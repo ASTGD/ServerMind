@@ -1,3 +1,4 @@
+from __future__ import annotations
 from app.models.user import User
 from app.models.server import Server
 from app.models.command_log import CommandLog

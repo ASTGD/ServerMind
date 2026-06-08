@@ -1,20 +1,21 @@
 # Web framework
-fastapi==0.111.0
-uvicorn[standard]==0.29.0
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
 
 # Database
-sqlalchemy[asyncio]==2.0.30
+sqlalchemy[asyncio]>=2.0.36
 alembic==1.13.1
-asyncpg==0.29.0
+asyncpg>=0.29.0
 
 # Validation
-pydantic==2.7.1
-pydantic-settings==2.2.1
+pydantic[email]>=2.7.1
+pydantic-settings>=2.2.1
 
 # Auth
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]>=3.3.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.9
+bcrypt==4.2.1
+python-multipart>=0.0.9
 
 # Cryptography
 cryptography==42.0.7

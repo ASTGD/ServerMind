@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import Layout from "@/components/layout/Layout"
+import ProtectedRoute from "@/components/shared/ProtectedRoute"
 import Dashboard from "@/routes/Dashboard"
 import Servers from "@/routes/Servers"
 import ServerDetail from "@/routes/ServerDetail"
@@ -24,7 +25,14 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/auth" element={<Auth />} />
-        <Route path="/" element={<Layout />}>
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="servers" element={<Servers />} />

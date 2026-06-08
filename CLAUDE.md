@@ -1118,16 +1118,16 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [x] Frontend: react-i18next setup (en + bn locales)
 - [x] Confirm everything runs locally
 
-### ⬜ Phase 1 — Auth System
-- [ ] users table + migration (with preferred_language field)
-- [ ] crypto_service.py (AES-256-GCM)
-- [ ] /auth endpoints (register, login, refresh, me)
-- [ ] JWT middleware
-- [ ] Language preference endpoint
-- [ ] Frontend: Login + Register pages
-- [ ] Frontend: authStore (Zustand)
-- [ ] Frontend: Protected route wrapper
-- [ ] Frontend: Language selector on register + settings
+### ✅ Phase 1 — Auth System
+- [x] users table + migration (with preferred_language field)
+- [x] crypto_service.py (AES-256-GCM)
+- [x] /auth endpoints (register, login, refresh, me)
+- [x] JWT middleware
+- [x] Language preference endpoint
+- [x] Frontend: Login + Register pages
+- [x] Frontend: authStore (Zustand)
+- [x] Frontend: Protected route wrapper
+- [x] Frontend: Language selector on register + settings
 
 ### ⬜ Phase 2 — Linux Server Management (SSH)
 - [ ] servers table + migration

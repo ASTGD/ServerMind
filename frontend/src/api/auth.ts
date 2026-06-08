@@ -1,3 +1,50 @@
 import { apiClient } from "./client"
-// TODO: implement auth API calls in Phase 1+
-export { apiClient }
+import type { User } from "@/types"
+
+export interface TokenResponse {
+  access_token: string
+  refresh_token: string
+  token_type: string
+  user: User
+}
+
+export interface RegisterBody {
+  email: string
+  password: string
+  name?: string
+  preferred_language?: string
+}
+
+export interface LoginBody {
+  email: string
+  password: string
+}
+
+/** Register a new account. */
+export async function register(body: RegisterBody): Promise<TokenResponse> {
+  const { data } = await apiClient.post<TokenResponse>("/api/auth/register", body)
+  return data
+}
+
+/** Login with email + password. */
+export async function login(body: LoginBody): Promise<TokenResponse> {
+  const { data } = await apiClient.post<TokenResponse>("/api/auth/login", body)
+  return data
+}
+
+/** Get the authenticated user profile. */
+export async function getMe(): Promise<User> {
+  const { data } = await apiClient.get<User>("/api/auth/me")
+  return data
+}
+
+/** Update preferred language. */
+export async function updateLanguage(language: string): Promise<User> {
+  const { data } = await apiClient.put<User>("/api/auth/language", { language })
+  return data
+}
+
+/** Logout — clears tokens on client side. */
+export async function logout(): Promise<void> {
+  await apiClient.post("/api/auth/logout").catch(() => {})
+}
