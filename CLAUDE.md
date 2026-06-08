@@ -1129,15 +1129,15 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [x] Frontend: Protected route wrapper
 - [x] Frontend: Language selector on register + settings
 
-### ⬜ Phase 2 — Linux Server Management (SSH)
-- [ ] servers table + migration
-- [ ] ssh_service.py (Paramiko: connect, test, execute, stream)
-- [ ] connection_manager.py (routes by connection_type)
-- [ ] metrics_service.py (CPU/RAM/disk via SSH)
-- [ ] OS detection on server add
-- [ ] /servers CRUD + test + detect + metrics endpoints
-- [ ] Frontend: Add Server modal
-- [ ] Frontend: Server list + Server detail with metrics
+### ✅ Phase 2 — Linux Server Management (SSH)
+- [x] servers table + migration
+- [x] ssh_service.py (Paramiko: connect, test, execute, stream)
+- [x] connection_manager.py (routes by connection_type)
+- [x] metrics_service.py (CPU/RAM/disk via SSH)
+- [x] OS detection on server add
+- [x] /servers CRUD + test + detect + metrics endpoints
+- [x] Frontend: Add Server modal
+- [x] Frontend: Server list + Server detail with metrics
 
 ### ⬜ Phase 2B — Windows Server Management (WinRM)
 - [ ] winrm_service.py (pywinrm: connect, test, execute, stream)

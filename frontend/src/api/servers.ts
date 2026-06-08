@@ -1,3 +1,73 @@
 import { apiClient } from "./client"
-// TODO: implement servers API calls in Phase 1+
-export { apiClient }
+import type { Server, ServerMetrics } from "@/types"
+
+export interface ServerCreateBody {
+  name: string
+  host: string
+  port: number
+  username: string
+  auth_type: "password" | "key"
+  connection_type: "ssh" | "winrm" | "hosting"
+  panel_type?: string | null
+  credential: string
+  tags?: string[] | null
+  notes?: string | null
+}
+
+export interface ServerUpdateBody {
+  name?: string
+  tags?: string[] | null
+  notes?: string | null
+}
+
+export interface TestConnectionResult {
+  ok: boolean
+  latency_ms: number
+  error: string | null
+}
+
+export interface DetectOsResult {
+  os_type: string
+  os_version: string
+  arch: string
+  pretty_name: string
+}
+
+export async function listServers(): Promise<Server[]> {
+  const { data } = await apiClient.get<Server[]>("/api/servers")
+  return data
+}
+
+export async function createServer(body: ServerCreateBody): Promise<Server> {
+  const { data } = await apiClient.post<Server>("/api/servers", body)
+  return data
+}
+
+export async function getServer(id: string): Promise<Server> {
+  const { data } = await apiClient.get<Server>(`/api/servers/${id}`)
+  return data
+}
+
+export async function updateServer(id: string, body: ServerUpdateBody): Promise<Server> {
+  const { data } = await apiClient.put<Server>(`/api/servers/${id}`, body)
+  return data
+}
+
+export async function deleteServer(id: string): Promise<void> {
+  await apiClient.delete(`/api/servers/${id}`)
+}
+
+export async function testConnection(id: string): Promise<TestConnectionResult> {
+  const { data } = await apiClient.post<TestConnectionResult>(`/api/servers/${id}/test`)
+  return data
+}
+
+export async function detectOs(id: string): Promise<DetectOsResult> {
+  const { data } = await apiClient.post<DetectOsResult>(`/api/servers/${id}/detect`)
+  return data
+}
+
+export async function getMetrics(id: string): Promise<ServerMetrics> {
+  const { data } = await apiClient.get<ServerMetrics>(`/api/servers/${id}/metrics`)
+  return data
+}
