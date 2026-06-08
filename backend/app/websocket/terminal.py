@@ -1,1 +1,368 @@
-# TODO: WebSocket terminal handler — Phase 3
+"""WebSocket handlers — interactive terminal and AI chat with streaming execution."""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import socket as _socket
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+
+import paramiko
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from sqlalchemy import select
+
+from app.database import AsyncSessionLocal
+from app.models.command_log import CommandLog
+from app.models.server import Server
+from app.services import ai_service, connection_manager, safety_service
+from app.services import ssh_service
+from app.services.auth_service import decode_token
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+_pty_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="pty")
+
+
+# ── Auth helper ───────────────────────────────────────────────────────────────
+
+async def _auth_and_get_server(token: str, server_id: str) -> Server | None:
+    """Decode JWT and return the server if owned by that user."""
+    payload = decode_token(token)
+    if not payload:
+        return None
+    user_id = payload.get("sub")
+
+    async with AsyncSessionLocal() as db:
+        try:
+            sid = uuid.UUID(server_id)
+        except ValueError:
+            return None
+        result = await db.execute(
+            select(Server).where(Server.id == sid, Server.user_id == uuid.UUID(user_id))
+        )
+        return result.scalar_one_or_none()
+
+
+# ── Terminal WebSocket ────────────────────────────────────────────────────────
+
+def _read_channel(channel: paramiko.Channel) -> bytes | None:
+    """Blocking read from a Paramiko channel. Returns None on close."""
+    channel.settimeout(0.3)
+    try:
+        data = channel.recv(4096)
+        return data if data else None
+    except _socket.timeout:
+        # No data within timeout; channel still open
+        return b""
+    except Exception:
+        return None
+
+
+@router.websocket("/ws/terminal/{server_id}")
+async def terminal_ws(
+    websocket: WebSocket,
+    server_id: str,
+    token: str = Query(default=""),
+) -> None:
+    """Bidirectional interactive terminal over WebSocket."""
+    server = await _auth_and_get_server(token, server_id)
+    if not server:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+
+    await websocket.accept()
+
+    try:
+        channel = await ssh_service.open_shell(
+            str(server.id), server.host, server.port,
+            server.username, server.auth_type, server.encrypted_cred,
+        )
+    except Exception as exc:
+        await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+        await websocket.close()
+        return
+
+    loop = asyncio.get_event_loop()
+
+    async def _ssh_to_ws() -> None:
+        """Read SSH output and forward to WebSocket."""
+        while True:
+            data = await loop.run_in_executor(_pty_executor, lambda: _read_channel(channel))
+            if data is None:
+                break
+            if data:
+                await websocket.send_bytes(data)
+
+    async def _ws_to_ssh() -> None:
+        """Read WebSocket messages and forward to SSH channel."""
+        while True:
+            raw = await websocket.receive_text()
+            msg = json.loads(raw)
+            if msg.get("type") == "input":
+                payload = msg.get("data", "")
+                await loop.run_in_executor(
+                    _pty_executor,
+                    lambda p=payload: channel.sendall(p.encode("utf-8", errors="replace")),
+                )
+            elif msg.get("type") == "resize":
+                cols = int(msg.get("cols", 80))
+                rows = int(msg.get("rows", 24))
+                await loop.run_in_executor(
+                    _pty_executor,
+                    lambda c=cols, r=rows: channel.resize_pty(width=c, height=r),
+                )
+
+    tasks = [
+        asyncio.ensure_future(_ssh_to_ws()),
+        asyncio.ensure_future(_ws_to_ssh()),
+    ]
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for t in pending:
+            t.cancel()
+    except WebSocketDisconnect:
+        for t in tasks:
+            t.cancel()
+    except Exception as exc:
+        logger.warning("Terminal WS error for server %s: %s", server_id, exc)
+        for t in tasks:
+            t.cancel()
+    finally:
+        try:
+            channel.close()
+        except Exception:
+            pass
+
+
+# ── Chat WebSocket ────────────────────────────────────────────────────────────
+
+@router.websocket("/ws/chat/{server_id}")
+async def chat_ws(
+    websocket: WebSocket,
+    server_id: str,
+    token: str = Query(default=""),
+) -> None:
+    """AI chat with streaming command execution."""
+    server = await _auth_and_get_server(token, server_id)
+    if not server:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+
+    await websocket.accept()
+
+    try:
+        await _chat_loop(websocket, server)
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        logger.exception("Chat WS error for server %s", server_id)
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+        except Exception:
+            pass
+
+
+async def _chat_loop(ws: WebSocket, server: Server) -> None:
+    """Main chat loop — processes user messages until disconnect."""
+    os_family = "windows" if server.connection_type == "winrm" else "linux"
+
+    while True:
+        raw = await ws.receive_text()
+        msg = json.loads(raw)
+
+        if msg.get("type") != "message":
+            continue
+
+        user_input: str = msg.get("content", "").strip()
+        user_language: str = msg.get("language", "en")
+        if not user_input:
+            continue
+
+        await _handle_message(ws, server, user_input, user_language, os_family)
+
+
+async def _handle_message(
+    ws: WebSocket,
+    server: Server,
+    user_input: str,
+    user_language: str,
+    os_family: str,
+) -> None:
+    """Plan, validate, execute and explain one user message."""
+    # ── 1. AI planning ────────────────────────────────────────────────────────
+    await ws.send_text(json.dumps({"type": "thinking"}))
+
+    try:
+        plan = await ai_service.plan_commands(user_input, server, user_language)
+    except Exception as exc:
+        await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
+        return
+
+    # If AI needs clarification, return early
+    if plan.get("clarification_needed"):
+        await ws.send_text(json.dumps({
+            "type": "clarification",
+            "message": plan["clarification_needed"],
+        }))
+        return
+
+    commands: list[dict] = plan.get("commands", [])
+
+    # ── 2. Safety check ───────────────────────────────────────────────────────
+    safety = safety_service.validate_plan(commands, os_family)
+    if safety.status == "blocked":
+        log = await _save_log(server, user_input, user_language, plan, "", "blocked")
+        await ws.send_text(json.dumps({
+            "type": "blocked",
+            "log_id": str(log.id),
+            "reason": safety.reason,
+            "pattern": safety.pattern,
+        }))
+        return
+
+    requires_approval = (
+        safety.status == "confirm"
+        or any(c.get("requires_confirmation") for c in commands)
+    )
+    risk_level = safety_service.highest_risk(commands)
+
+    # ── 3. Send plan ──────────────────────────────────────────────────────────
+    await ws.send_text(json.dumps({
+        "type": "plan",
+        "plan_summary": plan.get("plan_summary", ""),
+        "commands": commands,
+        "requires_approval": requires_approval,
+        "risk_level": risk_level,
+        "estimated_duration_seconds": plan.get("estimated_duration_seconds", 30),
+    }))
+
+    # ── 4. Wait for approval if required ─────────────────────────────────────
+    if requires_approval:
+        approval_event = asyncio.Event()
+        approved = {"value": False}
+
+        raw = await ws.receive_text()
+        decision = json.loads(raw)
+        if decision.get("type") == "approve":
+            approved["value"] = True
+        else:
+            log = await _save_log(server, user_input, user_language, plan, "", "cancelled")
+            await ws.send_text(json.dumps({"type": "cancelled", "log_id": str(log.id)}))
+            return
+
+    # ── 5. Execute commands ───────────────────────────────────────────────────
+    full_output: list[str] = []
+    t0 = time.monotonic()
+    overall_status = "success"
+
+    for idx, cmd_item in enumerate(commands):
+        cmd = cmd_item.get("cmd", "")
+        await ws.send_text(json.dumps({
+            "type": "command_start",
+            "index": idx,
+            "total": len(commands),
+            "cmd": cmd,
+            "description": cmd_item.get("description", ""),
+        }))
+
+        cmd_output: list[str] = []
+        cmd_t0 = time.monotonic()
+        exit_code = 0
+
+        try:
+            stream = await connection_manager.execute_stream(server, cmd)
+            async for line in stream:
+                cmd_output.append(line)
+                full_output.append(line)
+                await ws.send_text(json.dumps({
+                    "type": "output",
+                    "data": line + "\n",
+                    "stream": "stdout",
+                }))
+        except Exception as exc:
+            error_line = f"ERROR: {exc}"
+            cmd_output.append(error_line)
+            full_output.append(error_line)
+            await ws.send_text(json.dumps({
+                "type": "output",
+                "data": error_line + "\n",
+                "stream": "stderr",
+            }))
+            exit_code = 1
+            overall_status = "failed"
+
+        duration_ms = int((time.monotonic() - cmd_t0) * 1000)
+        await ws.send_text(json.dumps({
+            "type": "command_done",
+            "index": idx,
+            "exit_code": exit_code,
+            "duration_ms": duration_ms,
+        }))
+
+        if exit_code != 0 and overall_status != "failed":
+            overall_status = "partial"
+
+    # ── 6. Explain output ─────────────────────────────────────────────────────
+    execution_ms = int((time.monotonic() - t0) * 1000)
+    raw_output = "\n".join(full_output)
+
+    try:
+        explanation = await ai_service.explain_output(
+            plan.get("plan_summary", ""),
+            raw_output,
+            user_language,
+        )
+    except Exception:
+        explanation = plan.get("post_execution_message", "Commands completed.")
+
+    # ── 7. Save to DB ─────────────────────────────────────────────────────────
+    log = await _save_log(
+        server, user_input, user_language, plan, raw_output, overall_status,
+        execution_ms=execution_ms,
+    )
+
+    await ws.send_text(json.dumps({
+        "type": "execution_complete",
+        "log_id": str(log.id),
+        "status": overall_status,
+        "explanation": explanation,
+        "follow_up_suggestions": plan.get("follow_up_suggestions", []),
+    }))
+
+
+# ── DB helper ─────────────────────────────────────────────────────────────────
+
+async def _save_log(
+    server: Server,
+    user_input: str,
+    user_language: str,
+    plan: dict,
+    output: str,
+    status: str,
+    execution_ms: int | None = None,
+) -> CommandLog:
+    """Persist a command log entry."""
+    commands = plan.get("commands", [])
+    risk_level = safety_service.highest_risk(commands) if commands else "low"
+
+    async with AsyncSessionLocal() as db:
+        log = CommandLog(
+            server_id=server.id,
+            user_id=server.user_id,
+            user_input=user_input,
+            user_language=user_language,
+            ai_plan=plan,
+            commands=commands,
+            output=output or None,
+            status=status,
+            ai_explanation=plan.get("post_execution_message"),
+            risk_level=risk_level,
+            execution_ms=execution_ms,
+        )
+        db.add(log)
+        await db.commit()
+        await db.refresh(log)
+        return log

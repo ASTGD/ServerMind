@@ -1146,17 +1146,18 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [ ] Windows safety blocklist in safety_service.py
 - [ ] Test: connect Windows Server → run PowerShell command → stream output
 
-### ⬜ Phase 3 — AI Chat + Terminal
-- [ ] command_logs table + migration
-- [ ] ai_service.py (plan_commands with OS + language awareness)
-- [ ] safety_service.py (Linux + Windows blocklists)
-- [ ] WebSocket terminal handler
-- [ ] /chat endpoints
-- [ ] Frontend: XTerminal.tsx (xterm.js)
-- [ ] Frontend: ChatWindow.tsx with multilingual support
-- [ ] Frontend: CommandPlan.tsx (show plan before executing)
-- [ ] Frontend: useWebSocket.ts hook
-- [ ] Test: Linux + Windows commands in multiple languages
+### ✅ Phase 3 — AI Chat + Terminal
+- [x] command_logs table + migration
+- [x] ai_service.py (plan_commands with OS + language awareness)
+- [x] safety_service.py (Linux + Windows blocklists)
+- [x] WebSocket terminal handler (/ws/terminal + /ws/chat)
+- [x] /api/servers/{id}/history + /api/commands/{id} endpoints
+- [x] Frontend: XTerminal.tsx (xterm.js with PTY + resize)
+- [x] Frontend: ChatWindow.tsx with multilingual support
+- [x] Frontend: CommandPlan.tsx (show plan before executing)
+- [x] Frontend: ChatMessage.tsx, ChatInput.tsx components
+- [x] Frontend: useWebSocket.ts hook
+- [x] Chat + Terminal routes wired into ServerDetail
 
 ### ⬜ Phase 4 — Playbooks (Script Library)
 - [ ] playbooks + playbook_runs tables + migration

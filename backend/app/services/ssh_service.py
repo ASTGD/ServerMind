@@ -147,3 +147,28 @@ async def close(server_id: str) -> None:
             client.close()
         except Exception:
             pass
+
+
+async def open_shell(
+    server_id: str,
+    host: str,
+    port: int,
+    username: str,
+    auth_type: str,
+    encrypted_cred: str,
+    cols: int = 80,
+    rows: int = 24,
+) -> paramiko.Channel:
+    """Open an interactive PTY shell channel for terminal use."""
+    credential = decrypt(encrypted_cred)
+    loop = asyncio.get_event_loop()
+
+    def _open() -> paramiko.Channel:
+        client = _get_client(server_id, host, port, username, auth_type, credential)
+        transport = client.get_transport()
+        channel = transport.open_session()
+        channel.get_pty(term="xterm-256color", width=cols, height=rows)
+        channel.invoke_shell()
+        return channel
+
+    return await loop.run_in_executor(_executor, _open)

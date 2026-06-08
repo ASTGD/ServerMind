@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useParams, useNavigate, Link } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, Trash2, RefreshCw, Search, Loader2 } from "lucide-react"
+import { ChevronLeft, Trash2, RefreshCw, Search, Loader2, MessageSquare, Terminal as TerminalIcon } from "lucide-react"
 import { getServer, deleteServer, testConnection, detectOs } from "@/api/servers"
 import ConnectionStatus from "@/components/server/ConnectionStatus"
 import ServerMetrics from "@/components/server/ServerMetrics"
@@ -81,6 +81,20 @@ export default function ServerDetail() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Link
+            to={`/servers/${server.id}/chat`}
+            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <MessageSquare size={13} />
+            AI Chat
+          </Link>
+          <Link
+            to={`/servers/${server.id}/terminal`}
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          >
+            <TerminalIcon size={13} />
+            Terminal
+          </Link>
           <button
             onClick={() => testMutation.mutate()}
             disabled={testMutation.isPending}
