@@ -1,0 +1,48 @@
+{
+  "app": {
+    "name": "ServerMind",
+    "tagline": "إدارة أي خادم بلغة طبيعية"
+  },
+  "nav": {
+    "dashboard": "لوحة التحكم",
+    "servers": "الخوادم",
+    "playbooks": "الأدلة",
+    "scripts": "نصوصي",
+    "logs": "السجلات",
+    "team": "الفريق",
+    "settings": "الإعدادات"
+  },
+  "auth": {
+    "login": "تسجيل الدخول",
+    "register": "التسجيل",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "name": "الاسم",
+    "language": "اللغة",
+    "logout": "تسجيل الخروج"
+  },
+  "servers": {
+    "add": "إضافة خادم",
+    "connect": "اتصال",
+    "disconnect": "قطع الاتصال",
+    "status": {
+      "online": "متصل",
+      "offline": "غير متصل",
+      "unknown": "غير معروف"
+    }
+  },
+  "chat": {
+    "placeholder": "صف ما تريد القيام به...",
+    "send": "إرسال",
+    "approve": "موافقة وتشغيل",
+    "cancel": "إلغاء"
+  },
+  "common": {
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "delete": "حذف",
+    "confirm": "تأكيد",
+    "loading": "جارٍ التحميل...",
+    "error": "حدث خطأ ما"
+  }
+}

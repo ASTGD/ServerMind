@@ -1,0 +1,46 @@
+# Web framework
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+
+# Database
+sqlalchemy[asyncio]==2.0.30
+alembic==1.13.1
+asyncpg==0.29.0
+
+# Validation
+pydantic==2.7.1
+pydantic-settings==2.2.1
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.9
+
+# Cryptography
+cryptography==42.0.7
+
+# SSH
+paramiko==3.4.0
+
+# WinRM
+pywinrm==0.4.3
+
+# WebSocket
+python-socketio[asyncio_client]==5.11.2
+
+# Background jobs
+celery[redis]==5.3.6
+redis==5.0.4
+
+# Scheduler
+apscheduler==3.10.4
+
+# Claude API
+anthropic==0.28.0
+
+# HTTP
+requests==2.31.0
+aiofiles==23.2.1
+
+# Utilities
+python-dotenv==1.0.1

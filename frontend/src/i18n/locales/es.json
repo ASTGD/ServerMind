@@ -1,0 +1,48 @@
+{
+  "app": {
+    "name": "ServerMind",
+    "tagline": "Gestiona cualquier servidor en lenguaje natural"
+  },
+  "nav": {
+    "dashboard": "Panel",
+    "servers": "Servidores",
+    "playbooks": "Guías",
+    "scripts": "Mis Scripts",
+    "logs": "Registros",
+    "team": "Equipo",
+    "settings": "Configuración"
+  },
+  "auth": {
+    "login": "Iniciar sesión",
+    "register": "Registrarse",
+    "email": "Correo",
+    "password": "Contraseña",
+    "name": "Nombre",
+    "language": "Idioma",
+    "logout": "Cerrar sesión"
+  },
+  "servers": {
+    "add": "Agregar servidor",
+    "connect": "Conectar",
+    "disconnect": "Desconectar",
+    "status": {
+      "online": "En línea",
+      "offline": "Sin conexión",
+      "unknown": "Desconocido"
+    }
+  },
+  "chat": {
+    "placeholder": "Describe lo que quieres hacer...",
+    "send": "Enviar",
+    "approve": "Aprobar y ejecutar",
+    "cancel": "Cancelar"
+  },
+  "common": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "confirm": "Confirmar",
+    "loading": "Cargando...",
+    "error": "Algo salió mal"
+  }
+}
