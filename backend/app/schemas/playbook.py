@@ -13,7 +13,7 @@ class PlaybookOut(BaseModel):
     category: str | None
     os_family: str | None
     script_type: str | None
-    variables: dict | None
+    variables: list | None
     supported_os: list[str] | None
     est_runtime_sec: int | None
     is_official: bool
@@ -22,6 +22,24 @@ class PlaybookOut(BaseModel):
     tags: list[str] | None
     version: str
     created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PlaybookDetailOut(PlaybookOut):
+    script_bash: str | None
+    script_powershell: str | None
+
+
+class PlaybookRunOut(BaseModel):
+    id: uuid.UUID
+    server_id: uuid.UUID
+    playbook_id: uuid.UUID | None
+    variables_used: dict | None
+    output: str | None
+    status: str | None
+    started_at: datetime
+    completed_at: datetime | None
 
     model_config = {"from_attributes": True}
 

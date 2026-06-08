@@ -1159,14 +1159,14 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [x] Frontend: useWebSocket.ts hook
 - [x] Chat + Terminal routes wired into ServerDetail
 
-### ⬜ Phase 4 — Playbooks (Script Library)
-- [ ] playbooks + playbook_runs tables + migration
-- [ ] Dual script support (bash + powershell per playbook)
-- [ ] Seed all official Linux playbooks
-- [ ] Seed all official Windows playbooks
-- [ ] /playbooks endpoints
-- [ ] Frontend: Playbooks page (OS filter + category tabs + search)
-- [ ] Frontend: PlaybookCard, ScriptPreview, RunPlaybookModal
+### ✅ Phase 4 — Playbooks (Script Library)
+- [x] playbooks + playbook_runs tables + migration
+- [x] Dual script support (bash + powershell per playbook)
+- [x] Seed all official Linux playbooks
+- [x] Seed all official Windows playbooks
+- [x] /playbooks endpoints
+- [x] Frontend: Playbooks page (OS filter + category tabs + search)
+- [x] Frontend: PlaybookCard, ScriptPreview, RunPlaybookModal
 
 ### ⬜ Phase 5 — AI Script Generator
 - [ ] user_scripts table + migration

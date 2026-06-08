@@ -76,6 +76,13 @@ export interface CommandLog {
   created_at: string
 }
 
+export interface PlaybookVariable {
+  name: string
+  label: string
+  default: string
+  required: boolean
+}
+
 export interface Playbook {
   id: string
   slug: string
@@ -84,7 +91,7 @@ export interface Playbook {
   category: string | null
   os_family: "linux" | "windows" | "both" | null
   script_type: "bash" | "powershell" | "both" | null
-  variables: Record<string, unknown> | null
+  variables: PlaybookVariable[] | null
   supported_os: string[] | null
   est_runtime_sec: number | null
   is_official: boolean
@@ -93,6 +100,22 @@ export interface Playbook {
   tags: string[] | null
   version: string
   created_at: string
+}
+
+export interface PlaybookDetail extends Playbook {
+  script_bash: string | null
+  script_powershell: string | null
+}
+
+export interface PlaybookRun {
+  id: string
+  server_id: string
+  playbook_id: string | null
+  variables_used: Record<string, string> | null
+  output: string | null
+  status: "running" | "success" | "failed" | null
+  started_at: string
+  completed_at: string | null
 }
 
 export interface ScheduledTask {

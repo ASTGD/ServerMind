@@ -15,9 +15,11 @@ from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
 from app.models.command_log import CommandLog
+from app.models.playbook import Playbook, PlaybookRun
 from app.models.server import Server
 from app.services import ai_service, connection_manager, safety_service
 from app.services import ssh_service
+from app.services.playbook_service import substitute_variables
 from app.services.auth_service import decode_token
 
 logger = logging.getLogger(__name__)
@@ -366,3 +368,139 @@ async def _save_log(
         await db.commit()
         await db.refresh(log)
         return log
+
+
+# ── Playbook Run WebSocket ─────────────────────────────────────────────────────
+
+@router.websocket("/ws/playbook-run/{server_id}")
+async def playbook_run_ws(
+    websocket: WebSocket,
+    server_id: str,
+    token: str = Query(default=""),
+) -> None:
+    """Stream playbook script execution over WebSocket."""
+    server = await _auth_and_get_server(token, server_id)
+    if not server:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+
+    await websocket.accept()
+
+    try:
+        raw = await websocket.receive_text()
+        msg = json.loads(raw)
+        if msg.get("type") != "run":
+            await websocket.send_text(json.dumps({"type": "error", "message": "Expected run message"}))
+            await websocket.close()
+            return
+
+        playbook_id_str = msg.get("playbook_id")
+        variables: dict = msg.get("variables") or {}
+
+        async with AsyncSessionLocal() as db:
+            playbook = None
+            if playbook_id_str:
+                try:
+                    pid = uuid.UUID(playbook_id_str)
+                except ValueError:
+                    pid = None
+                if pid:
+                    result = await db.execute(select(Playbook).where(Playbook.id == pid))
+                    playbook = result.scalar_one_or_none()
+
+            if not playbook:
+                await websocket.send_text(json.dumps({"type": "error", "message": "Playbook not found"}))
+                await websocket.close()
+                return
+
+            # Pick correct script for OS
+            if server.connection_type == "winrm" and playbook.script_powershell:
+                script = playbook.script_powershell
+            elif playbook.script_bash:
+                script = playbook.script_bash
+            else:
+                await websocket.send_text(json.dumps({"type": "error", "message": "No script available for this OS"}))
+                await websocket.close()
+                return
+
+            script = substitute_variables(script, variables)
+
+            # Create run record
+            run = PlaybookRun(
+                server_id=server.id,
+                user_id=server.user_id,
+                playbook_id=playbook.id,
+                variables_used=variables,
+                status="running",
+            )
+            db.add(run)
+            await db.commit()
+            await db.refresh(run)
+
+        await websocket.send_text(json.dumps({
+            "type": "started",
+            "run_id": str(run.id),
+            "title": playbook.title,
+        }))
+
+        # Execute script and stream output
+        output_lines: list[str] = []
+        overall_status = "success"
+        t0 = time.monotonic()
+
+        try:
+            stream = await connection_manager.execute_stream(server, script)
+            async for line in stream:
+                output_lines.append(line)
+                await websocket.send_text(json.dumps({
+                    "type": "output",
+                    "data": line + "\n",
+                }))
+        except Exception as exc:
+            error_line = f"ERROR: {exc}"
+            output_lines.append(error_line)
+            overall_status = "failed"
+            await websocket.send_text(json.dumps({
+                "type": "output",
+                "data": error_line + "\n",
+            }))
+
+        execution_ms = int((time.monotonic() - t0) * 1000)
+        full_output = "\n".join(output_lines)
+
+        # Update run record
+        async with AsyncSessionLocal() as db:
+            from sqlalchemy import update as sa_update
+            from datetime import datetime, timezone
+            await db.execute(
+                sa_update(PlaybookRun)
+                .where(PlaybookRun.id == run.id)
+                .values(
+                    status=overall_status,
+                    output=full_output,
+                    completed_at=datetime.now(timezone.utc),
+                )
+            )
+            # Increment run_count
+            await db.execute(
+                sa_update(Playbook)
+                .where(Playbook.id == playbook.id)
+                .values(run_count=Playbook.run_count + 1)
+            )
+            await db.commit()
+
+        await websocket.send_text(json.dumps({
+            "type": "complete",
+            "run_id": str(run.id),
+            "status": overall_status,
+            "execution_ms": execution_ms,
+        }))
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        logger.exception("Playbook run WS error for server %s", server_id)
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+        except Exception:
+            pass

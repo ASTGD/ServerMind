@@ -4,9 +4,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.database import AsyncSessionLocal
 from app.routers import auth as auth_router
 from app.routers import commands as commands_router
+from app.routers import playbooks as playbooks_router
 from app.routers import servers as servers_router
+from app.services import playbook_service
 from app.websocket import terminal as ws_handlers
 
 logging.basicConfig(
@@ -35,6 +38,7 @@ app.add_middleware(
 app.include_router(auth_router.router)
 app.include_router(servers_router.router)
 app.include_router(commands_router.router)
+app.include_router(playbooks_router.router)
 app.include_router(ws_handlers.router)
 
 
@@ -48,6 +52,8 @@ async def health() -> dict[str, str]:
 async def on_startup() -> None:
     """Run on application startup."""
     logger.info("ServerMind backend starting up...")
+    async with AsyncSessionLocal() as db:
+        await playbook_service.seed_if_empty(db)
 
 
 @app.on_event("shutdown")
