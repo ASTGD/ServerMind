@@ -67,6 +67,15 @@ ALWAYS RESPOND WITH VALID JSON ONLY (no markdown, no explanation outside JSON):
 }}
 """
 
+_HOSTING_NOTE = """\
+
+HOSTING MODE: This is a managed control-panel account ({panel_type}), not a shell.
+You CANNOT run bash/PowerShell commands here. Return an EMPTY "commands" array and
+put step-by-step control-panel UI instructions (or the matching ServerMind panel
+action — create site, issue SSL, create database/email) in "plan_summary" and
+"post_execution_message" instead. Never output shell commands for hosting accounts.
+"""
+
 _EXPLAIN_SYSTEM = """\
 You are ServerMind AI. A user just ran server commands.
 Summarize what happened in 2-3 sentences in plain, friendly language.
@@ -166,6 +175,8 @@ async def plan_commands(
         arch=server.arch or "unknown",
         user_language=user_language,
     )
+    if server.connection_type == "hosting":
+        system += _HOSTING_NOTE.format(panel_type=server.panel_type or "control panel")
 
     message = await _get_client().messages.create(
         model=settings.ANTHROPIC_MODEL,

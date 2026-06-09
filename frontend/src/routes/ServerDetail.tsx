@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useParams, useNavigate, Link } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, Trash2, RefreshCw, Search, Loader2, MessageSquare, Terminal as TerminalIcon, Clock, Activity, FolderOpen, Shield, HardDriveDownload } from "lucide-react"
+import { ChevronLeft, Trash2, RefreshCw, Search, Loader2, MessageSquare, Terminal as TerminalIcon, Clock, Activity, FolderOpen, Shield, HardDriveDownload, Globe } from "lucide-react"
 import { getServer, deleteServer, testConnection, detectOs } from "@/api/servers"
 import ConnectionStatus from "@/components/server/ConnectionStatus"
 import ServerMetrics from "@/components/server/ServerMetrics"
@@ -88,6 +88,15 @@ export default function ServerDetail() {
             <MessageSquare size={13} />
             AI Chat
           </Link>
+          {server.connection_type === "hosting" && (
+            <Link
+              to={`/servers/${server.id}/hosting`}
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            >
+              <Globe size={13} />
+              Hosting
+            </Link>
+          )}
           <Link
             to={`/servers/${server.id}/terminal`}
             className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"

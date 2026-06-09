@@ -1184,15 +1184,17 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [x] /schedules endpoints (list, create, update, delete, toggle, run-now)
 - [x] Frontend: Scheduler.tsx (task cards, new task modal with live cron preview)
 
-### ⬜ Phase 7 — Hosting Mode
-- [ ] hosting_service.py (CyberPanel API)
-- [ ] hosting_service.py (cPanel UAPI)
-- [ ] hosting_service.py (Plesk REST API)
-- [ ] Hosting-specific AI prompt adjustments
-- [ ] /servers with connection_type='hosting'
-- [ ] Frontend: Add Hosting Account modal (panel type selector)
-- [ ] Frontend: Hosting-specific dashboard (sites, DBs, email)
-- [ ] Test: Connect CyberPanel → create site → issue SSL
+### ✅ Phase 7 — Hosting Mode
+- [x] hosting_service.py — adapter architecture (_Adapter base + per-panel subclasses) with uniform async dispatch; requests via asyncio.to_thread, verify=False (self-signed panels), HostingError → HTTP 502
+- [x] CyberPanelAdapter (cloud JSON API, port 8090; adminUser/adminPass in each POST): verifyLogin, fetchWebsites, createWebsite, submitWebsiteDeletion, issueSSL, createDatabase
+- [x] CpanelAdapter (UAPI, port 2083; `Authorization: cpanel user:token`): list_domains, list/create databases, list/create email
+- [x] PleskAdapter (REST API v2, port 8443; Basic auth): server, list/create domains
+- [x] connection_manager routes connection_type=='hosting' → hosting_service.test_connection
+- [x] Hosting-aware AI prompt: hosting servers get _HOSTING_NOTE → AI returns empty commands[] and panel UI steps instead of shell commands
+- [x] /api/servers/{id}/hosting/* router: websites (list/create/delete/ssl), databases (list/create), email (list/create); reads=view, writes=need_execute
+- [x] Frontend: AddServerModal panel-type selector (CyberPanel/cPanel/Plesk) with auto port + password/token labels; create_server stays connection_type='hosting'
+- [x] Frontend: Hosting.tsx dashboard (Websites/Databases/Email tabs, create modals, Issue-SSL + delete actions) + api/hosting.ts + conditional Hosting link in ServerDetail
+- [x] Tested: all three adapters' auth/parse/error paths + dispatch via mocked requests (no live panel available; endpoint strings follow documented vendor APIs and need live validation per panel version)
 
 ### ✅ Phase 8 — File Manager
 - [x] file_service.py (SFTP via Paramiko pool, async ThreadPoolExecutor, 2 MB read cap, binary detection)

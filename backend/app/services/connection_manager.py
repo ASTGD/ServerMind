@@ -40,7 +40,11 @@ async def test_connection(server: Server) -> ConnectionResult:
         )
         return ConnectionResult(**result)
 
-    # hosting — Phase 7
+    if server.connection_type == "hosting":
+        from app.services import hosting_service
+        result = await hosting_service.test_connection(server)
+        return ConnectionResult(**result)
+
     raise NotImplementedError(f"connection_type '{server.connection_type}' not yet supported")
 
 

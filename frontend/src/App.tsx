@@ -15,6 +15,7 @@ import FileManager from "@/routes/FileManager"
 import Monitoring from "@/routes/Monitoring"
 import Security from "@/routes/Security"
 import Backups from "@/routes/Backups"
+import Hosting from "@/routes/Hosting"
 import Logs from "@/routes/Logs"
 import Team from "@/routes/Team"
 import AcceptInvite from "@/routes/AcceptInvite"
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="servers/:id/monitoring" element={<Monitoring />} />
           <Route path="servers/:id/security" element={<Security />} />
           <Route path="servers/:id/backups" element={<Backups />} />
+          <Route path="servers/:id/hosting" element={<Hosting />} />
           <Route path="logs" element={<Logs />} />
           <Route path="team" element={<Team />} />
           <Route path="team/accept/:token" element={<AcceptInvite />} />

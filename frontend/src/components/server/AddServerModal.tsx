@@ -44,6 +44,8 @@ export default function AddServerModal({ onClose }: Props) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  const HOSTING_PORTS: Record<string, number> = { cyberpanel: 8090, cpanel: 2083, plesk: 8443 }
+
   function setConnectionType(value: ServerCreateBody["connection_type"]) {
     setForm((prev) => {
       const next = { ...prev, connection_type: value }
@@ -52,11 +54,22 @@ export default function AddServerModal({ onClose }: Props) {
         next.auth_type = "password" // WinRM uses NTLM, not SSH keys
         if (prev.port === 22) next.port = 5985
         if (prev.username === "root") next.username = "Administrator"
+      } else if (value === "hosting") {
+        next.auth_type = "password"
+        next.panel_type = next.panel_type ?? "cyberpanel"
+        next.port = HOSTING_PORTS[next.panel_type ?? "cyberpanel"] ?? 8090
+        if (prev.username === "root") next.username = "admin"
       } else if (value === "ssh") {
-        if (prev.port === 5985 || prev.port === 5986) next.port = 22
+        next.panel_type = null
+        const nonSshPorts = [5985, 5986, ...Object.values(HOSTING_PORTS)]
+        if (nonSshPorts.includes(prev.port)) next.port = 22
       }
       return next
     })
+  }
+
+  function setPanelType(panel: string) {
+    setForm((prev) => ({ ...prev, panel_type: panel, port: HOSTING_PORTS[panel] ?? prev.port }))
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -65,9 +78,13 @@ export default function AddServerModal({ onClose }: Props) {
     mutation.mutate(form)
   }
 
-  const isSSH = form.connection_type === "ssh"
-  const credLabel = form.auth_type === "key" ? "Private Key (PEM)" : "Password"
-  const credPlaceholder = form.auth_type === "key" ? "-----BEGIN OPENSSH PRIVATE KEY-----\n..." : "Server password"
+  const isHosting = form.connection_type === "hosting"
+  const credLabel = isHosting
+    ? (form.panel_type === "cpanel" ? "API Token" : "Panel Password")
+    : form.auth_type === "key" ? "Private Key (PEM)" : "Password"
+  const credPlaceholder = isHosting
+    ? (form.panel_type === "cpanel" ? "cPanel API token" : "Control panel admin password")
+    : form.auth_type === "key" ? "-----BEGIN OPENSSH PRIVATE KEY-----\n..." : "Server password"
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -110,20 +127,37 @@ export default function AddServerModal({ onClose }: Props) {
               </select>
             </div>
 
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Auth Type
-              </label>
-              <select
-                value={form.auth_type}
-                onChange={(e) => set("auth_type", e.target.value as "password" | "key")}
-                disabled={form.connection_type === "winrm"}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none disabled:opacity-60"
-              >
-                <option value="password">Password</option>
-                {form.connection_type !== "winrm" && <option value="key">SSH Key</option>}
-              </select>
-            </div>
+            {isHosting ? (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Panel Type
+                </label>
+                <select
+                  value={form.panel_type ?? "cyberpanel"}
+                  onChange={(e) => setPanelType(e.target.value)}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                >
+                  <option value="cyberpanel">CyberPanel</option>
+                  <option value="cpanel">cPanel</option>
+                  <option value="plesk">Plesk</option>
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Auth Type
+                </label>
+                <select
+                  value={form.auth_type}
+                  onChange={(e) => set("auth_type", e.target.value as "password" | "key")}
+                  disabled={form.connection_type === "winrm"}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none disabled:opacity-60"
+                >
+                  <option value="password">Password</option>
+                  {form.connection_type !== "winrm" && <option value="key">SSH Key</option>}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Host + Port */}
