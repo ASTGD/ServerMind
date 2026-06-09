@@ -8,6 +8,7 @@ from app.database import AsyncSessionLocal
 from app.routers import auth as auth_router
 from app.routers import commands as commands_router
 from app.routers import playbooks as playbooks_router
+from app.routers import scripts as scripts_router
 from app.routers import servers as servers_router
 from app.services import playbook_service
 from app.websocket import terminal as ws_handlers
@@ -39,6 +40,7 @@ app.include_router(auth_router.router)
 app.include_router(servers_router.router)
 app.include_router(commands_router.router)
 app.include_router(playbooks_router.router)
+app.include_router(scripts_router.router)
 app.include_router(ws_handlers.router)
 
 

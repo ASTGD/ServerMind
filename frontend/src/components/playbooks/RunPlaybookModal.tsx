@@ -9,11 +9,13 @@ interface Props {
   playbook: PlaybookDetail
   servers: Server[]
   onClose: () => void
+  /** When true, sends user_script_id instead of playbook_id to the WS handler */
+  isUserScript?: boolean
 }
 
 type RunState = "idle" | "running" | "success" | "failed"
 
-export default function RunPlaybookModal({ playbook, servers, onClose }: Props) {
+export default function RunPlaybookModal({ playbook, servers, onClose, isUserScript = false }: Props) {
   const token = useAuthStore((s) => s.token)
   const [serverId, setServerId] = useState<string>(servers[0]?.id ?? "")
   const [vars, setVars] = useState<Record<string, string>>(() => {
@@ -59,7 +61,9 @@ export default function RunPlaybookModal({ playbook, servers, onClose }: Props) 
       ws.send(
         JSON.stringify({
           type: "run",
-          playbook_id: playbook.id,
+          ...(isUserScript
+            ? { user_script_id: playbook.id }
+            : { playbook_id: playbook.id }),
           variables: vars,
         })
       )

@@ -22,7 +22,7 @@ def _get_client() -> AsyncAnthropic:
     return _client
 
 
-# ── System prompt ─────────────────────────────────────────────────────────────
+# ── System prompts ────────────────────────────────────────────────────────────
 
 _CHAT_SYSTEM = """\
 You are ServerMind AI, an expert server administrator.
@@ -75,6 +75,50 @@ Focus on: what was accomplished, any important output, and what to do next if re
 Keep it short and jargon-free. Output plain text only, no JSON.
 """
 
+_SCRIPT_SYSTEM = """\
+You are ServerMind Script Generator.
+Create production-ready scripts for server administration.
+
+Target OS: {os_family}
+Shell: {shell}
+User language: {user_language}
+
+For bash scripts:
+- Start with: #!/bin/bash
+- Strict mode: set -euo pipefail
+- Use trap for cleanup where appropriate
+- Check prerequisites before running
+- Clear echo progress messages
+
+For PowerShell scripts:
+- Start with: #Requires -Version 5.1
+- Set-StrictMode -Version Latest
+- $ErrorActionPreference = 'Stop'
+- try/catch error handling
+- Write-Host for progress messages
+
+For both script types:
+- Header comment: title, description, author: ServerMind AI
+- User-configurable variables section at the top with comments
+- Inline comments on non-obvious steps
+- Meaningful success/failure messages
+- Success summary at the end
+
+RESPOND WITH VALID JSON ONLY (no markdown fences, no text outside JSON):
+{{
+  "title": "Short descriptive title",
+  "description": "One sentence description",
+  "script_type": "bash or powershell",
+  "estimated_runtime_seconds": 30,
+  "variables": [
+    {{"name": "VAR_NAME", "label": "Human-readable label", "default": "default_value", "required": true}}
+  ],
+  "script": "full script content",
+  "post_run_instructions": "What to do after running, or empty string",
+  "warnings": []
+}}
+"""
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -82,7 +126,6 @@ def _extract_json(raw: str) -> str:
     """Strip markdown code fences if present."""
     raw = raw.strip()
     if raw.startswith("```"):
-        # Remove opening fence + optional language tag
         raw = re.sub(r"^```[a-z]*\n?", "", raw)
         raw = re.sub(r"\n?```$", "", raw)
     return raw.strip()
@@ -137,3 +180,31 @@ async def explain_output(
         messages=[{"role": "user", "content": prompt}],
     )
     return message.content[0].text.strip()
+
+
+async def generate_script(
+    request: str,
+    os_family: str = "linux",
+    user_language: str = "en",
+) -> dict:
+    """Ask Claude to generate a complete server administration script."""
+    shell = "powershell" if os_family == "windows" else "bash"
+    system = _SCRIPT_SYSTEM.format(
+        os_family=os_family,
+        shell=shell,
+        user_language=user_language,
+    )
+
+    message = await _get_client().messages.create(
+        model=settings.ANTHROPIC_MODEL,
+        max_tokens=4096,
+        system=system,
+        messages=[{"role": "user", "content": request}],
+    )
+
+    raw = _extract_json(message.content[0].text)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.warning("AI script JSON parse error: %s\nRaw: %r", exc, raw[:500])
+        raise ValueError(f"AI returned invalid JSON: {exc}") from exc

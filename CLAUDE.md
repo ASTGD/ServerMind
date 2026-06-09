@@ -1168,12 +1168,12 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [x] Frontend: Playbooks page (OS filter + category tabs + search)
 - [x] Frontend: PlaybookCard, ScriptPreview, RunPlaybookModal
 
-### ⬜ Phase 5 — AI Script Generator
-- [ ] user_scripts table + migration
-- [ ] ai_service.generate_script() (bash or PowerShell based on server OS)
-- [ ] /scripts endpoints
-- [ ] Frontend: ScriptGenerator.tsx
-- [ ] Frontend: MyScripts.tsx
+### ✅ Phase 5 — AI Script Generator
+- [x] user_scripts table + migration (in 004, already ran)
+- [x] ai_service.generate_script() (bash or PowerShell based on server OS)
+- [x] /scripts endpoints (list, create, get, update, delete, generate)
+- [x] Frontend: ScriptGenerator.tsx (OS selector, examples, Monaco editor, save)
+- [x] Frontend: MyScripts.tsx (filter, search, detail panel, run via WS)
 
 ### ⬜ Phase 6 — Scheduler
 - [ ] scheduled_tasks table + migration

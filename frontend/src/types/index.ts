@@ -146,6 +146,29 @@ export interface Alert {
   created_at: string
 }
 
+export interface UserScript {
+  id: string
+  title: string
+  description: string | null
+  script_type: string | null
+  script_content: string
+  source: string | null
+  tags: string[] | null
+  created_at: string
+}
+
+export interface GenerateScriptResult {
+  title: string
+  description: string
+  script_type: string
+  estimated_runtime_seconds: number
+  variables: PlaybookVariable[]
+  script: string
+  post_run_instructions: string
+  warnings: string[]
+  saved_id: string | null
+}
+
 export interface WSMessage {
   type: string
   [key: string]: unknown

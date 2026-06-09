@@ -15,7 +15,7 @@ from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
 from app.models.command_log import CommandLog
-from app.models.playbook import Playbook, PlaybookRun
+from app.models.playbook import Playbook, PlaybookRun, UserScript
 from app.models.server import Server
 from app.services import ai_service, connection_manager, safety_service
 from app.services import ssh_service
@@ -395,10 +395,15 @@ async def playbook_run_ws(
             return
 
         playbook_id_str = msg.get("playbook_id")
+        user_script_id_str = msg.get("user_script_id")
         variables: dict = msg.get("variables") or {}
 
         async with AsyncSessionLocal() as db:
-            playbook = None
+            script: str | None = None
+            run_title: str = "Script"
+            playbook_id_val: uuid.UUID | None = None
+            user_script_id_val: uuid.UUID | None = None
+
             if playbook_id_str:
                 try:
                     pid = uuid.UUID(playbook_id_str)
@@ -407,19 +412,34 @@ async def playbook_run_ws(
                 if pid:
                     result = await db.execute(select(Playbook).where(Playbook.id == pid))
                     playbook = result.scalar_one_or_none()
+                    if playbook:
+                        playbook_id_val = playbook.id
+                        run_title = playbook.title
+                        if server.connection_type == "winrm" and playbook.script_powershell:
+                            script = playbook.script_powershell
+                        elif playbook.script_bash:
+                            script = playbook.script_bash
 
-            if not playbook:
-                await websocket.send_text(json.dumps({"type": "error", "message": "Playbook not found"}))
-                await websocket.close()
-                return
+            elif user_script_id_str:
+                try:
+                    usid = uuid.UUID(user_script_id_str)
+                except ValueError:
+                    usid = None
+                if usid:
+                    result = await db.execute(
+                        select(UserScript).where(
+                            UserScript.id == usid,
+                            UserScript.user_id == server.user_id,
+                        )
+                    )
+                    user_script = result.scalar_one_or_none()
+                    if user_script:
+                        user_script_id_val = user_script.id
+                        run_title = user_script.title
+                        script = user_script.script_content
 
-            # Pick correct script for OS
-            if server.connection_type == "winrm" and playbook.script_powershell:
-                script = playbook.script_powershell
-            elif playbook.script_bash:
-                script = playbook.script_bash
-            else:
-                await websocket.send_text(json.dumps({"type": "error", "message": "No script available for this OS"}))
+            if not script:
+                await websocket.send_text(json.dumps({"type": "error", "message": "Script not found or no compatible script for this OS"}))
                 await websocket.close()
                 return
 
@@ -429,7 +449,8 @@ async def playbook_run_ws(
             run = PlaybookRun(
                 server_id=server.id,
                 user_id=server.user_id,
-                playbook_id=playbook.id,
+                playbook_id=playbook_id_val,
+                user_script_id=user_script_id_val,
                 variables_used=variables,
                 status="running",
             )
@@ -440,7 +461,7 @@ async def playbook_run_ws(
         await websocket.send_text(json.dumps({
             "type": "started",
             "run_id": str(run.id),
-            "title": playbook.title,
+            "title": run_title,
         }))
 
         # Execute script and stream output
@@ -481,12 +502,13 @@ async def playbook_run_ws(
                     completed_at=datetime.now(timezone.utc),
                 )
             )
-            # Increment run_count
-            await db.execute(
-                sa_update(Playbook)
-                .where(Playbook.id == playbook.id)
-                .values(run_count=Playbook.run_count + 1)
-            )
+            # Increment run_count only for official playbooks
+            if playbook_id_val:
+                await db.execute(
+                    sa_update(Playbook)
+                    .where(Playbook.id == playbook_id_val)
+                    .values(run_count=Playbook.run_count + 1)
+                )
             await db.commit()
 
         await websocket.send_text(json.dumps({
