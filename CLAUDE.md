@@ -1197,12 +1197,12 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [ ] /files endpoints
 - [ ] Frontend: FileManager.tsx + Monaco Editor
 
-### ⬜ Phase 9 — Monitoring & Alerts
-- [ ] server_metrics + alerts tables + migration
-- [ ] metrics_worker.py (collect every 5 min)
-- [ ] alert_worker.py + notification_service.py
-- [ ] /alerts + /metrics/history endpoints
-- [ ] Frontend: Monitoring.tsx
+### ✅ Phase 9 — Monitoring & Alerts
+- [x] server_metrics + alerts tables + migration (006_create_metrics_and_alerts.py)
+- [x] metrics_worker.py (APScheduler job every 5 min, 7-day retention, marks server online/offline)
+- [x] alert_worker.py (threshold checks, 1-hr cooldown) + notification_service.py (email SMTP + webhook/Slack)
+- [x] /alerts CRUD + toggle + test + /metrics/history endpoints (hours param, up to 168h)
+- [x] Frontend: Monitoring.tsx (stat cards, 3 area charts, time window selector, alert rules manager)
 
 ### ⬜ Phase 10 — Security Audit
 - [ ] security_service.py (Linux checks + Windows checks)
