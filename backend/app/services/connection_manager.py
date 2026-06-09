@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from app.models.server import Server
-from app.services import ssh_service
+from app.services import ssh_service, winrm_service
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,14 @@ async def test_connection(server: Server) -> ConnectionResult:
         )
         return ConnectionResult(**result)
 
-    # winrm / hosting — Phase 2B / Phase 7
+    if server.connection_type == "winrm":
+        result = await winrm_service.test_connection(
+            str(server.id), server.host, server.port,
+            server.username, server.auth_type, server.encrypted_cred,
+        )
+        return ConnectionResult(**result)
+
+    # hosting — Phase 7
     raise NotImplementedError(f"connection_type '{server.connection_type}' not yet supported")
 
 
@@ -41,6 +48,12 @@ async def execute(server: Server, command: str) -> tuple[str, str, int]:
     """Execute command, return (stdout, stderr, exit_code)."""
     if server.connection_type == "ssh":
         return await ssh_service.execute(
+            str(server.id), server.host, server.port,
+            server.username, server.auth_type, server.encrypted_cred,
+            command,
+        )
+    if server.connection_type == "winrm":
+        return await winrm_service.execute(
             str(server.id), server.host, server.port,
             server.username, server.auth_type, server.encrypted_cred,
             command,
@@ -56,6 +69,12 @@ async def execute_stream(server: Server, command: str) -> AsyncIterator[str]:
             server.username, server.auth_type, server.encrypted_cred,
             command,
         )
+    if server.connection_type == "winrm":
+        return winrm_service.execute_stream(
+            str(server.id), server.host, server.port,
+            server.username, server.auth_type, server.encrypted_cred,
+            command,
+        )
     raise NotImplementedError(f"connection_type '{server.connection_type}' not yet supported")
 
 
@@ -63,3 +82,5 @@ async def close(server: Server) -> None:
     """Close and release the connection to the server."""
     if server.connection_type == "ssh":
         await ssh_service.close(str(server.id))
+    elif server.connection_type == "winrm":
+        await winrm_service.close(str(server.id))

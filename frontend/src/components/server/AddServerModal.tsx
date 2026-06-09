@@ -44,6 +44,21 @@ export default function AddServerModal({ onClose }: Props) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  function setConnectionType(value: ServerCreateBody["connection_type"]) {
+    setForm((prev) => {
+      const next = { ...prev, connection_type: value }
+      // Sensible defaults per connection type.
+      if (value === "winrm") {
+        next.auth_type = "password" // WinRM uses NTLM, not SSH keys
+        if (prev.port === 22) next.port = 5985
+        if (prev.username === "root") next.username = "Administrator"
+      } else if (value === "ssh") {
+        if (prev.port === 5985 || prev.port === 5986) next.port = 22
+      }
+      return next
+    })
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
@@ -86,7 +101,7 @@ export default function AddServerModal({ onClose }: Props) {
               </label>
               <select
                 value={form.connection_type}
-                onChange={(e) => set("connection_type", e.target.value as ServerCreateBody["connection_type"])}
+                onChange={(e) => setConnectionType(e.target.value as ServerCreateBody["connection_type"])}
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
               >
                 <option value="ssh">SSH (Linux/Unix)</option>
@@ -102,10 +117,11 @@ export default function AddServerModal({ onClose }: Props) {
               <select
                 value={form.auth_type}
                 onChange={(e) => set("auth_type", e.target.value as "password" | "key")}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
+                disabled={form.connection_type === "winrm"}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none disabled:opacity-60"
               >
                 <option value="password">Password</option>
-                <option value="key">SSH Key</option>
+                {form.connection_type !== "winrm" && <option value="key">SSH Key</option>}
               </select>
             </div>
           </div>

@@ -58,10 +58,49 @@ print(json.dumps({'os_type':info.get('ID','linux'),'os_version':info.get('VERSIO
 " 2>/dev/null || echo '{"os_type":"linux","os_version":"","arch":"unknown","pretty_name":"Linux"}'
 """
 
+# ── Windows (PowerShell) variants — emit the same JSON keys as the Linux scripts ──
+
+_WIN_METRICS_SCRIPT = r"""
+$os = Get-CimInstance Win32_OperatingSystem
+$cpu = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
+$disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+$uptime = [int]((Get-Date) - $os.LastBootUpTime).TotalSeconds
+[pscustomobject]@{
+  cpu = $cpu
+  ram_total_kb = [int64]$os.TotalVisibleMemorySize
+  ram_avail_kb = [int64]$os.FreePhysicalMemory
+  disk_total_bytes = [int64]$disk.Size
+  disk_free_bytes = [int64]$disk.FreeSpace
+  load1 = $null
+  load5 = $null
+  load15 = $null
+  uptime = $uptime
+} | ConvertTo-Json -Compress
+"""
+
+_WIN_DETECT_SCRIPT = r"""
+$os = Get-CimInstance Win32_OperatingSystem
+[pscustomobject]@{
+  os_type = 'windows'
+  os_version = $os.Version
+  arch = $env:PROCESSOR_ARCHITECTURE
+  pretty_name = $os.Caption
+} | ConvertTo-Json -Compress
+"""
+
+
+def _is_windows(server: Server) -> bool:
+    return (
+        server.connection_type == "winrm"
+        or (server.os_type or "").lower() == "windows"
+        or (server.shell or "").lower() == "powershell"
+    )
+
 
 async def get_metrics(server: Server) -> dict:
     """Return current CPU/RAM/disk/load metrics for the server."""
-    stdout, _, _ = await connection_manager.execute(server, _METRICS_SCRIPT)
+    script = _WIN_METRICS_SCRIPT if _is_windows(server) else _METRICS_SCRIPT
+    stdout, _, _ = await connection_manager.execute(server, script)
     raw = stdout.strip()
     try:
         data = json.loads(raw)
@@ -97,13 +136,15 @@ async def get_metrics(server: Server) -> dict:
 
 async def detect_os(server: Server) -> dict:
     """Auto-detect OS type, version, and architecture."""
-    stdout, _, _ = await connection_manager.execute(server, _DETECT_SCRIPT)
+    script = _WIN_DETECT_SCRIPT if _is_windows(server) else _DETECT_SCRIPT
+    stdout, _, _ = await connection_manager.execute(server, script)
     raw = stdout.strip()
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
         logger.warning("OS detect parse failed for server %s: %r", server.id, raw)
-        return {"os_type": "linux", "os_version": "", "arch": "unknown"}
+        fallback = "windows" if _is_windows(server) else "linux"
+        return {"os_type": fallback, "os_version": "", "arch": "unknown"}
 
     return {
         "os_type": data.get("os_type", "linux"),

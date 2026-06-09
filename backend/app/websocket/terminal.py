@@ -88,6 +88,18 @@ async def terminal_ws(
         await websocket.close(code=4001, reason="Unauthorized")
         return
 
+    # Interactive PTY shells are SSH-only. WinRM/hosting have no PTY — those
+    # users should use the AI Chat tab (which streams command execution).
+    if server.connection_type != "ssh":
+        await websocket.accept()
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "message": "Interactive terminal is only available for SSH servers. "
+                       "Use the AI Chat tab to run commands on this server.",
+        }))
+        await websocket.close()
+        return
+
     await websocket.accept()
 
     try:

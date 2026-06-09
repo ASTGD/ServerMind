@@ -25,6 +25,7 @@ paramiko==3.4.0
 
 # WinRM
 pywinrm==0.4.3
+requests-ntlm>=1.2.0
 
 # WebSocket
 python-socketio[asyncio_client]==5.11.2

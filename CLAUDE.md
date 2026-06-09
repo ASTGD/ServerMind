@@ -1139,12 +1139,14 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [x] Frontend: Add Server modal
 - [x] Frontend: Server list + Server detail with metrics
 
-### ⬜ Phase 2B — Windows Server Management (WinRM)
-- [ ] winrm_service.py (pywinrm: connect, test, execute, stream)
-- [ ] Windows metrics collection (PowerShell commands)
-- [ ] Windows OS detection
-- [ ] Windows safety blocklist in safety_service.py
-- [ ] Test: connect Windows Server → run PowerShell command → stream output
+### ✅ Phase 2B — Windows Server Management (WinRM)
+- [x] winrm_service.py (pywinrm: test/execute/execute_stream/close; NTLM transport; 5985 HTTP / 5986 HTTPS by port; session cache; CLIXML error cleanup; runs in ThreadPoolExecutor) + requests-ntlm dep
+- [x] connection_manager routes connection_type=='winrm' for test/execute/execute_stream/close
+- [x] Windows metrics collection (PowerShell Win32_OperatingSystem/Processor/LogicalDisk → same JSON keys as Linux; load avg null)
+- [x] Windows OS detection (PowerShell Win32_OperatingSystem caption/version + PROCESSOR_ARCHITECTURE)
+- [x] Windows safety blocklist already wired in safety_service (os_family=='windows' → WINDOWS_BLOCKED)
+- [x] create_server sets shell='powershell' for winrm; AddServerModal defaults port 5985 + forces password/NTLM; interactive PTY terminal guarded to SSH-only (winrm uses AI Chat which streams via execute_stream)
+- [x] Tested: winrm_service execute/test/stream, connection_manager routing, Windows metrics+detect parsing — all via mocked pywinrm (no live Windows host available for a real WinRM handshake; security/playbook Windows batteries now activate automatically for winrm servers)
 
 ### ✅ Phase 3 — AI Chat + Terminal
 - [x] command_logs table + migration

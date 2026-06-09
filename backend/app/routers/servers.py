@@ -62,6 +62,7 @@ async def create_server(
         connection_type=body.connection_type,
         panel_type=body.panel_type,
         encrypted_cred=encrypted,
+        shell="powershell" if body.connection_type == "winrm" else "bash",
         tags=body.tags,
         notes=body.notes,
     )
