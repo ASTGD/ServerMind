@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.routers import auth as auth_router
+from app.routers import backups as backups_router
 from app.routers import commands as commands_router
 from app.routers import files as files_router
 from app.routers import monitoring as monitoring_router
@@ -14,7 +15,7 @@ from app.routers import scheduler as scheduler_router
 from app.routers import scripts as scripts_router
 from app.routers import security as security_router
 from app.routers import servers as servers_router
-from app.services import playbook_service, scheduler_service
+from app.services import backup_service, playbook_service, scheduler_service
 from app.websocket import terminal as ws_handlers
 from app.workers import metrics_worker
 
@@ -50,6 +51,7 @@ app.include_router(scheduler_router.router)
 app.include_router(monitoring_router.router)
 app.include_router(files_router.router)
 app.include_router(security_router.router)
+app.include_router(backups_router.router)
 app.include_router(ws_handlers.router)
 
 
@@ -68,6 +70,7 @@ async def on_startup() -> None:
     # Start APScheduler, load saved tasks, and register metrics collection
     scheduler_service.start()
     await scheduler_service.load_all_tasks()
+    await backup_service.load_all_backups()
     # Collect metrics every 5 minutes
     from apscheduler.triggers.interval import IntervalTrigger
     scheduler_service.get_scheduler().add_job(

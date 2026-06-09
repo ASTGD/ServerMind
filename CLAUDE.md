@@ -1212,10 +1212,13 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [x] Frontend: Security.tsx (score ring, severity count chips, grouped findings with copyable fix commands, passing-checks toggle, scan history) + api/security.ts
 - [x] Security quick-link added to ServerDetail.tsx
 
-### ⬜ Phase 11 — Backups
-- [ ] backup_service.py
-- [ ] /backups endpoints
-- [ ] Frontend: Backups.tsx
+### ✅ Phase 11 — Backups
+- [x] backups + backup_runs tables + models + migration (008_create_backups.py)
+- [x] backup_service.py (files=tar.gz, mysql=mysqldump, postgres=pg_dump; gzip to dest_dir; retention prune of oldest beyond keep-N; restore via tar -x / mysql / psql; shlex-quoted commands; DB passwords AES-256-GCM at rest and passed via MYSQL_PWD/PGPASSWORD env, never on argv)
+- [x] Optional cron scheduling integrated with APScheduler (schedule_backup/unschedule_backup/load_all_backups on startup; job-id namespaced "backup:")
+- [x] /backups endpoints (list, create, update, delete, run, history, restore) — restore picks given run or latest successful backup
+- [x] Frontend: Backups.tsx (job cards, type-aware New/Edit modal with NL→cron preview via parseSchedule, run/restore/history, destructive restore confirm) + api/backups.ts
+- [x] Backups quick-link added to ServerDetail.tsx
 
 ### ⬜ Phase 12 — Team Management
 - [ ] team_members + server_access tables + migration
