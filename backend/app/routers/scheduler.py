@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies.access import resolve_server
 from app.models.scheduled_task import ScheduledTask
 from app.models.server import Server
 from app.models.user import User
@@ -28,18 +29,11 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-async def _get_server(server_id: str, user: User, db: AsyncSession) -> Server:
-    """Fetch a server that belongs to the authenticated user."""
-    result = await db.execute(
-        select(Server).where(
-            Server.id == uuid.UUID(server_id),
-            Server.user_id == user.id,
-        )
-    )
-    server = result.scalar_one_or_none()
-    if not server:
-        raise HTTPException(status_code=404, detail="Server not found")
-    return server
+async def _get_server(
+    server_id: str, user: User, db: AsyncSession, *, need_execute: bool = False
+) -> Server:
+    """Fetch a server the user can access (owner or team member)."""
+    return await resolve_server(server_id, user, db, need_execute=need_execute)
 
 
 async def _get_task(task_id: str, user: User, db: AsyncSession) -> ScheduledTask:
@@ -116,7 +110,7 @@ async def create_schedule(
     If *human_schedule* is provided and *cron_expression* is omitted, the AI
     converts the natural language description into a cron expression.
     """
-    await _get_server(server_id, current_user, db)
+    await _get_server(server_id, current_user, db, need_execute=True)
     cron, human = await _resolve_cron(body)
 
     next_run = scheduler_service.compute_next_run(cron)

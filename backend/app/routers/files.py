@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies.access import resolve_server
 from app.models.server import Server
 from app.models.user import User
 from app.routers.auth import get_current_user
@@ -34,14 +35,11 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _get_server(server_id: str, user: User, db: AsyncSession) -> Server:
-    row = await db.execute(
-        select(Server).where(Server.id == uuid.UUID(server_id), Server.user_id == user.id)
-    )
-    server = row.scalar_one_or_none()
-    if not server:
-        raise HTTPException(status_code=404, detail="Server not found")
-    return server
+async def _get_server(
+    server_id: str, user: User, db: AsyncSession, *, need_execute: bool = False
+) -> Server:
+    """Resolve a server the user can access. Mutations require execute rights."""
+    return await resolve_server(server_id, user, db, need_execute=need_execute)
 
 
 def _sftp_exc(exc: Exception) -> HTTPException:
@@ -109,7 +107,7 @@ async def write_file(
     current_user: CurrentUser,
 ) -> dict[str, str]:
     """Save edited content back to a remote file."""
-    server = await _get_server(server_id, current_user, db)
+    server = await _get_server(server_id, current_user, db, need_execute=True)
     try:
         await file_service.write_file(server, body.path, body.content)
     except Exception as exc:
@@ -127,7 +125,7 @@ async def make_directory(
     current_user: CurrentUser,
 ) -> dict[str, str]:
     """Create a new remote directory."""
-    server = await _get_server(server_id, current_user, db)
+    server = await _get_server(server_id, current_user, db, need_execute=True)
     try:
         await file_service.make_dir(server, body.path)
     except Exception as exc:
@@ -145,7 +143,7 @@ async def delete_path(
     path: str = Query(...),
 ) -> None:
     """Delete a remote file or directory tree."""
-    server = await _get_server(server_id, current_user, db)
+    server = await _get_server(server_id, current_user, db, need_execute=True)
     try:
         await file_service.delete_path(server, path)
     except Exception as exc:
@@ -162,7 +160,7 @@ async def rename_path(
     current_user: CurrentUser,
 ) -> dict[str, str]:
     """Rename or move a remote file/directory."""
-    server = await _get_server(server_id, current_user, db)
+    server = await _get_server(server_id, current_user, db, need_execute=True)
     try:
         await file_service.rename_path(server, body.old_path, body.new_path)
     except Exception as exc:
@@ -181,7 +179,7 @@ async def upload_file(
     file: UploadFile = File(...),
 ) -> dict[str, str]:
     """Upload a local file into a remote directory (multipart/form-data)."""
-    server = await _get_server(server_id, current_user, db)
+    server = await _get_server(server_id, current_user, db, need_execute=True)
     data = await file.read()
     dest = posixpath.join(
         posixpath.normpath("/" + path.lstrip("/")),

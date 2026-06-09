@@ -17,8 +17,9 @@ from app.database import AsyncSessionLocal
 from app.models.command_log import CommandLog
 from app.models.playbook import Playbook, PlaybookRun, UserScript
 from app.models.server import Server
+from app.models.user import User
 from app.services import ai_service, connection_manager, safety_service
-from app.services import ssh_service
+from app.services import ssh_service, team_service
 from app.services.playbook_service import substitute_variables
 from app.services.auth_service import decode_token
 
@@ -30,8 +31,15 @@ _pty_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="pty")
 
 # ── Auth helper ───────────────────────────────────────────────────────────────
 
-async def _auth_and_get_server(token: str, server_id: str) -> Server | None:
-    """Decode JWT and return the server if owned by that user."""
+async def _auth_and_get_server(
+    token: str, server_id: str, *, need_execute: bool = False
+) -> Server | None:
+    """Decode JWT and return the server the user may access.
+
+    Resolves ownership *or* team access. When ``need_execute`` is set, the user
+    must have execute permission (owners/admins/operators-with-grant) — viewers
+    are rejected (CLAUDE.md security rule 7).
+    """
     payload = decode_token(token)
     if not payload:
         return None
@@ -39,13 +47,18 @@ async def _auth_and_get_server(token: str, server_id: str) -> Server | None:
 
     async with AsyncSessionLocal() as db:
         try:
-            sid = uuid.UUID(server_id)
-        except ValueError:
+            uid = uuid.UUID(user_id)
+        except (ValueError, TypeError):
             return None
-        result = await db.execute(
-            select(Server).where(Server.id == sid, Server.user_id == uuid.UUID(user_id))
-        )
-        return result.scalar_one_or_none()
+        user = (await db.execute(select(User).where(User.id == uid))).scalar_one_or_none()
+        if user is None:
+            return None
+        access = await team_service.get_access(db, user, server_id)
+        if access is None:
+            return None
+        if need_execute and not access.can_execute:
+            return None
+        return access.server
 
 
 # ── Terminal WebSocket ────────────────────────────────────────────────────────
@@ -70,7 +83,7 @@ async def terminal_ws(
     token: str = Query(default=""),
 ) -> None:
     """Bidirectional interactive terminal over WebSocket."""
-    server = await _auth_and_get_server(token, server_id)
+    server = await _auth_and_get_server(token, server_id, need_execute=True)
     if not server:
         await websocket.close(code=4001, reason="Unauthorized")
         return
@@ -148,7 +161,7 @@ async def chat_ws(
     token: str = Query(default=""),
 ) -> None:
     """AI chat with streaming command execution."""
-    server = await _auth_and_get_server(token, server_id)
+    server = await _auth_and_get_server(token, server_id, need_execute=True)
     if not server:
         await websocket.close(code=4001, reason="Unauthorized")
         return
@@ -379,7 +392,7 @@ async def playbook_run_ws(
     token: str = Query(default=""),
 ) -> None:
     """Stream playbook script execution over WebSocket."""
-    server = await _auth_and_get_server(token, server_id)
+    server = await _auth_and_get_server(token, server_id, need_execute=True)
     if not server:
         await websocket.close(code=4001, reason="Unauthorized")
         return

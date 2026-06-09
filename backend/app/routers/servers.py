@@ -6,15 +6,15 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies.access import resolve_server
 from app.dependencies.auth import get_current_user
 from app.models.server import Server
 from app.models.user import User
 from app.schemas.server import ServerCreate, ServerOut, ServerUpdate
-from app.services import connection_manager, metrics_service
+from app.services import connection_manager, metrics_service, team_service
 from app.services.crypto_service import encrypt
 
 logger = logging.getLogger(__name__)
@@ -29,14 +29,8 @@ async def _get_server(
     db: AsyncSession,
     current_user: User,
 ) -> Server:
-    """Fetch a server owned by current_user or raise 404."""
-    result = await db.execute(
-        select(Server).where(Server.id == server_id, Server.user_id == current_user.id)
-    )
-    server = result.scalar_one_or_none()
-    if server is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
-    return server
+    """Fetch a server the current user can access (owner or team member)."""
+    return await resolve_server(server_id, current_user, db)
 
 
 # ── CRUD ─────────────────────────────────────────────────────────────────────
@@ -46,11 +40,8 @@ async def list_servers(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[Server]:
-    """List all servers belonging to the current user."""
-    result = await db.execute(
-        select(Server).where(Server.user_id == current_user.id).order_by(Server.created_at)
-    )
-    return list(result.scalars().all())
+    """List all servers the current user can access (owned + team-granted)."""
+    return await team_service.accessible_servers(db, current_user)
 
 
 @router.post("", response_model=ServerOut, status_code=status.HTTP_201_CREATED)
@@ -99,7 +90,7 @@ async def update_server(
     current_user: User = Depends(get_current_user),
 ) -> Server:
     """Update server name, tags, or notes."""
-    server = await _get_server(server_id, db, current_user)
+    server = await resolve_server(server_id, current_user, db, need_manage=True)
     if body.name is not None:
         server.name = body.name
     if body.tags is not None:
@@ -118,7 +109,7 @@ async def delete_server(
     current_user: User = Depends(get_current_user),
 ) -> None:
     """Delete a server and close its connection."""
-    server = await _get_server(server_id, db, current_user)
+    server = await resolve_server(server_id, current_user, db, need_manage=True)
     await connection_manager.close(server)
     await db.delete(server)
     await db.commit()

@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies.access import resolve_server
 from app.dependencies.auth import get_current_user
 from app.models.backup import Backup, BackupRun
 from app.models.server import Server
@@ -40,14 +41,11 @@ def _uuid(value: str, what: str) -> uuid.UUID:
         raise HTTPException(status_code=404, detail=f"{what} not found")
 
 
-async def _get_server(server_id: str, user: User, db: AsyncSession) -> Server:
-    row = await db.execute(
-        select(Server).where(Server.id == _uuid(server_id, "Server"), Server.user_id == user.id)
-    )
-    server = row.scalar_one_or_none()
-    if not server:
-        raise HTTPException(status_code=404, detail="Server not found")
-    return server
+async def _get_server(
+    server_id: str, user: User, db: AsyncSession, *, need_execute: bool = False
+) -> Server:
+    """Resolve a server the user can access (owner or team member)."""
+    return await resolve_server(server_id, user, db, need_execute=need_execute)
 
 
 async def _get_backup(backup_id: str, user: User, db: AsyncSession) -> Backup:
@@ -58,14 +56,6 @@ async def _get_backup(backup_id: str, user: User, db: AsyncSession) -> Backup:
     if not backup:
         raise HTTPException(status_code=404, detail="Backup not found")
     return backup
-
-
-async def _get_server_for(backup: Backup, db: AsyncSession) -> Server:
-    row = await db.execute(select(Server).where(Server.id == backup.server_id))
-    server = row.scalar_one_or_none()
-    if not server:
-        raise HTTPException(status_code=404, detail="Server not found")
-    return server
 
 
 def _to_out(backup: Backup) -> BackupOut:
@@ -126,7 +116,7 @@ async def create_backup(
     current_user: CurrentUser,
 ) -> BackupOut:
     """Create a backup job."""
-    server = await _get_server(server_id, current_user, db)
+    server = await _get_server(server_id, current_user, db, need_execute=True)
     _validate_type(body.backup_type)
     _validate_cron(body.cron_expression)
 
@@ -222,7 +212,7 @@ async def run_backup_now(
 ) -> BackupRunOut:
     """Run a backup immediately and return the run record."""
     backup = await _get_backup(backup_id, current_user, db)
-    server = await _get_server_for(backup, db)
+    server = await resolve_server(backup.server_id, current_user, db, need_execute=True)
     run = await backup_service.perform_backup(db, server, backup)
     return BackupRunOut.model_validate(run)
 
@@ -255,7 +245,7 @@ async def restore_backup(
     """Restore a backup. Restores from the given run, or the latest successful
     backup if none specified. This overwrites data on the server."""
     backup = await _get_backup(backup_id, current_user, db)
-    server = await _get_server_for(backup, db)
+    server = await resolve_server(backup.server_id, current_user, db, need_execute=True)
 
     if body.run_id:
         row = await db.execute(

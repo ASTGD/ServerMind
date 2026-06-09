@@ -1220,11 +1220,14 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [x] Frontend: Backups.tsx (job cards, type-aware New/Edit modal with NL→cron preview via parseSchedule, run/restore/history, destructive restore confirm) + api/backups.ts
 - [x] Backups quick-link added to ServerDetail.tsx
 
-### ⬜ Phase 12 — Team Management
-- [ ] team_members + server_access tables + migration
-- [ ] Role enforcement on all command endpoints
-- [ ] Invite flow
-- [ ] Frontend: Team.tsx
+### ✅ Phase 12 — Team Management
+- [x] team_members + server_access tables + migration (009_create_team_tables.py)
+- [x] team_service.py — access model (owner/admin/operator/viewer) + get_access/accessible_servers primitives; invite/accept (email-bound token)/list/role/remove + per-server access set/get
+- [x] dependencies/access.py — resolve_server(need_execute, need_manage) shared by all server-scoped routers
+- [x] Role enforcement on every execution path (CLAUDE.md rule 7): websocket terminal+chat+playbook-run, files write/mkdir/delete/rename/upload, backups create/run/restore, security scan, scheduler create — all require can_execute; servers update/delete require owner/admin (need_manage). A viewer can NEVER execute even if granted can_execute (role override, unit-tested against Postgres).
+- [x] Read endpoints (servers list/detail, commands history, monitoring, files read, security history, backups list) made team-aware via accessible_servers / get_access
+- [x] /team endpoints (list, invite, update role, remove, get/set access, accept/{token})
+- [x] Frontend: Team.tsx (member list, role selector, invite modal, per-server access editor, shareable invite link) + AcceptInvite.tsx route + api/team.ts
 
 ### ⬜ Phase 13 — Production Deploy
 - [ ] docker-compose.prod.yml

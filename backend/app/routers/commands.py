@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies.access import resolve_server
 from app.dependencies.auth import get_current_user
 from app.models.command_log import CommandLog
 from app.models.server import Server
@@ -18,13 +19,8 @@ router = APIRouter(tags=["commands"])
 
 
 async def _own_server(server_id: uuid.UUID, db: AsyncSession, user: User) -> Server:
-    result = await db.execute(
-        select(Server).where(Server.id == server_id, Server.user_id == user.id)
-    )
-    server = result.scalar_one_or_none()
-    if not server:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Server not found")
-    return server
+    """Resolve a server the user can access (owner or team member)."""
+    return await resolve_server(server_id, user, db)
 
 
 @router.get("/api/servers/{server_id}/history", response_model=list[CommandLogOut])

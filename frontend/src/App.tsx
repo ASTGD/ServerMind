@@ -17,6 +17,7 @@ import Security from "@/routes/Security"
 import Backups from "@/routes/Backups"
 import Logs from "@/routes/Logs"
 import Team from "@/routes/Team"
+import AcceptInvite from "@/routes/AcceptInvite"
 import Settings from "@/routes/Settings"
 import Auth from "@/routes/Auth"
 
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="servers/:id/backups" element={<Backups />} />
           <Route path="logs" element={<Logs />} />
           <Route path="team" element={<Team />} />
+          <Route path="team/accept/:token" element={<AcceptInvite />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

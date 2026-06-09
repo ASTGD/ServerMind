@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies.access import resolve_server
 from app.dependencies.auth import get_current_user
 from app.models.security_scan import SecurityScan
 from app.models.server import Server
@@ -27,18 +28,11 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
-async def _get_server(server_id: str, user: User, db: AsyncSession) -> Server:
-    try:
-        sid = uuid.UUID(server_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Server not found")
-    row = await db.execute(
-        select(Server).where(Server.id == sid, Server.user_id == user.id)
-    )
-    server = row.scalar_one_or_none()
-    if not server:
-        raise HTTPException(status_code=404, detail="Server not found")
-    return server
+async def _get_server(
+    server_id: str, user: User, db: AsyncSession, *, need_execute: bool = False
+) -> Server:
+    """Resolve a server the user can access (owner or team member)."""
+    return await resolve_server(server_id, user, db, need_execute=need_execute)
 
 
 def _to_out(scan: SecurityScan) -> SecurityScanOut:
@@ -101,7 +95,7 @@ async def run_security_scan(
     All probe commands are read-only; suggested fixes are returned for display
     only and are never executed.
     """
-    server = await _get_server(server_id, current_user, db)
+    server = await _get_server(server_id, current_user, db, need_execute=True)
 
     result = await security_service.run_scan(server)
     counts = result["counts"]

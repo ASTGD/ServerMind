@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies.access import resolve_server
 from app.models.alert import Alert, ServerMetric
 from app.models.server import Server
 from app.models.user import User
@@ -28,13 +29,8 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _get_server(server_id: str, user: User, db: AsyncSession) -> Server:
-    row = await db.execute(
-        select(Server).where(Server.id == uuid.UUID(server_id), Server.user_id == user.id)
-    )
-    server = row.scalar_one_or_none()
-    if not server:
-        raise HTTPException(status_code=404, detail="Server not found")
-    return server
+    """Resolve a server the user can access (owner or team member)."""
+    return await resolve_server(server_id, user, db)
 
 
 async def _get_alert(alert_id: str, user: User, db: AsyncSession) -> Alert:
