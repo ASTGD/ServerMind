@@ -7,6 +7,7 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.routers import auth as auth_router
 from app.routers import commands as commands_router
+from app.routers import files as files_router
 from app.routers import monitoring as monitoring_router
 from app.routers import playbooks as playbooks_router
 from app.routers import scheduler as scheduler_router
@@ -46,6 +47,7 @@ app.include_router(playbooks_router.router)
 app.include_router(scripts_router.router)
 app.include_router(scheduler_router.router)
 app.include_router(monitoring_router.router)
+app.include_router(files_router.router)
 app.include_router(ws_handlers.router)
 
 

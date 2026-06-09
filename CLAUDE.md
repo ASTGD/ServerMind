@@ -1192,10 +1192,11 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [ ] Frontend: Hosting-specific dashboard (sites, DBs, email)
 - [ ] Test: Connect CyberPanel → create site → issue SSL
 
-### ⬜ Phase 8 — File Manager
-- [ ] file_service.py (SFTP for Linux, SMB/WinRM for Windows, API for hosting)
-- [ ] /files endpoints
-- [ ] Frontend: FileManager.tsx + Monaco Editor
+### ✅ Phase 8 — File Manager
+- [x] file_service.py (SFTP via Paramiko pool, async ThreadPoolExecutor, 2 MB read cap, binary detection)
+- [x] /files endpoints (list, read, write, mkdir, delete, rename, upload multipart, download octet-stream)
+- [x] Frontend: FileManager.tsx (breadcrumb nav, file table, Monaco Editor panel, download via apiClient blob)
+- [x] Files quick-link added to ServerDetail.tsx
 
 ### ✅ Phase 9 — Monitoring & Alerts
 - [x] server_metrics + alerts tables + migration (006_create_metrics_and_alerts.py)
