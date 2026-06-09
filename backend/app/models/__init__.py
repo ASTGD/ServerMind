@@ -6,6 +6,7 @@ from app.models.playbook import Playbook, UserScript, PlaybookRun
 from app.models.scheduled_task import ScheduledTask
 from app.models.alert import Alert, ServerMetric
 from app.models.team import TeamMember, ServerAccess
+from app.models.security_scan import SecurityScan
 
 __all__ = [
     "User",
@@ -19,4 +20,5 @@ __all__ = [
     "ServerMetric",
     "TeamMember",
     "ServerAccess",
+    "SecurityScan",
 ]

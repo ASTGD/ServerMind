@@ -12,6 +12,7 @@ from app.routers import monitoring as monitoring_router
 from app.routers import playbooks as playbooks_router
 from app.routers import scheduler as scheduler_router
 from app.routers import scripts as scripts_router
+from app.routers import security as security_router
 from app.routers import servers as servers_router
 from app.services import playbook_service, scheduler_service
 from app.websocket import terminal as ws_handlers
@@ -48,6 +49,7 @@ app.include_router(scripts_router.router)
 app.include_router(scheduler_router.router)
 app.include_router(monitoring_router.router)
 app.include_router(files_router.router)
+app.include_router(security_router.router)
 app.include_router(ws_handlers.router)
 
 

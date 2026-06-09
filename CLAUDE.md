@@ -1205,10 +1205,12 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [x] /alerts CRUD + toggle + test + /metrics/history endpoints (hours param, up to 168h)
 - [x] Frontend: Monitoring.tsx (stat cards, 3 area charts, time window selector, alert rules manager)
 
-### ⬜ Phase 10 — Security Audit
-- [ ] security_service.py (Linux checks + Windows checks)
-- [ ] /security/scan endpoint
-- [ ] Frontend: Security.tsx
+### ✅ Phase 10 — Security Audit
+- [x] security_scans table + model + migration (007_create_security_scans.py)
+- [x] security_service.py (single-script section battery; 19 Linux checks across ssh/firewall/updates/accounts/filesystem/services/hardening/kernel; 5 Windows/PowerShell checks staged for Phase 2B; severity scoring 0-100 + A-F grade; all read-only probes)
+- [x] /api/servers/{id}/security (history) + /api/servers/{id}/security/scan endpoints
+- [x] Frontend: Security.tsx (score ring, severity count chips, grouped findings with copyable fix commands, passing-checks toggle, scan history) + api/security.ts
+- [x] Security quick-link added to ServerDetail.tsx
 
 ### ⬜ Phase 11 — Backups
 - [ ] backup_service.py
