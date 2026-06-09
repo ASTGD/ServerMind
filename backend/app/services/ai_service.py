@@ -75,6 +75,24 @@ Focus on: what was accomplished, any important output, and what to do next if re
 Keep it short and jargon-free. Output plain text only, no JSON.
 """
 
+_SCHEDULE_SYSTEM = """\
+Convert a natural language schedule description into a cron expression.
+
+Examples (input → cron):
+  "every night at 2am"               → 0 2 * * *
+  "every Sunday at midnight"         → 0 0 * * 0
+  "every hour"                       → 0 * * * *
+  "every 15 minutes"                 → */15 * * * *
+  "first day of every month at 3am"  → 0 3 1 * *
+  "every weekday at 9am"             → 0 9 * * 1-5
+  "twice a day"                      → 0 9,21 * * *
+  "every 5 minutes"                  → */5 * * * *
+  "every day at noon"                → 0 12 * * *
+
+RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
+{{"cron_expression": "...", "human_description": "Plain English of the schedule"}}
+"""
+
 _SCRIPT_SYSTEM = """\
 You are ServerMind Script Generator.
 Create production-ready scripts for server administration.
@@ -180,6 +198,22 @@ async def explain_output(
         messages=[{"role": "user", "content": prompt}],
     )
     return message.content[0].text.strip()
+
+
+async def parse_schedule(human_input: str) -> dict:
+    """Convert natural language schedule description to a cron expression via Claude."""
+    message = await _get_client().messages.create(
+        model=settings.ANTHROPIC_MODEL,
+        max_tokens=128,
+        system=_SCHEDULE_SYSTEM,
+        messages=[{"role": "user", "content": human_input}],
+    )
+    raw = _extract_json(message.content[0].text)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.warning("AI schedule JSON parse error: %s\nRaw: %r", exc, raw[:200])
+        raise ValueError(f"AI returned invalid JSON: {exc}") from exc
 
 
 async def generate_script(

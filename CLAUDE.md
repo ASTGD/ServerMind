@@ -1175,12 +1175,12 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [x] Frontend: ScriptGenerator.tsx (OS selector, examples, Monaco editor, save)
 - [x] Frontend: MyScripts.tsx (filter, search, detail panel, run via WS)
 
-### ⬜ Phase 6 — Scheduler
-- [ ] scheduled_tasks table + migration
-- [ ] scheduler_service.py (APScheduler)
-- [ ] Natural language → cron (AI-assisted)
-- [ ] /schedules endpoints
-- [ ] Frontend: Scheduler.tsx
+### ✅ Phase 6 — Scheduler
+- [x] scheduled_tasks table + migration (005_create_scheduled_tasks.py)
+- [x] scheduler_service.py (APScheduler AsyncIOScheduler, load_all_tasks on startup)
+- [x] Natural language → cron (AI-assisted via ai_service.parse_schedule + /api/parse-schedule endpoint)
+- [x] /schedules endpoints (list, create, update, delete, toggle, run-now)
+- [x] Frontend: Scheduler.tsx (task cards, new task modal with live cron preview)
 
 ### ⬜ Phase 7 — Hosting Mode
 - [ ] hosting_service.py (CyberPanel API)

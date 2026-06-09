@@ -8,9 +8,10 @@ from app.database import AsyncSessionLocal
 from app.routers import auth as auth_router
 from app.routers import commands as commands_router
 from app.routers import playbooks as playbooks_router
+from app.routers import scheduler as scheduler_router
 from app.routers import scripts as scripts_router
 from app.routers import servers as servers_router
-from app.services import playbook_service
+from app.services import playbook_service, scheduler_service
 from app.websocket import terminal as ws_handlers
 
 logging.basicConfig(
@@ -41,6 +42,7 @@ app.include_router(servers_router.router)
 app.include_router(commands_router.router)
 app.include_router(playbooks_router.router)
 app.include_router(scripts_router.router)
+app.include_router(scheduler_router.router)
 app.include_router(ws_handlers.router)
 
 
@@ -56,9 +58,13 @@ async def on_startup() -> None:
     logger.info("ServerMind backend starting up...")
     async with AsyncSessionLocal() as db:
         await playbook_service.seed_if_empty(db)
+    # Start APScheduler and load saved tasks
+    scheduler_service.start()
+    await scheduler_service.load_all_tasks()
 
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
     """Run on application shutdown."""
     logger.info("ServerMind backend shutting down...")
+    scheduler_service.shutdown()
