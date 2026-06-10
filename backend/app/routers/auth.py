@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import logging
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +24,10 @@ from app.services.auth_service import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# Precomputed hash used to equalize login timing when an email is unknown,
+# preventing user-enumeration via response-time differences.
+_DUMMY_HASH = hash_password("servermind-timing-equalizer")
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -44,7 +50,7 @@ class RefreshRequest(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     current_password: str
-    new_password: str
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class LanguageRequest(BaseModel):
@@ -85,7 +91,12 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(body.password, user.password_hash):
+    # Always run a hash verification (against a dummy when the email is unknown)
+    # so the response time doesn't reveal whether an account exists.
+    if user is None:
+        verify_password(body.password, _DUMMY_HASH)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
     if not user.is_active:
@@ -105,8 +116,11 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> T
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
-    import uuid
-    result = await db.execute(select(User).where(User.id == uuid.UUID(payload["sub"])))
+    try:
+        sub = uuid.UUID(payload.get("sub", ""))
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+    result = await db.execute(select(User).where(User.id == sub))
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")

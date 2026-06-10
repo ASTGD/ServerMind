@@ -41,7 +41,7 @@ async def _auth_and_get_server(
     are rejected (CLAUDE.md security rule 7).
     """
     payload = decode_token(token)
-    if not payload:
+    if not payload or payload.get("type") != "access":
         return None
     user_id = payload.get("sub")
 

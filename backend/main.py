@@ -45,6 +45,16 @@ if settings.SENTRY_DSN:
 # In production, hide the interactive API docs.
 _is_prod = settings.APP_ENV == "production"
 
+# Fail loud if production is started with placeholder/weak secrets.
+if _is_prod:
+    _weak = "change-me-in-production"
+    if settings.SECRET_KEY == _weak or len(settings.SECRET_KEY) < 32:
+        logger.error("SECURITY: SECRET_KEY is default/weak in production — set a 64-char hex value!")
+    if settings.ENCRYPTION_KEY == _weak or len(settings.ENCRYPTION_KEY) < 32:
+        logger.error("SECURITY: ENCRYPTION_KEY is default/weak in production — set a 64-char hex value!")
+    if "*" in settings.ALLOWED_ORIGINS:
+        logger.error("SECURITY: ALLOWED_ORIGINS='*' with credentials is unsafe — set explicit origins!")
+
 app = FastAPI(
     title=settings.APP_NAME,
     description="AI-powered server management platform",
