@@ -1,48 +1,96 @@
-version: "3.9"
+# ServerMind — production stack.
+#
+# Postgres and Redis are expected to be MANAGED services (Supabase / Upstash) set
+# via DATABASE_URL / REDIS_URL in .env.prod. To self-host them on the VPS instead,
+# bring up the optional services with:  --profile selfhost
+#
+# Usage:
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+#
+# `--env-file` feeds the VITE_* build args below; `env_file:` feeds the backend
+# container its runtime settings.
 
 services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+    image: servermind-backend:latest
     container_name: servermind_backend
     restart: unless-stopped
-    env_file: .env
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    env_file: .env.prod
+    environment:
+      APP_ENV: production
+      ENABLE_SCHEDULER: "true"   # exactly one backend process runs the scheduler
+    # Apply migrations, then serve (single process keeps the in-process scheduler singular).
+    command: sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - servermind
 
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_WS_URL: ${VITE_WS_URL}
+        VITE_APP_NAME: ${VITE_APP_NAME:-ServerMind}
+        VITE_APP_TAGLINE: ${VITE_APP_TAGLINE:-Manage any server in natural language}
+    image: servermind-frontend:latest
+    container_name: servermind_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      # OpenLiteSpeed / CyberPanel reverse-proxies the public HTTPS domain here.
+      - "127.0.0.1:8080:80"
+    networks:
+      - servermind
+
+  # ── Optional self-hosted datastores (profile: selfhost) ──────────────────────
   postgres:
     image: postgres:16-alpine
-    container_name: servermind_postgres
+    container_name: servermind_postgres_prod
     restart: unless-stopped
+    profiles: ["selfhost"]
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-servermind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-servermind}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-servermind}"]
+      interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - servermind
 
   redis:
     image: redis:7-alpine
-    container_name: servermind_redis
+    container_name: servermind_redis_prod
     restart: unless-stopped
+    profiles: ["selfhost"]
     volumes:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - servermind
+
+networks:
+  servermind:
+    driver: bridge
 
 volumes:
   postgres_data:

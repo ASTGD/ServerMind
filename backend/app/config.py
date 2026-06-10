@@ -9,8 +9,16 @@ class Settings(BaseSettings):
     # App
     APP_ENV: str = "development"
     APP_NAME: str = "ServerMind"
+    APP_VERSION: str = "1.0.0"
     SECRET_KEY: str = "change-me-in-production"
     ENCRYPTION_KEY: str = "change-me-in-production"
+
+    # Background scheduler — must run in exactly ONE process. Set false on extra
+    # web workers when scaling horizontally so jobs don't fire multiple times.
+    ENABLE_SCHEDULER: bool = True
+
+    # Error monitoring (optional)
+    SENTRY_DSN: str = ""
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://servermind:password@localhost:5432/servermind"

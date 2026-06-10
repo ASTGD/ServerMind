@@ -47,3 +47,7 @@ aiofiles==23.2.1
 
 # Utilities
 python-dotenv==1.0.1
+
+# Production
+gunicorn>=21.2.0
+sentry-sdk[fastapi]>=1.40.0

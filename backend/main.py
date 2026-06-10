@@ -27,12 +27,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Error monitoring — only active when a DSN is configured.
+if settings.SENTRY_DSN:
+    try:
+        import sentry_sdk
+
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            environment=settings.APP_ENV,
+            release=settings.APP_VERSION,
+            traces_sample_rate=0.1,
+        )
+        logger.info("Sentry initialised (env=%s)", settings.APP_ENV)
+    except Exception as exc:  # noqa: BLE001 — never let monitoring break startup
+        logger.warning("Sentry init failed: %s", exc)
+
+# In production, hide the interactive API docs.
+_is_prod = settings.APP_ENV == "production"
+
 app = FastAPI(
     title=settings.APP_NAME,
     description="AI-powered server management platform",
-    version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    version=settings.APP_VERSION,
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
 )
 
 app.add_middleware(
@@ -71,6 +89,14 @@ async def on_startup() -> None:
     logger.info("ServerMind backend starting up...")
     async with AsyncSessionLocal() as db:
         await playbook_service.seed_if_empty(db)
+
+    # The scheduler/metrics jobs must run in exactly ONE process. When scaling
+    # web workers horizontally, set ENABLE_SCHEDULER=false on the extra workers
+    # (and run a single dedicated process with it enabled).
+    if not settings.ENABLE_SCHEDULER:
+        logger.info("Scheduler disabled on this worker (ENABLE_SCHEDULER=false)")
+        return
+
     # Start APScheduler, load saved tasks, and register metrics collection
     scheduler_service.start()
     await scheduler_service.load_all_tasks()

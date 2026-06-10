@@ -1233,14 +1233,17 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [x] /team endpoints (list, invite, update role, remove, get/set access, accept/{token})
 - [x] Frontend: Team.tsx (member list, role selector, invite modal, per-server access editor, shareable invite link) + AcceptInvite.tsx route + api/team.ts
 
-### ⬜ Phase 13 — Production Deploy
-- [ ] docker-compose.prod.yml
-- [ ] Frontend build → static files
-- [ ] CyberPanel subdomain + reverse proxy
-- [ ] CyberPanel Let's Encrypt SSL
-- [ ] Sentry integration
-- [ ] Production environment variables
-- [ ] Smoke test all platforms (Linux SSH, Windows WinRM, CyberPanel hosting)
+### ✅ Phase 13 — Production Deploy
+- [x] docker-compose.prod.yml (backend + frontend services; managed Postgres/Redis via env, optional `selfhost` profile for bundled pg+redis; backend runs migrations then uvicorn single-process; healthchecks; internal network)
+- [x] Frontend build → static files (multi-stage Dockerfile node→nginx; nginx.conf serves SPA + proxies /api and /ws to backend, gzip, asset caching, security headers; .dockerignore)
+- [x] CyberPanel subdomain + reverse proxy → documented in DEPLOY.md (OLS rewrite → 127.0.0.1:8080, WebSocket proxy context)
+- [x] CyberPanel Let's Encrypt SSL → documented in DEPLOY.md (issue + force-HTTPS)
+- [x] Sentry integration (sentry-sdk[fastapi]; conditional init on SENTRY_DSN; env+release tags; never breaks startup)
+- [x] Production env vars (config: APP_VERSION, ENABLE_SCHEDULER, SENTRY_DSN; .env.example updated; .gitignore now excludes .env.prod/.env.* but keeps .env.example; APP_ENV=production hides /docs)
+- [x] Scheduler-safety: ENABLE_SCHEDULER flag gates APScheduler/metrics/backup jobs so horizontal web scaling doesn't fire jobs N times
+- [x] Smoke test all platforms → DEPLOY.md §8 checklist (Linux SSH, Windows WinRM, hosting, playbooks/scripts/scheduler/security/backups/team/websockets)
+- [x] DEPLOY.md runbook (datastores → .env.prod → build → reverse proxy → SSL → Sentry → smoke tests → operations/scaling/backup notes)
+- [x] Verified: backend imports (83 routes), `docker compose config` valid for default + selfhost profiles
 
 ---
 
@@ -1367,14 +1370,21 @@ open http://localhost:8000/docs
 
 ---
 
-## 📌 CURRENT TASK → START HERE
+## 📌 CURRENT STATUS → ALL PHASES COMPLETE 🎉
 
-**Phase 0: Project Scaffold**
+Every build phase (0–13, incl. 2B) is done. ServerMind is feature-complete:
+auth, Linux SSH + Windows WinRM + hosting-panel management, AI chat/terminal,
+playbooks, AI script generator, scheduler, file manager, monitoring & alerts,
+security audit, backups, team management with role enforcement, and a production
+deployment story (see DEPLOY.md).
 
-Read this entire file first.
-Then build the complete folder structure, docker-compose.yml,
-FastAPI skeleton with /health, and React + Vite + Tailwind + i18n scaffold.
+**What's left is operational, not build work:**
+- Run `DEPLOY.md` against a real VPS + managed Postgres/Redis.
+- Validate the WinRM handshake against a live Windows Server, and the hosting
+  adapters against a live CyberPanel/cPanel/Plesk (endpoints follow documented
+  APIs but were only mock-tested).
+- Consider the **Future Features Backlog** above for what to build next.
 
-Check off each Phase 0 item as completed.
-Update the Decisions Log for any tech choices that change.
-Never deviate from the tech stack without updating this file first.
+When starting new work, read this entire file first and keep the phase
+checklists + Decisions Log up to date. Never deviate from the tech stack without
+updating this file first.
