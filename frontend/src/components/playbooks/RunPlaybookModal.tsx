@@ -219,20 +219,11 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
           {canRun && (
             <button
               onClick={handleRun}
-              disabled={!serverId || runState === "running"}
+              disabled={!serverId}
               className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {runState === "running" ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Running...
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4" />
-                  {runState === "idle" ? "Run Playbook" : "Run Again"}
-                </>
-              )}
+              <Play className="h-4 w-4" />
+              {runState === "idle" ? "Run Playbook" : "Run Again"}
             </button>
           )}
         </div>

@@ -5,7 +5,6 @@ import Editor from "@monaco-editor/react"
 import {
   FileCode,
   Sparkles,
-  Plus,
   Search,
   Terminal,
   Monitor,

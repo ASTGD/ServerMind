@@ -1,4 +1,4 @@
-import { Bell, BellOff, Trash2, Play, Mail, Globe, Slack } from "lucide-react"
+import { Bell, BellOff, Trash2, Play, Mail, Globe, MessageSquare } from "lucide-react"
 import type { Alert } from "@/types"
 import { formatDistanceToNow } from "date-fns"
 
@@ -26,7 +26,7 @@ const CONDITION_LABEL: Record<string, string> = {
 const CHANNEL_ICON: Record<string, React.ReactNode> = {
   email: <Mail className="h-3.5 w-3.5" />,
   webhook: <Globe className="h-3.5 w-3.5" />,
-  slack: <Slack className="h-3.5 w-3.5" />,
+  slack: <MessageSquare className="h-3.5 w-3.5" />,
 }
 
 function metricColor(metric: string | null): string {

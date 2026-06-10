@@ -204,13 +204,12 @@ function TaskCard({
 // ── New task modal ─────────────────────────────────────────────────────────
 
 interface NewTaskModalProps {
-  serverId: string
   onClose: () => void
   onCreate: (body: ScheduledTaskCreateBody) => Promise<void>
   isCreating: boolean
 }
 
-function NewTaskModal({ serverId, onClose, onCreate, isCreating }: NewTaskModalProps) {
+function NewTaskModal({ onClose, onCreate, isCreating }: NewTaskModalProps) {
   const [title, setTitle] = useState("")
   const [taskType, setTaskType] = useState<TaskType>("command")
   const [command, setCommand] = useState("")
@@ -638,7 +637,6 @@ export default function Scheduler() {
 
       {showModal && (
         <NewTaskModal
-          serverId={serverId!}
           onClose={() => setShowModal(false)}
           onCreate={async (body) => {
             await createMutation.mutateAsync(body)

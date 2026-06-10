@@ -27,8 +27,7 @@ export default function ChatWindow({ serverId }: Props) {
   const language = user?.preferred_language ?? "en"
   const [messages, setMessages] = useState<ChatMessageData[]>([])
   const [pending, setPending] = useState<PendingPlan | null>(null)
-  const [outputBuffer, setOutputBuffer] = useState<string>("")
-  const [outputMsgId, setOutputMsgId] = useState<string | null>(null)
+  const [, setOutputBuffer] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -66,7 +65,6 @@ export default function ChatWindow({ serverId }: Props) {
         case "command_start":
           // Start accumulating output
           setOutputBuffer("")
-          setOutputMsgId(nextId())
           break
 
         case "output": {
@@ -92,7 +90,6 @@ export default function ChatWindow({ serverId }: Props) {
         }
 
         case "command_done":
-          setOutputMsgId(null)
           break
 
         case "execution_complete":

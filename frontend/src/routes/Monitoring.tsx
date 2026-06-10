@@ -28,8 +28,6 @@ import CpuChart from "@/components/monitoring/CpuChart"
 import RamChart from "@/components/monitoring/RamChart"
 import DiskChart from "@/components/monitoring/DiskChart"
 import AlertCard from "@/components/monitoring/AlertCard"
-import type { Alert } from "@/types"
-import { formatDistanceToNow } from "date-fns"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
