@@ -44,6 +44,26 @@ export async function updateLanguage(language: string): Promise<User> {
   return data
 }
 
+export interface ProfileUpdateBody {
+  name?: string | null
+  avatar_url?: string | null
+  preferred_language?: string
+}
+
+/** Update the authenticated user's profile (name, avatar, language). */
+export async function updateProfile(body: ProfileUpdateBody): Promise<User> {
+  const { data } = await apiClient.put<User>("/api/auth/me", body)
+  return data
+}
+
+/** Change the account password (requires the current one). */
+export async function changePassword(
+  current_password: string,
+  new_password: string,
+): Promise<void> {
+  await apiClient.put("/api/auth/password", { current_password, new_password })
+}
+
 /** Logout — clears tokens on client side. */
 export async function logout(): Promise<void> {
   await apiClient.post("/api/auth/logout").catch(() => {})
