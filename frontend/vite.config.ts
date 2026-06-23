@@ -20,13 +20,15 @@ export default defineConfig({
       // We force the Origin header to localhost:5190 so the backend CORS list
       // always matches, regardless of which IP/hostname the browser used to
       // reach the Vite dev server (LAN IP, localhost, etc.).
+      // Target 127.0.0.1 (IPv4) explicitly: uvicorn binds IPv4 by default, but
+      // Node resolves "localhost" to ::1 (IPv6) here, which would miss it.
       "/api": {
-        target: "http://localhost:8888",
+        target: "http://127.0.0.1:8888",
         changeOrigin: true,
         headers: { origin: "http://localhost:5190" },
       },
       "/ws": {
-        target: "ws://localhost:8888",
+        target: "ws://127.0.0.1:8888",
         ws: true,
         changeOrigin: true,
         headers: { origin: "http://localhost:5190" },
