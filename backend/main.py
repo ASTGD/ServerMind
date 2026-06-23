@@ -2,6 +2,9 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import settings
 from app.database import AsyncSessionLocal
@@ -18,6 +21,7 @@ from app.routers import security as security_router
 from app.routers import servers as servers_router
 from app.routers import team as team_router
 from app.services import backup_service, playbook_service, scheduler_service
+from app.services.rate_limit_service import limiter
 from app.websocket import terminal as ws_handlers
 from app.workers import metrics_worker
 
@@ -45,15 +49,20 @@ if settings.SENTRY_DSN:
 # In production, hide the interactive API docs.
 _is_prod = settings.APP_ENV == "production"
 
-# Fail loud if production is started with placeholder/weak secrets.
+# Refuse to start in production with placeholder/weak secrets.
 if _is_prod:
     _weak = "change-me-in-production"
+    _problems: list[str] = []
     if settings.SECRET_KEY == _weak or len(settings.SECRET_KEY) < 32:
-        logger.error("SECURITY: SECRET_KEY is default/weak in production — set a 64-char hex value!")
-    if settings.ENCRYPTION_KEY == _weak or len(settings.ENCRYPTION_KEY) < 32:
-        logger.error("SECURITY: ENCRYPTION_KEY is default/weak in production — set a 64-char hex value!")
+        _problems.append("SECRET_KEY is default or too short (need >= 32 chars)")
+    if settings.ENCRYPTION_KEY == _weak or len(settings.ENCRYPTION_KEY) < 64:
+        _problems.append("ENCRYPTION_KEY is default or too short (need 64 hex chars)")
     if "*" in settings.ALLOWED_ORIGINS:
-        logger.error("SECURITY: ALLOWED_ORIGINS='*' with credentials is unsafe — set explicit origins!")
+        _problems.append("ALLOWED_ORIGINS='*' is unsafe with credentials — set explicit origins")
+    if _problems:
+        raise RuntimeError(
+            "Refusing to start in production due to insecure config: " + "; ".join(_problems)
+        )
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -70,6 +79,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Rate limiting (slowapi) — brute-force protection on auth endpoints.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 
 app.include_router(auth_router.router)

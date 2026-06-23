@@ -5,7 +5,7 @@ import logging
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,8 @@ from app.services.auth_service import (
     hash_password,
     verify_password,
 )
+from app.config import settings
+from app.services.rate_limit_service import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -60,7 +62,8 @@ class LanguageRequest(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: UserCreate, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+@limiter.limit(settings.REGISTER_RATE_LIMIT)
+async def register(request: Request, body: UserCreate, db: AsyncSession = Depends(get_db)) -> TokenResponse:
     """Register a new user. Email verification skipped — user is active immediately."""
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
@@ -79,14 +82,15 @@ async def register(body: UserCreate, db: AsyncSession = Depends(get_db)) -> Toke
 
     logger.info("New user registered: %s", user.email)
     return TokenResponse(
-        access_token=create_access_token(str(user.id)),
-        refresh_token=create_refresh_token(str(user.id)),
+        access_token=create_access_token(str(user.id), user.token_version),
+        refresh_token=create_refresh_token(str(user.id), user.token_version),
         user=UserOut.model_validate(user),
     )
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+@limiter.limit(settings.LOGIN_RATE_LIMIT)
+async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
     """Authenticate with email + password."""
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
@@ -103,8 +107,8 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
 
     return TokenResponse(
-        access_token=create_access_token(str(user.id)),
-        refresh_token=create_refresh_token(str(user.id)),
+        access_token=create_access_token(str(user.id), user.token_version),
+        refresh_token=create_refresh_token(str(user.id), user.token_version),
         user=UserOut.model_validate(user),
     )
 
@@ -124,17 +128,24 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> T
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    if payload.get("tv", 0) != user.token_version:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
     return TokenResponse(
-        access_token=create_access_token(str(user.id)),
-        refresh_token=create_refresh_token(str(user.id)),
+        access_token=create_access_token(str(user.id), user.token_version),
+        refresh_token=create_refresh_token(str(user.id), user.token_version),
         user=UserOut.model_validate(user),
     )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(current_user: User = Depends(get_current_user)) -> None:
-    """Logout — client must discard tokens. Server-side token blacklist is Phase 2+."""
+async def logout(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Logout — invalidate every token issued to this user by bumping token_version."""
+    current_user.token_version += 1
+    await db.commit()
     return None
 
 

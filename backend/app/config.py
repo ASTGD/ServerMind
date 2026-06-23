@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # Rate limiting (Update 14)
+    RATE_LIMIT_ENABLED: bool = True
+    LOGIN_RATE_LIMIT: str = "5/minute"      # per IP
+    REGISTER_RATE_LIMIT: str = "3/minute"   # per IP
+    COMMAND_RATE_PER_MIN: int = 30          # per user+server, WebSocket exec (rule 8)
+
     # CORS
     ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]
 

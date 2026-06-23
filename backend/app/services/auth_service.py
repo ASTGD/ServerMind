@@ -35,18 +35,18 @@ def _create_token(data: dict, expires_delta: timedelta) -> str:
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def create_access_token(user_id: str) -> str:
-    """Create a short-lived access token."""
+def create_access_token(user_id: str, token_version: int = 0) -> str:
+    """Create a short-lived access token carrying the user's token_version."""
     return _create_token(
-        {"sub": user_id, "type": "access"},
+        {"sub": user_id, "type": "access", "tv": token_version},
         timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
 
 
-def create_refresh_token(user_id: str) -> str:
-    """Create a long-lived refresh token."""
+def create_refresh_token(user_id: str, token_version: int = 0) -> str:
+    """Create a long-lived refresh token carrying the user's token_version."""
     return _create_token(
-        {"sub": user_id, "type": "refresh"},
+        {"sub": user_id, "type": "refresh", "tv": token_version},
         timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
     )
 

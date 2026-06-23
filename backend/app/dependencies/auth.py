@@ -51,6 +51,12 @@ async def get_current_user(
     if not user or not user.is_active:
         raise unauthorized
 
+    # Token revocation: a token is invalid once the user's token_version has moved
+    # past the value embedded in it (bumped on logout/password-change). Default 0
+    # so pre-existing tokens (no "tv" claim) keep working until they expire.
+    if payload.get("tv", 0) != user.token_version:
+        raise unauthorized
+
     return user
 
 

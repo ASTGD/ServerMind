@@ -2,7 +2,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,6 +24,9 @@ class User(Base):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     totp_secret: Mapped[str | None] = mapped_column(String(255))
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Bumped on logout/password-change to invalidate all previously issued tokens
+    # (tokens carry a "tv" claim that must match). See dependencies/auth.py.
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

@@ -20,6 +20,7 @@ from app.models.server import Server
 from app.models.user import User
 from app.services import ai_service, connection_manager, safety_service
 from app.services import ssh_service, team_service
+from app.services.rate_limit_service import check_command_rate
 from app.services.playbook_service import substitute_variables
 from app.services.auth_service import decode_token
 
@@ -52,6 +53,8 @@ async def _auth_and_get_server(
             return None
         user = (await db.execute(select(User).where(User.id == uid))).scalar_one_or_none()
         if user is None:
+            return None
+        if payload.get("tv", 0) != user.token_version:
             return None
         access = await team_service.get_access(db, user, server_id)
         if access is None:
@@ -178,10 +181,11 @@ async def chat_ws(
         await websocket.close(code=4001, reason="Unauthorized")
         return
 
+    user_id = (decode_token(token) or {}).get("sub", "")
     await websocket.accept()
 
     try:
-        await _chat_loop(websocket, server)
+        await _chat_loop(websocket, server, user_id)
     except WebSocketDisconnect:
         pass
     except Exception as exc:
@@ -192,7 +196,7 @@ async def chat_ws(
             pass
 
 
-async def _chat_loop(ws: WebSocket, server: Server) -> None:
+async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
     """Main chat loop — processes user messages until disconnect."""
     os_family = "windows" if server.connection_type == "winrm" else "linux"
 
@@ -206,6 +210,13 @@ async def _chat_loop(ws: WebSocket, server: Server) -> None:
         user_input: str = msg.get("content", "").strip()
         user_language: str = msg.get("language", "en")
         if not user_input:
+            continue
+
+        if not await check_command_rate(user_id, str(server.id)):
+            await ws.send_text(json.dumps({
+                "type": "error",
+                "message": "Rate limit reached — wait a minute before sending more commands.",
+            }))
             continue
 
         await _handle_message(ws, server, user_input, user_language, os_family)
@@ -409,7 +420,15 @@ async def playbook_run_ws(
         await websocket.close(code=4001, reason="Unauthorized")
         return
 
+    user_id = (decode_token(token) or {}).get("sub", "")
     await websocket.accept()
+    if not await check_command_rate(user_id, str(server.id)):
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "message": "Rate limit reached — wait a minute before running more.",
+        }))
+        await websocket.close()
+        return
 
     try:
         raw = await websocket.receive_text()
