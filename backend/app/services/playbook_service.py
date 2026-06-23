@@ -41,11 +41,50 @@ def _with_docker(script: str) -> str:
     return script[:cut] + _ENSURE_DOCKER + script[cut:]
 
 
+# ── Control-panel pre-flight guard ────────────────────────────────────────────
+# Control panels (CyberPanel, HestiaCP, …) demand a FRESH, supported server and
+# fail messily on a dirty one. Playbooks flagged ``"needs_preflight": True`` get
+# this ``preflight`` function injected after ``set -euo pipefail``; the script
+# then sets PANEL / MIN_RAM_MB and calls ``preflight`` before the vendor
+# installer. It aborts with a plain-English message instead of a cryptic failure.
+_PREFLIGHT = (
+    "preflight() {\n"
+    '  panel="${PANEL:-control panel}"\n'
+    '  min_ram="${MIN_RAM_MB:-1024}"\n'
+    '  if [ "$(id -u)" -ne 0 ]; then echo ">>> ERROR: $panel must be installed as root."; exit 1; fi\n'
+    '  echo ">>> Pre-flight checks for $panel..."\n'
+    "  for entry in /usr/local/cpanel:cPanel /usr/local/CyberCP:CyberPanel /usr/local/hestia:HestiaCP /usr/local/directadmin:DirectAdmin /opt/psa:Plesk /www/server/panel:aaPanel /home/clp:CloudPanel; do\n"
+    '    d="${entry%%:*}"; n="${entry##*:}"\n'
+    '    if [ -e "$d" ]; then echo ">>> ERROR: $n is already installed ($d). $panel needs a clean server — use a fresh VPS."; exit 1; fi\n'
+    "  done\n"
+    '  if command -v docker >/dev/null 2>&1; then echo ">>> ERROR: Docker is present. A control panel needs a clean server (no Docker / existing web stack). Use a fresh VPS."; exit 1; fi\n'
+    "  if command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -qE ':80[[:space:]]'; then echo \">>> ERROR: Port 80 is already in use. $panel needs a clean server.\"; exit 1; fi\n"
+    "  ram_mb=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')\n"
+    '  if [ -n "${ram_mb:-}" ] && [ "$ram_mb" -lt "$min_ram" ]; then echo ">>> ERROR: $panel needs at least ${min_ram}MB RAM (found ${ram_mb}MB)."; exit 1; fi\n'
+    '  echo ">>> Pre-flight OK — clean server, ${ram_mb:-?}MB RAM. Installing $panel; this can take several minutes."\n'
+    "}\n"
+)
+
+
+def _with_preflight(script: str) -> str:
+    """Inject the preflight function definition after the ``set -euo pipefail`` line."""
+    marker = "set -euo pipefail\n"
+    idx = script.find(marker)
+    if idx == -1:
+        return _PREFLIGHT + script
+    cut = idx + len(marker)
+    return script[:cut] + _PREFLIGHT + script[cut:]
+
+
 def _script_for(item: dict) -> str | None:
-    """Resolve a playbook's bash script, adding the Docker preamble if needed."""
+    """Resolve a playbook's bash script, injecting any required preambles."""
     script = item.get("script_bash")
-    if script and item.get("needs_docker"):
-        return _with_docker(script)
+    if not script:
+        return script
+    if item.get("needs_docker"):
+        script = _with_docker(script)
+    if item.get("needs_preflight"):
+        script = _with_preflight(script)
     return script
 
 
@@ -844,6 +883,316 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         ),
     },
 
+    # ── Control Panels — Linux ────────────────────────────────────────────────
+
+    {
+        "slug": "cyberpanel",
+        "needs_preflight": True,
+        "title": "CyberPanel (OpenLiteSpeed)",
+        "description": (
+            "Installs CyberPanel — a free, open-source hosting control panel built on "
+            "OpenLiteSpeed. Requires a FRESH server (Ubuntu 20.04/22.04 or AlmaLinux 8) "
+            "with no other web server or panel. After install, you can re-add this server "
+            "in Hosting Mode to manage sites, databases and email from ServerMind."
+        ),
+        "category": "control-panel",
+        "os_family": "linux",
+        "script_type": "bash",
+        "est_runtime_sec": 900,
+        "tags": ["control-panel", "cyberpanel", "openlitespeed", "hosting"],
+        "variables": [
+            {"name": "ADMIN_PASSWORD", "label": "CyberPanel admin password", "default": "", "required": True}
+        ],
+        "access": {
+            "name": "CyberPanel",
+            "url": "https://{{HOST}}:8090",
+            "username": "admin",
+            "password": "{{ADMIN_PASSWORD}}",
+            "note": "Your browser will warn about a self-signed certificate on first load — that's expected; continue past it.",
+        },
+        "script_bash": (
+            "#!/bin/bash\n"
+            "set -euo pipefail\n"
+            'PANEL="CyberPanel"\n'
+            "MIN_RAM_MB=1024\n"
+            'ADMIN_PASSWORD="{{ADMIN_PASSWORD}}"\n'
+            "preflight\n"
+            ". /etc/os-release\n"
+            'case "${ID:-}:${VERSION_ID:-}" in\n'
+            "  ubuntu:20.04|ubuntu:22.04|almalinux:8*) : ;;\n"
+            '  *) echo ">>> ERROR: CyberPanel supports Ubuntu 20.04/22.04 or AlmaLinux 8. Found ${PRETTY_NAME:-$ID}."; exit 1 ;;\n'
+            "esac\n"
+            'echo ">>> Downloading the official CyberPanel installer..."\n'
+            "curl -sSL -o /tmp/cyberpanel.sh https://cyberpanel.net/install.sh\n"
+            'echo ">>> Running installer (OpenLiteSpeed + full services, ~10-15 min)..."\n'
+            "# Feed answers to the installer prompts: 1=install, 1=OpenLiteSpeed,\n"
+            "# Y=full services, N=remote MySQL, <Enter>=latest version, s+password=set\n"
+            "# admin password, Y=Memcached, Y=Redis, Yes=Watchdog.\n"
+            "printf '1\\n1\\nY\\nN\\n\\ns\\n%s\\nY\\nY\\nYes\\n' \"$ADMIN_PASSWORD\" | bash /tmp/cyberpanel.sh\n"
+            'echo ">>> CyberPanel installed. Panel: https://YOUR-SERVER-IP:8090 (user: admin) — see the access card for the link."\n'
+        ),
+    },
+
+    {
+        "slug": "hestiacp",
+        "needs_preflight": True,
+        "title": "HestiaCP (Hestia Control Panel)",
+        "description": (
+            "Installs HestiaCP — a free, open-source web hosting control panel for "
+            "Ubuntu/Debian. Requires a FRESH server. Sets up the admin account "
+            "non-interactively with the values you provide."
+        ),
+        "category": "control-panel",
+        "os_family": "linux",
+        "script_type": "bash",
+        "est_runtime_sec": 900,
+        "tags": ["control-panel", "hestiacp", "hosting"],
+        "variables": [
+            {"name": "ADMIN_EMAIL", "label": "Admin email", "default": "", "required": True},
+            {"name": "ADMIN_PASSWORD", "label": "Admin password", "default": "", "required": True},
+            {"name": "HOSTNAME", "label": "Server hostname (FQDN, e.g. panel.example.com)", "default": "", "required": True},
+        ],
+        "access": {
+            "name": "HestiaCP",
+            "url": "https://{{HOST}}:8083",
+            "username": "admin",
+            "password": "{{ADMIN_PASSWORD}}",
+            "note": "Expect a self-signed-certificate warning on first load.",
+        },
+        "script_bash": (
+            "#!/bin/bash\n"
+            "set -euo pipefail\n"
+            'PANEL="HestiaCP"\n'
+            "MIN_RAM_MB=1024\n"
+            'ADMIN_EMAIL="{{ADMIN_EMAIL}}"\n'
+            'ADMIN_PASSWORD="{{ADMIN_PASSWORD}}"\n'
+            'HOSTNAME_FQDN="{{HOSTNAME}}"\n'
+            "preflight\n"
+            ". /etc/os-release\n"
+            'case "${ID:-}" in ubuntu|debian) : ;; *) echo ">>> ERROR: HestiaCP supports Ubuntu/Debian. Found ${PRETTY_NAME:-$ID}."; exit 1 ;; esac\n'
+            'echo ">>> Downloading the official HestiaCP installer..."\n'
+            "wget -qO /tmp/hst-install.sh https://raw.githubusercontent.com/hestiacp/hestiacp/release/install/hst-install.sh\n"
+            'echo ">>> Installing HestiaCP (non-interactive, ~10 min)..."\n'
+            'bash /tmp/hst-install.sh --interactive no --force --email "$ADMIN_EMAIL" --password "$ADMIN_PASSWORD" --hostname "$HOSTNAME_FQDN" --lang en\n'
+            'echo ">>> HestiaCP installed. Panel: https://YOUR-SERVER-IP:8083 (user: admin) — see the access card."\n'
+        ),
+    },
+
+    {
+        "slug": "aapanel",
+        "needs_preflight": True,
+        "title": "aaPanel",
+        "description": (
+            "Installs aaPanel — a free, beginner-friendly hosting control panel (LNMP/LAMP). "
+            "Requires a FRESH server (Ubuntu/Debian/CentOS/AlmaLinux). The login URL, username "
+            "and a temporary password are printed at the end of the install — copy them."
+        ),
+        "category": "control-panel",
+        "os_family": "linux",
+        "script_type": "bash",
+        "est_runtime_sec": 360,
+        "tags": ["control-panel", "aapanel", "hosting"],
+        "variables": [],
+        "access": {
+            "name": "aaPanel",
+            "note": "aaPanel prints your exact panel URL (it includes a random security path), username and temporary password at the END of the install log above — copy them now. To retrieve them later, run 'bt default' on the server.",
+        },
+        "script_bash": (
+            "#!/bin/bash\n"
+            "set -euo pipefail\n"
+            'PANEL="aaPanel"\n'
+            "MIN_RAM_MB=1024\n"
+            "preflight\n"
+            'echo ">>> Downloading the official aaPanel installer..."\n'
+            "curl -sSL -o /tmp/aapanel.sh https://www.aapanel.com/script/install_6.0_en.sh\n"
+            'echo ">>> Installing aaPanel (~5 min)..."\n'
+            "echo y | bash /tmp/aapanel.sh aapanel\n"
+            'echo ">>> aaPanel installed. Copy the URL / username / password shown above."\n'
+        ),
+    },
+
+    {
+        "slug": "cloudpanel",
+        "needs_preflight": True,
+        "title": "CloudPanel",
+        "description": (
+            "Installs CloudPanel — a free, modern hosting control panel (PHP/Node/Python) for "
+            "Debian 11/12 and Ubuntu 22.04/24.04. Requires a FRESH server with at least 2 GB RAM. "
+            "Create your admin account on the first visit."
+        ),
+        "category": "control-panel",
+        "os_family": "linux",
+        "script_type": "bash",
+        "est_runtime_sec": 420,
+        "tags": ["control-panel", "cloudpanel", "hosting"],
+        "variables": [],
+        "access": {
+            "name": "CloudPanel",
+            "url": "https://{{HOST}}:8443",
+            "note": "Create your admin account on the first visit (no preset login). Expect a self-signed-certificate warning.",
+        },
+        "script_bash": (
+            "#!/bin/bash\n"
+            "set -euo pipefail\n"
+            'PANEL="CloudPanel"\n'
+            "MIN_RAM_MB=2048\n"
+            "preflight\n"
+            ". /etc/os-release\n"
+            'case "${ID:-}:${VERSION_ID:-}" in\n'
+            "  debian:11|debian:12|ubuntu:22.04|ubuntu:24.04) : ;;\n"
+            '  *) echo ">>> ERROR: CloudPanel supports Debian 11/12 or Ubuntu 22.04/24.04. Found ${PRETTY_NAME:-$ID}."; exit 1 ;;\n'
+            "esac\n"
+            "export DEBIAN_FRONTEND=noninteractive\n"
+            "apt-get update -qq\n"
+            "apt-get install -y -qq curl wget sudo\n"
+            'echo ">>> Downloading the official CloudPanel installer..."\n'
+            "curl -sSL https://installer.cloudpanel.io/ce/v2/install.sh -o /tmp/cloudpanel.sh\n"
+            'echo ">>> Installing CloudPanel (MySQL 8.0, ~5 min)..."\n'
+            "DB_ENGINE=MYSQL_8.0 bash /tmp/cloudpanel.sh\n"
+            'echo ">>> CloudPanel installed. Open https://YOUR-SERVER-IP:8443 and create your admin account."\n'
+        ),
+    },
+
+    # ── Control Panels — Premium (license required) ──────────────────────────
+
+    {
+        "slug": "cpanel-whm",
+        "needs_preflight": True,
+        "title": "cPanel / WHM",
+        "description": (
+            "Installs cPanel & WHM — the industry-standard commercial hosting panel. Requires a "
+            "FRESH server (AlmaLinux/Rocky 8-9, CloudLinux, CentOS 7, or Ubuntu 20.04/22.04 — NOT "
+            "Debian) with 2 GB+ RAM. cPanel needs a license; a 15-day trial is offered on first "
+            "login. Manage it via WHM on port 2087."
+        ),
+        "category": "control-panel",
+        "os_family": "linux",
+        "script_type": "bash",
+        "est_runtime_sec": 1800,
+        "tags": ["control-panel", "cpanel", "whm", "hosting", "premium"],
+        "variables": [
+            {"name": "HOSTNAME", "label": "Server hostname (FQDN, e.g. server.example.com)", "default": "", "required": True}
+        ],
+        "access": {
+            "name": "WHM (cPanel)",
+            "url": "https://{{HOST}}:2087",
+            "username": "root",
+            "note": "Log in with your server's root password. cPanel needs a license — a 15-day trial is offered on first login (store.cpanel.net). Expect a self-signed-certificate warning.",
+        },
+        "script_bash": (
+            "#!/bin/bash\n"
+            "set -euo pipefail\n"
+            'PANEL="cPanel & WHM"\n'
+            "MIN_RAM_MB=2048\n"
+            'HOSTNAME_FQDN="{{HOSTNAME}}"\n'
+            "preflight\n"
+            ". /etc/os-release\n"
+            'case "${ID:-}:${VERSION_ID:-}" in\n'
+            "  almalinux:8*|almalinux:9*|rocky:8*|rocky:9*|cloudlinux:*|centos:7*|ubuntu:20.04|ubuntu:22.04) : ;;\n"
+            '  *) echo ">>> ERROR: cPanel supports AlmaLinux/Rocky 8-9, CloudLinux, CentOS 7, or Ubuntu 20.04/22.04 (not Debian). Found ${PRETTY_NAME:-$ID}."; exit 1 ;;\n'
+            "esac\n"
+            'echo ">>> Setting hostname to $HOSTNAME_FQDN..."\n'
+            'hostnamectl set-hostname "$HOSTNAME_FQDN" || true\n'
+            'echo ">>> Downloading and running the official cPanel installer (~25-40 min)..."\n'
+            "cd /home\n"
+            "curl -o latest -L https://securedownloads.cpanel.net/latest\n"
+            "sh latest\n"
+            'echo ">>> cPanel & WHM installed. WHM: https://YOUR-SERVER-IP:2087 (user: root). Add a license or start a trial on first login."\n'
+        ),
+    },
+
+    {
+        "slug": "plesk",
+        "needs_preflight": True,
+        "title": "Plesk",
+        "description": (
+            "Installs Plesk — a leading commercial hosting panel — via its official one-click "
+            "installer. Requires a FRESH server (Ubuntu 20.04/22.04, Debian 11/12, or "
+            "AlmaLinux/Rocky/CentOS 8-9) with 2 GB+ RAM. A trial license is available on first "
+            "login. Presets the admin password you provide."
+        ),
+        "category": "control-panel",
+        "os_family": "linux",
+        "script_type": "bash",
+        "est_runtime_sec": 1200,
+        "tags": ["control-panel", "plesk", "hosting", "premium"],
+        "variables": [
+            {"name": "ADMIN_PASSWORD", "label": "Plesk admin password", "default": "", "required": True}
+        ],
+        "access": {
+            "name": "Plesk",
+            "url": "https://{{HOST}}:8443",
+            "username": "admin",
+            "password": "{{ADMIN_PASSWORD}}",
+            "note": "Plesk needs a license — choose the trial on first login. Expect a self-signed-certificate warning.",
+        },
+        "script_bash": (
+            "#!/bin/bash\n"
+            "set -euo pipefail\n"
+            'PANEL="Plesk"\n'
+            "MIN_RAM_MB=2048\n"
+            'ADMIN_PASSWORD="{{ADMIN_PASSWORD}}"\n'
+            "preflight\n"
+            ". /etc/os-release\n"
+            'case "${ID:-}:${VERSION_ID:-}" in\n'
+            "  ubuntu:20.04|ubuntu:22.04|debian:11|debian:12|almalinux:8*|almalinux:9*|rocky:8*|rocky:9*|centos:8*) : ;;\n"
+            '  *) echo ">>> ERROR: Plesk supports Ubuntu 20.04/22.04, Debian 11/12, or AlmaLinux/Rocky/CentOS 8-9. Found ${PRETTY_NAME:-$ID}."; exit 1 ;;\n'
+            "esac\n"
+            'echo ">>> Downloading the official Plesk one-click installer..."\n'
+            "curl -fsSL https://autoinstall.plesk.com/one-click-installer -o /tmp/plesk-installer.sh\n"
+            'echo ">>> Installing Plesk (~15-25 min)..."\n'
+            "sh /tmp/plesk-installer.sh\n"
+            'echo ">>> Setting the Plesk admin password..."\n'
+            'plesk bin admin --set-password -passwd "$ADMIN_PASSWORD" || echo ">>> Could not preset the admin password; run plesk login on the server for a one-time login link."\n'
+            'echo ">>> Plesk installed. Panel: https://YOUR-SERVER-IP:8443 (user: admin)."\n'
+        ),
+    },
+
+    {
+        "slug": "directadmin",
+        "needs_preflight": True,
+        "title": "DirectAdmin",
+        "description": (
+            "Installs DirectAdmin — a lightweight commercial hosting panel — using your license "
+            "key. Requires a FRESH server (AlmaLinux/Rocky 8-9, Ubuntu 20.04/22.04/24.04, or "
+            "Debian 11/12) with 1 GB+ RAM. Get a license key (incl. a low-cost personal option) "
+            "from directadmin.com. Admin credentials are printed at the end of the install."
+        ),
+        "category": "control-panel",
+        "os_family": "linux",
+        "script_type": "bash",
+        "est_runtime_sec": 1200,
+        "tags": ["control-panel", "directadmin", "hosting", "premium"],
+        "variables": [
+            {"name": "LICENSE_KEY", "label": "DirectAdmin license key", "default": "", "required": True}
+        ],
+        "access": {
+            "name": "DirectAdmin",
+            "url": "https://{{HOST}}:2222",
+            "note": "Your admin username and password are printed at the END of the install log above — copy them now. Expect a self-signed-certificate warning.",
+        },
+        "script_bash": (
+            "#!/bin/bash\n"
+            "set -euo pipefail\n"
+            'PANEL="DirectAdmin"\n'
+            "MIN_RAM_MB=1024\n"
+            'LICENSE_KEY="{{LICENSE_KEY}}"\n'
+            "preflight\n"
+            'if [ -z "$LICENSE_KEY" ]; then echo ">>> ERROR: A DirectAdmin license key is required (get one at https://www.directadmin.com/)."; exit 1; fi\n'
+            ". /etc/os-release\n"
+            'case "${ID:-}:${VERSION_ID:-}" in\n'
+            "  almalinux:8*|almalinux:9*|rocky:8*|rocky:9*|centos:7*|centos:8*|ubuntu:20.04|ubuntu:22.04|ubuntu:24.04|debian:11|debian:12) : ;;\n"
+            '  *) echo ">>> ERROR: DirectAdmin supports AlmaLinux/Rocky 8-9, CentOS, Ubuntu 20.04/22.04/24.04, or Debian 11/12. Found ${PRETTY_NAME:-$ID}."; exit 1 ;;\n'
+            "esac\n"
+            'echo ">>> Downloading the official DirectAdmin installer..."\n'
+            "curl -fsSL https://download.directadmin.com/setup.sh -o /tmp/da-setup.sh\n"
+            "chmod 755 /tmp/da-setup.sh\n"
+            'echo ">>> Installing DirectAdmin (~15 min)..."\n'
+            '/tmp/da-setup.sh "$LICENSE_KEY"\n'
+            'echo ">>> DirectAdmin installed. Panel: https://YOUR-SERVER-IP:2222 — the admin login is printed above."\n'
+        ),
+    },
+
     # ── Monitoring — Linux ────────────────────────────────────────────────────
 
     {
@@ -1271,27 +1620,32 @@ async def seed_if_empty(db: AsyncSession) -> None:
     logger.info("Playbook seed complete.")
 
 
-async def resync_official_scripts(db: AsyncSession) -> int:
-    """Update already-seeded official playbooks' scripts to match the current
-    definitions (matched by slug). Use after editing a playbook's script — e.g.
-    adding the Docker preamble. Preserves run_count/rating. Returns rows updated.
+async def resync_official_scripts(db: AsyncSession) -> dict:
+    """Upsert official playbooks against the current definitions (matched by slug):
+    update existing rows' scripts/access and INSERT any new playbooks. Use after
+    editing or adding playbooks. Preserves run_count/rating. Returns counts.
     """
     from sqlalchemy import update as sa_update
 
-    updated = 0
+    existing = set((await db.execute(select(Playbook.slug))).scalars().all())
+    updated = inserted = 0
     for item in OFFICIAL_PLAYBOOKS:
-        res = await db.execute(
-            sa_update(Playbook)
-            .where(Playbook.slug == item["slug"])
-            .values(
-                script_bash=_script_for(item),
-                script_powershell=item.get("script_powershell"),
-                access_info=item.get("access"),
+        if item["slug"] in existing:
+            await db.execute(
+                sa_update(Playbook)
+                .where(Playbook.slug == item["slug"])
+                .values(
+                    script_bash=_script_for(item),
+                    script_powershell=item.get("script_powershell"),
+                    access_info=item.get("access"),
+                )
             )
-        )
-        updated += res.rowcount or 0
+            updated += 1
+        else:
+            db.add(_build_playbook(item))
+            inserted += 1
     await db.commit()
-    return updated
+    return {"updated": updated, "inserted": inserted}
 
 
 def substitute_variables(script: str, variables: dict) -> str:

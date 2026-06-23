@@ -426,7 +426,9 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
           )}
 
           {/* Status banners */}
-          {runState === "success" && resolvedAccess?.url ? (
+          {runState === "success" &&
+          resolvedAccess &&
+          (resolvedAccess.url || resolvedAccess.username || resolvedAccess.note) ? (
             <AccessCard access={resolvedAccess} />
           ) : runState === "success" ? (
             <div className="flex items-center gap-2 rounded-lg border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-400">
