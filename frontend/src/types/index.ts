@@ -178,6 +178,17 @@ export interface GenerateScriptResult {
   saved_id: string | null
 }
 
+export interface ActivityItem {
+  id: string
+  kind: "command" | "playbook"
+  server_id: string | null
+  title: string
+  status: string | null
+  risk_level: string | null
+  duration_ms: number | null
+  created_at: string
+}
+
 export interface WSMessage {
   type: string
   [key: string]: unknown

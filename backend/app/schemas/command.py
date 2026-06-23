@@ -41,3 +41,16 @@ class CommandLogOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ActivityItem(BaseModel):
+    """A unified activity feed entry — an AI command or a playbook/script run."""
+
+    id: uuid.UUID
+    kind: str                      # 'command' | 'playbook'
+    server_id: uuid.UUID | None
+    title: str                     # user_input, or the playbook/script title
+    status: str | None
+    risk_level: str | None = None
+    duration_ms: int | None = None
+    created_at: datetime
