@@ -156,6 +156,7 @@ export default function MyScripts() {
         created_at: selected.created_at,
         script_bash: selected.script_type !== "powershell" ? selected.script_content : null,
         script_powershell: selected.script_type === "powershell" ? selected.script_content : null,
+        access_info: null,
       }
     : null
 
