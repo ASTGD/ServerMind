@@ -4,7 +4,7 @@ import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, Check, Loader2 
 import { QRCodeSVG } from "qrcode.react"
 import {
   updateProfile, updateLanguage, changePassword,
-  setup2fa, verify2fa, disable2fa, type TotpSetupResponse,
+  setup2fa, verify2fa, disable2fa, regenerateRecoveryCodes, type TotpSetupResponse,
 } from "@/api/auth"
 import { useAuthStore } from "@/store/authStore"
 import i18n from "@/i18n"
@@ -83,6 +83,9 @@ export default function Settings() {
   const [disableCode, setDisableCode] = useState("")
   const [twoFAMsg, setTwoFAMsg] = useState("")
   const [twoFAErr, setTwoFAErr] = useState("")
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null)
+  const [showRegen, setShowRegen] = useState(false)
+  const [regenCode, setRegenCode] = useState("")
 
   const syncUser = (u: User) => {
     if (token) setAuth(u, token)
@@ -136,12 +139,13 @@ export default function Settings() {
 
   const verifyMut = useMutation({
     mutationFn: () => verify2fa(totpCode.trim()),
-    onSuccess: (u) => {
-      syncUser(u)
+    onSuccess: (res) => {
+      syncUser(res.user)
       setTwoFAStep("idle")
       setSetupData(null)
       setTotpCode("")
       setTwoFAErr("")
+      setRecoveryCodes(res.recovery_codes)
       setTwoFAMsg("Two-factor authentication enabled")
       setTimeout(() => setTwoFAMsg(""), 3000)
     },
@@ -156,6 +160,19 @@ export default function Settings() {
       setDisableCode("")
       setTwoFAErr("")
       setTwoFAMsg("Two-factor authentication disabled")
+      setTimeout(() => setTwoFAMsg(""), 3000)
+    },
+    onError: (e) => setTwoFAErr(errMsg(e)),
+  })
+
+  const regenMut = useMutation({
+    mutationFn: () => regenerateRecoveryCodes(regenCode.trim()),
+    onSuccess: (codes) => {
+      setShowRegen(false)
+      setRegenCode("")
+      setTwoFAErr("")
+      setRecoveryCodes(codes)
+      setTwoFAMsg("New recovery codes generated")
       setTimeout(() => setTwoFAMsg(""), 3000)
     },
     onError: (e) => setTwoFAErr(errMsg(e)),
@@ -333,31 +350,50 @@ export default function Settings() {
       title="Two-factor authentication"
       description="Require a one-time code from an authenticator app at login."
     >
-      {user.totp_enabled ? (
+      {recoveryCodes ? (
+        <div className="space-y-3">
+          <p className="text-sm font-medium text-foreground">Save your recovery codes</p>
+          <p className="text-xs text-muted-foreground">
+            Each code works once. Store them somewhere safe — they're the only way back in if you lose your authenticator.
+          </p>
+          <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-muted/40 p-3 font-mono text-sm">
+            {recoveryCodes.map((c) => (
+              <span key={c} className="select-all">
+                {c}
+              </span>
+            ))}
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                void navigator.clipboard?.writeText(recoveryCodes.join("\n"))
+                setTwoFAMsg("Copied")
+                setTimeout(() => setTwoFAMsg(""), 2000)
+              }}
+              className={btnCls}
+            >
+              Copy codes
+            </button>
+            <button
+              onClick={() => setRecoveryCodes(null)}
+              className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+            >
+              I've saved them
+            </button>
+          </div>
+        </div>
+      ) : user.totp_enabled ? (
         <div className="space-y-3">
           <span className="inline-flex items-center gap-1 rounded-full border border-green-500/20 bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600">
             <Check size={13} /> Enabled
           </span>
-          {!showDisable ? (
-            <div>
-              <button
-                onClick={() => {
-                  setShowDisable(true)
-                  setTwoFAErr("")
-                  setTwoFAMsg("")
-                }}
-                className="block rounded-md border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-500/20"
-              >
-                Disable 2FA
-              </button>
-            </div>
-          ) : (
+          {showRegen ? (
             <div className="space-y-3">
               <div>
-                <label className={labelCls}>Enter a current code to disable</label>
+                <label className={labelCls}>Enter a current code to regenerate</label>
                 <input
-                  value={disableCode}
-                  onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, ""))}
+                  value={regenCode}
+                  onChange={(e) => setRegenCode(e.target.value.replace(/\D/g, ""))}
                   inputMode="numeric"
                   maxLength={6}
                   autoComplete="one-time-code"
@@ -367,8 +403,42 @@ export default function Settings() {
               </div>
               <div className="flex items-center gap-3">
                 <button
+                  onClick={() => regenMut.mutate()}
+                  disabled={regenCode.trim().length !== 6 || regenMut.isPending}
+                  className={btnCls}
+                >
+                  {regenMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Generate new codes
+                </button>
+                <button
+                  onClick={() => {
+                    setShowRegen(false)
+                    setRegenCode("")
+                    setTwoFAErr("")
+                  }}
+                  className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : showDisable ? (
+            <div className="space-y-3">
+              <div>
+                <label className={labelCls}>Enter a code or recovery code to disable</label>
+                <input
+                  value={disableCode}
+                  onChange={(e) => setDisableCode(e.target.value)}
+                  maxLength={14}
+                  autoComplete="one-time-code"
+                  placeholder="123456 or recovery code"
+                  className={`${inputCls} max-w-[16rem] font-mono`}
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <button
                   onClick={() => disableMut.mutate()}
-                  disabled={disableCode.trim().length !== 6 || disableMut.isPending}
+                  disabled={disableCode.trim().length < 6 || disableMut.isPending}
                   className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-500/20 disabled:opacity-50"
                 >
                   {disableMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -385,6 +455,31 @@ export default function Settings() {
                   Cancel
                 </button>
               </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => {
+                  setShowRegen(true)
+                  setShowDisable(false)
+                  setTwoFAErr("")
+                  setTwoFAMsg("")
+                }}
+                className="rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/50"
+              >
+                Regenerate recovery codes
+              </button>
+              <button
+                onClick={() => {
+                  setShowDisable(true)
+                  setShowRegen(false)
+                  setTwoFAErr("")
+                  setTwoFAMsg("")
+                }}
+                className="rounded-md border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-500/20"
+              >
+                Disable 2FA
+              </button>
             </div>
           )}
         </div>

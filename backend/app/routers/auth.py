@@ -77,7 +77,31 @@ class TotpCodeRequest(BaseModel):
     code: str
 
 
+class TotpVerifyResponse(BaseModel):
+    user: UserOut
+    recovery_codes: list[str]
+
+
+class RecoveryCodesResponse(BaseModel):
+    recovery_codes: list[str]
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+
+async def _consume_recovery_code(db: AsyncSession, user: User, code: str) -> bool:
+    """If ``code`` matches one of the user's stored recovery-code hashes, consume
+    it (one-time use), persist the remaining codes, and return True."""
+    codes = user.totp_recovery_codes or []
+    if not codes or not code:
+        return False
+    h = totp_service.hash_code(code)
+    if h in codes:
+        user.totp_recovery_codes = [c for c in codes if c != h]
+        await db.commit()
+        return True
+    return False
+
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(settings.REGISTER_RATE_LIMIT)
@@ -132,7 +156,12 @@ async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many 2FA attempts — try again later.",
             )
-        if not body.totp_code or not totp_service.verify(user.totp_secret, body.totp_code):
+        code = body.totp_code
+        ok = bool(code) and (
+            totp_service.verify(user.totp_secret, code)
+            or await _consume_recovery_code(db, user, code)
+        )
+        if not ok:
             await totp_register_failure(str(user.id))
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="TOTP code required"
@@ -274,12 +303,12 @@ async def totp_setup(
     )
 
 
-@router.post("/2fa/verify", response_model=UserOut)
+@router.post("/2fa/verify", response_model=TotpVerifyResponse)
 async def totp_verify(
     body: TotpCodeRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> UserOut:
+) -> TotpVerifyResponse:
     """Confirm a TOTP code from the authenticator app to activate 2FA."""
     if current_user.totp_enabled:
         raise HTTPException(
@@ -299,10 +328,15 @@ async def totp_verify(
         # (authenticated) user out for a mistyped code.
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
     await totp_clear_failures(str(current_user.id))
+    recovery = totp_service.generate_recovery_codes()
+    current_user.totp_recovery_codes = [totp_service.hash_code(c) for c in recovery]
     current_user.totp_enabled = True
     await db.commit()
     await db.refresh(current_user)
-    return UserOut.model_validate(current_user)
+    return TotpVerifyResponse(
+        user=UserOut.model_validate(current_user),
+        recovery_codes=recovery,
+    )
 
 
 @router.delete("/2fa", response_model=UserOut)
@@ -322,7 +356,10 @@ async def totp_disable(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many 2FA attempts — try again later.",
         )
-    if not totp_service.verify(current_user.totp_secret, body.code):
+    if not (
+        totp_service.verify(current_user.totp_secret, body.code)
+        or await _consume_recovery_code(db, current_user, body.code)
+    ):
         await totp_register_failure(str(current_user.id))
         # 400, not 401 — avoids the global interceptor logging the user out, and
         # the per-user lockout makes brute-forcing the disable endpoint impractical.
@@ -330,6 +367,35 @@ async def totp_disable(
     await totp_clear_failures(str(current_user.id))
     current_user.totp_enabled = False
     current_user.totp_secret = None
+    current_user.totp_recovery_codes = None
     await db.commit()
     await db.refresh(current_user)
     return UserOut.model_validate(current_user)
+
+
+@router.post("/2fa/recovery-codes", response_model=RecoveryCodesResponse)
+async def regenerate_recovery_codes(
+    body: TotpCodeRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RecoveryCodesResponse:
+    """Replace the user's recovery codes with a fresh set. Requires a current TOTP
+    code (the authenticator app), not a recovery code."""
+    if not current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Two-factor authentication is not enabled",
+        )
+    if await totp_locked(str(current_user.id)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many 2FA attempts — try again later.",
+        )
+    if not totp_service.verify(current_user.totp_secret, body.code):
+        await totp_register_failure(str(current_user.id))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
+    await totp_clear_failures(str(current_user.id))
+    recovery = totp_service.generate_recovery_codes()
+    current_user.totp_recovery_codes = [totp_service.hash_code(c) for c in recovery]
+    await db.commit()
+    return RecoveryCodesResponse(recovery_codes=recovery)

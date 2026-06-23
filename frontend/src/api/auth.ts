@@ -77,10 +77,24 @@ export async function setup2fa(): Promise<TotpSetupResponse> {
   return data
 }
 
-/** Verify a 6-digit code to enable TOTP. Returns the updated user. */
-export async function verify2fa(code: string): Promise<User> {
-  const { data } = await apiClient.post<User>("/api/auth/2fa/verify", { code })
+export interface TotpVerifyResult {
+  user: User
+  recovery_codes: string[]
+}
+
+/** Verify a 6-digit code to enable TOTP. Returns the updated user + one-time recovery codes. */
+export async function verify2fa(code: string): Promise<TotpVerifyResult> {
+  const { data } = await apiClient.post<TotpVerifyResult>("/api/auth/2fa/verify", { code })
   return data
+}
+
+/** Regenerate recovery codes — requires a current TOTP code. Returns the new codes. */
+export async function regenerateRecoveryCodes(code: string): Promise<string[]> {
+  const { data } = await apiClient.post<{ recovery_codes: string[] }>(
+    "/api/auth/2fa/recovery-codes",
+    { code },
+  )
+  return data.recovery_codes
 }
 
 /** Disable TOTP (requires a current code). Returns the updated user. */

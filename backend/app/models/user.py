@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Integer, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -24,6 +24,8 @@ class User(Base):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     totp_secret: Mapped[str | None] = mapped_column(String(255))
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # JSON array of SHA-256 hashes of one-time 2FA recovery codes (never plaintext).
+    totp_recovery_codes: Mapped[list | None] = mapped_column(JSONB)
     # Bumped on logout/password-change to invalidate all previously issued tokens
     # (tokens carry a "tv" claim that must match). See dependencies/auth.py.
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
