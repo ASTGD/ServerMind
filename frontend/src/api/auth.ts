@@ -19,6 +19,7 @@ export interface RegisterBody {
 export interface LoginBody {
   email: string
   password: string
+  totp_code?: string
 }
 
 /** Register a new account. */
@@ -63,6 +64,29 @@ export async function changePassword(
   new_password: string,
 ): Promise<void> {
   await apiClient.put("/api/auth/password", { current_password, new_password })
+}
+
+export interface TotpSetupResponse {
+  secret: string
+  otpauth_uri: string
+}
+
+/** Begin TOTP enrollment — returns the secret + otpauth URI for a QR code. */
+export async function setup2fa(): Promise<TotpSetupResponse> {
+  const { data } = await apiClient.post<TotpSetupResponse>("/api/auth/2fa/setup")
+  return data
+}
+
+/** Verify a 6-digit code to enable TOTP. Returns the updated user. */
+export async function verify2fa(code: string): Promise<User> {
+  const { data } = await apiClient.post<User>("/api/auth/2fa/verify", { code })
+  return data
+}
+
+/** Disable TOTP (requires a current code). Returns the updated user. */
+export async function disable2fa(code: string): Promise<User> {
+  const { data } = await apiClient.delete<User>("/api/auth/2fa", { data: { code } })
+  return data
 }
 
 /** Mint a short-lived, single-use WebSocket auth ticket. */

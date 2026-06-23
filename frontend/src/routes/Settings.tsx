@@ -1,7 +1,11 @@
 import { useState, type ReactNode } from "react"
 import { useMutation } from "@tanstack/react-query"
-import { User as UserIcon, Globe, Lock, BadgeCheck, Check, Loader2 } from "lucide-react"
-import { updateProfile, updateLanguage, changePassword } from "@/api/auth"
+import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, Check, Loader2 } from "lucide-react"
+import { QRCodeSVG } from "qrcode.react"
+import {
+  updateProfile, updateLanguage, changePassword,
+  setup2fa, verify2fa, disable2fa, type TotpSetupResponse,
+} from "@/api/auth"
 import { useAuthStore } from "@/store/authStore"
 import i18n from "@/i18n"
 import type { User } from "@/types"
@@ -72,6 +76,14 @@ export default function Settings() {
 
   const [langMsg, setLangMsg] = useState("")
 
+  const [twoFAStep, setTwoFAStep] = useState<"idle" | "enrolling">("idle")
+  const [setupData, setSetupData] = useState<TotpSetupResponse | null>(null)
+  const [totpCode, setTotpCode] = useState("")
+  const [showDisable, setShowDisable] = useState(false)
+  const [disableCode, setDisableCode] = useState("")
+  const [twoFAMsg, setTwoFAMsg] = useState("")
+  const [twoFAErr, setTwoFAErr] = useState("")
+
   const syncUser = (u: User) => {
     if (token) setAuth(u, token)
   }
@@ -110,6 +122,43 @@ export default function Settings() {
       setPwMsg("")
       setPwErr(errMsg(e))
     },
+  })
+
+  const setupMut = useMutation({
+    mutationFn: () => setup2fa(),
+    onSuccess: (d) => {
+      setSetupData(d)
+      setTwoFAStep("enrolling")
+      setTwoFAErr("")
+    },
+    onError: (e) => setTwoFAErr(errMsg(e)),
+  })
+
+  const verifyMut = useMutation({
+    mutationFn: () => verify2fa(totpCode.trim()),
+    onSuccess: (u) => {
+      syncUser(u)
+      setTwoFAStep("idle")
+      setSetupData(null)
+      setTotpCode("")
+      setTwoFAErr("")
+      setTwoFAMsg("Two-factor authentication enabled")
+      setTimeout(() => setTwoFAMsg(""), 3000)
+    },
+    onError: (e) => setTwoFAErr(errMsg(e)),
+  })
+
+  const disableMut = useMutation({
+    mutationFn: () => disable2fa(disableCode.trim()),
+    onSuccess: (u) => {
+      syncUser(u)
+      setShowDisable(false)
+      setDisableCode("")
+      setTwoFAErr("")
+      setTwoFAMsg("Two-factor authentication disabled")
+      setTimeout(() => setTwoFAMsg(""), 3000)
+    },
+    onError: (e) => setTwoFAErr(errMsg(e)),
   })
 
   if (!user) return null
@@ -278,6 +327,135 @@ export default function Settings() {
     </Section>
   )
 
+  const twoFactorSection = (
+    <Section
+      icon={ShieldCheck}
+      title="Two-factor authentication"
+      description="Require a one-time code from an authenticator app at login."
+    >
+      {user.totp_enabled ? (
+        <div className="space-y-3">
+          <span className="inline-flex items-center gap-1 rounded-full border border-green-500/20 bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600">
+            <Check size={13} /> Enabled
+          </span>
+          {!showDisable ? (
+            <div>
+              <button
+                onClick={() => {
+                  setShowDisable(true)
+                  setTwoFAErr("")
+                  setTwoFAMsg("")
+                }}
+                className="block rounded-md border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-500/20"
+              >
+                Disable 2FA
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className={labelCls}>Enter a current code to disable</label>
+                <input
+                  value={disableCode}
+                  onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, ""))}
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  className={`${inputCls} max-w-[12rem] font-mono tracking-widest`}
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => disableMut.mutate()}
+                  disabled={disableCode.trim().length !== 6 || disableMut.isPending}
+                  className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-500/20 disabled:opacity-50"
+                >
+                  {disableMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Confirm disable
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDisable(false)
+                    setDisableCode("")
+                    setTwoFAErr("")
+                  }}
+                  className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : twoFAStep === "enrolling" && setupData ? (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Scan with an authenticator app (Google Authenticator, 1Password, Authy…), then enter the 6-digit code.
+          </p>
+          <div className="inline-block rounded-lg bg-white p-3">
+            <QRCodeSVG value={setupData.otpauth_uri} size={160} />
+          </div>
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">Can't scan? Enter this key manually:</p>
+            <code className="block select-all break-all rounded bg-muted px-2 py-1 font-mono text-xs text-foreground">
+              {setupData.secret}
+            </code>
+          </div>
+          <div>
+            <label className={labelCls}>6-digit code</label>
+            <input
+              value={totpCode}
+              onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+              inputMode="numeric"
+              maxLength={6}
+              autoComplete="one-time-code"
+              placeholder="123456"
+              className={`${inputCls} max-w-[12rem] font-mono tracking-widest`}
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => verifyMut.mutate()}
+              disabled={totpCode.trim().length !== 6 || verifyMut.isPending}
+              className={btnCls}
+            >
+              {verifyMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Verify &amp; enable
+            </button>
+            <button
+              onClick={() => {
+                setTwoFAStep("idle")
+                setSetupData(null)
+                setTotpCode("")
+                setTwoFAErr("")
+              }}
+              className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setupMut.mutate()}
+          disabled={setupMut.isPending}
+          className={btnCls}
+        >
+          {setupMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          Enable 2FA
+        </button>
+      )}
+
+      {twoFAErr && <p className="mt-3 text-sm text-red-500">{twoFAErr}</p>}
+      {twoFAMsg && (
+        <p className="mt-3 flex items-center gap-1 text-sm text-green-600">
+          <Check size={15} /> {twoFAMsg}
+        </p>
+      )}
+    </Section>
+  )
+
   return (
     <div className="space-y-6">
       <div>
@@ -293,6 +471,7 @@ export default function Settings() {
         <div className="space-y-6">
           {languageSection}
           {passwordSection}
+          {twoFactorSection}
         </div>
       </div>
     </div>

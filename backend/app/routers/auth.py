@@ -23,7 +23,13 @@ from app.services.auth_service import (
     verify_password,
 )
 from app.config import settings
-from app.services.rate_limit_service import limiter
+from app.services import totp_service
+from app.services.rate_limit_service import (
+    limiter,
+    totp_clear_failures,
+    totp_locked,
+    totp_register_failure,
+)
 from app.services.redis_service import get_redis
 
 logger = logging.getLogger(__name__)
@@ -39,6 +45,7 @@ _DUMMY_HASH = hash_password("servermind-timing-equalizer")
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    totp_code: str | None = None
 
 
 class TokenResponse(BaseModel):
@@ -59,6 +66,15 @@ class PasswordChangeRequest(BaseModel):
 
 class LanguageRequest(BaseModel):
     language: str
+
+
+class TotpSetupResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+
+class TotpCodeRequest(BaseModel):
+    code: str
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -107,6 +123,21 @@ async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends
 
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
+
+    # Second factor (TOTP), when enabled. A single generic 401 covers both a
+    # missing and an invalid code so we don't reveal which it was.
+    if user.totp_enabled:
+        if await totp_locked(str(user.id)):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many 2FA attempts — try again later.",
+            )
+        if not body.totp_code or not totp_service.verify(user.totp_secret, body.totp_code):
+            await totp_register_failure(str(user.id))
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="TOTP code required"
+            )
+        await totp_clear_failures(str(user.id))
 
     return TokenResponse(
         access_token=create_access_token(str(user.id), user.token_version),
@@ -220,3 +251,85 @@ async def ws_ticket(current_user: User = Depends(get_current_user)) -> dict:
             detail="Ticket service unavailable",
         )
     return {"ticket": ticket, "expires_in": settings.WS_TICKET_TTL_SECONDS}
+
+
+@router.post("/2fa/setup", response_model=TotpSetupResponse)
+async def totp_setup(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TotpSetupResponse:
+    """Begin TOTP enrollment: store a fresh (still-disabled) secret and return it
+    plus the otpauth URI for QR display. 2FA is only activated by /2fa/verify."""
+    if current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Two-factor authentication is already enabled",
+        )
+    secret = totp_service.generate_secret()
+    current_user.totp_secret = totp_service.encrypt_secret(secret)
+    await db.commit()
+    return TotpSetupResponse(
+        secret=secret,
+        otpauth_uri=totp_service.provisioning_uri(secret, current_user.email),
+    )
+
+
+@router.post("/2fa/verify", response_model=UserOut)
+async def totp_verify(
+    body: TotpCodeRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UserOut:
+    """Confirm a TOTP code from the authenticator app to activate 2FA."""
+    if current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Two-factor authentication is already enabled",
+        )
+    if not current_user.totp_secret:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Run 2FA setup first")
+    if await totp_locked(str(current_user.id)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many 2FA attempts — try again later.",
+        )
+    if not totp_service.verify(current_user.totp_secret, body.code):
+        await totp_register_failure(str(current_user.id))
+        # 400, not 401 — a 401 trips the global client interceptor and logs the
+        # (authenticated) user out for a mistyped code.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
+    await totp_clear_failures(str(current_user.id))
+    current_user.totp_enabled = True
+    await db.commit()
+    await db.refresh(current_user)
+    return UserOut.model_validate(current_user)
+
+
+@router.delete("/2fa", response_model=UserOut)
+async def totp_disable(
+    body: TotpCodeRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UserOut:
+    """Disable 2FA — requires a current TOTP code (guards against session takeover)."""
+    if not current_user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Two-factor authentication is not enabled",
+        )
+    if await totp_locked(str(current_user.id)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many 2FA attempts — try again later.",
+        )
+    if not totp_service.verify(current_user.totp_secret, body.code):
+        await totp_register_failure(str(current_user.id))
+        # 400, not 401 — avoids the global interceptor logging the user out, and
+        # the per-user lockout makes brute-forcing the disable endpoint impractical.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
+    await totp_clear_failures(str(current_user.id))
+    current_user.totp_enabled = False
+    current_user.totp_secret = None
+    await db.commit()
+    await db.refresh(current_user)
+    return UserOut.model_validate(current_user)

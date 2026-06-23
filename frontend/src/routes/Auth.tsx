@@ -29,6 +29,8 @@ export default function Auth() {
   const [language, setLanguage] = useState("en")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [totpCode, setTotpCode] = useState("")
+  const [totpRequired, setTotpRequired] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -37,7 +39,7 @@ export default function Auth() {
     try {
       const result =
         mode === "login"
-          ? await login({ email, password })
+          ? await login({ email, password, totp_code: totpRequired ? totpCode : undefined })
           : await register({ email, password, name, preferred_language: language })
 
       // Persist language choice in i18n
@@ -47,12 +49,19 @@ export default function Auth() {
       setAuth(result.user, result.access_token)
       navigate("/dashboard", { replace: true })
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-            t("common.error")
-      setError(msg)
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      if (mode === "login" && detail === "TOTP code required") {
+        // 2FA challenge — reveal the code field (only show an error if a code was tried).
+        setTotpRequired(true)
+        if (totpCode) {
+          setError("Invalid authentication code.")
+          setTotpCode("") // codes roll every 30s — clear the stale one for a fresh entry
+        } else {
+          setError("")
+        }
+      } else {
+        setError(detail ?? (err instanceof Error ? err.message : t("common.error")))
+      }
     } finally {
       setLoading(false)
     }
@@ -120,6 +129,28 @@ export default function Auth() {
               />
             </div>
 
+            {mode === "login" && totpRequired && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  Authentication code
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  autoFocus
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="123456"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring font-mono tracking-widest"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Enter the 6-digit code from your authenticator app.
+                </p>
+              </div>
+            )}
+
             {mode === "register" && (
               <div>
                 <label className="mb-1 block text-sm font-medium text-foreground">
@@ -161,7 +192,12 @@ export default function Auth() {
             <>
               Don&apos;t have an account?{" "}
               <button
-                onClick={() => setMode("register")}
+                onClick={() => {
+                  setMode("register")
+                  setTotpRequired(false)
+                  setTotpCode("")
+                  setError("")
+                }}
                 className="font-medium text-foreground underline-offset-2 hover:underline"
               >
                 {t("auth.register")}
@@ -171,7 +207,12 @@ export default function Auth() {
             <>
               Already have an account?{" "}
               <button
-                onClick={() => setMode("login")}
+                onClick={() => {
+                  setMode("login")
+                  setTotpRequired(false)
+                  setTotpCode("")
+                  setError("")
+                }}
                 className="font-medium text-foreground underline-offset-2 hover:underline"
               >
                 {t("auth.login")}

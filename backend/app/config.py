@@ -37,12 +37,16 @@ class Settings(BaseSettings):
 
     # Rate limiting (Update 14)
     RATE_LIMIT_ENABLED: bool = True
-    LOGIN_RATE_LIMIT: str = "5/minute"      # per IP
+    LOGIN_RATE_LIMIT: str = "10/minute"     # per IP (2FA login is a 2-request flow)
     REGISTER_RATE_LIMIT: str = "3/minute"   # per IP
     COMMAND_RATE_PER_MIN: int = 30          # per user+server, WebSocket exec (rule 8)
 
     # WebSocket auth ticket (Update 14.6) — short-lived, single-use
     WS_TICKET_TTL_SECONDS: int = 30
+
+    # 2FA / TOTP (Update 14.3) — per-user failed-attempt lockout on login
+    TOTP_MAX_FAILURES: int = 10
+    TOTP_LOCKOUT_SECONDS: int = 900
 
     # CORS
     ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]

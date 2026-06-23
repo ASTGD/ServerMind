@@ -100,3 +100,14 @@ Services `postgres:16` + `redis:7`; steps: install → `alembic upgrade head` �
 
 ## Rollout
 Flags off → on per environment, in order: hard-fail keys → rate limit → WS ticket → 2FA (opt-in) → `REQUIRE_EMAIL_VERIFICATION` last (after SMTP verified in prod).
+
+---
+
+## 14.3 — Shipped (2FA / TOTP)
+Built via a design workflow → implement → 4-lens adversarial-review workflow (verified each finding). **Shipped:** `totp_service` (pyotp, AES-GCM-encrypted secret); `POST /2fa/setup` (pending secret), `POST /2fa/verify` (activates), `DELETE /2fa` (requires a code); login gate (single `401 "TOTP code required"`); `valid_window=1`; per-user failed-attempt lockout (`totp:fail:{uid}`, 10/900s) on **login, verify, and disable**; Settings QR enroll/disable UI; login TOTP field. Review fixes applied: throttle on verify/disable (not just login), invalid-code returns **400 not 401** (a 401 trips the global interceptor → logout), `LOGIN_RATE_LIMIT` raised to 10/min (2FA login is a 2-request flow), stale code cleared on retry.
+
+**Deferred follow-ups (tracked, accepted risk):**
+- **TOTP replay** — a valid code is reusable within its ~90s window (no single-use timestep cache). Mitigation: record the last consumed timestep per user in Redis. Deferred to avoid added state on the hot login path.
+- **Recovery/backup codes** — none yet, so a lost authenticator = admin/DB reset. Needs a small migration (hashed one-time codes).
+- **`token_version` bump on enable/disable** — enabling 2FA does not invalidate other live sessions / pre-2FA refresh tokens (would require token re-issue to avoid logging out the current session).
+- **Per-IP login limit behind a proxy** — keys off the proxy IP until `X-Forwarded-For` is trusted (the per-user TOTP lockout is the real control).

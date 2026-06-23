@@ -43,3 +43,43 @@ async def check_command_rate(user_id: str, server_id: str) -> bool:
     except Exception as exc:  # noqa: BLE001 — never let rate limiting break execution
         logger.warning("Command rate-limit check failed (allowing): %s", exc)
         return True
+
+
+# ── TOTP login brute-force lockout (per user) ─────────────────────────────────
+# A 6-digit code is a small space, so the per-IP slowapi login limit isn't enough
+# against rotating IPs. We add a per-user failed-attempt counter. Fail-OPEN on
+# Redis errors (the per-IP slowapi limit remains the hard floor).
+
+def _totp_key(user_id: str) -> str:
+    return f"totp:fail:{user_id}"
+
+
+async def totp_locked(user_id: str) -> bool:
+    """True if the user has exceeded TOTP_MAX_FAILURES within the lockout window."""
+    if not settings.RATE_LIMIT_ENABLED:
+        return False
+    try:
+        n = await get_redis().get(_totp_key(user_id))
+        return n is not None and int(n) >= settings.TOTP_MAX_FAILURES
+    except Exception as exc:  # noqa: BLE001 — fail open
+        logger.warning("TOTP lockout check failed (allowing): %s", exc)
+        return False
+
+
+async def totp_register_failure(user_id: str) -> None:
+    """Record one failed TOTP attempt; starts the lockout window on the first."""
+    try:
+        r = get_redis()
+        n = await r.incr(_totp_key(user_id))
+        if n == 1:
+            await r.expire(_totp_key(user_id), settings.TOTP_LOCKOUT_SECONDS)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("TOTP failure record failed: %s", exc)
+
+
+async def totp_clear_failures(user_id: str) -> None:
+    """Clear the failed-attempt counter after a successful TOTP."""
+    try:
+        await get_redis().delete(_totp_key(user_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("TOTP failure clear failed: %s", exc)
