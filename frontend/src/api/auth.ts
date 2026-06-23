@@ -1,4 +1,5 @@
 import { apiClient } from "./client"
+import { useAuthStore } from "@/store/authStore"
 import type { User } from "@/types"
 
 export interface TokenResponse {
@@ -62,6 +63,27 @@ export async function changePassword(
   new_password: string,
 ): Promise<void> {
   await apiClient.put("/api/auth/password", { current_password, new_password })
+}
+
+/** Mint a short-lived, single-use WebSocket auth ticket. */
+export async function getWsTicket(): Promise<{ ticket: string; expires_in: number }> {
+  const { data } = await apiClient.post<{ ticket: string; expires_in: number }>("/api/auth/ws-ticket")
+  return data
+}
+
+/**
+ * Build the auth query for a WebSocket URL. Prefers a single-use ticket (keeps
+ * the JWT out of the URL / proxy logs); falls back to the access token if the
+ * ticket endpoint is unavailable (e.g. Redis down).
+ */
+export async function wsAuthQuery(): Promise<string> {
+  try {
+    const { ticket } = await getWsTicket()
+    return `ticket=${encodeURIComponent(ticket)}`
+  } catch {
+    const token = useAuthStore.getState().token
+    return `token=${encodeURIComponent(token ?? "")}`
+  }
 }
 
 /** Logout — clears tokens on client side. */

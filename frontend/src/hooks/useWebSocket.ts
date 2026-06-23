@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react"
-import { useAuthStore } from "@/store/authStore"
+import { wsAuthQuery } from "@/api/auth"
 
 export type WSStatus = "connecting" | "open" | "closed" | "error"
 
@@ -30,40 +30,44 @@ const WS_BASE = resolveWsBase()
 
 export function useWebSocket(path: string, options: Options) {
   const { onMessage, onOpen, onClose } = options
-  const token = useAuthStore.getState().token
   const wsRef = useRef<WebSocket | null>(null)
   const [status, setStatus] = useState<WSStatus>("connecting")
 
   useEffect(() => {
-    const url = `${WS_BASE}${path}?token=${token ?? ""}`
-    const ws = new WebSocket(url)
-    wsRef.current = ws
+    let cancelled = false
     setStatus("connecting")
 
-    ws.onopen = () => {
-      setStatus("open")
-      onOpen?.()
-    }
+    // Fetch a single-use ticket (falls back to the token) before connecting, so
+    // the JWT doesn't ride in the WebSocket URL.
+    void (async () => {
+      const q = await wsAuthQuery()
+      if (cancelled) return
+      const ws = new WebSocket(`${WS_BASE}${path}?${q}`)
+      wsRef.current = ws
 
-    ws.onmessage = (event) => {
-      try {
-        onMessage(JSON.parse(event.data as string))
-      } catch {
-        onMessage(event.data)
+      ws.onopen = () => {
+        setStatus("open")
+        onOpen?.()
       }
-    }
-
-    ws.onclose = () => {
-      setStatus("closed")
-      onClose?.()
-    }
-
-    ws.onerror = () => {
-      setStatus("error")
-    }
+      ws.onmessage = (event) => {
+        try {
+          onMessage(JSON.parse(event.data as string))
+        } catch {
+          onMessage(event.data)
+        }
+      }
+      ws.onclose = () => {
+        setStatus("closed")
+        onClose?.()
+      }
+      ws.onerror = () => {
+        setStatus("error")
+      }
+    })()
 
     return () => {
-      ws.close()
+      cancelled = true
+      wsRef.current?.close()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path])

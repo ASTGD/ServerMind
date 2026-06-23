@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 
+import secrets
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -23,6 +24,7 @@ from app.services.auth_service import (
 )
 from app.config import settings
 from app.services.rate_limit_service import limiter
+from app.services.redis_service import get_redis
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -200,3 +202,21 @@ async def update_language(
     await db.commit()
     await db.refresh(current_user)
     return UserOut.model_validate(current_user)
+
+
+@router.post("/ws-ticket")
+async def ws_ticket(current_user: User = Depends(get_current_user)) -> dict:
+    """Mint a short-lived, single-use ticket to authenticate a WebSocket
+    connection — keeps the JWT out of the WS URL and proxy logs (Update 14.6)."""
+    ticket = secrets.token_urlsafe(32)
+    try:
+        await get_redis().setex(
+            f"ws_ticket:{ticket}", settings.WS_TICKET_TTL_SECONDS, str(current_user.id)
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ws-ticket mint failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ticket service unavailable",
+        )
+    return {"ticket": ticket, "expires_in": settings.WS_TICKET_TTL_SECONDS}

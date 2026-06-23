@@ -5,6 +5,7 @@ import {
 } from "lucide-react"
 import type { PlaybookAccessInfo, PlaybookDetail, Server } from "@/types"
 import { useAuthStore } from "@/store/authStore"
+import { wsAuthQuery } from "@/api/auth"
 
 /**
  * WebSocket base URL — derived from the page origin so the modal works from
@@ -201,7 +202,7 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
     }
   }, [stopTick])
 
-  const handleRun = useCallback(() => {
+  const handleRun = useCallback(async () => {
     if (!serverId || !token) return
     const missingRequired = (playbook.variables ?? []).filter(
       (v) => v.required && !vars[v.name]?.trim()
@@ -226,7 +227,8 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
       setElapsed((Date.now() - startRef.current) / 1000)
     }, 1000)
 
-    const ws = new WebSocket(`${WS_BASE}/ws/playbook-run/${serverId}?token=${token}`)
+    const q = await wsAuthQuery()
+    const ws = new WebSocket(`${WS_BASE}/ws/playbook-run/${serverId}?${q}`)
     wsRef.current = ws
 
     ws.onopen = () => {

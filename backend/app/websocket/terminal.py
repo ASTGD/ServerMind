@@ -21,6 +21,7 @@ from app.models.user import User
 from app.services import ai_service, connection_manager, safety_service
 from app.services import ssh_service, team_service
 from app.services.rate_limit_service import check_command_rate
+from app.services.redis_service import get_redis
 from app.services.playbook_service import substitute_variables
 from app.services.auth_service import decode_token
 
@@ -33,18 +34,31 @@ _pty_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="pty")
 # ── Auth helper ───────────────────────────────────────────────────────────────
 
 async def _auth_and_get_server(
-    token: str, server_id: str, *, need_execute: bool = False
-) -> Server | None:
-    """Decode JWT and return the server the user may access.
+    token: str, ticket: str, server_id: str, *, need_execute: bool = False
+) -> tuple[User, Server] | None:
+    """Authenticate a WebSocket and return (user, server) the user may access.
 
-    Resolves ownership *or* team access. When ``need_execute`` is set, the user
-    must have execute permission (owners/admins/operators-with-grant) — viewers
-    are rejected (CLAUDE.md security rule 7).
+    Prefers a single-use Redis ``ticket`` (keeps the JWT out of the URL); falls
+    back to a JWT ``token`` in the query string (deprecated). Resolves ownership
+    *or* team access. When ``need_execute`` is set the user must have execute
+    permission — viewers are rejected (CLAUDE.md rule 7).
     """
-    payload = decode_token(token)
-    if not payload or payload.get("type") != "access":
+    via_ticket = bool(ticket)
+    token_tv = 0
+    if via_ticket:
+        try:
+            user_id = await get_redis().getdel(f"ws_ticket:{ticket}")
+        except Exception:  # noqa: BLE001 — no Redis ⇒ can't validate a ticket
+            user_id = None
+    else:
+        payload = decode_token(token)
+        if not payload or payload.get("type") != "access":
+            return None
+        user_id = payload.get("sub")
+        token_tv = payload.get("tv", 0)
+
+    if not user_id:
         return None
-    user_id = payload.get("sub")
 
     async with AsyncSessionLocal() as db:
         try:
@@ -52,16 +66,16 @@ async def _auth_and_get_server(
         except (ValueError, TypeError):
             return None
         user = (await db.execute(select(User).where(User.id == uid))).scalar_one_or_none()
-        if user is None:
+        if user is None or not user.is_active:
             return None
-        if payload.get("tv", 0) != user.token_version:
+        if not via_ticket and token_tv != user.token_version:
             return None
         access = await team_service.get_access(db, user, server_id)
         if access is None:
             return None
         if need_execute and not access.can_execute:
             return None
-        return access.server
+        return user, access.server
 
 
 # ── Terminal WebSocket ────────────────────────────────────────────────────────
@@ -84,12 +98,14 @@ async def terminal_ws(
     websocket: WebSocket,
     server_id: str,
     token: str = Query(default=""),
+    ticket: str = Query(default=""),
 ) -> None:
     """Bidirectional interactive terminal over WebSocket."""
-    server = await _auth_and_get_server(token, server_id, need_execute=True)
-    if not server:
+    auth = await _auth_and_get_server(token, ticket, server_id, need_execute=True)
+    if not auth:
         await websocket.close(code=4001, reason="Unauthorized")
         return
+    _user, server = auth
 
     # Interactive PTY shells are SSH-only. WinRM/hosting have no PTY — those
     # users should use the AI Chat tab (which streams command execution).
@@ -174,18 +190,18 @@ async def chat_ws(
     websocket: WebSocket,
     server_id: str,
     token: str = Query(default=""),
+    ticket: str = Query(default=""),
 ) -> None:
     """AI chat with streaming command execution."""
-    server = await _auth_and_get_server(token, server_id, need_execute=True)
-    if not server:
+    auth = await _auth_and_get_server(token, ticket, server_id, need_execute=True)
+    if not auth:
         await websocket.close(code=4001, reason="Unauthorized")
         return
-
-    user_id = (decode_token(token) or {}).get("sub", "")
+    user, server = auth
     await websocket.accept()
 
     try:
-        await _chat_loop(websocket, server, user_id)
+        await _chat_loop(websocket, server, str(user.id))
     except WebSocketDisconnect:
         pass
     except Exception as exc:
@@ -413,16 +429,16 @@ async def playbook_run_ws(
     websocket: WebSocket,
     server_id: str,
     token: str = Query(default=""),
+    ticket: str = Query(default=""),
 ) -> None:
     """Stream playbook script execution over WebSocket."""
-    server = await _auth_and_get_server(token, server_id, need_execute=True)
-    if not server:
+    auth = await _auth_and_get_server(token, ticket, server_id, need_execute=True)
+    if not auth:
         await websocket.close(code=4001, reason="Unauthorized")
         return
-
-    user_id = (decode_token(token) or {}).get("sub", "")
+    user, server = auth
     await websocket.accept()
-    if not await check_command_rate(user_id, str(server.id)):
+    if not await check_command_rate(str(user.id), str(server.id)):
         await websocket.send_text(json.dumps({
             "type": "error",
             "message": "Rate limit reached — wait a minute before running more.",

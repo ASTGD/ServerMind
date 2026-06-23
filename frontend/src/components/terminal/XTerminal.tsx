@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react"
 import { Terminal } from "xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
-import { useAuthStore } from "@/store/authStore"
+import { wsAuthQuery } from "@/api/auth"
 
 import "xterm/css/xterm.css"
 
@@ -10,15 +10,22 @@ interface Props {
   serverId: string
 }
 
-const WS_BASE = (import.meta.env.VITE_WS_URL ?? "ws://localhost:8000") as string
+function wsBase(): string {
+  const configured = import.meta.env.VITE_WS_URL as string | undefined
+  if (configured) return configured
+  if (typeof window !== "undefined") {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:"
+    return `${proto}//${window.location.host}`
+  }
+  return "ws://localhost:8888"
+}
+const WS_BASE = wsBase()
 
 export default function XTerminal({ serverId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!containerRef.current) return
-
-    const token = useAuthStore.getState().token ?? ""
 
     const terminal = new Terminal({
       theme: {
@@ -57,42 +64,45 @@ export default function XTerminal({ serverId }: Props) {
     terminal.open(containerRef.current)
     fitAddon.fit()
 
-    // WebSocket connection
-    const ws = new WebSocket(`${WS_BASE}/ws/terminal/${serverId}?token=${token}`)
-    ws.binaryType = "arraybuffer"
+    // WebSocket connection — fetch a single-use ticket first so the JWT stays
+    // out of the URL (falls back to the token if unavailable).
+    let ws: WebSocket | null = null
+    let disposed = false
+    void (async () => {
+      const q = await wsAuthQuery()
+      if (disposed) return
+      ws = new WebSocket(`${WS_BASE}/ws/terminal/${serverId}?${q}`)
+      ws.binaryType = "arraybuffer"
 
-    ws.onopen = () => {
-      terminal.write("\x1b[1;32m✓ Connected\x1b[0m\r\n")
-      // Send initial size
-      ws.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }))
-    }
-
-    ws.onmessage = (e) => {
-      if (e.data instanceof ArrayBuffer) {
-        terminal.write(new Uint8Array(e.data))
-      } else {
-        terminal.write(e.data as string)
+      ws.onopen = () => {
+        terminal.write("\x1b[1;32m✓ Connected\x1b[0m\r\n")
+        ws?.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }))
       }
-    }
-
-    ws.onclose = () => {
-      terminal.write("\r\n\x1b[1;33m⚠ Connection closed\x1b[0m\r\n")
-    }
-
-    ws.onerror = () => {
-      terminal.write("\r\n\x1b[1;31m✗ Connection error\x1b[0m\r\n")
-    }
+      ws.onmessage = (e) => {
+        if (e.data instanceof ArrayBuffer) {
+          terminal.write(new Uint8Array(e.data))
+        } else {
+          terminal.write(e.data as string)
+        }
+      }
+      ws.onclose = () => {
+        terminal.write("\r\n\x1b[1;33m⚠ Connection closed\x1b[0m\r\n")
+      }
+      ws.onerror = () => {
+        terminal.write("\r\n\x1b[1;31m✗ Connection error\x1b[0m\r\n")
+      }
+    })()
 
     // Keyboard input → SSH
     terminal.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "input", data }))
       }
     })
 
     // Resize → SSH PTY
     terminal.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "resize", cols, rows }))
       }
     })
@@ -104,8 +114,9 @@ export default function XTerminal({ serverId }: Props) {
     observer.observe(containerRef.current)
 
     return () => {
+      disposed = true
       observer.disconnect()
-      ws.close()
+      ws?.close()
       terminal.dispose()
     }
   }, [serverId])

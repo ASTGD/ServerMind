@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     REGISTER_RATE_LIMIT: str = "3/minute"   # per IP
     COMMAND_RATE_PER_MIN: int = 30          # per user+server, WebSocket exec (rule 8)
 
+    # WebSocket auth ticket (Update 14.6) — short-lived, single-use
+    WS_TICKET_TTL_SECONDS: int = 30
+
     # CORS
     ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]
 
