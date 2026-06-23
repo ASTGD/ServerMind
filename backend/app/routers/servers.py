@@ -5,7 +5,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -14,7 +14,7 @@ from app.dependencies.auth import get_current_user
 from app.models.server import Server
 from app.models.user import User
 from app.schemas.server import ServerCreate, ServerOut, ServerUpdate
-from app.services import connection_manager, metrics_service, team_service
+from app.services import audit_service, connection_manager, metrics_service, team_service
 from app.services.crypto_service import encrypt
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,7 @@ async def list_servers(
 
 @router.post("", response_model=ServerOut, status_code=status.HTTP_201_CREATED)
 async def create_server(
+    request: Request,
     body: ServerCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -69,6 +70,12 @@ async def create_server(
     db.add(server)
     await db.commit()
     await db.refresh(server)
+    await audit_service.audit(
+        db, current_user, "server.create",
+        target_type="server", target_id=server.id,
+        meta={"name": server.name, "host": server.host, "connection_type": server.connection_type},
+        request=request,
+    )
     logger.info("Server %s created by user %s", server.id, current_user.id)
     return server
 
@@ -106,14 +113,21 @@ async def update_server(
 @router.delete("/{server_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_server(
     server_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> None:
     """Delete a server and close its connection."""
     server = await resolve_server(server_id, current_user, db, need_manage=True)
+    server_name = server.name
     await connection_manager.close(server)
     await db.delete(server)
     await db.commit()
+    await audit_service.audit(
+        db, current_user, "server.delete",
+        target_type="server", target_id=server_id, meta={"name": server_name},
+        request=request,
+    )
     logger.info("Server %s deleted by user %s", server_id, current_user.id)
 
 

@@ -23,7 +23,7 @@ from app.services.auth_service import (
     verify_password,
 )
 from app.config import settings
-from app.services import totp_service
+from app.services import audit_service, totp_service
 from app.services.rate_limit_service import (
     limiter,
     totp_clear_failures,
@@ -123,6 +123,7 @@ async def register(request: Request, body: UserCreate, db: AsyncSession = Depend
     await db.refresh(user)
 
     logger.info("New user registered: %s", user.email)
+    await audit_service.audit(db, user, "auth.register", request=request)
     return TokenResponse(
         access_token=create_access_token(str(user.id), user.token_version),
         refresh_token=create_refresh_token(str(user.id), user.token_version),
@@ -168,6 +169,7 @@ async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends
             )
         await totp_clear_failures(str(user.id))
 
+    await audit_service.audit(db, user, "auth.login", request=request)
     return TokenResponse(
         access_token=create_access_token(str(user.id), user.token_version),
         refresh_token=create_refresh_token(str(user.id), user.token_version),
@@ -202,12 +204,14 @@ async def refresh(body: RefreshRequest, db: AsyncSession = Depends(get_db)) -> T
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Logout — invalidate every token issued to this user by bumping token_version."""
     current_user.token_version += 1
     await db.commit()
+    await audit_service.audit(db, current_user, "auth.logout", request=request)
     return None
 
 
@@ -237,6 +241,7 @@ async def update_me(
 
 @router.put("/password", status_code=status.HTTP_204_NO_CONTENT)
 async def change_password(
+    request: Request,
     body: PasswordChangeRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -246,6 +251,7 @@ async def change_password(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password incorrect")
     current_user.password_hash = hash_password(body.new_password)
     await db.commit()
+    await audit_service.audit(db, current_user, "auth.password_change", request=request)
 
 
 @router.put("/language", response_model=UserOut)
@@ -305,6 +311,7 @@ async def totp_setup(
 
 @router.post("/2fa/verify", response_model=TotpVerifyResponse)
 async def totp_verify(
+    request: Request,
     body: TotpCodeRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -333,6 +340,7 @@ async def totp_verify(
     current_user.totp_enabled = True
     await db.commit()
     await db.refresh(current_user)
+    await audit_service.audit(db, current_user, "auth.2fa_enabled", request=request)
     return TotpVerifyResponse(
         user=UserOut.model_validate(current_user),
         recovery_codes=recovery,
@@ -341,6 +349,7 @@ async def totp_verify(
 
 @router.delete("/2fa", response_model=UserOut)
 async def totp_disable(
+    request: Request,
     body: TotpCodeRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -370,11 +379,13 @@ async def totp_disable(
     current_user.totp_recovery_codes = None
     await db.commit()
     await db.refresh(current_user)
+    await audit_service.audit(db, current_user, "auth.2fa_disabled", request=request)
     return UserOut.model_validate(current_user)
 
 
 @router.post("/2fa/recovery-codes", response_model=RecoveryCodesResponse)
 async def regenerate_recovery_codes(
+    request: Request,
     body: TotpCodeRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -398,4 +409,5 @@ async def regenerate_recovery_codes(
     recovery = totp_service.generate_recovery_codes()
     current_user.totp_recovery_codes = [totp_service.hash_code(c) for c in recovery]
     await db.commit()
+    await audit_service.audit(db, current_user, "auth.2fa_recovery_regenerated", request=request)
     return RecoveryCodesResponse(recovery_codes=recovery)

@@ -127,3 +127,14 @@ CI (`.github/workflows/ci.yml`): backend `pytest` + frontend `tsc --noEmit` + `n
 **🔒 Security fix surfaced by these tests:** the Windows blocklist path patterns were over-escaped (`C:\\\\` → the regex required a *double* backslash), so real single-backslash commands — `Remove-Item C:\Windows`, `del /f /s /q C:\Windows`, `rd /s /q C:\` — were **not blocked**. Fixed and covered by `test_safety`.
 
 **Follow-up (not this pass):** DB-backed integration tests (httpx + Postgres fixtures + a Postgres service in CI) for the RBAC "viewer can never execute" invariant and the auth/2FA endpoints end-to-end.
+
+---
+
+## 14.5 — Shipped (audit log)
+New `audit_logs` table (migration 013) + `audit_service.audit()` — best-effort (never raises into the caller; rolls back on failure), captures IP (honours `X-Forwarded-For`) + user-agent. `meta` holds only non-sensitive context — never secrets/codes.
+
+**Instrumented events:** `auth.login` / `logout` / `register` / `password_change` / `2fa_enabled` / `2fa_disabled` / `2fa_recovery_regenerated`; `server.create` / `server.delete`; `team.invite` / `team.role_change` / `team.remove`.
+
+`GET /api/audit` returns the user's own events (newest first, ≤200). Settings shows a **Recent security activity** list (action, IP, relative time).
+
+**Follow-up:** admin/team-wide audit view (currently each user sees only their own events); retention/pruning of old rows.

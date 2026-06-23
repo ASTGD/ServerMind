@@ -178,6 +178,17 @@ export interface GenerateScriptResult {
   saved_id: string | null
 }
 
+export interface AuditEntry {
+  id: string
+  action: string
+  target_type: string | null
+  target_id: string | null
+  meta: Record<string, unknown> | null
+  ip: string | null
+  user_agent: string | null
+  created_at: string
+}
+
 export interface ActivityItem {
   id: string
   kind: "command" | "playbook"

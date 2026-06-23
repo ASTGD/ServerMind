@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -18,7 +18,7 @@ from app.schemas.team import (
     TeamMemberOut,
     TeamMemberUpdate,
 )
-from app.services import team_service
+from app.services import audit_service, team_service
 
 router = APIRouter(prefix="/api/team", tags=["team"])
 logger = logging.getLogger(__name__)
@@ -46,19 +46,27 @@ async def list_team(db: DBDep, current_user: CurrentUser) -> list[TeamMemberOut]
 
 @router.post("/invite", response_model=TeamMemberOut, status_code=201)
 async def invite_member(
+    request: Request,
     body: TeamInvite,
     db: DBDep,
     current_user: CurrentUser,
 ) -> TeamMemberOut:
     """Invite someone by email with a role. Returns the invite (incl. token)."""
     _validate_role(body.role)
-    member = await team_service.invite(db, current_user, body.email.strip().lower(), body.role)
+    email = body.email.strip().lower()
+    member = await team_service.invite(db, current_user, email, body.role)
+    await audit_service.audit(
+        db, current_user, "team.invite",
+        target_type="team_member", target_id=member.id,
+        meta={"email": email, "role": body.role}, request=request,
+    )
     return TeamMemberOut.model_validate(member)
 
 
 @router.put("/{member_id}", response_model=TeamMemberOut)
 async def update_member(
     member_id: str,
+    request: Request,
     body: TeamMemberUpdate,
     db: DBDep,
     current_user: CurrentUser,
@@ -71,12 +79,18 @@ async def update_member(
     member.role = body.role
     await db.commit()
     await db.refresh(member)
+    await audit_service.audit(
+        db, current_user, "team.role_change",
+        target_type="team_member", target_id=member_id, meta={"role": body.role},
+        request=request,
+    )
     return TeamMemberOut.model_validate(member)
 
 
 @router.delete("/{member_id}", status_code=204)
 async def delete_member(
     member_id: str,
+    request: Request,
     db: DBDep,
     current_user: CurrentUser,
 ) -> None:
@@ -85,6 +99,10 @@ async def delete_member(
     if not member:
         raise HTTPException(status_code=404, detail="Team member not found")
     await team_service.remove_member(db, member)
+    await audit_service.audit(
+        db, current_user, "team.remove",
+        target_type="team_member", target_id=member_id, request=request,
+    )
 
 
 # ── Per-server access ───────────────────────────────────────────────────────

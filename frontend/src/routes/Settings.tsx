@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react"
-import { useMutation } from "@tanstack/react-query"
-import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, Check, Loader2 } from "lucide-react"
+import { useMutation, useQuery } from "@tanstack/react-query"
+import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, History, Check, Loader2 } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
+import { listAudit } from "@/api/audit"
 import {
   updateProfile, updateLanguage, changePassword,
   setup2fa, verify2fa, disable2fa, regenerateRecoveryCodes, type TotpSetupResponse,
@@ -20,6 +21,33 @@ const LANGUAGES = [
   { code: "pt", label: "Português" },
   { code: "tr", label: "Türkçe" },
 ]
+
+const ACTION_LABELS: Record<string, string> = {
+  "auth.login": "Signed in",
+  "auth.logout": "Signed out",
+  "auth.register": "Account created",
+  "auth.password_change": "Password changed",
+  "auth.2fa_enabled": "Two-factor enabled",
+  "auth.2fa_disabled": "Two-factor disabled",
+  "auth.2fa_recovery_regenerated": "Recovery codes regenerated",
+  "server.create": "Server added",
+  "server.delete": "Server removed",
+  "team.invite": "Team member invited",
+  "team.role_change": "Team role changed",
+  "team.remove": "Team member removed",
+}
+
+function timeAgo(iso: string): string {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
+  if (s < 60) return "just now"
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.floor(h / 24)
+  if (d < 30) return `${d}d ago`
+  return new Date(iso).toLocaleDateString()
+}
 
 function errMsg(e: unknown): string {
   const ax = e as { response?: { data?: { detail?: string } } }
@@ -176,6 +204,11 @@ export default function Settings() {
       setTimeout(() => setTwoFAMsg(""), 3000)
     },
     onError: (e) => setTwoFAErr(errMsg(e)),
+  })
+
+  const { data: audit = [] } = useQuery({
+    queryKey: ["audit"],
+    queryFn: () => listAudit(25),
   })
 
   if (!user) return null
@@ -551,6 +584,30 @@ export default function Settings() {
     </Section>
   )
 
+  const auditSection = (
+    <Section
+      icon={History}
+      title="Recent security activity"
+      description="Sign-ins and account changes on your account."
+    >
+      {audit.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No recent activity.</p>
+      ) : (
+        <ul className="divide-y divide-border text-sm">
+          {audit.map((e) => (
+            <li key={e.id} className="flex items-center justify-between gap-3 py-2">
+              <span className="text-foreground">{ACTION_LABELS[e.action] ?? e.action}</span>
+              <span className="flex items-center gap-3 text-xs text-muted-foreground">
+                {e.ip && <span className="font-mono">{e.ip}</span>}
+                <span className="tabular-nums">{timeAgo(e.created_at)}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  )
+
   return (
     <div className="space-y-6">
       <div>
@@ -569,6 +626,8 @@ export default function Settings() {
           {twoFactorSection}
         </div>
       </div>
+
+      {auditSection}
     </div>
   )
 }
