@@ -20,6 +20,19 @@ _executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="ssh")
 _pool: dict[str, paramiko.SSHClient] = {}
 
 
+class CommandError(Exception):
+    """Raised when a streamed command finishes with a non-zero exit status.
+
+    Lets callers (playbook runner, AI chat) detect script failure even though
+    the output streamed fine — a non-zero shell exit is a failure, not an I/O
+    error. ``winrm_service`` imports and raises this too for parity.
+    """
+
+    def __init__(self, exit_code: int) -> None:
+        self.exit_code = exit_code
+        super().__init__(f"command exited with status {exit_code}")
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _make_client(host: str, port: int, username: str, auth_type: str, credential: str) -> paramiko.SSHClient:
@@ -101,12 +114,18 @@ async def execute_stream(server_id: str, host: str, port: int, username: str, au
     credential = decrypt(encrypted_cred)
     loop = asyncio.get_event_loop()
     queue: asyncio.Queue[str | None] = asyncio.Queue()
+    result: dict[str, int | None] = {"exit_code": None}
 
     def _stream() -> None:
         try:
             client = _get_client(server_id, host, port, username, auth_type, credential)
             transport = client.get_transport()
             channel = transport.open_session()
+            # Merge stderr into the same stream. Installers (apt, pip, etc.) write
+            # most of their progress to stderr — without this the live output looks
+            # frozen until the final stdout line. This mirrors what a real terminal
+            # shows (interleaved stdout + stderr).
+            channel.set_combine_stderr(True)
             channel.exec_command(command)
             channel.settimeout(0.5)
 
@@ -125,6 +144,9 @@ async def execute_stream(server_id: str, host: str, port: int, username: str, au
                     pass
             if buf:
                 loop.call_soon_threadsafe(queue.put_nowait, buf.decode(errors="replace"))
+            # Capture the script's exit status so the caller can tell success
+            # from failure (e.g. a command-not-found mid-script exits non-zero).
+            result["exit_code"] = channel.recv_exit_status()
         except Exception as exc:
             loop.call_soon_threadsafe(queue.put_nowait, f"ERROR: {exc}")
         finally:
@@ -137,6 +159,10 @@ async def execute_stream(server_id: str, host: str, port: int, username: str, au
         if item is None:
             break
         yield item
+
+    code = result["exit_code"]
+    if code is not None and code != 0:
+        raise CommandError(code)
 
 
 async def close(server_id: str) -> None:

@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 import winrm
 
 from app.services.crypto_service import decrypt
+from app.services.ssh_service import CommandError
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +132,7 @@ async def execute_stream(
     command completes, then its output lines are yielded. The async-iterator
     contract matches ssh_service so callers are unchanged.
     """
-    out, err, _code = await execute(
+    out, err, code = await execute(
         server_id, host, port, username, auth_type, encrypted_cred, command
     )
     for line in out.splitlines():
@@ -139,6 +140,9 @@ async def execute_stream(
     if err.strip():
         for line in err.splitlines():
             yield line
+    # Surface a non-zero exit as a failure (parity with ssh_service).
+    if code != 0:
+        raise CommandError(code)
 
 
 async def close(server_id: str) -> None:

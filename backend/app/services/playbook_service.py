@@ -10,6 +10,45 @@ from app.models.playbook import Playbook
 
 logger = logging.getLogger(__name__)
 
+# ── Docker dependency preamble ────────────────────────────────────────────────
+# Docker-based playbooks shouldn't fail just because Docker isn't installed yet —
+# a non-technical user shouldn't need to know about that dependency. Any playbook
+# flagged ``"needs_docker": True`` gets this idempotent block injected right after
+# its ``set -euo pipefail`` line: it installs Docker first if missing, otherwise
+# prints the existing version and moves on.
+_ENSURE_DOCKER = (
+    "ensure_docker() {\n"
+    "  if command -v docker >/dev/null 2>&1; then\n"
+    '    echo ">>> Docker already installed: $(docker --version)"\n'
+    "    return 0\n"
+    "  fi\n"
+    '  echo ">>> Docker not found — installing it first (this can take a minute)..."\n'
+    "  curl -fsSL https://get.docker.com | sh\n"
+    "  systemctl enable --now docker\n"
+    '  echo ">>> Docker ready: $(docker --version)"\n'
+    "}\n"
+    "ensure_docker\n"
+)
+
+
+def _with_docker(script: str) -> str:
+    """Inject the ensure_docker preamble after the ``set -euo pipefail`` line."""
+    marker = "set -euo pipefail\n"
+    idx = script.find(marker)
+    if idx == -1:
+        return _ENSURE_DOCKER + script
+    cut = idx + len(marker)
+    return script[:cut] + _ENSURE_DOCKER + script[cut:]
+
+
+def _script_for(item: dict) -> str | None:
+    """Resolve a playbook's bash script, adding the Docker preamble if needed."""
+    script = item.get("script_bash")
+    if script and item.get("needs_docker"):
+        return _with_docker(script)
+    return script
+
+
 # ── Official playbook definitions ─────────────────────────────────────────────
 
 OFFICIAL_PLAYBOOKS: list[dict] = [
@@ -594,6 +633,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
 
     {
         "slug": "portainer",
+        "needs_docker": True,
         "title": "Portainer (Docker Management UI)",
         "description": "Installs Portainer CE for managing Docker containers via a web UI.",
         "category": "deployment",
@@ -608,7 +648,6 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
             "#!/bin/bash\n"
             "set -euo pipefail\n"
             'PORT="{{PORT}}"\n'
-            "command -v docker &>/dev/null || { echo 'Docker required. Run the Docker playbook first.'; exit 1; }\n"
             "docker volume create portainer_data 2>/dev/null || true\n"
             "docker stop portainer 2>/dev/null || true; docker rm portainer 2>/dev/null || true\n"
             'docker run -d --name portainer --restart=always -p "${PORT}:9443" -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:latest\n'
@@ -618,6 +657,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
 
     {
         "slug": "uptime-kuma",
+        "needs_docker": True,
         "title": "Uptime Kuma (Self-hosted Monitoring)",
         "description": "Installs Uptime Kuma for monitoring websites and services.",
         "category": "deployment",
@@ -640,6 +680,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
 
     {
         "slug": "ghost-cms",
+        "needs_docker": True,
         "title": "Ghost CMS",
         "description": "Installs Ghost CMS using Docker with Nginx reverse proxy.",
         "category": "deployment",
@@ -663,6 +704,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
 
     {
         "slug": "nextcloud",
+        "needs_docker": True,
         "title": "Nextcloud",
         "description": "Installs Nextcloud self-hosted cloud storage using Docker.",
         "category": "deployment",
@@ -688,6 +730,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
 
     {
         "slug": "gitea",
+        "needs_docker": True,
         "title": "Gitea (Self-hosted Git)",
         "description": "Installs Gitea — a lightweight self-hosted Git service.",
         "category": "deployment",
@@ -711,6 +754,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
 
     {
         "slug": "n8n",
+        "needs_docker": True,
         "title": "n8n (Workflow Automation)",
         "description": "Installs n8n self-hosted workflow automation using Docker.",
         "category": "deployment",
@@ -734,6 +778,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
 
     {
         "slug": "vaultwarden",
+        "needs_docker": True,
         "title": "Vaultwarden (Bitwarden-compatible)",
         "description": "Installs Vaultwarden, a lightweight Bitwarden-compatible password manager.",
         "category": "deployment",
@@ -815,6 +860,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
 
     {
         "slug": "prometheus-grafana",
+        "needs_docker": True,
         "title": "Prometheus + Grafana Stack",
         "description": "Deploys Prometheus + Node Exporter + Grafana via Docker Compose.",
         "category": "monitoring",
@@ -1181,6 +1227,25 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
 
 # ── Seed function ─────────────────────────────────────────────────────────────
 
+def _build_playbook(item: dict) -> Playbook:
+    """Construct a Playbook row from a definition (without mutating it)."""
+    return Playbook(
+        slug=item["slug"],
+        title=item["title"],
+        description=item.get("description"),
+        category=item.get("category"),
+        os_family=item.get("os_family"),
+        script_type=item.get("script_type"),
+        est_runtime_sec=item.get("est_runtime_sec"),
+        tags=item.get("tags"),
+        variables=item.get("variables", []),
+        script_bash=_script_for(item),
+        script_powershell=item.get("script_powershell"),
+        is_official=True,
+        is_public=True,
+    )
+
+
 async def seed_if_empty(db: AsyncSession) -> None:
     """Seed official playbooks if the table is empty."""
     result = await db.execute(select(Playbook).limit(1))
@@ -1188,22 +1253,33 @@ async def seed_if_empty(db: AsyncSession) -> None:
         return
 
     logger.info("Seeding %d official playbooks...", len(OFFICIAL_PLAYBOOKS))
-    for data in OFFICIAL_PLAYBOOKS:
-        variables = data.pop("variables", [])
-        script_bash = data.pop("script_bash", None)
-        script_powershell = data.pop("script_powershell", None)
-        playbook = Playbook(
-            **data,
-            script_bash=script_bash,
-            script_powershell=script_powershell,
-            variables=variables,
-            is_official=True,
-            is_public=True,
-        )
-        db.add(playbook)
+    for item in OFFICIAL_PLAYBOOKS:
+        db.add(_build_playbook(item))
 
     await db.commit()
     logger.info("Playbook seed complete.")
+
+
+async def resync_official_scripts(db: AsyncSession) -> int:
+    """Update already-seeded official playbooks' scripts to match the current
+    definitions (matched by slug). Use after editing a playbook's script — e.g.
+    adding the Docker preamble. Preserves run_count/rating. Returns rows updated.
+    """
+    from sqlalchemy import update as sa_update
+
+    updated = 0
+    for item in OFFICIAL_PLAYBOOKS:
+        res = await db.execute(
+            sa_update(Playbook)
+            .where(Playbook.slug == item["slug"])
+            .values(
+                script_bash=_script_for(item),
+                script_powershell=item.get("script_powershell"),
+            )
+        )
+        updated += res.rowcount or 0
+    await db.commit()
+    return updated
 
 
 def substitute_variables(script: str, variables: dict) -> str:
