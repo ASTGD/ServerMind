@@ -10,7 +10,7 @@ Day-to-day guide for running ServerMind on this machine.
 | Service | Port | URL | Notes |
 |---|---|---|---|
 | Frontend (Vite) | **5190** | http://localhost:5190 · http://192.168.1.136:5190 (LAN) | Dedicated port; 5173 is used by another local project |
-| Backend (FastAPI) | **8000** | http://localhost:8000 · /docs · /health | uvicorn with auto-reload |
+| Backend (FastAPI) | **8888** | http://localhost:8888 · /docs · /health | uvicorn with auto-reload; 8000 is used by another local project |
 | PostgreSQL | **5432** | localhost:5432 | Docker container `servermind_postgres` (data in a named volume) |
 | Redis | 6379 | localhost:6379 | Optional today (scheduler is in-process); a shared redis on 6379 is fine |
 
@@ -32,7 +32,7 @@ docker compose up -d postgres
 ```bash
 cd /Users/shafin/Documents/ServerMind/backend
 source venv/bin/activate
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8888
 ```
 
 **Terminal 3 — Frontend**
@@ -57,7 +57,7 @@ docker compose down
 
 To stop a server whose terminal you've lost:
 ```bash
-lsof -nP -iTCP:8000 -sTCP:LISTEN | awk 'NR>1{print $2}' | xargs kill   # backend
+lsof -nP -iTCP:8888 -sTCP:LISTEN | awk 'NR>1{print $2}' | xargs kill   # backend
 lsof -nP -iTCP:5190 -sTCP:LISTEN | awk 'NR>1{print $2}' | xargs kill   # frontend
 ```
 
@@ -67,7 +67,7 @@ lsof -nP -iTCP:5190 -sTCP:LISTEN | awk 'NR>1{print $2}' | xargs kill   # fronten
 
 ```bash
 docker ps --format '{{.Names}}  {{.Status}}' | grep servermind      # is the DB up?
-curl -s http://localhost:8000/health                                # {"status":"ok",...}
+curl -s http://localhost:8888/health                                # {"status":"ok",...}
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5190/     # 200 = frontend up
 ```
 

@@ -2,7 +2,9 @@ import axios from "axios"
 import { useAuthStore } from "@/store/authStore"
 
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? "http://localhost:8000",
+  // Empty string → relative URLs, proxied by Vite to the backend.
+  // Works from any host (localhost, LAN IP) without rebuilding.
+  baseURL: import.meta.env.VITE_API_URL || "",
   timeout: 30_000,
 })
 

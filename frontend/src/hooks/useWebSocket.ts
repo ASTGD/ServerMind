@@ -9,7 +9,24 @@ interface Options {
   onClose?: () => void
 }
 
-const WS_BASE = (import.meta.env.VITE_WS_URL ?? "ws://localhost:8000") as string
+/**
+ * WebSocket base URL.
+ * - If VITE_WS_URL is set (non-empty), use it (e.g. production wss://domain).
+ * - Otherwise derive it from the current page origin, so the app works on
+ *   localhost, a LAN IP, or any host without rebuilding. The Vite dev server
+ *   (and the prod nginx) proxy /ws/* to the backend.
+ */
+function resolveWsBase(): string {
+  const configured = import.meta.env.VITE_WS_URL as string | undefined
+  if (configured) return configured
+  if (typeof window !== "undefined") {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:"
+    return `${proto}//${window.location.host}`
+  }
+  return "ws://localhost:8000"
+}
+
+const WS_BASE = resolveWsBase()
 
 export function useWebSocket(path: string, options: Options) {
   const { onMessage, onOpen, onClose } = options
