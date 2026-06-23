@@ -29,6 +29,7 @@ class PlaybookOut(BaseModel):
 class PlaybookDetailOut(PlaybookOut):
     script_bash: str | None
     script_powershell: str | None
+    access_info: dict | None = None
 
 
 class PlaybookRunOut(BaseModel):

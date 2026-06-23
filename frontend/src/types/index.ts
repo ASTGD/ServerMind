@@ -102,9 +102,18 @@ export interface Playbook {
   created_at: string
 }
 
+export interface PlaybookAccessInfo {
+  name?: string
+  url?: string
+  username?: string
+  password?: string
+  note?: string
+}
+
 export interface PlaybookDetail extends Playbook {
   script_bash: string | null
   script_powershell: string | null
+  access_info: PlaybookAccessInfo | null
 }
 
 export interface PlaybookRun {

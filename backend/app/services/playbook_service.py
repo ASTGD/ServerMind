@@ -584,6 +584,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
 
     {
         "slug": "wordpress",
+        "access": {"name": "WordPress", "url": "https://{{DOMAIN}}/wp-admin/install.php", "note": "Finish setup in the browser — set your site title and admin account there."},
         "title": "WordPress (Nginx + MySQL + PHP)",
         "description": "Full WordPress install with Nginx, MySQL, PHP-FPM, and Let's Encrypt SSL.",
         "category": "deployment",
@@ -634,6 +635,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
     {
         "slug": "portainer",
         "needs_docker": True,
+        "access": {"name": "Portainer", "url": "https://{{HOST}}:{{PORT}}", "note": "Create your admin account on first open — do it promptly, Portainer locks new setups after a few minutes."},
         "title": "Portainer (Docker Management UI)",
         "description": "Installs Portainer CE for managing Docker containers via a web UI.",
         "category": "deployment",
@@ -658,6 +660,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
     {
         "slug": "uptime-kuma",
         "needs_docker": True,
+        "access": {"name": "Uptime Kuma", "url": "http://{{HOST}}:{{PORT}}", "note": "Create your admin account on first open."},
         "title": "Uptime Kuma (Self-hosted Monitoring)",
         "description": "Installs Uptime Kuma for monitoring websites and services.",
         "category": "deployment",
@@ -681,6 +684,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
     {
         "slug": "ghost-cms",
         "needs_docker": True,
+        "access": {"name": "Ghost", "url": "http://{{HOST}}:2368", "note": "Set up your admin account at /ghost."},
         "title": "Ghost CMS",
         "description": "Installs Ghost CMS using Docker with Nginx reverse proxy.",
         "category": "deployment",
@@ -705,6 +709,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
     {
         "slug": "nextcloud",
         "needs_docker": True,
+        "access": {"name": "Nextcloud", "url": "http://{{HOST}}:8080", "username": "admin", "password": "{{NC_ADMIN_PASS}}"},
         "title": "Nextcloud",
         "description": "Installs Nextcloud self-hosted cloud storage using Docker.",
         "category": "deployment",
@@ -731,6 +736,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
     {
         "slug": "gitea",
         "needs_docker": True,
+        "access": {"name": "Gitea", "url": "http://{{HOST}}:{{PORT}}", "note": "Complete the install wizard in the browser; the first registered user becomes the admin."},
         "title": "Gitea (Self-hosted Git)",
         "description": "Installs Gitea — a lightweight self-hosted Git service.",
         "category": "deployment",
@@ -755,6 +761,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
     {
         "slug": "n8n",
         "needs_docker": True,
+        "access": {"name": "n8n", "url": "http://{{HOST}}:{{PORT}}", "username": "{{N8N_USER}}", "password": "{{N8N_PASS}}"},
         "title": "n8n (Workflow Automation)",
         "description": "Installs n8n self-hosted workflow automation using Docker.",
         "category": "deployment",
@@ -779,6 +786,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
     {
         "slug": "vaultwarden",
         "needs_docker": True,
+        "access": {"name": "Vaultwarden", "url": "http://{{HOST}}:{{PORT}}", "note": "Create your account in the browser. The admin panel is at /admin (use your admin token)."},
         "title": "Vaultwarden (Bitwarden-compatible)",
         "description": "Installs Vaultwarden, a lightweight Bitwarden-compatible password manager.",
         "category": "deployment",
@@ -840,6 +848,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
 
     {
         "slug": "netdata",
+        "access": {"name": "Netdata", "url": "http://{{HOST}}:19999", "note": "No login required by default."},
         "title": "Netdata Real-time Monitoring",
         "description": "Installs Netdata for beautiful real-time system monitoring.",
         "category": "monitoring",
@@ -861,6 +870,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
     {
         "slug": "prometheus-grafana",
         "needs_docker": True,
+        "access": {"name": "Grafana", "url": "http://{{HOST}}:{{GRAFANA_PORT}}", "username": "admin", "password": "{{GRAFANA_PASS}}"},
         "title": "Prometheus + Grafana Stack",
         "description": "Deploys Prometheus + Node Exporter + Grafana via Docker Compose.",
         "category": "monitoring",
@@ -1239,6 +1249,7 @@ def _build_playbook(item: dict) -> Playbook:
         est_runtime_sec=item.get("est_runtime_sec"),
         tags=item.get("tags"),
         variables=item.get("variables", []),
+        access_info=item.get("access"),
         script_bash=_script_for(item),
         script_powershell=item.get("script_powershell"),
         is_official=True,
@@ -1275,6 +1286,7 @@ async def resync_official_scripts(db: AsyncSession) -> int:
             .values(
                 script_bash=_script_for(item),
                 script_powershell=item.get("script_powershell"),
+                access_info=item.get("access"),
             )
         )
         updated += res.rowcount or 0

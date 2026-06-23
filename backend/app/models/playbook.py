@@ -24,6 +24,12 @@ class Playbook(Base):
     script_bash: Mapped[str | None] = mapped_column(Text)
     script_powershell: Mapped[str | None] = mapped_column(Text)
     variables: Mapped[dict | None] = mapped_column(JSONB)
+    # Optional "service ready" info shown after a successful run. Holds template
+    # strings with {{HOST}} / {{VAR}} placeholders (NO secrets) — e.g.
+    # {"name": "Grafana", "url": "http://{{HOST}}:{{GRAFANA_PORT}}",
+    #  "username": "admin", "password": "{{GRAFANA_PASS}}"}. The frontend fills
+    # the placeholders client-side from what the user entered.
+    access_info: Mapped[dict | None] = mapped_column(JSONB)
     supported_os: Mapped[list[str] | None] = mapped_column(ARRAY(String))
     est_runtime_sec: Mapped[int | None] = mapped_column(Integer)
     is_official: Mapped[bool] = mapped_column(Boolean, default=False)

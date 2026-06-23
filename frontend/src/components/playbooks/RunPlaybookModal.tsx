@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react"
-import { X, Play, CheckCircle2, XCircle, Loader2, TerminalSquare } from "lucide-react"
-import type { PlaybookDetail, Server } from "@/types"
+import {
+  X, Play, CheckCircle2, XCircle, Loader2, TerminalSquare,
+  ExternalLink, Copy, Check, Eye, EyeOff, PartyPopper,
+} from "lucide-react"
+import type { PlaybookAccessInfo, PlaybookDetail, Server } from "@/types"
 import { useAuthStore } from "@/store/authStore"
 
 /**
@@ -26,6 +29,112 @@ function fmt(sec: number): string {
   const m = Math.floor(s / 60)
   const r = s % 60
   return `${m}:${r.toString().padStart(2, "0")}`
+}
+
+/**
+ * Fill {{HOST}} and {{VAR}} placeholders in an access-info template using the
+ * server host and the variables the user just entered. Runs entirely
+ * client-side — passwords come from the form and never round-trip the backend.
+ */
+function resolveAccess(
+  tpl: PlaybookAccessInfo | null | undefined,
+  vars: Record<string, string>,
+  host: string | undefined,
+): PlaybookAccessInfo | null {
+  if (!tpl) return null
+  const fill = (s?: string): string | undefined => {
+    if (!s) return s
+    let out = s.replace(/\{\{HOST\}\}/g, host ?? "")
+    for (const [k, v] of Object.entries(vars)) {
+      out = out.split(`{{${k}}}`).join(v)
+    }
+    return out
+  }
+  return {
+    name: tpl.name,
+    url: fill(tpl.url),
+    username: fill(tpl.username),
+    password: fill(tpl.password),
+    note: fill(tpl.note),
+  }
+}
+
+/** Small button that copies text to the clipboard with brief visual feedback. */
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      aria-label={`Copy ${label}`}
+      onClick={() => {
+        void navigator.clipboard?.writeText(value)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      }}
+      className="shrink-0 text-muted-foreground hover:text-foreground transition-colors p-1"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  )
+}
+
+/** "Service is ready" card shown after a successful install that exposes a UI. */
+function AccessCard({ access }: { access: PlaybookAccessInfo }) {
+  const [showPass, setShowPass] = useState(false)
+  return (
+    <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4 space-y-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <PartyPopper className="h-4 w-4 text-green-500" />
+        {access.name ? `${access.name} is ready` : "Your service is ready"}
+      </div>
+
+      {access.url && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground w-20 shrink-0">URL</span>
+          <a
+            href={access.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-sm text-primary hover:underline font-mono break-all"
+          >
+            {access.url}
+            <ExternalLink className="h-3 w-3 shrink-0" />
+          </a>
+          <CopyButton value={access.url} label="URL" />
+        </div>
+      )}
+
+      {access.username && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground w-20 shrink-0">Username</span>
+          <span className="text-sm text-foreground font-mono break-all flex-1">{access.username}</span>
+          <CopyButton value={access.username} label="username" />
+        </div>
+      )}
+
+      {access.password && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground w-20 shrink-0">Password</span>
+          <span className="text-sm text-foreground font-mono break-all flex-1">
+            {showPass ? access.password : "•".repeat(Math.min(12, access.password.length))}
+          </span>
+          <button
+            type="button"
+            aria-label={showPass ? "Hide password" : "Show password"}
+            onClick={() => setShowPass((v) => !v)}
+            className="shrink-0 text-muted-foreground hover:text-foreground transition-colors p-1"
+          >
+            {showPass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </button>
+          <CopyButton value={access.password} label="password" />
+        </div>
+      )}
+
+      {access.note && (
+        <p className="text-xs text-muted-foreground leading-relaxed pt-1">{access.note}</p>
+      )}
+    </div>
+  )
 }
 
 interface Props {
@@ -63,6 +172,7 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
 
   const estimate = playbook.est_runtime_sec ?? 60
   const selectedServer = servers.find((s) => s.id === serverId)
+  const resolvedAccess = resolveAccess(playbook.access_info, vars, selectedServer?.host)
 
   // ETA progress: time-based estimate (we can't know a script's true % done).
   // Climbs toward the estimate but caps at 95% until the run actually completes.
@@ -316,12 +426,14 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
           )}
 
           {/* Status banners */}
-          {runState === "success" && (
+          {runState === "success" && resolvedAccess?.url ? (
+            <AccessCard access={resolvedAccess} />
+          ) : runState === "success" ? (
             <div className="flex items-center gap-2 rounded-lg border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-400">
               <CheckCircle2 className="h-4 w-4" />
               Playbook completed successfully
             </div>
-          )}
+          ) : null}
           {runState === "failed" && (
             <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
               <XCircle className="h-4 w-4" />
