@@ -20,10 +20,10 @@ LINUX_BLOCKED = [
 
 WINDOWS_BLOCKED = [
     r"Format-Volume",
-    r"Remove-Item\s+C:\\\\Windows",
-    r"Remove-Item\s+C:\\\\\*",
-    r"rd\s+/s\s+/q\s+C:\\\\",
-    r"del\s+/f\s+/s\s+/q\s+C:\\\\Windows",
+    r"Remove-Item\s+C:\\Windows",
+    r"Remove-Item\s+C:\\\*",
+    r"rd\s+/s\s+/q\s+C:\\",
+    r"del\s+/f\s+/s\s+/q\s+C:\\Windows",
     r"Stop-Computer",
     r"Disable-NetAdapter",
     r"Clear-Disk",

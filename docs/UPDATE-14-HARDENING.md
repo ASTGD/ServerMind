@@ -112,3 +112,18 @@ Built via a design workflow → implement → 4-lens adversarial-review workflow
 - **TOTP replay** — a valid code is reusable within its ~90s window (no single-use timestep cache). Mitigation: record the last consumed timestep per user in Redis. Deferred to avoid added state on the hot login path.
 - **`token_version` bump on enable/disable** — enabling 2FA does not invalidate other live sessions / pre-2FA refresh tokens (would require token re-issue to avoid logging out the current session).
 - **Per-IP login limit behind a proxy** — keys off the proxy IP until `X-Forwarded-For` is trusted (the per-user TOTP lockout is the real control).
+
+---
+
+## 14.8 — Shipped (tests + CI)
+**52 pytest tests**, no external services (`fakeredis` for Redis, no DB) — `pip install -r requirements-dev.txt && pytest`:
+- `test_safety.py` — Linux + Windows blocklist, confirm patterns, plan priority (blocked > confirm), `highest_risk`.
+- `test_totp.py` — secret/verify (empty/None/undecryptable → `False`, never raises), encrypted-at-rest, provisioning URI, recovery-code generation + hash normalization.
+- `test_auth_service.py` — JWT `tv` (token_version) claim, refresh type, garbage → `None`, password hash/verify.
+- `test_rate_limit.py` — WS command cap, per-user TOTP lockout, **fail-open** on Redis outage.
+
+CI (`.github/workflows/ci.yml`): backend `pytest` + frontend `tsc --noEmit` + `npm run build`, on push to `main` and every PR.
+
+**🔒 Security fix surfaced by these tests:** the Windows blocklist path patterns were over-escaped (`C:\\\\` → the regex required a *double* backslash), so real single-backslash commands — `Remove-Item C:\Windows`, `del /f /s /q C:\Windows`, `rd /s /q C:\` — were **not blocked**. Fixed and covered by `test_safety`.
+
+**Follow-up (not this pass):** DB-backed integration tests (httpx + Postgres fixtures + a Postgres service in CI) for the RBAC "viewer can never execute" invariant and the auth/2FA endpoints end-to-end.
