@@ -430,6 +430,7 @@ script_type       VARCHAR(20)                 -- 'bash' | 'powershell' | 'both'
 script_bash       TEXT                        -- bash version
 script_powershell TEXT                        -- powershell version
 variables         JSONB
+access_info       JSONB                       -- "service ready" card template {name,url,username,password,note} with {{HOST}}/{{VAR}} placeholders (migration 010)
 supported_os      TEXT[]
 est_runtime_sec   INTEGER
 is_official       BOOLEAN DEFAULT false
@@ -833,6 +834,7 @@ POST   /api/servers/{id}/chat/cancel
 GET    /api/servers/{id}/history
 GET    /api/commands/{log_id}
 DELETE /api/commands/{log_id}
+GET    /api/activity                  ← unified feed: AI commands + playbook runs (newest first)
 ```
 
 ### Playbooks
@@ -1007,6 +1009,25 @@ WS     /ws/metrics/{server_id}     ← live metrics (1s updates)
 | full-update | Full System Update + Cleanup | 2 min |
 | clean-logs | Clear Old Logs + Temp Files | 1 min |
 | find-large-files | Large Files Report | 30 sec |
+
+**Control Panels** — category `control-panel`. Each runs a shared **pre-flight guard** (root + clean-box + supported-OS + RAM checks) before the official vendor installer, aborting with a plain-English message on a dirty/unsupported server, and shows a panel URL/login **access card** on success.
+
+*Free / open-source*
+| Slug | Title | Notes |
+|---|---|---|
+| cyberpanel | CyberPanel (OpenLiteSpeed) | Ubuntu 20.04/22.04, AlmaLinux 8 · admin-password input |
+| hestiacp | HestiaCP | Ubuntu/Debian · email + password + hostname inputs |
+| aapanel | aaPanel | Ubuntu/Debian/CentOS/AlmaLinux · login printed in install log |
+| cloudpanel | CloudPanel | Debian 11/12, Ubuntu 22.04/24.04 · 2 GB RAM · set admin on first visit |
+
+*Premium (license required)*
+| Slug | Title | Notes |
+|---|---|---|
+| cpanel-whm | cPanel / WHM | AlmaLinux/Rocky/CloudLinux/CentOS7/Ubuntu (not Debian) · 2 GB RAM · WHM :2087 · 15-day trial |
+| plesk | Plesk | Ubuntu/Debian/AlmaLinux/Rocky/CentOS 8-9 · 2 GB RAM · :8443 · admin-password input · trial on first login |
+| directadmin | DirectAdmin | AlmaLinux/Rocky/Ubuntu/Debian · :2222 · **license key required** |
+
+> ⚠️ Control-panel playbooks use official vendor installers and are `bash -n` syntax-checked, but were **not** run end-to-end (each needs a *fresh* VPS). CyberPanel drives an interactive installer via piped answers (version-sensitive); the other six are non-interactive by design. Validate on a clean box before relying on them.
 
 ---
 
@@ -1334,10 +1355,17 @@ i18n: add Bengali translations for chat UI
 | Day 1 | Upstash free tier for prod Redis | Zero cost |
 | Day 1 | CyberPanel VPS for hosting | Zero extra infra cost |
 | Day 1 | Monaco Editor for scripts | VS Code editor — familiar to users |
+| 2026-06-23 | Control panels via official vendor installers + shared pre-flight guard | Vendor-supported & reliable; guard blocks dirty/unsupported servers with a plain message (non-technical UX) |
+| 2026-06-23 | Playbooks declare `access_info`; frontend renders the access card client-side | Show panel/app URL + login after install without storing any secret server-side |
+| 2026-06-23 | `execute_stream` merges stderr & raises on non-zero exit | stderr was dropped (live output looked frozen) and failed runs falsely reported success |
+| 2026-06-23 | Built Dashboard, Activity Log (+ `/api/activity`), Settings pages | Replaced Phase-1 placeholders with real, data-driven pages |
+| 2026-06-23 | Local dev: backend :8888, frontend :5190, Vite proxy → 127.0.0.1 | 8000/8080/5173 taken by other local projects; IPv4 avoids the localhost→::1 miss (see OPS.md) |
 
 ---
 
 ## 🚀 How to Run Locally
+
+> On this machine, local dev runs on **backend :8888 / frontend :5190** (8000/8080/5173 are used by other local projects) — see **OPS.md** for the exact start/stop commands. The generic commands below use the documented defaults.
 
 ```bash
 # First time
@@ -1384,6 +1412,13 @@ deployment story (see DEPLOY.md).
   adapters against a live CyberPanel/cPanel/Plesk (endpoints follow documented
   APIs but were only mock-tested).
 - Consider the **Future Features Backlog** above for what to build next.
+
+**Post-launch additions (2026-06-23):**
+- **Dashboard, Activity Log, Settings** pages built (replaced placeholders); new `GET /api/activity` (AI commands + playbook-run feed) and an `access_info` column on `playbooks` (migration 010).
+- **Playbook execution hardened** — live stderr streaming + non-zero-exit detection; the run modal shows live output, an ETA bar, and a post-run access card (URL/login).
+- **Docker-based playbooks** self-install Docker via an `ensure_docker` preamble (idempotent).
+- **Control-panel playbooks** added (free: CyberPanel/HestiaCP/aaPanel/CloudPanel; premium: cPanel/Plesk/DirectAdmin) behind a pre-flight guard — see the Script Library. **Need live validation on a fresh VPS** (official installers; CyberPanel's is piped-answer/version-sensitive).
+- **Local dev** moved to backend :8888 / frontend :5190, Vite proxy on 127.0.0.1 (see OPS.md).
 
 When starting new work, read this entire file first and keep the phase
 checklists + Decisions Log up to date. Never deviate from the tech stack without
