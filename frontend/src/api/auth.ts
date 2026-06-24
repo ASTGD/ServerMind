@@ -124,6 +124,16 @@ export async function wsAuthQuery(): Promise<string> {
   }
 }
 
+/** Confirm an email address from a verification token (public, no auth). */
+export async function verifyEmail(token: string): Promise<void> {
+  await apiClient.post("/api/auth/verify-email", { token })
+}
+
+/** Re-send the verification email to the current user. */
+export async function resendVerification(): Promise<void> {
+  await apiClient.post("/api/auth/resend-verification")
+}
+
 /** Logout — clears tokens on client side. */
 export async function logout(): Promise<void> {
   await apiClient.post("/api/auth/logout").catch(() => {})

@@ -1,6 +1,6 @@
 # Update 14 — Production Hardening · Build Spec
 
-> Status: in progress. Goal: make ServerMind safe for untrusted, multi-tenant signup.
+> Status: **COMPLETE** (14.1–14.8 + 14.3b). Goal: make ServerMind safe for untrusted, multi-tenant signup.
 > **Backward-compatible** — every gate is behind a config flag defaulting to today's
 > behavior. Closes CLAUDE.md security rule **#8** (rate limiting); rule **#6** (SSH
 > host-key verification) is tracked as an optional follow-up.
@@ -138,3 +138,13 @@ New `audit_logs` table (migration 013) + `audit_service.audit()` — best-effort
 `GET /api/audit` returns the user's own events (newest first, ≤200). Settings shows a **Recent security activity** list (action, IP, relative time).
 
 **Follow-up:** admin/team-wide audit view (currently each user sees only their own events); retention/pruning of old rows.
+
+---
+
+## 14.4 — Shipped (email verification)
+Config flag `REQUIRE_EMAIL_VERIFICATION` (default **off** — existing behavior unchanged). When on: `register` sets `is_verified=False` and emails a signed verify-JWT link (`notification_service` SMTP, best-effort); `POST /api/auth/verify-email {token}` confirms; `POST /api/auth/resend-verification` re-sends. A `require_verified` dependency **403s server-create and WS command exec** until verified. Frontend: a public `/verify-email` page + a global banner (with resend) shown whenever `user.is_verified` is false. `APP_BASE_URL` sets the link's frontend origin (falls back to the request origin).
+
+---
+
+## ✅ Update 14 complete
+All hardening workstreams shipped and CI-green: rate limiting, token revocation, 2FA + recovery codes, WS tickets, weak-key hard-fail, audit log, email verification, and a pytest suite + CI. Two real bugs were caught and fixed along the way (the unblocked Windows destructive commands; the force-logout on a mistyped 2FA code). Remaining follow-ups are documented inline above (TOTP replay cache, token_version bump on 2FA change, admin-wide audit view, DB-backed RBAC integration tests).

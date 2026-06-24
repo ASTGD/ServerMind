@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies.access import resolve_server
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, require_verified
 from app.models.server import Server
 from app.models.user import User
 from app.schemas.server import ServerCreate, ServerOut, ServerUpdate
@@ -49,7 +49,7 @@ async def create_server(
     request: Request,
     body: ServerCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_verified),
 ) -> Server:
     """Add a new server. Credential is encrypted before storage."""
     encrypted = encrypt(body.credential)

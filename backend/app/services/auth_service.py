@@ -51,6 +51,14 @@ def create_refresh_token(user_id: str, token_version: int = 0) -> str:
     )
 
 
+def create_verify_token(user_id: str) -> str:
+    """Create a short-lived email-verification token (type='verify')."""
+    return _create_token(
+        {"sub": user_id, "type": "verify"},
+        timedelta(hours=settings.EMAIL_VERIFICATION_TOKEN_HOURS),
+    )
+
+
 def decode_token(token: str) -> dict | None:
     """Decode and validate a JWT. Returns payload or None on failure."""
     try:

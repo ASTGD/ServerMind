@@ -9,6 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models.user import User
 from app.services.auth_service import decode_token
@@ -58,6 +59,17 @@ async def get_current_user(
         raise unauthorized
 
     return user
+
+
+async def require_verified(current_user: User = Depends(get_current_user)) -> User:
+    """Like get_current_user, but 403s when email verification is required and the
+    user has not verified their address (Update 14.4)."""
+    if settings.REQUIRE_EMAIL_VERIFICATION and not current_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email address to continue",
+        )
+    return current_user
 
 
 async def get_current_user_optional(

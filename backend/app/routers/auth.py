@@ -18,12 +18,13 @@ from app.schemas.user import UserCreate, UserOut, UserUpdate
 from app.services.auth_service import (
     create_access_token,
     create_refresh_token,
+    create_verify_token,
     decode_token,
     hash_password,
     verify_password,
 )
 from app.config import settings
-from app.services import audit_service, totp_service
+from app.services import audit_service, notification_service, totp_service
 from app.services.rate_limit_service import (
     limiter,
     totp_clear_failures,
@@ -86,6 +87,10 @@ class RecoveryCodesResponse(BaseModel):
     recovery_codes: list[str]
 
 
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
@@ -103,6 +108,23 @@ async def _consume_recovery_code(db: AsyncSession, user: User, code: str) -> boo
     return False
 
 
+async def _send_verification_email(user: User, request: Request) -> None:
+    """Email the user a signed link to verify their address. Best-effort."""
+    token = create_verify_token(str(user.id))
+    base = settings.APP_BASE_URL or str(request.base_url).rstrip("/")
+    link = f"{base}/verify-email?token={token}"
+    await notification_service.send_email(
+        user.email,
+        "Verify your ServerMind email",
+        (
+            "Welcome to ServerMind! Confirm your email to activate your account:\n\n"
+            f"{link}\n\n"
+            f"This link expires in {settings.EMAIL_VERIFICATION_TOKEN_HOURS} hours. "
+            "If you didn't sign up, you can ignore this email."
+        ),
+    )
+
+
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(settings.REGISTER_RATE_LIMIT)
 async def register(request: Request, body: UserCreate, db: AsyncSession = Depends(get_db)) -> TokenResponse:
@@ -116,11 +138,14 @@ async def register(request: Request, body: UserCreate, db: AsyncSession = Depend
         password_hash=hash_password(body.password),
         name=body.name,
         preferred_language=body.preferred_language,
-        is_verified=True,  # Skip email verification for Phase 1
+        is_verified=not settings.REQUIRE_EMAIL_VERIFICATION,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
+
+    if settings.REQUIRE_EMAIL_VERIFICATION:
+        await _send_verification_email(user, request)
 
     logger.info("New user registered: %s", user.email)
     await audit_service.audit(db, user, "auth.register", request=request)
@@ -411,3 +436,36 @@ async def regenerate_recovery_codes(
     await db.commit()
     await audit_service.audit(db, current_user, "auth.2fa_recovery_regenerated", request=request)
     return RecoveryCodesResponse(recovery_codes=recovery)
+
+
+@router.post("/verify-email")
+async def verify_email(body: VerifyEmailRequest, db: AsyncSession = Depends(get_db)) -> dict:
+    """Confirm an email address from a signed verification token (no auth needed)."""
+    payload = decode_token(body.token)
+    if not payload or payload.get("type") != "verify":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification link",
+        )
+    try:
+        uid = uuid.UUID(payload.get("sub", ""))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification link")
+    user = (await db.execute(select(User).where(User.id == uid))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not user.is_verified:
+        user.is_verified = True
+        await db.commit()
+    return {"verified": True}
+
+
+@router.post("/resend-verification", status_code=status.HTTP_204_NO_CONTENT)
+async def resend_verification(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Re-send the verification email to the current user (no-op if verified)."""
+    if not current_user.is_verified:
+        await _send_verification_email(current_user, request)
+    return None

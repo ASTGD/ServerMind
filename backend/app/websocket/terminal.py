@@ -13,6 +13,7 @@ import paramiko
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy import select
 
+from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.command_log import CommandLog
 from app.models.playbook import Playbook, PlaybookRun, UserScript
@@ -69,6 +70,8 @@ async def _auth_and_get_server(
         if user is None or not user.is_active:
             return None
         if not via_ticket and token_tv != user.token_version:
+            return None
+        if need_execute and settings.REQUIRE_EMAIL_VERIFICATION and not user.is_verified:
             return None
         access = await team_service.get_access(db, user, server_id)
         if access is None:

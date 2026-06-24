@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     TOTP_MAX_FAILURES: int = 10
     TOTP_LOCKOUT_SECONDS: int = 900
 
+    # Email verification (Update 14.4)
+    REQUIRE_EMAIL_VERIFICATION: bool = False
+    EMAIL_VERIFICATION_TOKEN_HOURS: int = 24
+    APP_BASE_URL: str = ""   # frontend origin for verify links, e.g. https://app.example.com
+
     # CORS
     ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]
 

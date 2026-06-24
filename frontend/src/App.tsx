@@ -21,12 +21,14 @@ import Team from "@/routes/Team"
 import AcceptInvite from "@/routes/AcceptInvite"
 import Settings from "@/routes/Settings"
 import Auth from "@/routes/Auth"
+import VerifyEmail from "@/routes/VerifyEmail"
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/auth" element={<Auth />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route
           path="/"
           element={
