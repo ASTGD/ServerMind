@@ -1,9 +1,10 @@
 """Celery tasks for durable playbook/command execution (Update 15).
 
-The task runs in a worker process, streams output to a Redis pub/sub channel
-(``run:{run_id}``), and persists the final result to the PlaybookRun row — so the
-run survives the client disconnecting or the web process restarting. A WebSocket
-handler subscribes to the channel and relays output to the browser.
+The task runs in a worker process and appends each output message to a Redis
+**list** ``run:{run_id}:log`` (a replayable backlog with a TTL), and persists the
+final result to the PlaybookRun row. A WebSocket handler *tails* that list — so a
+run survives the client disconnecting, and a reconnecting client can replay
+everything it missed (slice 2). The run also survives a web-process restart.
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from redis.asyncio import from_url
+from redis.asyncio import Redis, from_url
 from sqlalchemy import select, update as sa_update
 
 from app.celery_app import celery
@@ -26,15 +27,21 @@ from app.services import connection_manager
 logger = logging.getLogger(__name__)
 
 
-def run_channel(run_id: str) -> str:
-    return f"run:{run_id}"
+def run_log_key(run_id: str) -> str:
+    return f"run:{run_id}:log"
+
+
+async def _emit(redis: Redis, key: str, message: dict) -> None:
+    """Append one message to the run's replay log and refresh its TTL."""
+    await redis.rpush(key, json.dumps(message))
+    await redis.expire(key, settings.EXECUTION_LOG_TTL)
 
 
 async def _execute(run_id: str, server_id: str, script: str) -> None:
-    """Stream the script's output to Redis and persist the result. A fresh Redis
-    client is created per task (each Celery task gets its own event loop)."""
+    """Stream the script's output into the Redis log and persist the result. A
+    fresh Redis client is used per task (each Celery task gets its own loop)."""
     redis = from_url(settings.REDIS_URL, decode_responses=True)
-    channel = run_channel(run_id)
+    key = run_log_key(run_id)
     output: list[str] = []
     status = "success"
     try:
@@ -43,8 +50,8 @@ async def _execute(run_id: str, server_id: str, script: str) -> None:
                 await db.execute(select(Server).where(Server.id == uuid.UUID(server_id)))
             ).scalar_one_or_none()
             if server is None:
-                await redis.publish(channel, json.dumps({"type": "output", "data": "ERROR: server not found\n"}))
-                await redis.publish(channel, json.dumps({"type": "complete", "run_id": run_id, "status": "failed"}))
+                await _emit(redis, key, {"type": "output", "data": "ERROR: server not found\n"})
+                await _emit(redis, key, {"type": "complete", "run_id": run_id, "status": "failed"})
                 return
             await db.execute(
                 sa_update(PlaybookRun).where(PlaybookRun.id == uuid.UUID(run_id)).values(status="running")
@@ -55,11 +62,11 @@ async def _execute(run_id: str, server_id: str, script: str) -> None:
             stream = await connection_manager.execute_stream(server, script)
             async for line in stream:
                 output.append(line)
-                await redis.publish(channel, json.dumps({"type": "output", "data": line + "\n"}))
+                await _emit(redis, key, {"type": "output", "data": line + "\n"})
         except Exception as exc:  # noqa: BLE001 — CommandError (non-zero exit) or connection error
             status = "failed"
             output.append(f"ERROR: {exc}")
-            await redis.publish(channel, json.dumps({"type": "output", "data": f"ERROR: {exc}\n"}))
+            await _emit(redis, key, {"type": "output", "data": f"ERROR: {exc}\n"})
 
         async with AsyncSessionLocal() as db:
             await db.execute(
@@ -69,7 +76,7 @@ async def _execute(run_id: str, server_id: str, script: str) -> None:
             )
             await db.commit()
 
-        await redis.publish(channel, json.dumps({"type": "complete", "run_id": run_id, "status": status}))
+        await _emit(redis, key, {"type": "complete", "run_id": run_id, "status": status})
     finally:
         await redis.aclose()
 

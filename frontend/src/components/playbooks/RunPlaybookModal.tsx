@@ -23,6 +23,7 @@ function wsBase(): string {
 }
 
 const WS_BASE = wsBase()
+const MAX_RECONNECTS = 5
 
 /** Format a number of seconds as m:ss. */
 function fmt(sec: number): string {
@@ -169,6 +170,10 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
   // Tracks whether the run reached a terminal state, so a normal socket close
   // doesn't get mislabelled as a failure.
   const finishedRef = useRef(false)
+  const runIdRef = useRef<string | null>(null)
+  const runStateRef = useRef<RunState>("idle")
+  const attemptsRef = useRef(0)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const outputEndRef = useRef<HTMLDivElement>(null)
 
   const estimate = playbook.est_runtime_sec ?? 60
@@ -188,6 +193,10 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
     outputEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [outputLines])
 
+  useEffect(() => {
+    runStateRef.current = runState
+  }, [runState])
+
   const stopTick = useCallback(() => {
     if (tickRef.current) {
       clearInterval(tickRef.current)
@@ -198,9 +207,94 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
   useEffect(() => {
     return () => {
       stopTick()
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       wsRef.current?.close()
     }
   }, [stopTick])
+
+  const connect = useCallback(
+    async (mode: "run" | "attach") => {
+      const q = await wsAuthQuery()
+      const ws = new WebSocket(`${WS_BASE}/ws/playbook-run/${serverId}?${q}`)
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        if (mode === "run") {
+          ws.send(
+            JSON.stringify({
+              type: "run",
+              ...(isUserScript ? { user_script_id: playbook.id } : { playbook_id: playbook.id }),
+              variables: vars,
+            })
+          )
+        } else {
+          ws.send(JSON.stringify({ type: "attach", run_id: runIdRef.current }))
+        }
+      }
+
+      ws.onmessage = (e: MessageEvent<string>) => {
+        const msg = JSON.parse(e.data) as { type: string; [k: string]: unknown }
+        if (msg.type === "started") {
+          runIdRef.current = msg.run_id as string
+          setRunId(msg.run_id as string)
+          startRef.current = Date.now()
+          if (mode === "attach") {
+            // Reconnected — the server replays the run from the start; show fresh.
+            setOutputLines(["⟳ Reconnected — resuming output…"])
+          } else {
+            setOutputLines((prev) => [
+              ...prev,
+              `▶ Installation started — streaming live output (est. ~${fmt(estimate)})`,
+              "",
+            ])
+          }
+        } else if (msg.type === "output") {
+          setOutputLines((prev) => [...prev, (msg.data as string).replace(/\n$/, "")])
+        } else if (msg.type === "complete") {
+          finishedRef.current = true
+          if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+          stopTick()
+          setRunState((msg.status as string) === "success" ? "success" : "failed")
+          ws.close()
+        } else if (msg.type === "error") {
+          finishedRef.current = true
+          if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+          stopTick()
+          setOutputLines((prev) => [...prev, `ERROR: ${msg.message as string}`])
+          setRunState("failed")
+          ws.close()
+        }
+      }
+
+      // onerror is always followed by onclose — let onclose decide reconnect/fail.
+      ws.onerror = () => {}
+
+      ws.onclose = () => {
+        if (finishedRef.current) return
+        // Unexpected drop mid-run: transparently reconnect and re-attach by run_id
+        // so a Wi-Fi/LAN blip doesn't lose a long install (the worker runs on).
+        if (
+          runStateRef.current === "running" &&
+          runIdRef.current &&
+          attemptsRef.current < MAX_RECONNECTS
+        ) {
+          attemptsRef.current += 1
+          setOutputLines((prev) => [
+            ...prev,
+            `⟳ Connection lost — reconnecting (${attemptsRef.current}/${MAX_RECONNECTS})…`,
+          ])
+          reconnectTimerRef.current = setTimeout(() => {
+            void connect("attach")
+          }, 1500)
+        } else {
+          stopTick()
+          setRunState((s) => (s === "running" ? "failed" : s))
+        }
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [serverId, isUserScript, playbook, vars, estimate, stopTick]
+  )
 
   const handleRun = useCallback(async () => {
     if (!serverId || !token) return
@@ -213,12 +307,13 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
     }
 
     finishedRef.current = false
+    attemptsRef.current = 0
+    runIdRef.current = null
     setRunState("running")
     setRunId(null)
     setElapsed(0)
     startRef.current = Date.now()
-    // Immediate confirmation — the log window appears at once with this line,
-    // so the user never stares at a frozen dialog.
+    // Immediate confirmation — the log window appears at once with this line.
     setOutputLines([`▶ Connecting to ${selectedServer?.name ?? "server"}…`])
 
     // Tick elapsed time every second to drive the ETA bar.
@@ -227,64 +322,8 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
       setElapsed((Date.now() - startRef.current) / 1000)
     }, 1000)
 
-    const q = await wsAuthQuery()
-    const ws = new WebSocket(`${WS_BASE}/ws/playbook-run/${serverId}?${q}`)
-    wsRef.current = ws
-
-    ws.onopen = () => {
-      ws.send(
-        JSON.stringify({
-          type: "run",
-          ...(isUserScript
-            ? { user_script_id: playbook.id }
-            : { playbook_id: playbook.id }),
-          variables: vars,
-        })
-      )
-    }
-
-    ws.onmessage = (e: MessageEvent<string>) => {
-      const msg = JSON.parse(e.data) as { type: string; [k: string]: unknown }
-      if (msg.type === "started") {
-        setRunId(msg.run_id as string)
-        startRef.current = Date.now()
-        setOutputLines((prev) => [
-          ...prev,
-          `▶ Installation started — streaming live output (est. ~${fmt(estimate)})`,
-          "",
-        ])
-      } else if (msg.type === "output") {
-        setOutputLines((prev) => [...prev, (msg.data as string).replace(/\n$/, "")])
-      } else if (msg.type === "complete") {
-        finishedRef.current = true
-        stopTick()
-        const status = msg.status as string
-        setRunState(status === "success" ? "success" : "failed")
-        ws.close()
-      } else if (msg.type === "error") {
-        finishedRef.current = true
-        stopTick()
-        setOutputLines((prev) => [...prev, `ERROR: ${msg.message as string}`])
-        setRunState("failed")
-        ws.close()
-      }
-    }
-
-    ws.onerror = () => {
-      if (finishedRef.current) return
-      setOutputLines((prev) => [...prev, "WebSocket connection error"])
-      stopTick()
-      setRunState("failed")
-    }
-
-    ws.onclose = () => {
-      // Only a close *before* a terminal message counts as a failure.
-      if (!finishedRef.current) {
-        stopTick()
-        setRunState((s) => (s === "running" ? "failed" : s))
-      }
-    }
-  }, [serverId, token, playbook, vars, isUserScript, estimate, selectedServer, stopTick])
+    await connect("run")
+  }, [serverId, token, playbook, vars, selectedServer, stopTick, connect])
 
   const canRun = runState === "idle" || runState === "success" || runState === "failed"
   const showConsole = runState !== "idle"

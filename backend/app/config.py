@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     # (durable worker + Redis pub/sub; survives disconnects/restarts). Requires a
     # running Celery worker when set to "celery".
     EXECUTION_BACKEND: str = "inline"
+    EXECUTION_LOG_TTL: int = 3600   # seconds to retain a run's streamed output for replay/reconnect
 
     # CORS
     ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]

@@ -35,10 +35,22 @@ Playbook runs (`/ws/playbook-run`) execute via Celery + Redis pub/sub, behind th
   success/failed; a `.delay()` → background-worker round-trip ran end-to-end and
   updated the run row; 52 unit tests still green; default-inline path unchanged.
 
+## Slice 2 — shipped (reconnect-to-running)
+The worker now appends each output message to a Redis **list** `run:{run_id}:log`
+(TTL `EXECUTION_LOG_TTL`, default 1h) rather than fire-and-forget pub/sub. The WS
+**tails the list** (`_stream_run_log`) — fresh runs and reconnects use the same
+path: a reconnecting client replays from the start of the buffered log, then
+follows live appends. Falls back to the DB-stored result if the log expired or the
+worker died.
+- New WS message `{type:"attach", run_id}` resumes an existing run on the same
+  server (`_attach_run`, access-checked against the connection's server).
+- Frontend (`RunPlaybookModal`): on a mid-run socket drop it auto-reconnects and
+  re-attaches by `run_id` (up to 5 tries, 1.5s apart), so a Wi-Fi/LAN blip doesn't
+  lose a long install — the worker keeps going and the client re-syncs.
+- Verified on a live VPS: list replay (output + complete) **and** DB-fallback
+  after log expiry both reproduce the full run; default-inline path unchanged.
+
 ## Remaining slices
-- **Reconnect-to-running:** on (re)connect, replay current state from the DB and
-  re-attach to the live stream (pub/sub doesn't buffer — needs a backlog/replay,
-  e.g. a Redis list or stream per run).
 - AI-chat command execution and the interactive terminal over the same model.
 - `run_count` increment + richer run metadata on the celery path.
 - Worker in `docker-compose` / prod (DEPLOY.md); horizontal web scaling with

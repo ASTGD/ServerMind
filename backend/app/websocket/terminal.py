@@ -24,7 +24,7 @@ from app.services import ssh_service, team_service
 from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
 from app.services.playbook_service import substitute_variables
-from app.workers.playbook_tasks import run_channel, run_playbook_task
+from app.workers.playbook_tasks import run_log_key, run_playbook_task
 from app.services.auth_service import decode_token
 
 logger = logging.getLogger(__name__)
@@ -428,34 +428,83 @@ async def _save_log(
 
 # ── Playbook Run WebSocket ─────────────────────────────────────────────────────
 
+_RUN_POLL_INTERVAL = 0.4
+_RUN_MAX_POLLS = 9000  # ~60 min safety bound
+
+
+async def _stream_run_log(websocket: WebSocket, run_id: str) -> None:
+    """Replay + live-tail a run's output log to the client until it completes.
+
+    Uniform for fresh runs and reconnects: a reconnecting client replays from the
+    start of the (still-buffered) log, then follows live appends. Falls back to
+    the DB-stored result if the log has expired or the worker died mid-run."""
+    key = run_log_key(run_id)
+    r = get_redis()
+    cursor = 0
+    sent_any = False
+    idle = 0
+    for _ in range(_RUN_MAX_POLLS):
+        items = await r.lrange(key, cursor, -1)
+        if items:
+            cursor += len(items)
+            sent_any = True
+            idle = 0
+            for raw in items:
+                await websocket.send_text(raw)
+                try:
+                    if json.loads(raw).get("type") == "complete":
+                        return
+                except (ValueError, TypeError):
+                    pass
+        else:
+            idle += 1
+            # Every ~2s with no new entries, check whether the run already finished
+            # (log expired, or the worker died without a final message).
+            if idle % 5 == 0:
+                async with AsyncSessionLocal() as db:
+                    run = (
+                        await db.execute(select(PlaybookRun).where(PlaybookRun.id == uuid.UUID(run_id)))
+                    ).scalar_one_or_none()
+                if run is None:
+                    await websocket.send_text(json.dumps({"type": "error", "message": "Run not found"}))
+                    return
+                if run.status in ("success", "failed"):
+                    if not sent_any and run.output:
+                        await websocket.send_text(json.dumps({"type": "output", "data": run.output + "\n"}))
+                    await websocket.send_text(
+                        json.dumps({"type": "complete", "run_id": run_id, "status": run.status})
+                    )
+                    return
+        await asyncio.sleep(_RUN_POLL_INTERVAL)
+    await websocket.send_text(json.dumps({"type": "error", "message": "Run stream timed out"}))
+
+
 async def _relay_celery_run(
     websocket: WebSocket, run_id: str, server_id: str, script: str
 ) -> None:
-    """Subscribe to the run's Redis channel, enqueue the Celery worker task, and
-    relay output to the client. The worker keeps running even if the client drops
-    (durable execution — Update 15)."""
-    channel = run_channel(run_id)
-    pubsub = get_redis().pubsub()
-    await pubsub.subscribe(channel)
-    # Subscribe BEFORE enqueuing so no early output is missed.
+    """Enqueue the durable worker task, then tail its output log to the client.
+    The worker keeps running even if the client drops (Update 15)."""
     run_playbook_task.delay(run_id, server_id, script)
+    await _stream_run_log(websocket, run_id)
+
+
+async def _attach_run(websocket: WebSocket, server: Server, run_id: str | None) -> None:
+    """Reconnect to an existing run on the same server and resume its stream."""
+    if not run_id:
+        await websocket.send_text(json.dumps({"type": "error", "message": "Missing run_id"}))
+        return
     try:
-        async for message in pubsub.listen():
-            if message.get("type") != "message":
-                continue
-            data = message["data"]
-            await websocket.send_text(data)
-            try:
-                if json.loads(data).get("type") == "complete":
-                    break
-            except (ValueError, TypeError):
-                pass
-    finally:
-        try:
-            await pubsub.unsubscribe(channel)
-            await pubsub.aclose()
-        except Exception:  # noqa: BLE001
-            pass
+        rid = uuid.UUID(run_id)
+    except (ValueError, TypeError):
+        await websocket.send_text(json.dumps({"type": "error", "message": "Invalid run_id"}))
+        return
+    async with AsyncSessionLocal() as db:
+        run = (await db.execute(select(PlaybookRun).where(PlaybookRun.id == rid))).scalar_one_or_none()
+    if run is None or str(run.server_id) != str(server.id):
+        await websocket.send_text(json.dumps({"type": "error", "message": "Run not found"}))
+        return
+    await websocket.send_text(json.dumps({"type": "started", "run_id": run_id, "title": "Reconnected"}))
+    await _stream_run_log(websocket, run_id)
 
 
 @router.websocket("/ws/playbook-run/{server_id}")
@@ -483,7 +532,11 @@ async def playbook_run_ws(
     try:
         raw = await websocket.receive_text()
         msg = json.loads(raw)
-        if msg.get("type") != "run":
+        mtype = msg.get("type")
+        if mtype == "attach":
+            await _attach_run(websocket, server, msg.get("run_id"))
+            return
+        if mtype != "run":
             await websocket.send_text(json.dumps({"type": "error", "message": "Expected run message"}))
             await websocket.close()
             return
