@@ -1,12 +1,14 @@
 """Commands router — history and log retrieval."""
 from __future__ import annotations
 
+import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies.access import resolve_server
 from app.dependencies.auth import get_current_user
@@ -15,6 +17,8 @@ from app.models.playbook import Playbook, PlaybookRun, UserScript
 from app.models.server import Server
 from app.models.user import User
 from app.schemas.command import ActivityItem, CommandLogOut
+from app.services.redis_service import get_redis
+from app.workers.playbook_tasks import run_log_key
 
 router = APIRouter(tags=["commands"])
 
@@ -121,6 +125,39 @@ async def get_log(
     if not log:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Log not found")
     return log
+
+
+@router.post("/api/commands/{log_id}/cancel", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_command(
+    log_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Request cancellation of a running AI-chat command execution (durable path).
+    Signals the worker (Redis flag) to stop, marks the log cancelled, and emits a
+    final execution_complete so the tailing WebSocket resolves immediately."""
+    log = (
+        await db.execute(select(CommandLog).where(CommandLog.id == log_id))
+    ).scalar_one_or_none()
+    if not log:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Log not found")
+    # Must be able to execute on the log's server to cancel it.
+    await resolve_server(log.server_id, current_user, db, need_execute=True)
+    if log.status != "running":
+        return None  # not in progress — no-op
+
+    redis = get_redis()
+    await redis.setex(f"run:{log_id}:cancel", settings.EXECUTION_LOG_TTL, "1")
+    log.status = "cancelled"
+    await db.commit()
+    key = run_log_key(str(log_id))
+    await redis.rpush(key, json.dumps({"type": "output", "data": "⏹ Cancelled by user\n", "stream": "stdout"}))
+    await redis.rpush(key, json.dumps({
+        "type": "execution_complete", "log_id": str(log_id), "status": "cancelled",
+        "explanation": "Cancelled by user.", "follow_up_suggestions": [],
+    }))
+    await redis.expire(key, settings.EXECUTION_LOG_TTL)
+    return None
 
 
 @router.delete("/api/commands/{log_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -24,7 +24,7 @@ from app.services import ssh_service, team_service
 from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
 from app.services.playbook_service import substitute_variables
-from app.workers.playbook_tasks import run_log_key, run_playbook_task
+from app.workers.playbook_tasks import run_chat_task, run_log_key, run_playbook_task
 from app.services.auth_service import decode_token
 
 logger = logging.getLogger(__name__)
@@ -311,7 +311,32 @@ async def _handle_message(
             await ws.send_text(json.dumps({"type": "cancelled", "log_id": str(log.id)}))
             return
 
-    # ── 5. Execute commands ───────────────────────────────────────────────────
+    # ── 5. Execute ────────────────────────────────────────────────────────────
+    # Durable worker path: create the log up front (so it has an id to stream and
+    # cancel against), enqueue the worker, and tail its log. The worker keeps
+    # running and persists even if the client disconnects (Update 15, slice 4).
+    if settings.EXECUTION_BACKEND == "celery":
+        async with AsyncSessionLocal() as db:
+            log = CommandLog(
+                server_id=server.id,
+                user_id=server.user_id,
+                user_input=user_input,
+                user_language=user_language,
+                ai_plan=plan,
+                commands=commands,
+                status="running",
+                risk_level=risk_level,
+            )
+            db.add(log)
+            await db.commit()
+            await db.refresh(log)
+        # Tell the client the run's id up front so it can offer a Stop button.
+        await ws.send_text(json.dumps({"type": "run_started", "log_id": str(log.id)}))
+        run_chat_task.delay(str(log.id), str(server.id), commands, plan, user_language)
+        await _stream_chat_log(ws, str(log.id))
+        return
+
+    # Inline path (default) — execute in this process.
     full_output: list[str] = []
     t0 = time.monotonic()
     overall_status = "success"
@@ -432,12 +457,22 @@ _RUN_POLL_INTERVAL = 0.4
 _RUN_MAX_POLLS = 9000  # ~60 min safety bound
 
 
-async def _stream_run_log(websocket: WebSocket, run_id: str) -> None:
-    """Replay + live-tail a run's output log to the client until it completes.
+_TERMINAL_RUN_STATUSES = ("success", "failed", "partial", "cancelled", "blocked")
 
-    Uniform for fresh runs and reconnects: a reconnecting client replays from the
-    start of the (still-buffered) log, then follows live appends. Falls back to
-    the DB-stored result if the log has expired or the worker died mid-run."""
+
+async def _tail_log(
+    websocket: WebSocket,
+    run_id: str,
+    terminal_types: tuple[str, ...],
+    finished,
+) -> None:
+    """Replay + live-tail run:{run_id}:log to the client until a terminal message.
+
+    Uniform for fresh runs and reconnects (replay from the start of the buffered
+    log, then follow live appends). ``finished(run_id)`` is consulted when the log
+    is empty/expired: it returns ``None`` (run not found), or ``(replay_output,
+    terminal_msg)`` — a non-None ``terminal_msg`` means the run already ended, so
+    replay any stored output then send that message."""
     key = run_log_key(run_id)
     r = get_redis()
     cursor = 0
@@ -452,7 +487,7 @@ async def _stream_run_log(websocket: WebSocket, run_id: str) -> None:
             for raw in items:
                 await websocket.send_text(raw)
                 try:
-                    if json.loads(raw).get("type") == "complete":
+                    if json.loads(raw).get("type") in terminal_types:
                         return
                 except (ValueError, TypeError):
                     pass
@@ -461,22 +496,56 @@ async def _stream_run_log(websocket: WebSocket, run_id: str) -> None:
             # Every ~2s with no new entries, check whether the run already finished
             # (log expired, or the worker died without a final message).
             if idle % 5 == 0:
-                async with AsyncSessionLocal() as db:
-                    run = (
-                        await db.execute(select(PlaybookRun).where(PlaybookRun.id == uuid.UUID(run_id)))
-                    ).scalar_one_or_none()
-                if run is None:
+                fb = await finished(run_id)
+                if fb is None:
                     await websocket.send_text(json.dumps({"type": "error", "message": "Run not found"}))
                     return
-                if run.status in ("success", "failed"):
-                    if not sent_any and run.output:
-                        await websocket.send_text(json.dumps({"type": "output", "data": run.output + "\n"}))
-                    await websocket.send_text(
-                        json.dumps({"type": "complete", "run_id": run_id, "status": run.status})
-                    )
+                replay_output, terminal_msg = fb
+                if terminal_msg is not None:
+                    if not sent_any and replay_output:
+                        await websocket.send_text(json.dumps({"type": "output", "data": replay_output + "\n"}))
+                    await websocket.send_text(json.dumps(terminal_msg))
                     return
         await asyncio.sleep(_RUN_POLL_INTERVAL)
     await websocket.send_text(json.dumps({"type": "error", "message": "Run stream timed out"}))
+
+
+async def _playbook_finished(run_id: str):
+    async with AsyncSessionLocal() as db:
+        run = (
+            await db.execute(select(PlaybookRun).where(PlaybookRun.id == uuid.UUID(run_id)))
+        ).scalar_one_or_none()
+    if run is None:
+        return None
+    if run.status in _TERMINAL_RUN_STATUSES:
+        return run.output, {"type": "complete", "run_id": run_id, "status": run.status}
+    return None, None
+
+
+async def _chat_finished(run_id: str):
+    async with AsyncSessionLocal() as db:
+        log = (
+            await db.execute(select(CommandLog).where(CommandLog.id == uuid.UUID(run_id)))
+        ).scalar_one_or_none()
+    if log is None:
+        return None
+    if log.status in _TERMINAL_RUN_STATUSES:
+        return log.output, {
+            "type": "execution_complete", "log_id": run_id, "status": log.status,
+            "explanation": log.ai_explanation or "",
+            "follow_up_suggestions": (log.ai_plan or {}).get("follow_up_suggestions", []),
+        }
+    return None, None
+
+
+async def _stream_run_log(websocket: WebSocket, run_id: str) -> None:
+    """Tail a playbook run's log until ``complete`` (or the DB shows it finished)."""
+    await _tail_log(websocket, run_id, ("complete",), _playbook_finished)
+
+
+async def _stream_chat_log(websocket: WebSocket, log_id: str) -> None:
+    """Tail an AI-chat run's log until ``execution_complete`` (or DB-finished)."""
+    await _tail_log(websocket, log_id, ("execution_complete",), _chat_finished)
 
 
 async def _relay_celery_run(

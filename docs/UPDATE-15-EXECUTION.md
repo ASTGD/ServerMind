@@ -6,11 +6,13 @@
 
 ## Architecture
 - A **Celery worker** (broker + result backend = Redis) executes the run.
-- Output is published to a Redis **pub/sub** channel `run:{run_id}`; the final
-  state is persisted to the `playbook_runs` row.
-- The **WebSocket handler is a subscriber**: it authenticates, creates the run
-  record, subscribes to the channel, enqueues the task, then relays output to the
-  browser. If the client drops, the worker keeps running.
+- Each output message is appended to a Redis **list** `run:{run_id}:log` (a
+  replayable backlog with a TTL); the final state is persisted to the DB row
+  (`playbook_runs` for playbooks, `command_logs` for chat).
+- The **WebSocket handler tails that list**: it authenticates, creates the run
+  record, enqueues the task, then replays + live-tails the log to the browser. If
+  the client drops the worker keeps running and persists; a reconnecting client
+  replays from the log (or the DB once it has expired).
 
 ## Safe rollout — `EXECUTION_BACKEND` flag
 - `inline` (**default**) — runs in the web process, no worker needed, behavior
@@ -66,8 +68,30 @@ each output line and stop. Frontend: the run modal's primary button becomes
   check means a fully-silent command is only interrupted when it next prints,
   though the HTTP endpoint resolves the UI immediately regardless.
 
+## Slice 4 — shipped (durable AI chat execution)
+AI chat — the headline NL flow — now runs its command execution on the same
+durable rails as playbooks. Planning, safety validation, and approval stay in the
+web process; once approved, the chat WS (when `EXECUTION_BACKEND=celery`) creates
+the CommandLog up front (`status=running`), sends `run_started` with its id,
+enqueues `run_chat` (`_execute_chat`), and tails the log via `_stream_chat_log`.
+- The worker emits the **same** protocol the inline path does — `command_start` /
+  `output` / `command_done` / `execution_complete` — so the chat UI needed no
+  changes for durability; it just streams from the worker instead.
+- Cancellable: `POST /api/commands/{log_id}/cancel` sets the flag, marks the log
+  cancelled, and emits `execution_complete`; the worker honours the flag per
+  command and per line. The chat UI shows a **Stop** button while a run is live
+  (keyed off the `run_started` log id).
+- `_stream_run_log` was generalised into `_tail_log(terminal_types, finished)` so
+  the playbook (`complete`) and chat (`execution_complete`) tails share one loop,
+  with the DB-fallback resolving from PlaybookRun or CommandLog. (Also fixed: the
+  playbook fallback now recognises the `cancelled` terminal status.)
+- Verified on a live VPS: a 2-command plan streams the full protocol and persists
+  `success` + an explanation; a pre-set cancel flag yields `cancelled`; the tail
+  replays live and falls back to the DB after the log expires.
+
 ## Remaining slices
-- AI-chat command execution and the interactive terminal over the same model.
+- The interactive terminal (`/ws/terminal`) over the durable model; chat
+  reconnect-to-running from the UI.
 - `run_count` increment + richer run metadata on the celery path.
 - Worker in `docker-compose` / prod (DEPLOY.md); horizontal web scaling with
   `ENABLE_SCHEDULER` on a single process.

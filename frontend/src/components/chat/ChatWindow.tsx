@@ -4,7 +4,8 @@ import ChatInput from "./ChatInput"
 import ChatMessage, { type ChatMessageData } from "./ChatMessage"
 import CommandPlan from "./CommandPlan"
 import { useAuthStore } from "@/store/authStore"
-import { WifiOff } from "lucide-react"
+import { WifiOff, Square } from "lucide-react"
+import { cancelCommand } from "@/api/commands"
 import type { CommandItem } from "@/types"
 
 interface Props {
@@ -29,6 +30,8 @@ export default function ChatWindow({ serverId }: Props) {
   const [pending, setPending] = useState<PendingPlan | null>(null)
   const [, setOutputBuffer] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
+  // Set when a durable (worker) run starts — enables the Stop button.
+  const [runningLogId, setRunningLogId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const addMsg = useCallback((msg: ChatMessageData) => {
@@ -61,6 +64,11 @@ export default function ChatWindow({ serverId }: Props) {
           }
           break
         }
+
+        case "run_started":
+          // Durable worker run — remember its id so we can offer a Stop button.
+          setRunningLogId(msg.log_id as string)
+          break
 
         case "command_start":
           // Start accumulating output
@@ -95,6 +103,7 @@ export default function ChatWindow({ serverId }: Props) {
         case "execution_complete":
           setIsLoading(false)
           setPending(null)
+          setRunningLogId(null)
           setOutputBuffer("")
           setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "output")))
           addMsg({
@@ -137,6 +146,7 @@ export default function ChatWindow({ serverId }: Props) {
 
         case "error":
           setIsLoading(false)
+          setRunningLogId(null)
           setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "thinking")))
           addMsg({
             id: nextId(),
@@ -169,6 +179,15 @@ export default function ChatWindow({ serverId }: Props) {
     send({ type: "cancel" })
     setPending(null)
     setIsLoading(false)
+  }
+
+  async function handleStopRun() {
+    if (!runningLogId) return
+    try {
+      await cancelCommand(runningLogId)
+    } catch {
+      /* the stream still resolves when the run ends */
+    }
   }
 
   return (
@@ -215,6 +234,20 @@ export default function ChatWindow({ serverId }: Props) {
 
         <div ref={bottomRef} />
       </div>
+
+      {/* Stop a running execution (durable worker path) */}
+      {runningLogId && (
+        <div className="flex items-center justify-between gap-2 border-t border-border bg-amber-500/5 px-4 py-2">
+          <span className="text-xs text-muted-foreground">Running on the server…</span>
+          <button
+            onClick={handleStopRun}
+            className="flex items-center gap-1.5 rounded-lg bg-red-500/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-500"
+          >
+            <Square className="h-3 w-3" />
+            Stop
+          </button>
+        </div>
+      )}
 
       {/* Input */}
       <div className="border-t border-border p-3">
