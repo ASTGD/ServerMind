@@ -58,15 +58,23 @@ async def _execute(run_id: str, server_id: str, script: str) -> None:
             )
             await db.commit()
 
+        cancel_key = f"run:{run_id}:cancel"
         try:
             stream = await connection_manager.execute_stream(server, script)
             async for line in stream:
+                if await redis.exists(cancel_key):
+                    break
                 output.append(line)
                 await _emit(redis, key, {"type": "output", "data": line + "\n"})
         except Exception as exc:  # noqa: BLE001 — CommandError (non-zero exit) or connection error
             status = "failed"
             output.append(f"ERROR: {exc}")
             await _emit(redis, key, {"type": "output", "data": f"ERROR: {exc}\n"})
+        # Honour a cancel requested via the HTTP endpoint (flag set in Redis).
+        if await redis.exists(cancel_key):
+            status = "cancelled"
+            await _emit(redis, key, {"type": "output", "data": "⏹ Cancelled by user\n"})
+        await redis.delete(cancel_key)
 
         async with AsyncSessionLocal() as db:
             await db.execute(

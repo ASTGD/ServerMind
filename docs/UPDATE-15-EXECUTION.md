@@ -50,9 +50,25 @@ worker died.
 - Verified on a live VPS: list replay (output + complete) **and** DB-fallback
   after log expiry both reproduce the full run; default-inline path unchanged.
 
+## Slice 3 — shipped (cancellation)
+A user can stop a running install. Cancellation goes over a separate **HTTP
+endpoint** (the streaming WS is busy sending, not receiving):
+`POST /api/playbooks/runs/{run_id}/cancel` (execute-access checked) sets a Redis
+flag `run:{run_id}:cancel`, marks the run `cancelled`, and emits a final
+`complete` to the run log so the tailing WS resolves immediately. **Both**
+executors — the celery worker `_execute` and the inline WS loop — check the flag
+each output line and stop. Frontend: the run modal's primary button becomes
+**Stop** while running, plus a distinct amber `cancelled` state.
+- Verified on a live VPS: a baseline run completes `success` (5/5 lines); with the
+  flag set mid-run the executor stops early and the run ends `cancelled`.
+- Known limits (follow-ups): the remote process isn't force-killed — we stop
+  streaming and mark cancelled (could send a kill over SSH); the per-line flag
+  check means a fully-silent command is only interrupted when it next prints,
+  though the HTTP endpoint resolves the UI immediately regardless.
+
 ## Remaining slices
 - AI-chat command execution and the interactive terminal over the same model.
 - `run_count` increment + richer run metadata on the celery path.
 - Worker in `docker-compose` / prod (DEPLOY.md); horizontal web scaling with
   `ENABLE_SCHEDULER` on a single process.
-- Run **cancellation** (signal/revoke the task) and per-run resource limits.
+- Force-kill the remote process on cancel; per-run resource limits.

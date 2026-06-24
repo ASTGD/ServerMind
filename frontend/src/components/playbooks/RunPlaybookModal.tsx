@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import {
   X, Play, CheckCircle2, XCircle, Loader2, TerminalSquare,
-  ExternalLink, Copy, Check, Eye, EyeOff, PartyPopper,
+  ExternalLink, Copy, Check, Eye, EyeOff, PartyPopper, Square, Ban,
 } from "lucide-react"
 import type { PlaybookAccessInfo, PlaybookDetail, Server } from "@/types"
 import { useAuthStore } from "@/store/authStore"
 import { wsAuthQuery } from "@/api/auth"
+import { cancelPlaybookRun } from "@/api/playbooks"
 
 /**
  * WebSocket base URL — derived from the page origin so the modal works from
@@ -147,7 +148,7 @@ interface Props {
   isUserScript?: boolean
 }
 
-type RunState = "idle" | "running" | "success" | "failed"
+type RunState = "idle" | "running" | "success" | "failed" | "cancelled"
 
 export default function RunPlaybookModal({ playbook, servers, onClose, isUserScript = false }: Props) {
   const token = useAuthStore((s) => s.token)
@@ -183,7 +184,7 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
   // ETA progress: time-based estimate (we can't know a script's true % done).
   // Climbs toward the estimate but caps at 95% until the run actually completes.
   const progress =
-    runState === "success" || runState === "failed"
+    runState === "success" || runState === "failed" || runState === "cancelled"
       ? 100
       : runState === "running"
         ? Math.min(95, (elapsed / estimate) * 100)
@@ -254,7 +255,8 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
           finishedRef.current = true
           if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
           stopTick()
-          setRunState((msg.status as string) === "success" ? "success" : "failed")
+          const st = msg.status as string
+          setRunState(st === "success" ? "success" : st === "cancelled" ? "cancelled" : "failed")
           ws.close()
         } else if (msg.type === "error") {
           finishedRef.current = true
@@ -325,7 +327,19 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
     await connect("run")
   }, [serverId, token, playbook, vars, selectedServer, stopTick, connect])
 
-  const canRun = runState === "idle" || runState === "success" || runState === "failed"
+  const handleCancel = useCallback(async () => {
+    const rid = runIdRef.current
+    if (!rid) return
+    setOutputLines((prev) => [...prev, "⏹ Cancelling…"])
+    try {
+      await cancelPlaybookRun(rid)
+    } catch {
+      setOutputLines((prev) => [...prev, "ERROR: could not cancel the run"])
+    }
+  }, [])
+
+  const canRun =
+    runState === "idle" || runState === "success" || runState === "failed" || runState === "cancelled"
   const showConsole = runState !== "idle"
 
   return (
@@ -405,6 +419,7 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
                   {runState === "running" && "Installing…"}
                   {runState === "success" && "Completed"}
                   {runState === "failed" && "Failed"}
+                  {runState === "cancelled" && "Cancelled"}
                 </span>
                 <span className="text-muted-foreground tabular-nums">
                   {runState === "running"
@@ -417,9 +432,11 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
                   className={`h-full rounded-full transition-all duration-700 ease-out ${
                     runState === "failed"
                       ? "bg-red-500"
-                      : runState === "success"
-                        ? "bg-green-500"
-                        : "bg-primary"
+                      : runState === "cancelled"
+                        ? "bg-amber-500"
+                        : runState === "success"
+                          ? "bg-green-500"
+                          : "bg-primary"
                   }`}
                   style={{ width: `${progress}%` }}
                 />
@@ -483,6 +500,12 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
               Playbook failed — check the output above
             </div>
           )}
+          {runState === "cancelled" && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-400">
+              <Ban className="h-4 w-4" />
+              Run cancelled
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -493,23 +516,24 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
           >
             Close
           </button>
-          <button
-            onClick={handleRun}
-            disabled={!serverId || runState === "running"}
-            className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-          >
-            {runState === "running" ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Running…
-              </>
-            ) : (
-              <>
-                <Play className="h-4 w-4" />
-                {runState === "idle" ? "Run Playbook" : "Run Again"}
-              </>
-            )}
-          </button>
+          {runState === "running" ? (
+            <button
+              onClick={handleCancel}
+              className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium bg-red-500/90 text-white hover:bg-red-500 transition-colors"
+            >
+              <Square className="h-4 w-4" />
+              Stop
+            </button>
+          ) : (
+            <button
+              onClick={handleRun}
+              disabled={!serverId}
+              className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              <Play className="h-4 w-4" />
+              {runState === "idle" ? "Run Playbook" : "Run Again"}
+            </button>
+          )}
         </div>
       </div>
     </div>

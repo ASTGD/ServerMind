@@ -31,3 +31,8 @@ export async function getPlaybookRun(runId: string): Promise<PlaybookRun> {
   const res = await apiClient.get<PlaybookRun>(`/api/playbooks/runs/${runId}`)
   return res.data
 }
+
+/** Request cancellation of a running playbook execution. */
+export async function cancelPlaybookRun(runId: string): Promise<void> {
+  await apiClient.post(`/api/playbooks/runs/${runId}/cancel`)
+}

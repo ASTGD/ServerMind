@@ -620,9 +620,14 @@ async def playbook_run_ws(
         overall_status = "success"
         t0 = time.monotonic()
 
+        cancel_key = f"run:{run.id}:cancel"
         try:
             stream = await connection_manager.execute_stream(server, script)
             async for line in stream:
+                if await get_redis().exists(cancel_key):
+                    overall_status = "cancelled"
+                    await websocket.send_text(json.dumps({"type": "output", "data": "⏹ Cancelled by user\n"}))
+                    break
                 output_lines.append(line)
                 await websocket.send_text(json.dumps({
                     "type": "output",
@@ -637,6 +642,7 @@ async def playbook_run_ws(
                 "data": error_line + "\n",
             }))
 
+        await get_redis().delete(cancel_key)
         execution_ms = int((time.monotonic() - t0) * 1000)
         full_output = "\n".join(output_lines)
 
