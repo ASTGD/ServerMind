@@ -24,6 +24,7 @@ from app.services import ssh_service, team_service
 from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
 from app.services.playbook_service import substitute_variables
+from app.workers.playbook_tasks import run_channel, run_playbook_task
 from app.services.auth_service import decode_token
 
 logger = logging.getLogger(__name__)
@@ -427,6 +428,36 @@ async def _save_log(
 
 # ── Playbook Run WebSocket ─────────────────────────────────────────────────────
 
+async def _relay_celery_run(
+    websocket: WebSocket, run_id: str, server_id: str, script: str
+) -> None:
+    """Subscribe to the run's Redis channel, enqueue the Celery worker task, and
+    relay output to the client. The worker keeps running even if the client drops
+    (durable execution — Update 15)."""
+    channel = run_channel(run_id)
+    pubsub = get_redis().pubsub()
+    await pubsub.subscribe(channel)
+    # Subscribe BEFORE enqueuing so no early output is missed.
+    run_playbook_task.delay(run_id, server_id, script)
+    try:
+        async for message in pubsub.listen():
+            if message.get("type") != "message":
+                continue
+            data = message["data"]
+            await websocket.send_text(data)
+            try:
+                if json.loads(data).get("type") == "complete":
+                    break
+            except (ValueError, TypeError):
+                pass
+    finally:
+        try:
+            await pubsub.unsubscribe(channel)
+            await pubsub.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 @router.websocket("/ws/playbook-run/{server_id}")
 async def playbook_run_ws(
     websocket: WebSocket,
@@ -526,6 +557,10 @@ async def playbook_run_ws(
             "run_id": str(run.id),
             "title": run_title,
         }))
+
+        if settings.EXECUTION_BACKEND == "celery":
+            await _relay_celery_run(websocket, str(run.id), str(server.id), script)
+            return
 
         # Execute script and stream output
         output_lines: list[str] = []

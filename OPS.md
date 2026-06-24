@@ -43,6 +43,14 @@ npm run dev
 
 Then open **http://localhost:5190**. Leave Terminals 2 & 3 running (both hot-reload on code changes).
 
+### Durable execution (optional — Update 15)
+By default playbook runs execute in the backend process (`EXECUTION_BACKEND=inline`, no worker needed). To use the durable Celery path, set `EXECUTION_BACKEND=celery` in `.env` and run a worker in a 4th terminal (needs Redis up):
+```bash
+cd /Users/shafin/Documents/ServerMind/backend && source venv/bin/activate
+celery -A app.celery_app worker --loglevel=info
+```
+See `docs/UPDATE-15-EXECUTION.md`.
+
 ---
 
 ## ⏹️ Stop

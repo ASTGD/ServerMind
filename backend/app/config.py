@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     EMAIL_VERIFICATION_TOKEN_HOURS: int = 24
     APP_BASE_URL: str = ""   # frontend origin for verify links, e.g. https://app.example.com
 
+    # Execution backend (Update 15) — "inline" (in the web process) or "celery"
+    # (durable worker + Redis pub/sub; survives disconnects/restarts). Requires a
+    # running Celery worker when set to "celery".
+    EXECUTION_BACKEND: str = "inline"
+
     # CORS
     ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]
 
