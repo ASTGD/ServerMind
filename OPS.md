@@ -44,10 +44,14 @@ npm run dev
 Then open **http://localhost:5190**. Leave Terminals 2 & 3 running (both hot-reload on code changes).
 
 ### Durable execution (optional — Update 15)
-By default playbook runs execute in the backend process (`EXECUTION_BACKEND=inline`, no worker needed). To use the durable Celery path, set `EXECUTION_BACKEND=celery` in `.env` and run a worker in a 4th terminal (needs Redis up):
+By default playbook **and** AI-chat command execution run in the backend process (`EXECUTION_BACKEND=inline`, no worker needed). The durable Celery path makes a run survive client disconnects + web restarts, reconnectable, and cancellable. To use it, set `EXECUTION_BACKEND=celery` in `backend/.env` and run a worker in a 4th terminal (needs Redis up):
 ```bash
 cd /Users/shafin/Documents/ServerMind/backend && source venv/bin/activate
 celery -A app.celery_app worker --loglevel=info
+```
+…or run it in Docker instead of a 4th terminal (connects to the host's Postgres/Redis):
+```bash
+docker compose --profile worker up -d --build worker
 ```
 See `docs/UPDATE-15-EXECUTION.md`.
 

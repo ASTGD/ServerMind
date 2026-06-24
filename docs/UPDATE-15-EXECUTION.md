@@ -89,10 +89,25 @@ enqueues `run_chat` (`_execute_chat`), and tails the log via `_stream_chat_log`.
   `success` + an explanation; a pre-set cancel flag yields `cancelled`; the tail
   replays live and falls back to the DB after the log expires.
 
+## Slice 5 — shipped (worker as a service + multi-task fix)
+The Celery worker now runs as a managed service, so the durable path can actually
+be switched on:
+- `docker-compose.prod.yml` has a `worker` service (reuses the backend image,
+  `ENABLE_SCHEDULER=false` so only the backend schedules). `docker-compose.yml`
+  has an opt-in `worker` profile for local use (connects to the host's
+  Postgres/Redis via `host.docker.internal`, no `depends_on` so it never
+  recreates the dev datastores); a pure-host `celery -A app.celery_app worker`
+  also works. Flip `EXECUTION_BACKEND=celery` to route execution to it.
+- **Bug fixed (surfaced by running the worker end-to-end):** the module-level
+  async SQLAlchemy engine can't be reused across the fresh event loop each Celery
+  task gets via `asyncio.run()` — so every task *after the first* in a worker
+  process failed with "got Future attached to a different loop" (slice 1's
+  single-task test passed by luck). The worker tasks now use a task-scoped
+  `NullPool` engine, disposed when the task ends. Verified: two sequential tasks
+  both succeed through the containerized worker.
+
 ## Remaining slices
 - The interactive terminal (`/ws/terminal`) over the durable model; chat
   reconnect-to-running from the UI.
 - `run_count` increment + richer run metadata on the celery path.
-- Worker in `docker-compose` / prod (DEPLOY.md); horizontal web scaling with
-  `ENABLE_SCHEDULER` on a single process.
 - Force-kill the remote process on cancel; per-run resource limits.

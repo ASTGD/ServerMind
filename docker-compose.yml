@@ -33,6 +33,29 @@ services:
       timeout: 5s
       retries: 5
 
+  # Durable-execution worker (optional, Update 15). Off by default; start with:
+  #   docker compose --profile worker up -d --build worker
+  # Connects to the SAME Postgres/Redis the host backend uses (via the host's
+  # ports), so it shares state with it no matter which container serves those
+  # ports. Set EXECUTION_BACKEND=celery in backend/.env for the backend to enqueue
+  # runs to it. (For a pure host workflow, just run
+  # `celery -A app.celery_app worker` instead — see OPS.md.)
+  worker:
+    profiles: ["worker"]
+    build:
+      context: ./backend
+    image: servermind-backend:latest
+    container_name: servermind_worker
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      # Reach the host's Postgres/Redis (same instances the host backend uses).
+      DATABASE_URL: postgresql+asyncpg://servermind:password@host.docker.internal:5432/servermind
+      REDIS_URL: redis://host.docker.internal:6379/0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: celery -A app.celery_app worker --loglevel=info
+
 volumes:
   postgres_data:
   redis_data:

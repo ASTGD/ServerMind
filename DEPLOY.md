@@ -61,6 +61,7 @@ APP_ENV=production
 SECRET_KEY=<generated>
 ENCRYPTION_KEY=<generated>          # NEVER change this after servers are saved — it decrypts stored credentials
 ENABLE_SCHEDULER=true
+EXECUTION_BACKEND=celery            # run playbook/AI-chat execution on the worker (durable); "inline" runs it in the web process
 SENTRY_DSN=                         # optional (see §7)
 
 DATABASE_URL=postgresql+asyncpg://...   # Supabase
@@ -93,9 +94,9 @@ VITE_APP_TAGLINE=Manage any server in natural language
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 
-This builds both images, runs `alembic upgrade head` on the backend, seeds the
-official playbooks, starts the scheduler, and serves the SPA on
-`127.0.0.1:8080`.
+This builds the images, runs `alembic upgrade head` on the backend, seeds the
+official playbooks, starts the scheduler, brings up the **Celery worker**, and
+serves the SPA on `127.0.0.1:8080`.
 
 Check status:
 
@@ -103,6 +104,21 @@ Check status:
 docker compose -f docker-compose.prod.yml ps
 curl -s http://127.0.0.1:8080/health      # {"status":"ok","app":"ServerMind"}
 ```
+
+### Durable execution worker
+The stack includes a `worker` service (Celery) that runs playbook and AI-chat
+command execution off the web process, so a run survives client disconnects and
+web restarts, can be reconnected to, and can be cancelled (Update 15). It is
+active when `EXECUTION_BACKEND=celery` (the backend enqueues to it); with `inline`
+the worker idles harmlessly and execution runs in the web process.
+
+```bash
+docker compose -f docker-compose.prod.yml logs -f worker   # "celery@… ready" + tasks: run_playbook, run_chat
+```
+
+The worker runs with `ENABLE_SCHEDULER=false` — only the backend runs the
+scheduler, so scheduled jobs never fire twice. Add throughput with
+`--scale worker=N`.
 
 ---
 
@@ -198,7 +214,9 @@ docker compose -f docker-compose.prod.yml down
 The backend runs as a **single process** so the in-process APScheduler (scheduled
 tasks, metrics, backups) fires exactly once. To run multiple web workers, keep
 `ENABLE_SCHEDULER=true` on **one** dedicated backend and set it to `false` on the
-others, then load-balance across them.
+others, then load-balance across them. The `worker` service already runs with
+`ENABLE_SCHEDULER=false`; scale it with `--scale worker=N` for more execution
+throughput.
 
 ### Backups of ServerMind itself
 Back up the Postgres database regularly (Supabase has automatic backups; for

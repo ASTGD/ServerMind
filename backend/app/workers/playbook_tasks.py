@@ -17,10 +17,11 @@ from datetime import datetime, timezone
 
 from redis.asyncio import Redis, from_url
 from sqlalchemy import select, update as sa_update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.celery_app import celery
 from app.config import settings
-from app.database import AsyncSessionLocal
 from app.models.command_log import CommandLog
 from app.models.playbook import PlaybookRun
 from app.models.server import Server
@@ -43,11 +44,15 @@ async def _execute(run_id: str, server_id: str, script: str) -> None:
     """Stream the script's output into the Redis log and persist the result. A
     fresh Redis client is used per task (each Celery task gets its own loop)."""
     redis = from_url(settings.REDIS_URL, decode_responses=True)
+    # Task-scoped DB engine: each Celery task runs in its own asyncio.run() loop,
+    # and the shared app engine's pooled asyncpg connections can't cross loops.
+    db_engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
+    Session = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
     key = run_log_key(run_id)
     output: list[str] = []
     status = "success"
     try:
-        async with AsyncSessionLocal() as db:
+        async with Session() as db:
             server = (
                 await db.execute(select(Server).where(Server.id == uuid.UUID(server_id)))
             ).scalar_one_or_none()
@@ -78,7 +83,7 @@ async def _execute(run_id: str, server_id: str, script: str) -> None:
             await _emit(redis, key, {"type": "output", "data": "⏹ Cancelled by user\n"})
         await redis.delete(cancel_key)
 
-        async with AsyncSessionLocal() as db:
+        async with Session() as db:
             await db.execute(
                 sa_update(PlaybookRun)
                 .where(PlaybookRun.id == uuid.UUID(run_id))
@@ -89,6 +94,7 @@ async def _execute(run_id: str, server_id: str, script: str) -> None:
         await _emit(redis, key, {"type": "complete", "run_id": run_id, "status": status})
     finally:
         await redis.aclose()
+        await db_engine.dispose()
 
 
 @celery.task(name="run_playbook")
@@ -110,13 +116,15 @@ async def _execute_chat(
     command_done / execution_complete) into the Redis log, then explains the
     output and finalises the CommandLog row. Honours the cancel flag per line."""
     redis = from_url(settings.REDIS_URL, decode_responses=True)
+    db_engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
+    Session = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
     key = run_log_key(log_id)
     cancel_key = f"run:{log_id}:cancel"
     full_output: list[str] = []
     overall_status = "success"
     t0 = time.monotonic()
     try:
-        async with AsyncSessionLocal() as db:
+        async with Session() as db:
             server = (
                 await db.execute(select(Server).where(Server.id == uuid.UUID(server_id)))
             ).scalar_one_or_none()
@@ -170,7 +178,7 @@ async def _execute_chat(
         except Exception:  # noqa: BLE001
             explanation = plan.get("post_execution_message", "Commands completed.")
 
-        async with AsyncSessionLocal() as db:
+        async with Session() as db:
             await db.execute(
                 sa_update(CommandLog)
                 .where(CommandLog.id == uuid.UUID(log_id))
@@ -189,6 +197,7 @@ async def _execute_chat(
         })
     finally:
         await redis.aclose()
+        await db_engine.dispose()
 
 
 @celery.task(name="run_chat")
