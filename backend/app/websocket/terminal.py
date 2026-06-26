@@ -29,6 +29,30 @@ from app.services.ssh_service import STALL_NOTE, CommandStalled
 from app.services.auth_service import decode_token
 
 logger = logging.getLogger(__name__)
+
+
+# Worker-availability probe (Risk 2 — graceful fallback). Cached briefly so we
+# don't ping the broker on every run start.
+_worker_probe: dict[str, object] = {"ts": -999.0, "ok": False}
+_WORKER_PROBE_TTL = 10.0
+
+
+async def _worker_available() -> bool:
+    """True if at least one Celery worker responds to a ping. Lets the durable
+    (celery) execution path fall back to inline when no worker is running, instead
+    of enqueuing a task nothing will process (which would hang the run)."""
+    now = time.monotonic()
+    if now - float(_worker_probe["ts"]) < _WORKER_PROBE_TTL:
+        return bool(_worker_probe["ok"])
+    try:
+        from app.celery_app import celery
+        replies = await asyncio.to_thread(celery.control.ping, timeout=0.5)
+        ok = bool(replies)
+    except Exception:  # noqa: BLE001 — broker down / any error ⇒ treat as no worker
+        ok = False
+    _worker_probe["ts"] = now
+    _worker_probe["ok"] = ok
+    return ok
 router = APIRouter()
 
 _pty_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="pty")
@@ -313,10 +337,14 @@ async def _handle_message(
             return
 
     # ── 5. Execute ────────────────────────────────────────────────────────────
-    # Durable worker path: create the log up front (so it has an id to stream and
-    # cancel against), enqueue the worker, and tail its log. The worker keeps
-    # running and persists even if the client disconnects (Update 15, slice 4).
-    if settings.EXECUTION_BACKEND == "celery":
+    # Durable worker path (when a Celery worker is up): create the log up front (so
+    # it has an id to stream and cancel against), enqueue the worker, and tail its
+    # log — survives client disconnects (Update 15, slice 4). If the flag is on but
+    # no worker responds, fall back to inline so the run never hangs (Risk 2).
+    use_celery = settings.EXECUTION_BACKEND == "celery" and await _worker_available()
+    if settings.EXECUTION_BACKEND == "celery" and not use_celery:
+        logger.warning("EXECUTION_BACKEND=celery but no worker responded — running chat inline")
+    if use_celery:
         async with AsyncSessionLocal() as db:
             log = CommandLog(
                 server_id=server.id,
@@ -695,8 +723,10 @@ async def playbook_run_ws(
         }))
 
         if settings.EXECUTION_BACKEND == "celery":
-            await _relay_celery_run(websocket, str(run.id), str(server.id), script)
-            return
+            if await _worker_available():
+                await _relay_celery_run(websocket, str(run.id), str(server.id), script)
+                return
+            logger.warning("EXECUTION_BACKEND=celery but no worker responded — running playbook inline")
 
         # Execute script and stream output
         output_lines: list[str] = []

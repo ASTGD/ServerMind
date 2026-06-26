@@ -106,6 +106,17 @@ be switched on:
   `NullPool` engine, disposed when the task ends. Verified: two sequential tasks
   both succeed through the containerized worker.
 
+## Slice 6 — shipped (safe-by-default fallback — Risk 2)
+`EXECUTION_BACKEND=celery` is now safe to turn on even if no worker is running.
+Before enqueuing, the WS checks for a live worker (`_worker_available()` — a cached
+`celery.control.ping`); if none responds, the run **falls back to inline** instead
+of hanging on a task nothing will process. This removes the footgun that made
+enabling the durable path risky (Risk 2 from the server-connection audit).
+- `terminal.py` `_worker_available()` (10s-cached probe); both celery branches
+  (playbook + chat) gated on it, with a logged warning on fallback.
+- Verified live: no worker → probe `False` → inline; worker up → `True` → durable.
+  4 unit tests (mocked ping: up / no-replies / broker-error / cached).
+
 ## Remaining slices
 - The interactive terminal (`/ws/terminal`) over the durable model; chat
   reconnect-to-running from the UI.
