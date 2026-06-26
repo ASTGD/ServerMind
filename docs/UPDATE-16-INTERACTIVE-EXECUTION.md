@@ -8,6 +8,10 @@
 > Solves **Risk 1** from the server-connection audit. Scenario 3 from the concept
 > (changing the plan mid-install) is explicitly **out of scope** here — see §7.
 
+**Status:** Phase A ✅ shipped · Phase B 📋 planned · Phase C 🔭 deferred. This doc
+is the living roadmap — Phases B and C are retained here as the plan of record for
+when we pick them up.
+
 ---
 
 ## 0. Plain-English summary (for the PM)
@@ -119,7 +123,7 @@ UI state.
 
 ---
 
-## 3. Phase B — Smart answers (interactive session)
+## 3. Phase B — Smart answers (interactive session) 📋 PLANNED (future)
 
 **Outcome:** installs run through a real two-way session. The app auto-answers safe
 questions, pauses and asks the user for real input, and the chat stays usable —
@@ -259,7 +263,7 @@ detection is fiddly); B2–B3 are the user-visible payoff.
 - Every auto-answer audited in history.
 - Phase A watchdog is the hard backstop against any detection miss.
 
-## 7. Explicitly OUT of scope (deferred)
+## 7. Phase C — change the plan mid-install 🔭 DEFERRED (future)
 - **Scenario 3 — change the plan mid-install.** Installs are a row of dominoes and
   most run as one script; cleanly "skipping a step" needs installs rebuilt as
   separate, resumable, dependency-aware steps. That's a much larger effort and a
