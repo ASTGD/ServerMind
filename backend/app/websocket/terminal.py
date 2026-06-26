@@ -25,6 +25,7 @@ from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
 from app.services.playbook_service import substitute_variables
 from app.workers.playbook_tasks import run_chat_task, run_log_key, run_playbook_task
+from app.services.ssh_service import STALL_NOTE, CommandStalled
 from app.services.auth_service import decode_token
 
 logger = logging.getLogger(__name__)
@@ -365,6 +366,17 @@ async def _handle_message(
                     "data": line + "\n",
                     "stream": "stdout",
                 }))
+        except CommandStalled as exc:
+            if exc.last_output:
+                cmd_output.append(exc.last_output)
+                full_output.append(exc.last_output)
+                await ws.send_text(json.dumps({
+                    "type": "output", "data": exc.last_output + "\n", "stream": "stdout",
+                }))
+            full_output.append(STALL_NOTE)
+            await ws.send_text(json.dumps({"type": "output", "data": STALL_NOTE + "\n", "stream": "stdout"}))
+            exit_code = 1
+            overall_status = "stalled"
         except Exception as exc:
             error_line = f"ERROR: {exc}"
             cmd_output.append(error_line)
@@ -385,8 +397,10 @@ async def _handle_message(
             "duration_ms": duration_ms,
         }))
 
-        if exit_code != 0 and overall_status != "failed":
+        if exit_code != 0 and overall_status not in ("failed", "stalled"):
             overall_status = "partial"
+        if overall_status == "stalled":
+            break
 
     # ── 6. Explain output ─────────────────────────────────────────────────────
     execution_ms = int((time.monotonic() - t0) * 1000)
@@ -457,7 +471,7 @@ _RUN_POLL_INTERVAL = 0.4
 _RUN_MAX_POLLS = 9000  # ~60 min safety bound
 
 
-_TERMINAL_RUN_STATUSES = ("success", "failed", "partial", "cancelled", "blocked")
+_TERMINAL_RUN_STATUSES = ("success", "failed", "partial", "cancelled", "blocked", "stalled")
 
 
 async def _tail_log(
@@ -702,6 +716,13 @@ async def playbook_run_ws(
                     "type": "output",
                     "data": line + "\n",
                 }))
+        except CommandStalled as exc:
+            overall_status = "stalled"
+            if exc.last_output:
+                output_lines.append(exc.last_output)
+                await websocket.send_text(json.dumps({"type": "output", "data": exc.last_output + "\n"}))
+            output_lines.append(STALL_NOTE)
+            await websocket.send_text(json.dumps({"type": "output", "data": STALL_NOTE + "\n"}))
         except Exception as exc:
             error_line = f"ERROR: {exc}"
             output_lines.append(error_line)

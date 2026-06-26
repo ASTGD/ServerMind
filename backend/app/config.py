@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     EXECUTION_BACKEND: str = "inline"
     EXECUTION_LOG_TTL: int = 3600   # seconds to retain a run's streamed output for replay/reconnect
 
+    # Interactive-execution safety (Update 16, Phase A) — a streamed command that
+    # produces no output for this long is treated as stuck (likely waiting for input
+    # it can't get) and stopped with a clear message; the hard ceiling bounds total run time.
+    SSH_IDLE_TIMEOUT_SECONDS: int = 300
+    SSH_MAX_RUNTIME_SECONDS: int = 3600
+
     # CORS
     ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]
 

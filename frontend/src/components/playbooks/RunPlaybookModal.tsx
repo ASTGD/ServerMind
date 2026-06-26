@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import {
   X, Play, CheckCircle2, XCircle, Loader2, TerminalSquare,
-  ExternalLink, Copy, Check, Eye, EyeOff, PartyPopper, Square, Ban,
+  ExternalLink, Copy, Check, Eye, EyeOff, PartyPopper, Square, Ban, Clock,
 } from "lucide-react"
 import type { PlaybookAccessInfo, PlaybookDetail, Server } from "@/types"
 import { useAuthStore } from "@/store/authStore"
@@ -148,7 +148,7 @@ interface Props {
   isUserScript?: boolean
 }
 
-type RunState = "idle" | "running" | "success" | "failed" | "cancelled"
+type RunState = "idle" | "running" | "success" | "failed" | "cancelled" | "stalled"
 
 export default function RunPlaybookModal({ playbook, servers, onClose, isUserScript = false }: Props) {
   const token = useAuthStore((s) => s.token)
@@ -184,7 +184,7 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
   // ETA progress: time-based estimate (we can't know a script's true % done).
   // Climbs toward the estimate but caps at 95% until the run actually completes.
   const progress =
-    runState === "success" || runState === "failed" || runState === "cancelled"
+    runState === "success" || runState === "failed" || runState === "cancelled" || runState === "stalled"
       ? 100
       : runState === "running"
         ? Math.min(95, (elapsed / estimate) * 100)
@@ -256,7 +256,12 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
           if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
           stopTick()
           const st = msg.status as string
-          setRunState(st === "success" ? "success" : st === "cancelled" ? "cancelled" : "failed")
+          setRunState(
+            st === "success" ? "success"
+              : st === "cancelled" ? "cancelled"
+                : st === "stalled" ? "stalled"
+                  : "failed"
+          )
           ws.close()
         } else if (msg.type === "error") {
           finishedRef.current = true
@@ -339,7 +344,8 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
   }, [])
 
   const canRun =
-    runState === "idle" || runState === "success" || runState === "failed" || runState === "cancelled"
+    runState === "idle" || runState === "success" || runState === "failed" ||
+    runState === "cancelled" || runState === "stalled"
   const showConsole = runState !== "idle"
 
   return (
@@ -420,6 +426,7 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
                   {runState === "success" && "Completed"}
                   {runState === "failed" && "Failed"}
                   {runState === "cancelled" && "Cancelled"}
+                  {runState === "stalled" && "Stopped responding"}
                 </span>
                 <span className="text-muted-foreground tabular-nums">
                   {runState === "running"
@@ -434,9 +441,11 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
                       ? "bg-red-500"
                       : runState === "cancelled"
                         ? "bg-amber-500"
-                        : runState === "success"
-                          ? "bg-green-500"
-                          : "bg-primary"
+                        : runState === "stalled"
+                          ? "bg-orange-500"
+                          : runState === "success"
+                            ? "bg-green-500"
+                            : "bg-primary"
                   }`}
                   style={{ width: `${progress}%` }}
                 />
@@ -504,6 +513,15 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
             <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-400">
               <Ban className="h-4 w-4" />
               Run cancelled
+            </div>
+          )}
+          {runState === "stalled" && (
+            <div className="flex items-start gap-2 rounded-lg border border-orange-500/20 bg-orange-500/10 px-4 py-3 text-sm text-orange-400">
+              <Clock className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                Stopped responding — it likely paused to ask a question we couldn't answer.
+                Nothing was broken. Try again, or open the Terminal to run it by hand.
+              </span>
             </div>
           )}
         </div>

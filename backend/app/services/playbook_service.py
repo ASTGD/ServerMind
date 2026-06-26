@@ -76,6 +76,28 @@ def _with_preflight(script: str) -> str:
     return script[:cut] + _PREFLIGHT + script[cut:]
 
 
+# ── Non-interactive environment (Update 16, Phase A) ──────────────────────────
+# Stop installers from pausing to ask questions (apt/dpkg confirmations, the
+# Ubuntu "needrestart" service prompt, apt-listchanges). Injected into every bash
+# playbook so a run doesn't freeze waiting for an answer the app can't give.
+_NONINTERACTIVE = (
+    "export DEBIAN_FRONTEND=noninteractive\n"
+    "export NEEDRESTART_MODE=a\n"
+    "export NEEDRESTART_SUSPEND=1\n"
+    "export APT_LISTCHANGES_FRONTEND=none\n"
+)
+
+
+def _with_noninteractive(script: str) -> str:
+    """Set a non-interactive environment after the ``set -euo pipefail`` line."""
+    marker = "set -euo pipefail\n"
+    idx = script.find(marker)
+    if idx == -1:
+        return script  # no safe insertion point — leave the script untouched
+    cut = idx + len(marker)
+    return script[:cut] + _NONINTERACTIVE + script[cut:]
+
+
 def _script_for(item: dict) -> str | None:
     """Resolve a playbook's bash script, injecting any required preambles."""
     script = item.get("script_bash")
@@ -85,6 +107,7 @@ def _script_for(item: dict) -> str | None:
         script = _with_docker(script)
     if item.get("needs_preflight"):
         script = _with_preflight(script)
+    script = _with_noninteractive(script)
     return script
 
 

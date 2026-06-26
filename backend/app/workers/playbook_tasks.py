@@ -26,6 +26,7 @@ from app.models.command_log import CommandLog
 from app.models.playbook import PlaybookRun
 from app.models.server import Server
 from app.services import ai_service, connection_manager
+from app.services.ssh_service import STALL_NOTE, CommandStalled
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,13 @@ async def _execute(run_id: str, server_id: str, script: str) -> None:
                     break
                 output.append(line)
                 await _emit(redis, key, {"type": "output", "data": line + "\n"})
+        except CommandStalled as exc:
+            status = "stalled"
+            if exc.last_output:
+                output.append(exc.last_output)
+                await _emit(redis, key, {"type": "output", "data": exc.last_output + "\n"})
+            output.append(STALL_NOTE)
+            await _emit(redis, key, {"type": "output", "data": STALL_NOTE + "\n"})
         except Exception as exc:  # noqa: BLE001 — CommandError (non-zero exit) or connection error
             status = "failed"
             output.append(f"ERROR: {exc}")
@@ -153,6 +161,14 @@ async def _execute_chat(
                         break
                     full_output.append(line)
                     await _emit(redis, key, {"type": "output", "data": line + "\n", "stream": "stdout"})
+            except CommandStalled as exc:
+                if exc.last_output:
+                    full_output.append(exc.last_output)
+                    await _emit(redis, key, {"type": "output", "data": exc.last_output + "\n", "stream": "stdout"})
+                full_output.append(STALL_NOTE)
+                await _emit(redis, key, {"type": "output", "data": STALL_NOTE + "\n", "stream": "stdout"})
+                exit_code = 1
+                overall_status = "stalled"
             except Exception as exc:  # noqa: BLE001
                 err = f"ERROR: {exc}"
                 full_output.append(err)
@@ -163,8 +179,10 @@ async def _execute_chat(
                 "type": "command_done", "index": idx, "exit_code": exit_code,
                 "duration_ms": int((time.monotonic() - cmd_t0) * 1000),
             })
-            if exit_code != 0 and overall_status not in ("failed", "cancelled"):
+            if exit_code != 0 and overall_status not in ("failed", "cancelled", "stalled"):
                 overall_status = "partial"
+            if overall_status == "stalled":
+                break
 
         if await redis.exists(cancel_key):
             overall_status = "cancelled"
