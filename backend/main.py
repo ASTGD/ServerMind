@@ -15,6 +15,7 @@ from app.routers import commands as commands_router
 from app.routers import files as files_router
 from app.routers import hosting as hosting_router
 from app.routers import monitoring as monitoring_router
+from app.routers import notifications as notifications_router
 from app.routers import playbooks as playbooks_router
 from app.routers import scheduler as scheduler_router
 from app.routers import scripts as scripts_router
@@ -95,6 +96,7 @@ app.include_router(playbooks_router.router)
 app.include_router(scripts_router.router)
 app.include_router(scheduler_router.router)
 app.include_router(monitoring_router.router)
+app.include_router(notifications_router.router)
 app.include_router(files_router.router)
 app.include_router(security_router.router)
 app.include_router(backups_router.router)

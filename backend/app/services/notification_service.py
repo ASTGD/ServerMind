@@ -20,6 +20,42 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+async def create_run_notification(db, run_id) -> None:
+    """Create an in-app notification when a playbook/script run finishes
+    (Update 17, Phase 2). Best-effort — never raises into the run path."""
+    from sqlalchemy import select
+
+    from app.models.notification import Notification
+    from app.models.playbook import Playbook, PlaybookRun, UserScript
+    from app.models.server import Server
+
+    try:
+        run = (await db.execute(select(PlaybookRun).where(PlaybookRun.id == run_id))).scalar_one_or_none()
+        if run is None:
+            return
+        name = "Playbook"
+        if run.playbook_id:
+            name = (await db.execute(select(Playbook.title).where(Playbook.id == run.playbook_id))).scalar_one_or_none() or name
+        elif run.user_script_id:
+            name = (await db.execute(select(UserScript.title).where(UserScript.id == run.user_script_id))).scalar_one_or_none() or name
+        server_name = (await db.execute(select(Server.name).where(Server.id == run.server_id))).scalar_one_or_none() or "the server"
+        status = run.status or "done"
+        verb = {
+            "success": "finished",
+            "failed": "failed",
+            "stalled": "stopped responding",
+            "cancelled": "was cancelled",
+        }.get(status, "finished")
+        db.add(Notification(
+            user_id=run.user_id, type="playbook_run", status=status,
+            title=f"{name} {verb}", body=f"on {server_name}",
+            server_id=run.server_id, ref_id=run.id,
+        ))
+        await db.commit()
+    except Exception:  # noqa: BLE001 — notifications must never break a run
+        logger.warning("Failed to create run notification for %s", run_id, exc_info=True)
+
+
 # ── Email ─────────────────────────────────────────────────────────────────────
 
 def _send_email_sync(to: str, subject: str, body_text: str) -> None:

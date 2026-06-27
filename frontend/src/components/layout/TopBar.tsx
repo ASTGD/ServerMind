@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next"
 import { LogOut } from "lucide-react"
 import { useAuthStore } from "@/store/authStore"
 import { logout } from "@/api/auth"
+import NotificationBell from "./NotificationBell"
 
 export default function TopBar() {
   const { t } = useTranslation()
@@ -19,6 +20,7 @@ export default function TopBar() {
     <header className="flex h-14 items-center justify-between border-b border-border bg-card px-6">
       <div />
       <div className="flex items-center gap-4">
+        <NotificationBell />
         {user && (
           <span className="text-sm text-muted-foreground">{user.name ?? user.email}</span>
         )}

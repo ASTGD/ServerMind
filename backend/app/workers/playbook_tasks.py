@@ -101,6 +101,10 @@ async def _execute(run_id: str, server_id: str, script: str) -> None:
             )
             await db.commit()
 
+        async with Session() as db:
+            from app.services.notification_service import create_run_notification
+            await create_run_notification(db, uuid.UUID(run_id))
+
         await _emit(redis, key, {"type": "complete", "run_id": run_id, "status": status})
     finally:
         await redis.aclose()

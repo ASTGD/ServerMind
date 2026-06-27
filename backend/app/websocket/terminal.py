@@ -790,6 +790,10 @@ async def playbook_run_ws(
                 )
             await db.commit()
 
+        async with AsyncSessionLocal() as db:
+            from app.services.notification_service import create_run_notification
+            await create_run_notification(db, run.id)
+
         await websocket.send_text(json.dumps({
             "type": "complete",
             "run_id": str(run.id),
