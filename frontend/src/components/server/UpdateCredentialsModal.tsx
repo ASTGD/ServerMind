@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { X, KeyRound, Loader2 } from "lucide-react"
-import { updateServer } from "@/api/servers"
+import { updateServer, testConnection } from "@/api/servers"
 import type { Server } from "@/types"
 
 interface Props {
@@ -25,8 +25,16 @@ export default function UpdateCredentialsModal({ server, onClose }: Props) {
   const [credential, setCredential] = useState("")
 
   const mutation = useMutation({
-    mutationFn: () =>
-      updateServer(server.id, { username, auth_type: authType, credential }),
+    mutationFn: async () => {
+      await updateServer(server.id, { username, auth_type: authType, credential })
+      // "& reconnect": verify the new credentials so the status reflects reality
+      // (online / action-needed) instead of lingering at "unknown".
+      try {
+        await testConnection(server.id)
+      } catch {
+        /* best-effort — status simply stays "unknown" if the test can't run */
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["server", server.id] })
       qc.invalidateQueries({ queryKey: ["servers"] })
