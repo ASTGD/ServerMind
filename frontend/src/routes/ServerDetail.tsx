@@ -1,10 +1,11 @@
 import { useState } from "react"
 import { useParams, useNavigate, Link } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, Trash2, RefreshCw, Search, Loader2, MessageSquare, Terminal as TerminalIcon, Clock, Activity, FolderOpen, Shield, HardDriveDownload, Globe } from "lucide-react"
+import { ChevronLeft, Trash2, RefreshCw, Search, Loader2, MessageSquare, Terminal as TerminalIcon, Clock, Activity, FolderOpen, Shield, HardDriveDownload, Globe, KeyRound } from "lucide-react"
 import { getServer, deleteServer, testConnection, detectOs } from "@/api/servers"
 import ConnectionStatus from "@/components/server/ConnectionStatus"
 import ServerMetrics from "@/components/server/ServerMetrics"
+import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
 import type { Server } from "@/types"
 
 export default function ServerDetail() {
@@ -12,6 +13,7 @@ export default function ServerDetail() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [showCreds, setShowCreds] = useState(false)
 
   const { data: server, isLoading } = useQuery<Server>({
     queryKey: ["server", id],
@@ -158,6 +160,14 @@ export default function ServerDetail() {
             Detect OS
           </button>
           <button
+            onClick={() => setShowCreds(true)}
+            title="Update credentials"
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          >
+            <KeyRound size={13} />
+            Credentials
+          </button>
+          <button
             onClick={() => setConfirmDelete(true)}
             className="flex items-center gap-1.5 rounded-md border border-destructive/30 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"
           >
@@ -165,6 +175,10 @@ export default function ServerDetail() {
           </button>
         </div>
       </div>
+
+      {showCreds && (
+        <UpdateCredentialsModal server={server} onClose={() => setShowCreds(false)} />
+      )}
 
       {/* Test result */}
       {testMutation.data && (

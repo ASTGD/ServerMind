@@ -94,10 +94,13 @@ async def get_server(
 async def update_server(
     server_id: uuid.UUID,
     body: ServerUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Server:
-    """Update server name, tags, or notes."""
+    """Update a server. Name/tags/notes, and — when provided — the connection
+    details and credential (password/key). Changing any connection detail drops the
+    cached SSH connection and resets status, so the new details take effect at once."""
     server = await resolve_server(server_id, current_user, db, need_manage=True)
     if body.name is not None:
         server.name = body.name
@@ -105,8 +108,34 @@ async def update_server(
         server.tags = body.tags
     if body.notes is not None:
         server.notes = body.notes
+
+    conn_changed = False
+    if body.host is not None:
+        server.host = body.host; conn_changed = True
+    if body.port is not None:
+        server.port = body.port; conn_changed = True
+    if body.username is not None:
+        server.username = body.username; conn_changed = True
+    if body.auth_type is not None:
+        server.auth_type = body.auth_type; conn_changed = True
+    if body.credential is not None:
+        server.encrypted_cred = encrypt(body.credential); conn_changed = True
+
+    if conn_changed:
+        # The pooled SSH connection (if any) was authenticated with the OLD creds —
+        # drop it and force a fresh connect/test on next use.
+        await connection_manager.close(server)
+        server.status = "unknown"
+
     await db.commit()
     await db.refresh(server)
+    if conn_changed:
+        await audit_service.audit(
+            db, current_user, "server.update",
+            target_type="server", target_id=server.id,
+            meta={"host": server.host, "credential_changed": body.credential is not None},
+            request=request,
+        )
     return server
 
 

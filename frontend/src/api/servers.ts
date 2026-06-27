@@ -18,6 +18,11 @@ export interface ServerUpdateBody {
   name?: string
   tags?: string[] | null
   notes?: string | null
+  host?: string
+  port?: number
+  username?: string
+  auth_type?: "password" | "key"
+  credential?: string
 }
 
 export interface TestConnectionResult {

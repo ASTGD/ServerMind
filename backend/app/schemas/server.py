@@ -22,6 +22,12 @@ class ServerUpdate(BaseModel):
     name: str | None = None
     tags: list[str] | None = None
     notes: str | None = None
+    # Connection details (all optional) — provide `credential` to change the password/key.
+    host: str | None = None
+    port: int | None = None
+    username: str | None = None
+    auth_type: str | None = None     # 'password' | 'key'
+    credential: str | None = None    # plaintext new secret — encrypted before storage
 
 
 class ServerOut(BaseModel):
