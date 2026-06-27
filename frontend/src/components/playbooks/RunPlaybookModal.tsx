@@ -348,6 +348,17 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
     runState === "cancelled" || runState === "stalled"
   const showConsole = runState !== "idle"
 
+  // The most meaningful error line for the failure banner — scripts/preflight use
+  // ">>> ERROR: <reason>". Skip the generic exit-code line.
+  const failureReason = (() => {
+    if (runState !== "failed") return null
+    for (let i = outputLines.length - 1; i >= 0; i--) {
+      const m = outputLines[i].trim().match(/^>{0,3}\s*ERROR:\s*(.+)$/i)
+      if (m && !/command exited with status/i.test(m[1])) return m[1]
+    }
+    return null
+  })()
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
@@ -504,9 +515,9 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
             </div>
           ) : null}
           {runState === "failed" && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-              <XCircle className="h-4 w-4" />
-              Playbook failed — check the output above
+            <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              <XCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{failureReason ?? "Playbook failed — check the output above."}</span>
             </div>
           )}
           {runState === "cancelled" && (

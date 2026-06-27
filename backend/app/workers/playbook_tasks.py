@@ -26,7 +26,7 @@ from app.models.command_log import CommandLog
 from app.models.playbook import PlaybookRun
 from app.models.server import Server
 from app.services import ai_service, connection_manager
-from app.services.ssh_service import STALL_NOTE, CommandStalled
+from app.services.ssh_service import STALL_NOTE, CommandError, CommandStalled
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,9 @@ async def _execute(run_id: str, server_id: str, script: str) -> None:
                 await _emit(redis, key, {"type": "output", "data": exc.last_output + "\n"})
             output.append(STALL_NOTE)
             await _emit(redis, key, {"type": "output", "data": STALL_NOTE + "\n"})
-        except Exception as exc:  # noqa: BLE001 — CommandError (non-zero exit) or connection error
+        except CommandError:
+            status = "failed"  # the script's own output already explains the failure
+        except Exception as exc:  # noqa: BLE001 — connection error / unexpected
             status = "failed"
             output.append(f"ERROR: {exc}")
             await _emit(redis, key, {"type": "output", "data": f"ERROR: {exc}\n"})

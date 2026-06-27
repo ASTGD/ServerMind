@@ -1076,6 +1076,87 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         ),
     },
 
+    {
+        "slug": "webmin",
+        "needs_preflight": False,
+        "title": "Webmin",
+        "description": (
+            "Installs Webmin — a free, web-based system administration panel for Linux "
+            "(manage users, services, packages, cron, firewall, and more). Lightweight and "
+            "coexists with your existing setup — no fresh server required. Log in with your "
+            "server's root or sudo user."
+        ),
+        "category": "control-panel",
+        "os_family": "linux",
+        "script_type": "bash",
+        "est_runtime_sec": 150,
+        "tags": ["control-panel", "webmin", "system"],
+        "variables": [],
+        "access": {
+            "name": "Webmin",
+            "url": "https://{{HOST}}:10000",
+            "username": "root",
+            "note": "Log in with your server's root or sudo-user password. Expect a self-signed-certificate warning on first load.",
+        },
+        "script_bash": (
+            "#!/bin/bash\n"
+            "set -euo pipefail\n"
+            ". /etc/os-release\n"
+            'case "${ID:-}" in ubuntu|debian) : ;; *) echo ">>> ERROR: This Webmin playbook supports Ubuntu/Debian. Found ${PRETTY_NAME:-$ID}."; exit 1 ;; esac\n'
+            "apt-get update -qq\n"
+            "apt-get install -y -qq curl\n"
+            'echo ">>> Adding the official Webmin repository..."\n'
+            "curl -fsSL https://download.webmin.com/setup-repos.sh -o /tmp/webmin-setup-repos.sh\n"
+            "sh /tmp/webmin-setup-repos.sh -f\n"
+            "apt-get update -qq\n"
+            'echo ">>> Installing Webmin (~2 min)..."\n'
+            "apt-get install -y --install-recommends webmin\n"
+            'echo ">>> Webmin installed. Open https://YOUR-SERVER-IP:10000 and log in with your root or sudo user."\n'
+        ),
+    },
+
+    {
+        "slug": "virtualmin",
+        "needs_preflight": True,
+        "title": "Virtualmin (GPL)",
+        "description": (
+            "Installs Virtualmin GPL — a free, full web-hosting control panel built on Webmin "
+            "(Apache, BIND, Postfix, MariaDB/MySQL). Requires a FRESH server with 2 GB+ RAM and a "
+            "fully-qualified hostname. Log in as root and finish the setup wizard on first visit."
+        ),
+        "category": "control-panel",
+        "os_family": "linux",
+        "script_type": "bash",
+        "est_runtime_sec": 900,
+        "tags": ["control-panel", "virtualmin", "hosting"],
+        "variables": [
+            {"name": "HOSTNAME", "label": "Server hostname (FQDN, e.g. server.example.com)", "default": "", "required": True},
+        ],
+        "access": {
+            "name": "Virtualmin",
+            "url": "https://{{HOST}}:10000",
+            "username": "root",
+            "note": "Log in with your server's root password, then complete the post-install wizard. Expect a self-signed-certificate warning.",
+        },
+        "script_bash": (
+            "#!/bin/bash\n"
+            "set -euo pipefail\n"
+            'PANEL="Virtualmin"\n'
+            "MIN_RAM_MB=2048\n"
+            'HOSTNAME_FQDN="{{HOSTNAME}}"\n'
+            "preflight\n"
+            ". /etc/os-release\n"
+            'case "${ID:-}" in ubuntu|debian|almalinux|rocky|centos) : ;; *) echo ">>> ERROR: Virtualmin supports Ubuntu/Debian/AlmaLinux/Rocky/CentOS. Found ${PRETTY_NAME:-$ID}."; exit 1 ;; esac\n'
+            'echo ">>> Setting hostname to $HOSTNAME_FQDN..."\n'
+            'hostnamectl set-hostname "$HOSTNAME_FQDN" 2>/dev/null || true\n'
+            'echo ">>> Downloading the official Virtualmin installer..."\n'
+            "curl -fsSL https://software.virtualmin.com/gpl/scripts/virtualmin-install.sh -o /tmp/virtualmin-install.sh\n"
+            'echo ">>> Installing Virtualmin GPL (~10-15 min)..."\n'
+            'sh /tmp/virtualmin-install.sh --force --hostname "$HOSTNAME_FQDN"\n'
+            'echo ">>> Virtualmin installed. Open https://YOUR-SERVER-IP:10000 and log in as root."\n'
+        ),
+    },
+
     # ── Control Panels — Premium (license required) ──────────────────────────
 
     {

@@ -25,7 +25,7 @@ from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
 from app.services.playbook_service import substitute_variables
 from app.workers.playbook_tasks import run_chat_task, run_log_key, run_playbook_task
-from app.services.ssh_service import STALL_NOTE, CommandStalled
+from app.services.ssh_service import STALL_NOTE, CommandError, CommandStalled
 from app.services.auth_service import decode_token
 
 logger = logging.getLogger(__name__)
@@ -753,6 +753,8 @@ async def playbook_run_ws(
                 await websocket.send_text(json.dumps({"type": "output", "data": exc.last_output + "\n"}))
             output_lines.append(STALL_NOTE)
             await websocket.send_text(json.dumps({"type": "output", "data": STALL_NOTE + "\n"}))
+        except CommandError:
+            overall_status = "failed"  # the script's own output already explains the failure
         except Exception as exc:
             error_line = f"ERROR: {exc}"
             output_lines.append(error_line)
