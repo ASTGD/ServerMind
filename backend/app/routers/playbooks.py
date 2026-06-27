@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,8 +17,9 @@ from app.dependencies.auth import get_current_user
 from app.models.playbook import Playbook, PlaybookRun
 from app.models.user import User
 from app.schemas.playbook import PlaybookOut, PlaybookDetailOut, PlaybookRunOut
+from app.services.playbook_service import substitute_variables
 from app.services.redis_service import get_redis
-from app.workers.playbook_tasks import run_log_key
+from app.workers.playbook_tasks import run_log_key, run_playbook_task
 
 router = APIRouter(prefix="/api/playbooks", tags=["playbooks"])
 
@@ -114,6 +116,82 @@ async def cancel_run(
     await redis.rpush(key, json.dumps({"type": "complete", "run_id": str(run_id), "status": "cancelled"}))
     await redis.expire(key, settings.EXECUTION_LOG_TTL)
     return None
+
+
+# ── Fleet install — run a playbook on several servers at once (Update 18) ──────
+
+MAX_FLEET = 25
+
+
+class RunMultiRequest(BaseModel):
+    server_ids: list[uuid.UUID]
+    variables: dict[str, str] = {}
+
+
+class RunStatusRequest(BaseModel):
+    run_ids: list[uuid.UUID]
+
+
+@router.post("/{playbook_id}/run-multi")
+async def run_multi(
+    playbook_id: uuid.UUID,
+    body: RunMultiRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Run a playbook on several servers at once — one durable background run per
+    server, same variables for all. Needs a worker running (Update 18)."""
+    if not body.server_ids:
+        raise HTTPException(status_code=400, detail="Select at least one server")
+    if len(body.server_ids) > MAX_FLEET:
+        raise HTTPException(status_code=400, detail=f"Too many servers at once (max {MAX_FLEET})")
+    playbook = (
+        await db.execute(select(Playbook).where(Playbook.id == playbook_id, Playbook.is_public == True))
+    ).scalar_one_or_none()
+    if not playbook:
+        raise HTTPException(status_code=404, detail="Playbook not found")
+
+    pending: list[tuple[str, str, str, str]] = []  # (run_id, server_id, script, server_name)
+    for sid in body.server_ids:
+        server = await resolve_server(sid, current_user, db, need_execute=True)
+        raw = (
+            playbook.script_powershell
+            if (server.connection_type == "winrm" and playbook.script_powershell)
+            else playbook.script_bash
+        )
+        if not raw:
+            continue  # no script compatible with this server's OS — skip it
+        script = substitute_variables(raw, body.variables)
+        run = PlaybookRun(
+            server_id=sid, user_id=current_user.id, playbook_id=playbook.id,
+            variables_used=body.variables, status="running",
+        )
+        db.add(run)
+        await db.flush()  # populate run.id
+        pending.append((str(run.id), str(sid), script, server.name))
+    await db.commit()  # commit before enqueuing so the worker can find the runs
+
+    runs = []
+    for run_id, sid, script, server_name in pending:
+        run_playbook_task.delay(run_id, sid, script)
+        runs.append({"run_id": run_id, "server_id": sid, "server_name": server_name})
+    return {"runs": runs}
+
+
+@router.post("/runs/status")
+async def runs_status(
+    body: RunStatusRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    """Current status of a batch of runs (for the fleet-install batch view)."""
+    rows = (
+        await db.execute(
+            select(PlaybookRun.id, PlaybookRun.status, PlaybookRun.server_id)
+            .where(PlaybookRun.id.in_(body.run_ids), PlaybookRun.user_id == current_user.id)
+        )
+    ).all()
+    return [{"id": str(i), "status": s, "server_id": str(sv)} for i, s, sv in rows]
 
 
 @router.get("/{playbook_id}", response_model=PlaybookDetailOut)

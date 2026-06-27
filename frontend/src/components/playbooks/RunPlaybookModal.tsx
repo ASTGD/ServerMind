@@ -6,8 +6,9 @@ import {
 import type { PlaybookAccessInfo, PlaybookDetail, Server } from "@/types"
 import { useAuthStore } from "@/store/authStore"
 import { wsAuthQuery } from "@/api/auth"
-import { cancelPlaybookRun } from "@/api/playbooks"
+import { cancelPlaybookRun, runMulti, type FleetRun } from "@/api/playbooks"
 import { getActiveRuns } from "@/api/servers"
+import BatchRunModal from "./BatchRunModal"
 
 /**
  * WebSocket base URL — derived from the page origin so the modal works from
@@ -153,7 +154,9 @@ type RunState = "idle" | "running" | "success" | "failed" | "cancelled" | "stall
 
 export default function RunPlaybookModal({ playbook, servers, onClose, isUserScript = false }: Props) {
   const token = useAuthStore((s) => s.token)
-  const [serverId, setServerId] = useState<string>(servers[0]?.id ?? "")
+  const [selectedIds, setSelectedIds] = useState<string[]>(servers[0] ? [servers[0].id] : [])
+  const serverId = selectedIds[0] ?? ""
+  const [batchRuns, setBatchRuns] = useState<FleetRun[] | null>(null)
   const [vars, setVars] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {}
     for (const v of playbook.variables ?? []) {
@@ -305,13 +308,36 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
     [serverId, isUserScript, playbook, vars, estimate, stopTick]
   )
 
+  function toggleServer(id: string) {
+    // Fleet install is for official playbooks; user scripts stay single-server.
+    if (isUserScript) {
+      setSelectedIds([id])
+      return
+    }
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
   const handleRun = useCallback(async () => {
-    if (!serverId || !token) return
+    if (selectedIds.length === 0 || !token) return
     const missingRequired = (playbook.variables ?? []).filter(
       (v) => v.required && !vars[v.name]?.trim()
     )
     if (missingRequired.length > 0) {
       alert(`Required: ${missingRequired.map((v) => v.label).join(", ")}`)
+      return
+    }
+
+    // Fleet install — 2+ servers each run as an independent background install.
+    if (!isUserScript && selectedIds.length >= 2) {
+      if (selectedIds.length > 10 && !confirm(`Run "${playbook.title}" on ${selectedIds.length} servers at once?`)) {
+        return
+      }
+      try {
+        const { runs } = await runMulti(playbook.id, selectedIds, vars)
+        setBatchRuns(runs)
+      } catch {
+        alert("Couldn't start the fleet install — make sure the background worker is running.")
+      }
       return
     }
 
@@ -332,7 +358,7 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
     }, 1000)
 
     await connect("run")
-  }, [serverId, token, playbook, vars, selectedServer, stopTick, connect])
+  }, [selectedIds, isUserScript, token, playbook, vars, selectedServer, stopTick, connect])
 
   const handleCancel = useCallback(async () => {
     const rid = runIdRef.current
@@ -395,6 +421,10 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
     return null
   })()
 
+  if (batchRuns) {
+    return <BatchRunModal runs={batchRuns} playbookTitle={playbook.title} onClose={onClose} />
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
@@ -413,26 +443,45 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
         </div>
 
         <div className="overflow-y-auto flex-1 p-6 space-y-5">
-          {/* Server selector */}
+          {/* Server selector — multi-select for fleet installs (playbooks only) */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">
-              Target Server
+              {isUserScript ? "Target Server" : "Target Server(s)"}
             </label>
-            <select
-              value={serverId}
-              onChange={(e) => setServerId(e.target.value)}
-              disabled={!canRun}
-              className="w-full rounded-lg border border-border bg-background text-foreground text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50"
-            >
-              {servers.length === 0 && (
-                <option value="">No servers available</option>
-              )}
-              {servers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.host}) — {s.os_type ?? s.connection_type}
-                </option>
-              ))}
-            </select>
+            {servers.length === 0 ? (
+              <p className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
+                No servers available
+              </p>
+            ) : (
+              <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-border p-1.5">
+                {servers.map((s) => {
+                  const checked = selectedIds.includes(s.id)
+                  return (
+                    <label
+                      key={s.id}
+                      className={`flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors ${checked ? "bg-primary/10" : "hover:bg-accent"} ${!canRun ? "pointer-events-none opacity-50" : ""}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!canRun}
+                        onChange={() => toggleServer(s.id)}
+                        className="h-4 w-4 rounded border-border accent-primary"
+                      />
+                      <span className="truncate font-medium text-foreground">{s.name}</span>
+                      <span className="truncate text-xs text-muted-foreground">{s.host}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+            {!isUserScript && servers.length > 1 && (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {selectedIds.length > 1
+                  ? `${selectedIds.length} servers selected — the same install runs on each in the background.`
+                  : "Tip: tick more than one server to install across your fleet at once."}
+              </p>
+            )}
           </div>
 
           {/* Variables */}
@@ -592,11 +641,13 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
           ) : (
             <button
               onClick={handleRun}
-              disabled={!serverId}
+              disabled={selectedIds.length === 0}
               className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
               <Play className="h-4 w-4" />
-              {runState === "idle" ? "Run Playbook" : "Run Again"}
+              {selectedIds.length >= 2
+                ? `Run on ${selectedIds.length} servers`
+                : runState === "idle" ? "Run Playbook" : "Run Again"}
             </button>
           )}
         </div>

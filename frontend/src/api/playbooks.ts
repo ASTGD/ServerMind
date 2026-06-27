@@ -36,3 +36,34 @@ export async function getPlaybookRun(runId: string): Promise<PlaybookRun> {
 export async function cancelPlaybookRun(runId: string): Promise<void> {
   await apiClient.post(`/api/playbooks/runs/${runId}/cancel`)
 }
+
+export interface FleetRun {
+  run_id: string
+  server_id: string
+  server_name: string
+}
+
+/** Run a playbook on several servers at once — one background run per server. */
+export async function runMulti(
+  playbookId: string,
+  serverIds: string[],
+  variables: Record<string, string>,
+): Promise<{ runs: FleetRun[] }> {
+  const { data } = await apiClient.post<{ runs: FleetRun[] }>(
+    `/api/playbooks/${playbookId}/run-multi`,
+    { server_ids: serverIds, variables },
+  )
+  return data
+}
+
+export interface RunStatus {
+  id: string
+  status: string
+  server_id: string
+}
+
+/** Current status of a batch of runs (for the fleet batch view). */
+export async function getRunsStatus(runIds: string[]): Promise<RunStatus[]> {
+  const { data } = await apiClient.post<RunStatus[]>("/api/playbooks/runs/status", { run_ids: runIds })
+  return data
+}
