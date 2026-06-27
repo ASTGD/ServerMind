@@ -141,6 +141,40 @@ async def list_active_runs(
     ]
 
 
+@router.get("/api/active-runs")
+async def list_all_active_runs(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    """All of the user's playbook/script runs currently in progress (recent), across
+    every server — the dashboard "running now" panel (Update 17, Phase 3)."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=2)
+    rows = (
+        await db.execute(
+            select(PlaybookRun, Server.name, Playbook.title, UserScript.title)
+            .outerjoin(Server, PlaybookRun.server_id == Server.id)
+            .outerjoin(Playbook, PlaybookRun.playbook_id == Playbook.id)
+            .outerjoin(UserScript, PlaybookRun.user_script_id == UserScript.id)
+            .where(
+                PlaybookRun.user_id == current_user.id,
+                PlaybookRun.status == "running",
+                PlaybookRun.started_at >= cutoff,
+            )
+            .order_by(PlaybookRun.started_at.desc())
+        )
+    ).all()
+    return [
+        {
+            "id": str(run.id),
+            "server_id": str(run.server_id),
+            "server_name": server_name or "server",
+            "title": pb_title or us_title or "Playbook",
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+        }
+        for run, server_name, pb_title, us_title in rows
+    ]
+
+
 @router.get("/api/commands/{log_id}", response_model=CommandLogOut)
 async def get_log(
     log_id: uuid.UUID,

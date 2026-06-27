@@ -8,6 +8,7 @@ import type { Server } from "@/types"
 import StatCard from "@/components/dashboard/StatCard"
 import ServerHealthRow from "@/components/dashboard/ServerHealthRow"
 import QuickActions from "@/components/dashboard/QuickActions"
+import RunningTasks from "@/components/dashboard/RunningTasks"
 
 const CONN_LABELS: Record<string, string> = {
   ssh: "Linux / SSH",
@@ -87,6 +88,9 @@ export default function Dashboard() {
           sub="ready to run"
         />
       </div>
+
+      {/* Running now (hidden when nothing is in progress) */}
+      <RunningTasks />
 
       {/* Main grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

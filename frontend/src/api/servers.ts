@@ -89,3 +89,17 @@ export async function getActiveRuns(serverId: string): Promise<ActiveRun[]> {
   const { data } = await apiClient.get<ActiveRun[]>(`/api/servers/${serverId}/active-runs`)
   return data
 }
+
+export interface ActiveRunSummary {
+  id: string
+  server_id: string
+  server_name: string
+  title: string
+  started_at: string | null
+}
+
+/** All of the user's in-progress installs across every server (dashboard panel). */
+export async function getAllActiveRuns(): Promise<ActiveRunSummary[]> {
+  const { data } = await apiClient.get<ActiveRunSummary[]>("/api/active-runs")
+  return data
+}

@@ -4,7 +4,7 @@
 > rejoin a running one, get notified when it finishes, and (Phase 3) see what's
 > running where. Built on the durable execution engine (Update 15).
 
-**Status:** Phase 1 ✅ shipped · Phase 2 ✅ shipped · Phase 3 📋 planned.
+**Status:** Phase 1 ✅ shipped · Phase 2 ✅ shipped · Phase 3 ✅ shipped.
 
 ## Phase 1 — Background installs + rejoin on reopen ✅
 - `EXECUTION_BACKEND` now defaults to `"celery"` (durable worker). It falls back to
@@ -31,10 +31,14 @@
 - Verified: a finished run creates a notification ("Playbook finished — on TestServer")
   and the unread count reflects it.
 
-## Phase 3 — Running-tasks dashboard 📋 PLANNED
-- A live panel of what's running on which server, with click-through to the live log.
-  Builds on `/active-runs` (extended across all the user's servers) + the durable run
-  log. Medium.
+## Phase 3 — Running-tasks dashboard ✅
+- `GET /api/active-runs` — all the user's in-progress runs across every server (recent),
+  each with server name + playbook/script title.
+- Frontend: a **"Running now"** panel on the Dashboard (polls every 8s, hidden when
+  nothing runs). Click a task → `RunLogModal`, a read-only live-log viewer that
+  rejoins the run (attach/replay) and streams its output, with a **Stop** button.
+- Verified: the panel query returns the right server + title; the log viewer reuses
+  the proven attach/replay path.
 
 ## Later / optional
 - Browser push + email notifications (extends Phase 2).
