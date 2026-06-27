@@ -23,7 +23,7 @@ export interface Server {
   os_version: string | null
   arch: string | null
   shell: string
-  status: "online" | "offline" | "unknown"
+  status: "online" | "offline" | "unknown" | "auth_failed"
   tags: string[] | null
   notes: string | null
   last_seen: string | null

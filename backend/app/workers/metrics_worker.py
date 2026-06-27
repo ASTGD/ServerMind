@@ -60,11 +60,13 @@ async def _collect_server(server: Server) -> bool:
     try:
         data = await metrics_service.get_metrics(server)
     except Exception as exc:
+        from app.services.ssh_service import is_auth_error
         logger.debug("Cannot reach %s for metrics: %s", server.name, exc)
-        # Mark server as offline
+        # Stale credentials (needs a password update) vs simply unreachable.
+        new_status = "auth_failed" if is_auth_error(exc) else "offline"
         async with AsyncSessionLocal() as db:
             await db.execute(
-                sa_update(Server).where(Server.id == server.id).values(status="offline")
+                sa_update(Server).where(Server.id == server.id).values(status=new_status)
             )
             await db.commit()
         return False

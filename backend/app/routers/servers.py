@@ -175,10 +175,15 @@ async def test_server(
     except NotImplementedError as exc:
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc))
 
-    # Update status in DB
-    server.status = "online" if result.ok else "offline"
+    # Update status in DB — flag stale credentials distinctly from unreachable.
+    from app.services.ssh_service import is_auth_error
     if result.ok:
+        server.status = "online"
         server.last_seen = datetime.now(timezone.utc)
+    elif is_auth_error(message=result.error):
+        server.status = "auth_failed"
+    else:
+        server.status = "offline"
     await db.commit()
 
     return {

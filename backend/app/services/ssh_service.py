@@ -57,6 +57,16 @@ STALL_NOTE = (
 )
 
 
+def is_auth_error(exc: BaseException | None = None, message: str | None = None) -> bool:
+    """True when a connection failure is an authentication failure (wrong
+    password/key) — i.e. the stored credentials are stale, as opposed to the server
+    being unreachable. Used to flag servers that need their password updated."""
+    if isinstance(exc, paramiko.AuthenticationException):
+        return True
+    text = message if message is not None else (str(exc) if exc else "")
+    return "authentication failed" in text.lower()
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _make_client(host: str, port: int, username: str, auth_type: str, credential: str) -> paramiko.SSHClient:

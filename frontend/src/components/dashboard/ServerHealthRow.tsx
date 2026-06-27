@@ -26,6 +26,7 @@ const dotClass: Record<Server["status"], string> = {
   online: "bg-green-500",
   offline: "bg-red-500",
   unknown: "bg-muted-foreground",
+  auth_failed: "bg-amber-500",
 }
 
 /**

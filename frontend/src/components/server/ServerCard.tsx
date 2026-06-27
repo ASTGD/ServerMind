@@ -1,5 +1,6 @@
+import { useState } from "react"
 import { Link } from "react-router-dom"
-import { Server as ServerIcon, Cpu } from "lucide-react"
+import { Server as ServerIcon, Cpu, AlertTriangle } from "lucide-react"
 import type { Server } from "@/types"
 import ConnectionStatus from "./ConnectionStatus"
 
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export default function ServerCard({ server }: Props) {
+  const [showMsg, setShowMsg] = useState(false)
   return (
     <Link
       to={`/servers/${server.id}`}
@@ -23,7 +25,31 @@ export default function ServerCard({ server }: Props) {
             <p className="truncate text-xs text-muted-foreground">{server.host}:{server.port}</p>
           </div>
         </div>
-        <ConnectionStatus status={server.status} className="shrink-0" />
+        <div className="flex shrink-0 items-center gap-2">
+          {server.status === "auth_failed" && (
+            <div className="relative">
+              <button
+                type="button"
+                aria-label="Action needed — password may have changed"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowMsg((v) => !v) }}
+                className="flex h-6 w-6 items-center justify-center rounded-full text-red-500 hover:bg-red-500/10"
+              >
+                <AlertTriangle size={15} />
+              </button>
+              {showMsg && (
+                <div className="absolute right-0 top-7 z-20 w-60 rounded-lg border border-border bg-card p-3 text-left shadow-lg">
+                  <p className="text-xs font-semibold text-foreground">Password may have changed</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    This server is rejecting the saved login. If you changed its password,
+                    open it and use <span className="font-medium text-foreground">Credentials</span> to update it.
+                  </p>
+                  <span className="mt-2 inline-block text-xs font-medium text-primary">Open server to fix →</span>
+                </div>
+              )}
+            </div>
+          )}
+          <ConnectionStatus status={server.status} />
+        </div>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
