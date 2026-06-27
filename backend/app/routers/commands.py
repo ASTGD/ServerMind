@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -106,6 +107,38 @@ async def list_history(
         .limit(limit)
     )
     return list(result.scalars().all())
+
+
+@router.get("/api/servers/{server_id}/active-runs")
+async def list_active_runs(
+    server_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    """Playbook/script runs still in progress on this server (recent only), so the
+    run window can rejoin one instead of starting a duplicate (Update 17)."""
+    await _own_server(server_id, db, current_user)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=2)
+    rows = (
+        await db.execute(
+            select(PlaybookRun)
+            .where(
+                PlaybookRun.server_id == server_id,
+                PlaybookRun.status == "running",
+                PlaybookRun.started_at >= cutoff,
+            )
+            .order_by(PlaybookRun.started_at.desc())
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "playbook_id": str(r.playbook_id) if r.playbook_id else None,
+            "user_script_id": str(r.user_script_id) if r.user_script_id else None,
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+        }
+        for r in rows
+    ]
 
 
 @router.get("/api/commands/{log_id}", response_model=CommandLogOut)

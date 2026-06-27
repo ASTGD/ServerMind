@@ -76,3 +76,16 @@ export async function getMetrics(id: string): Promise<ServerMetrics> {
   const { data } = await apiClient.get<ServerMetrics>(`/api/servers/${id}/metrics`)
   return data
 }
+
+export interface ActiveRun {
+  id: string
+  playbook_id: string | null
+  user_script_id: string | null
+  started_at: string | null
+}
+
+/** Playbook/script runs still in progress on a server (so a window can rejoin one). */
+export async function getActiveRuns(serverId: string): Promise<ActiveRun[]> {
+  const { data } = await apiClient.get<ActiveRun[]>(`/api/servers/${serverId}/active-runs`)
+  return data
+}

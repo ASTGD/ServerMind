@@ -53,10 +53,11 @@ class Settings(BaseSettings):
     EMAIL_VERIFICATION_TOKEN_HOURS: int = 24
     APP_BASE_URL: str = ""   # frontend origin for verify links, e.g. https://app.example.com
 
-    # Execution backend (Update 15) — "inline" (in the web process) or "celery"
-    # (durable worker + Redis pub/sub; survives disconnects/restarts). Requires a
-    # running Celery worker when set to "celery".
-    EXECUTION_BACKEND: str = "inline"
+    # Execution backend — "celery" (durable worker: installs keep running if the
+    # window closes and can be rejoined) or "inline" (in the web process). When set
+    # to "celery" but no worker is responding, execution safely falls back to inline,
+    # so this is safe to default on. (Update 17 — Background Tasks)
+    EXECUTION_BACKEND: str = "celery"
     EXECUTION_LOG_TTL: int = 3600   # seconds to retain a run's streamed output for replay/reconnect
 
     # Interactive-execution safety (Update 16, Phase A) — a streamed command that

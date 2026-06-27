@@ -7,6 +7,7 @@ import type { PlaybookAccessInfo, PlaybookDetail, Server } from "@/types"
 import { useAuthStore } from "@/store/authStore"
 import { wsAuthQuery } from "@/api/auth"
 import { cancelPlaybookRun } from "@/api/playbooks"
+import { getActiveRuns } from "@/api/servers"
 
 /**
  * WebSocket base URL — derived from the page origin so the modal works from
@@ -175,6 +176,7 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
   const runStateRef = useRef<RunState>("idle")
   const attemptsRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const rejoinedRef = useRef(false)
   const outputEndRef = useRef<HTMLDivElement>(null)
 
   const estimate = playbook.est_runtime_sec ?? 60
@@ -342,6 +344,40 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
       setOutputLines((prev) => [...prev, "ERROR: could not cancel the run"])
     }
   }, [])
+
+  // Rejoin an install already running on this server for this playbook — so closing
+  // and reopening the window resumes the live run instead of showing a fresh screen
+  // (and prevents starting a duplicate). Update 17, Phase 1.
+  useEffect(() => {
+    if (!serverId || runStateRef.current !== "idle" || rejoinedRef.current) return
+    let cancelled = false
+    getActiveRuns(serverId)
+      .then((runs) => {
+        if (cancelled || rejoinedRef.current) return
+        const match = runs.find((r) =>
+          isUserScript ? r.user_script_id === playbook.id : r.playbook_id === playbook.id
+        )
+        if (!match) return
+        rejoinedRef.current = true
+        finishedRef.current = false
+        attemptsRef.current = 0
+        runIdRef.current = match.id
+        setRunId(match.id)
+        setRunState("running")
+        setOutputLines(["⟳ Rejoining the install already running on this server…"])
+        startRef.current = match.started_at ? new Date(match.started_at).getTime() : Date.now()
+        stopTick()
+        tickRef.current = setInterval(() => {
+          setElapsed((Date.now() - startRef.current) / 1000)
+        }, 1000)
+        void connect("attach")
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverId, isUserScript, playbook.id])
 
   const canRun =
     runState === "idle" || runState === "success" || runState === "failed" ||
