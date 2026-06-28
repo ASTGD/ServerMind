@@ -5,6 +5,7 @@ import { Terminal, PlayCircle, Search, ScrollText } from "lucide-react"
 import { listActivity } from "@/api/activity"
 import { listServers } from "@/api/servers"
 import type { ActivityItem, Server } from "@/types"
+import { failureRemedy } from "@/lib/preflightRemedy"
 import { cn } from "@/lib/utils"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -196,6 +197,11 @@ export default function Logs() {
                   </div>
                   {a.failure_reason && (
                     <p className="mt-1 text-xs leading-snug text-red-500/90">{a.failure_reason}</p>
+                  )}
+                  {failureRemedy(a.failure_reason) && (
+                    <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
+                      <span className="font-medium text-foreground">What to do:</span> {failureRemedy(a.failure_reason)}
+                    </p>
                   )}
                 </div>
 

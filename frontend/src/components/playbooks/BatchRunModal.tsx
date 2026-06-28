@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { X, Loader2, CheckCircle2, XCircle, Clock, Ban, ChevronRight } from "lucide-react"
 import { getRunsStatus, type FleetRun, type FleetSkip } from "@/api/playbooks"
+import { failureRemedy } from "@/lib/preflightRemedy"
 import RunLogModal from "./RunLogModal"
 
 const TERMINAL = ["success", "failed", "stalled", "cancelled", "partial", "blocked"]
@@ -68,6 +69,7 @@ export default function BatchRunModal({ runs, skipped = [], playbookTitle, onClo
             const st = statusMap[r.run_id]
             const reason = reasonMap[r.run_id]
             const failed = st === "failed" || st === "stalled"
+            const remedy = failed ? failureRemedy(reason) : null
             return (
               <button
                 key={r.run_id}
@@ -86,6 +88,11 @@ export default function BatchRunModal({ runs, skipped = [], playbookTitle, onClo
                     className={`pl-0.5 text-xs leading-snug ${st === "stalled" ? "text-orange-500/90" : "text-red-500/90"}`}
                   >
                     {reason ?? "Failed — open to view the log."}
+                  </p>
+                )}
+                {remedy && (
+                  <p className="pl-0.5 text-xs leading-snug text-muted-foreground">
+                    <span className="font-medium text-foreground">What to do:</span> {remedy}
                   </p>
                 )}
               </button>

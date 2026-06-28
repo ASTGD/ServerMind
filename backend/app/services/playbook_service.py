@@ -94,7 +94,7 @@ _PREFLIGHT = (
     '    if [ -e "$d" ]; then echo ">>> ERROR: $n is already installed ($d). $panel needs a clean server — use a fresh VPS."; exit 1; fi\n'
     "  done\n"
     '  if command -v docker >/dev/null 2>&1; then echo ">>> ERROR: Docker is present. A control panel needs a clean server (no Docker / existing web stack). Use a fresh VPS."; exit 1; fi\n'
-    "  if command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -qE ':80[[:space:]]'; then echo \">>> ERROR: Port 80 is already in use. $panel needs a clean server.\"; exit 1; fi\n"
+    "  if command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -qE ':80[[:space:]]'; then who=$(ss -tlnp 2>/dev/null | grep -E ':80[[:space:]]' | grep -oE '\"[^\"]+\"' | head -1 | tr -d '\"'); echo \">>> ERROR: Port 80 is already in use${who:+ by '$who'}. $panel needs a clean server.\"; exit 1; fi\n"
     "  ram_mb=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}')\n"
     '  if [ -n "${ram_mb:-}" ] && [ "$ram_mb" -lt "$min_ram" ]; then echo ">>> ERROR: $panel needs at least ${min_ram}MB RAM (found ${ram_mb}MB)."; exit 1; fi\n'
     '  echo ">>> Pre-flight OK — clean server, ${ram_mb:-?}MB RAM. Installing $panel; this can take several minutes."\n'

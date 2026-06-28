@@ -68,3 +68,19 @@ and looked empty with one short line. Moved it into the dashboard right rail.
 
 Verified live: with two installs in progress the card shows "Running now (2)" in the
 rail with two compact rows; the full-width band is gone; build clean.
+
+## Follow-on — actionable failures (Tier 1)
+
+A failed control-panel install named the symptom but not the fix. Now every install
+failure carries a plain-English next step:
+- the pre-flight guard names the **culprit** holding port 80 (e.g. "Port 80 is already
+  in use by 'litespeed'") via `ss -tlnp`;
+- a frontend `failureRemedy()` maps each failure class — port/web server in use, low
+  RAM, unsupported OS, mid-install connection drop, existing panel — to a "What to do"
+  line shown under the reason on the batch rows, the single-run banner, and the
+  Activity log.
+
+Safe by design: it only ever *recommends* (use a fresh VPS / resize / reinstall the
+OS); nothing destructive runs automatically. Guided remediation ("free port 80 by
+stopping litespeed — ⚠️ deletes its sites") is the AI-assisted Tier 3, for when an AI
+key is configured.

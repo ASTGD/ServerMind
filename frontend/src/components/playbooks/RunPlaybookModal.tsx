@@ -10,6 +10,7 @@ import { wsAuthQuery } from "@/api/auth"
 import { cancelPlaybookRun, runMulti, type FleetRun, type FleetSkip } from "@/api/playbooks"
 import { getActiveRuns, getAllActiveRuns } from "@/api/servers"
 import BatchRunModal from "./BatchRunModal"
+import { failureRemedy } from "@/lib/preflightRemedy"
 
 /**
  * WebSocket base URL — derived from the page origin so the modal works from
@@ -634,9 +635,16 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
             </div>
           ) : null}
           {runState === "failed" && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-              <XCircle className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>{failureReason ?? "Playbook failed — check the output above."}</span>
+            <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm">
+              <div className="flex items-start gap-2 text-red-400">
+                <XCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>{failureReason ?? "Playbook failed — check the output above."}</span>
+              </div>
+              {failureRemedy(failureReason) && (
+                <p className="mt-2 pl-6 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">What to do:</span> {failureRemedy(failureReason)}
+                </p>
+              )}
             </div>
           )}
           {runState === "cancelled" && (
