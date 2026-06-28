@@ -226,7 +226,7 @@ async def execute_stream(server_id: str, host: str, port: int, username: str, au
     credential = decrypt(encrypted_cred)
     loop = asyncio.get_event_loop()
     queue: asyncio.Queue[str | None] = asyncio.Queue()
-    result: dict[str, object] = {"exit_code": None, "stalled": None, "last_output": ""}
+    result: dict[str, object] = {"exit_code": None, "stalled": None, "last_output": "", "error": None}
     idle_timeout = settings.SSH_IDLE_TIMEOUT_SECONDS
     max_runtime = settings.SSH_MAX_RUNTIME_SECONDS
 
@@ -277,6 +277,7 @@ async def execute_stream(server_id: str, host: str, port: int, username: str, au
             # from failure (e.g. a command-not-found mid-script exits non-zero).
             result["exit_code"] = channel.recv_exit_status()
         except Exception as exc:
+            result["error"] = str(exc)
             loop.call_soon_threadsafe(queue.put_nowait, f"ERROR: {exc}")
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, None)
@@ -291,6 +292,11 @@ async def execute_stream(server_id: str, host: str, port: int, username: str, au
 
     if result["stalled"]:
         raise CommandStalled(str(result["last_output"]), reason=str(result["stalled"]))
+    if result["error"]:
+        # The stream aborted before a clean exit (connection reset, host-key change,
+        # etc.) — that's a failure, not a successful run. The error line is already in
+        # the streamed output, so the caller can extract a reason from it.
+        raise CommandError(-1)
     code = result["exit_code"]
     if code is not None and code != 0:
         raise CommandError(int(code))
