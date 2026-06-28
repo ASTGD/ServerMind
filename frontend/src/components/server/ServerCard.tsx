@@ -42,6 +42,7 @@ export default function ServerCard({ server }: Props) {
                   <p className="mt-1 text-xs text-muted-foreground">
                     This server is rejecting the saved login. If you changed its password,
                     open it and use <span className="font-medium text-foreground">Credentials</span> to update it.
+                    If you also rebuilt or reinstalled the server, you'll be asked to trust its new identity next.
                   </p>
                   <span className="mt-2 inline-block text-xs font-medium text-primary">Open server to fix →</span>
                 </div>

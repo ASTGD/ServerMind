@@ -201,6 +201,30 @@ export default function ServerDetail() {
         <UpdateCredentialsModal server={server} onClose={() => setShowCreds(false)} />
       )}
 
+      {/* Login rejected (stale credentials) — guide to Credentials, then trust */}
+      {server.status === "auth_failed" && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-500" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-foreground">Login is being rejected</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                This server is refusing the saved login — most likely its password changed. Update it
+                under Credentials. If you also rebuilt or reinstalled the server, you'll be asked to
+                trust its new identity right after.
+              </p>
+              <button
+                onClick={() => setShowCreds(true)}
+                className="mt-3 flex items-center gap-2 rounded-md bg-amber-500/90 px-4 py-1.5 text-sm font-medium text-white hover:bg-amber-500"
+              >
+                <KeyRound size={13} />
+                Update credentials
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Server identity changed (host-key mismatch) — Risk 3 */}
       {server.status === "host_changed" && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3">
