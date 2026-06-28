@@ -40,6 +40,9 @@ export default function BatchRunModal({ runs, playbookTitle, onClose }: Props) {
     refetchOnWindowFocus: true,
   })
   const statusMap: Record<string, string> = Object.fromEntries(statuses.map((s) => [s.id, s.status]))
+  const reasonMap: Record<string, string | null | undefined> = Object.fromEntries(
+    statuses.map((s) => [s.id, s.failure_reason]),
+  )
   const done = runs.filter((r) => TERMINAL.includes(statusMap[r.run_id] ?? "")).length
 
   return (
@@ -58,19 +61,33 @@ export default function BatchRunModal({ runs, playbookTitle, onClose }: Props) {
         </div>
 
         <div className="space-y-2 overflow-y-auto px-6 py-4">
-          {runs.map((r) => (
-            <button
-              key={r.run_id}
-              onClick={() => setLogRun(r)}
-              className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2.5 text-left transition-colors hover:border-primary/40"
-            >
-              <p className="min-w-0 truncate text-sm font-medium text-foreground">{r.server_name}</p>
-              <div className="flex shrink-0 items-center gap-2 text-xs font-medium">
-                {statusBadge(statusMap[r.run_id])}
-                <ChevronRight size={14} className="text-muted-foreground" />
-              </div>
-            </button>
-          ))}
+          {runs.map((r) => {
+            const st = statusMap[r.run_id]
+            const reason = reasonMap[r.run_id]
+            const failed = st === "failed" || st === "stalled"
+            return (
+              <button
+                key={r.run_id}
+                onClick={() => setLogRun(r)}
+                className="flex w-full flex-col gap-1 rounded-lg border border-border bg-background px-3 py-2.5 text-left transition-colors hover:border-primary/40"
+              >
+                <div className="flex w-full items-center justify-between gap-3">
+                  <p className="min-w-0 truncate text-sm font-medium text-foreground">{r.server_name}</p>
+                  <div className="flex shrink-0 items-center gap-2 text-xs font-medium">
+                    {statusBadge(st)}
+                    <ChevronRight size={14} className="text-muted-foreground" />
+                  </div>
+                </div>
+                {failed && (
+                  <p
+                    className={`pl-0.5 text-xs leading-snug ${st === "stalled" ? "text-orange-500/90" : "text-red-500/90"}`}
+                  >
+                    {reason ?? "Failed — open to view the log."}
+                  </p>
+                )}
+              </button>
+            )
+          })}
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-border px-6 py-4">

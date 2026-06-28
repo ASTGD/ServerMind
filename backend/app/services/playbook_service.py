@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,41 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.playbook import Playbook
 
 logger = logging.getLogger(__name__)
+
+
+# ── Failure-reason extraction ─────────────────────────────────────────────────
+_ERROR_MARKER = re.compile(r"^>{0,3}\s*(?:ERROR|FATAL|FAILED)\s*[:\-]\s*(.+)$", re.IGNORECASE)
+_NOISE_PREFIXES = ("⏹", "⟳", "▶", "✓", ">>> ")
+
+
+def _cap(text: str, limit: int = 240) -> str:
+    """Collapse to a single trimmed line, capped in length for inline display."""
+    one_line = " ".join(text.split())
+    return one_line if len(one_line) <= limit else one_line[: limit - 1].rstrip() + "…"
+
+
+def extract_failure_reason(output: "str | list[str] | None") -> str | None:
+    """Pull a short, human-readable reason from a failed/stalled run's output.
+
+    Prefers an explicit error line (e.g. a pre-flight ``>>> ERROR: ...``); otherwise
+    falls back to the last meaningful line. Returns None for empty output. The result
+    is a single capped line so the UI can show it inline on a run row."""
+    if not output:
+        return None
+    text = output if isinstance(output, str) else "\n".join(output)
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return None
+    # Prefer the last explicit ERROR/FATAL line (skip the generic exit-code note).
+    for ln in reversed(lines):
+        m = _ERROR_MARKER.match(ln)
+        if m and "command exited with status" not in m.group(1).lower():
+            return _cap(m.group(1))
+    # Otherwise the last meaningful line that isn't a progress/status marker.
+    for ln in reversed(lines):
+        if not ln.startswith(_NOISE_PREFIXES):
+            return _cap(ln)
+    return _cap(lines[-1])
 
 # ── Docker dependency preamble ────────────────────────────────────────────────
 # Docker-based playbooks shouldn't fail just because Docker isn't installed yet —

@@ -39,6 +39,7 @@ class PlaybookRunOut(BaseModel):
     variables_used: dict | None
     output: str | None
     status: str | None
+    failure_reason: str | None = None
     started_at: datetime
     completed_at: datetime | None
 

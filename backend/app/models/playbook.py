@@ -75,5 +75,8 @@ class PlaybookRun(Base):
     variables_used: Mapped[dict | None] = mapped_column(JSONB)
     output: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str | None] = mapped_column(String(20))
+    # Short, human-readable reason a run failed/stalled (extracted from the output),
+    # so the UI can show it inline without parsing the log. Null on success.
+    failure_reason: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

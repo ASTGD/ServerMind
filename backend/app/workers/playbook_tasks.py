@@ -26,6 +26,7 @@ from app.models.command_log import CommandLog
 from app.models.playbook import PlaybookRun
 from app.models.server import Server
 from app.services import ai_service, connection_manager
+from app.services.playbook_service import extract_failure_reason
 from app.services.ssh_service import STALL_NOTE, CommandError, CommandStalled
 
 logger = logging.getLogger(__name__)
@@ -93,11 +94,19 @@ async def _execute(run_id: str, server_id: str, script: str) -> None:
             await _emit(redis, key, {"type": "output", "data": "⏹ Cancelled by user\n"})
         await redis.delete(cancel_key)
 
+        failure_reason = (
+            extract_failure_reason(output) if status in ("failed", "stalled") else None
+        )
         async with Session() as db:
             await db.execute(
                 sa_update(PlaybookRun)
                 .where(PlaybookRun.id == uuid.UUID(run_id))
-                .values(status=status, output="\n".join(output), completed_at=datetime.now(timezone.utc))
+                .values(
+                    status=status,
+                    output="\n".join(output),
+                    failure_reason=failure_reason,
+                    completed_at=datetime.now(timezone.utc),
+                )
             )
             await db.commit()
 

@@ -60,6 +60,7 @@ export interface RunStatus {
   id: string
   status: string
   server_id: string
+  failure_reason?: string | null
 }
 
 /** Current status of a batch of runs (for the fleet batch view). */

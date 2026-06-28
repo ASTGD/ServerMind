@@ -194,6 +194,9 @@ export default function Logs() {
                       </>
                     )}
                   </div>
+                  {a.failure_reason && (
+                    <p className="mt-1 text-xs leading-snug text-red-500/90">{a.failure_reason}</p>
+                  )}
                 </div>
 
                 <div className="flex shrink-0 flex-col items-end gap-1">

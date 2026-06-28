@@ -768,7 +768,12 @@ async def playbook_run_ws(
         execution_ms = int((time.monotonic() - t0) * 1000)
         full_output = "\n".join(output_lines)
 
-        # Update run record
+        # Update run record — capture a short failure reason for inline display.
+        from app.services.playbook_service import extract_failure_reason
+        failure_reason = (
+            extract_failure_reason(output_lines)
+            if overall_status in ("failed", "stalled") else None
+        )
         async with AsyncSessionLocal() as db:
             from sqlalchemy import update as sa_update
             from datetime import datetime, timezone
@@ -778,6 +783,7 @@ async def playbook_run_ws(
                 .values(
                     status=overall_status,
                     output=full_output,
+                    failure_reason=failure_reason,
                     completed_at=datetime.now(timezone.utc),
                 )
             )

@@ -122,7 +122,8 @@ export interface PlaybookRun {
   playbook_id: string | null
   variables_used: Record<string, string> | null
   output: string | null
-  status: "running" | "success" | "failed" | null
+  status: "running" | "success" | "failed" | "stalled" | "cancelled" | "partial" | null
+  failure_reason?: string | null
   started_at: string
   completed_at: string | null
 }
@@ -195,6 +196,7 @@ export interface ActivityItem {
   server_id: string | null
   title: string
   status: string | null
+  failure_reason: string | null
   risk_level: string | null
   duration_ms: number | null
   created_at: string

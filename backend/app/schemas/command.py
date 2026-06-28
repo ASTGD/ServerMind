@@ -51,6 +51,7 @@ class ActivityItem(BaseModel):
     server_id: uuid.UUID | None
     title: str                     # user_input, or the playbook/script title
     status: str | None
+    failure_reason: str | None = None  # short reason a run failed (playbook runs)
     risk_level: str | None = None
     duration_ms: int | None = None
     created_at: datetime

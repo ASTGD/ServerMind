@@ -82,6 +82,7 @@ async def list_activity(
                 server_id=run.server_id,
                 title=pb_title or us_title or "Script",
                 status=run.status,
+                failure_reason=run.failure_reason,
                 duration_ms=duration_ms,
                 created_at=run.started_at,
             )

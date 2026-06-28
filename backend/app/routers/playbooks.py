@@ -187,11 +187,16 @@ async def runs_status(
     """Current status of a batch of runs (for the fleet-install batch view)."""
     rows = (
         await db.execute(
-            select(PlaybookRun.id, PlaybookRun.status, PlaybookRun.server_id)
+            select(
+                PlaybookRun.id, PlaybookRun.status, PlaybookRun.server_id, PlaybookRun.failure_reason
+            )
             .where(PlaybookRun.id.in_(body.run_ids), PlaybookRun.user_id == current_user.id)
         )
     ).all()
-    return [{"id": str(i), "status": s, "server_id": str(sv)} for i, s, sv in rows]
+    return [
+        {"id": str(i), "status": s, "server_id": str(sv), "failure_reason": fr}
+        for i, s, sv, fr in rows
+    ]
 
 
 @router.get("/{playbook_id}", response_model=PlaybookDetailOut)
