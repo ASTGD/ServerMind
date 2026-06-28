@@ -44,18 +44,14 @@ print(json.dumps({'cpu':cpu,'ram_total_kb':ram_total_kb,'ram_avail_kb':ram_avail
 " 2>/dev/null || echo '{"error":"python3 unavailable"}'
 """
 
-_DETECT_SCRIPT = r"""python3 -c "
-import json, platform, subprocess
-info={}
-try:
-    with open('/etc/os-release') as f:
-        for line in f:
-            k,_,v=line.strip().partition('=')
-            info[k]=v.strip('\"')
-except:
-    pass
-print(json.dumps({'os_type':info.get('ID','linux'),'os_version':info.get('VERSION_ID',''),'arch':platform.machine(),'pretty_name':info.get('PRETTY_NAME','Linux')}))
-" 2>/dev/null || echo '{"os_type":"linux","os_version":"","arch":"unknown","pretty_name":"Linux"}'
+# Pure-shell OS detection — works on any Linux, including minimal images without
+# python3 (e.g. AlmaLinux/Rocky 8, Alpine). Sources /etc/os-release for the distro
+# and uses uname -m for the architecture.
+_DETECT_SCRIPT = r"""ARCH=$(uname -m 2>/dev/null || echo unknown)
+ID=linux; VERSION_ID=; PRETTY_NAME=Linux
+[ -r /etc/os-release ] && . /etc/os-release
+PN=$(printf '%s' "${PRETTY_NAME:-Linux}" | tr -d '"')
+printf '{"os_type":"%s","os_version":"%s","arch":"%s","pretty_name":"%s"}\n' "${ID:-linux}" "${VERSION_ID:-}" "$ARCH" "$PN"
 """
 
 # ── Windows (PowerShell) variants — emit the same JSON keys as the Linux scripts ──
