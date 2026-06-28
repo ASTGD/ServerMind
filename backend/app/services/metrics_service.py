@@ -12,36 +12,20 @@ logger = logging.getLogger(__name__)
 
 # Single-shot Python script that outputs JSON metrics without requiring any packages.
 # Falls back gracefully when /proc is unavailable.
-_METRICS_SCRIPT = r"""python3 -c "
-import json, os, time
-try:
-    s=open('/proc/stat').readline().split()[1:]
-    t,i=sum(int(x) for x in s),int(s[3])
-    cpu=round((1-i/t)*100,1)
-except:
-    cpu=None
-try:
-    m={l.split(':')[0].strip():int(l.split(':')[1].split()[0]) for l in open('/proc/meminfo') if l.split(':')[0].strip() in ('MemTotal','MemAvailable')}
-    ram_total_kb,ram_avail_kb=m['MemTotal'],m['MemAvailable']
-except:
-    ram_total_kb=ram_avail_kb=None
-try:
-    st=os.statvfs('/')
-    disk_total=st.f_blocks*st.f_frsize
-    disk_free=st.f_bavail*st.f_frsize
-except:
-    disk_total=disk_free=None
-try:
-    la=open('/proc/loadavg').read().split()
-    load1,load5,load15=float(la[0]),float(la[1]),float(la[2])
-except:
-    load1=load5=load15=None
-try:
-    uptime=int(float(open('/proc/uptime').read().split()[0]))
-except:
-    uptime=None
-print(json.dumps({'cpu':cpu,'ram_total_kb':ram_total_kb,'ram_avail_kb':ram_avail_kb,'disk_total_bytes':disk_total,'disk_free_bytes':disk_free,'load1':load1,'load5':load5,'load15':load15,'uptime':uptime}))
-" 2>/dev/null || echo '{"error":"python3 unavailable"}'
+# Pure-shell metrics — works on any Linux, including images without python3 (e.g.
+# AlmaLinux/Rocky 8). CPU from /proc/stat, RAM from /proc/meminfo, disk from df,
+# load from /proc/loadavg, uptime from /proc/uptime.
+_METRICS_SCRIPT = r"""read _ u n s i io q sq st r < /proc/stat 2>/dev/null
+u=${u:-0}; n=${n:-0}; s=${s:-0}; i=${i:-0}; io=${io:-0}; q=${q:-0}; sq=${sq:-0}; st=${st:-0}
+TOT=$((u+n+s+i+io+q+sq+st))
+CPU=$(awk "BEGIN{if($TOT>0)printf \"%.1f\",(1-($i+$io)/$TOT)*100;else print 0}")
+MT=$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null)
+MA=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo 2>/dev/null)
+DF=$(df -kP / 2>/dev/null | awk 'NR==2{print $2" "$4}')
+DT=$(echo "$DF" | awk '{print $1}'); DA=$(echo "$DF" | awk '{print $2}')
+read L1 L5 L15 r2 < /proc/loadavg 2>/dev/null
+UP=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)
+printf '{"cpu":%s,"ram_total_kb":%s,"ram_avail_kb":%s,"disk_total_bytes":%s,"disk_free_bytes":%s,"load1":%s,"load5":%s,"load15":%s,"uptime":%s}\n' "${CPU:-0}" "${MT:-0}" "${MA:-0}" "$(( ${DT:-0} * 1024 ))" "$(( ${DA:-0} * 1024 ))" "${L1:-0}" "${L5:-0}" "${L15:-0}" "${UP:-0}"
 """
 
 # Pure-shell OS detection — works on any Linux, including minimal images without
