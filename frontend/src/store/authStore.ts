@@ -5,7 +5,11 @@ import type { User } from "@/types"
 interface AuthState {
   user: User | null
   token: string | null
-  setAuth: (user: User, token: string) => void
+  refreshToken: string | null
+  /** Set the full session after login/register. Omit refreshToken to keep the current one. */
+  setAuth: (user: User, token: string, refreshToken?: string | null) => void
+  /** Swap in freshly-rotated tokens after a silent refresh (keeps the current user). */
+  setTokens: (token: string, refreshToken: string) => void
   clearAuth: () => void
 }
 
@@ -15,8 +19,15 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       token: null,
-      setAuth: (user, token) => set({ user, token }),
-      clearAuth: () => set({ user: null, token: null }),
+      refreshToken: null,
+      setAuth: (user, token, refreshToken) =>
+        set((s) => ({
+          user,
+          token,
+          refreshToken: refreshToken !== undefined ? refreshToken : s.refreshToken,
+        })),
+      setTokens: (token, refreshToken) => set({ token, refreshToken }),
+      clearAuth: () => set({ user: null, token: null, refreshToken: null }),
     }),
     { name: "sm-auth" },
   ),

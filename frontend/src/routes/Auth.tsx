@@ -46,7 +46,7 @@ export default function Auth() {
       i18n.changeLanguage(result.user.preferred_language)
       localStorage.setItem("lang", result.user.preferred_language)
 
-      setAuth(result.user, result.access_token)
+      setAuth(result.user, result.access_token, result.refresh_token)
       navigate("/dashboard", { replace: true })
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
