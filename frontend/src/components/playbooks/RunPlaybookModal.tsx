@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react"
+import { useQuery } from "@tanstack/react-query"
 import {
   X, Play, CheckCircle2, XCircle, Loader2, TerminalSquare,
   ExternalLink, Copy, Check, Eye, EyeOff, PartyPopper, Square, Ban, Clock,
@@ -6,8 +7,8 @@ import {
 import type { PlaybookAccessInfo, PlaybookDetail, Server } from "@/types"
 import { useAuthStore } from "@/store/authStore"
 import { wsAuthQuery } from "@/api/auth"
-import { cancelPlaybookRun, runMulti, type FleetRun } from "@/api/playbooks"
-import { getActiveRuns } from "@/api/servers"
+import { cancelPlaybookRun, runMulti, type FleetRun, type FleetSkip } from "@/api/playbooks"
+import { getActiveRuns, getAllActiveRuns } from "@/api/servers"
 import BatchRunModal from "./BatchRunModal"
 
 /**
@@ -155,8 +156,23 @@ type RunState = "idle" | "running" | "success" | "failed" | "cancelled" | "stall
 export default function RunPlaybookModal({ playbook, servers, onClose, isUserScript = false }: Props) {
   const token = useAuthStore((s) => s.token)
   const [selectedIds, setSelectedIds] = useState<string[]>(servers[0] ? [servers[0].id] : [])
-  const serverId = selectedIds[0] ?? ""
+  // Which servers already have THIS playbook/script running — so the picker shows
+  // "Installing now" and we never start a duplicate install (Update 19 #2).
+  const { data: allActive = [] } = useQuery({
+    queryKey: ["all-active-runs"],
+    queryFn: getAllActiveRuns,
+    refetchInterval: 5000,
+  })
+  const busyServerIds = new Set(
+    allActive
+      .filter((r) => (isUserScript ? r.user_script_id === playbook.id : r.playbook_id === playbook.id))
+      .map((r) => r.server_id),
+  )
+  // Single-run targets the first selected server that isn't already busy.
+  const serverId = (selectedIds.find((id) => !busyServerIds.has(id)) ?? selectedIds[0]) ?? ""
+  const selectableCount = selectedIds.filter((id) => !busyServerIds.has(id)).length
   const [batchRuns, setBatchRuns] = useState<FleetRun[] | null>(null)
+  const [batchSkipped, setBatchSkipped] = useState<FleetSkip[]>([])
   const [vars, setVars] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {}
     for (const v of playbook.variables ?? []) {
@@ -309,6 +325,7 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
   )
 
   function toggleServer(id: string) {
+    if (busyServerIds.has(id)) return // can't queue a duplicate on a busy server
     // Fleet install is for official playbooks; user scripts stay single-server.
     if (isUserScript) {
       setSelectedIds([id])
@@ -318,7 +335,8 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
   }
 
   const handleRun = useCallback(async () => {
-    if (selectedIds.length === 0 || !token) return
+    const targets = selectedIds.filter((id) => !busyServerIds.has(id))
+    if (targets.length === 0 || !token) return
     const missingRequired = (playbook.variables ?? []).filter(
       (v) => v.required && !vars[v.name]?.trim()
     )
@@ -328,13 +346,14 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
     }
 
     // Fleet install — 2+ servers each run as an independent background install.
-    if (!isUserScript && selectedIds.length >= 2) {
-      if (selectedIds.length > 10 && !confirm(`Run "${playbook.title}" on ${selectedIds.length} servers at once?`)) {
+    if (!isUserScript && targets.length >= 2) {
+      if (targets.length > 10 && !confirm(`Run "${playbook.title}" on ${targets.length} servers at once?`)) {
         return
       }
       try {
-        const { runs } = await runMulti(playbook.id, selectedIds, vars)
+        const { runs, skipped } = await runMulti(playbook.id, targets, vars)
         setBatchRuns(runs)
+        setBatchSkipped(skipped)
       } catch {
         alert("Couldn't start the fleet install — make sure the background worker is running.")
       }
@@ -358,7 +377,7 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
     }, 1000)
 
     await connect("run")
-  }, [selectedIds, isUserScript, token, playbook, vars, selectedServer, stopTick, connect])
+  }, [selectedIds, busyServerIds, isUserScript, token, playbook, vars, selectedServer, stopTick, connect])
 
   const handleCancel = useCallback(async () => {
     const rid = runIdRef.current
@@ -422,7 +441,14 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
   })()
 
   if (batchRuns) {
-    return <BatchRunModal runs={batchRuns} playbookTitle={playbook.title} onClose={onClose} />
+    return (
+      <BatchRunModal
+        runs={batchRuns}
+        skipped={batchSkipped}
+        playbookTitle={playbook.title}
+        onClose={onClose}
+      />
+    )
   }
 
   return (
@@ -455,21 +481,29 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
             ) : (
               <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-border p-1.5">
                 {servers.map((s) => {
-                  const checked = selectedIds.includes(s.id)
+                  const busy = busyServerIds.has(s.id)
+                  const checked = selectedIds.includes(s.id) && !busy
                   return (
                     <label
                       key={s.id}
-                      className={`flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors ${checked ? "bg-primary/10" : "hover:bg-accent"} ${!canRun ? "pointer-events-none opacity-50" : ""}`}
+                      title={busy ? `${playbook.title} is already running on ${s.name}` : undefined}
+                      className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors ${busy ? "cursor-not-allowed opacity-70" : "cursor-pointer"} ${checked ? "bg-primary/10" : busy ? "" : "hover:bg-accent"} ${!canRun ? "pointer-events-none opacity-50" : ""}`}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
-                        disabled={!canRun}
+                        disabled={!canRun || busy}
                         onChange={() => toggleServer(s.id)}
                         className="h-4 w-4 rounded border-border accent-primary"
                       />
                       <span className="truncate font-medium text-foreground">{s.name}</span>
                       <span className="truncate text-xs text-muted-foreground">{s.host}</span>
+                      {busy && (
+                        <span className="ml-auto flex shrink-0 items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                          <Loader2 size={11} className="animate-spin" />
+                          Installing now
+                        </span>
+                      )}
                     </label>
                   )
                 })}
@@ -477,8 +511,8 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
             )}
             {!isUserScript && servers.length > 1 && (
               <p className="mt-1.5 text-xs text-muted-foreground">
-                {selectedIds.length > 1
-                  ? `${selectedIds.length} servers selected — the same install runs on each in the background.`
+                {selectableCount > 1
+                  ? `${selectableCount} servers selected — the same install runs on each in the background.`
                   : "Tip: tick more than one server to install across your fleet at once."}
               </p>
             )}
@@ -641,12 +675,12 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
           ) : (
             <button
               onClick={handleRun}
-              disabled={selectedIds.length === 0}
+              disabled={selectableCount === 0}
               className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
               <Play className="h-4 w-4" />
-              {selectedIds.length >= 2
-                ? `Run on ${selectedIds.length} servers`
+              {selectableCount >= 2
+                ? `Run on ${selectableCount} servers`
                 : runState === "idle" ? "Run Playbook" : "Run Again"}
             </button>
           )}

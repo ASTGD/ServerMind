@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { X, Loader2, CheckCircle2, XCircle, Clock, Ban, ChevronRight } from "lucide-react"
-import { getRunsStatus, type FleetRun } from "@/api/playbooks"
+import { getRunsStatus, type FleetRun, type FleetSkip } from "@/api/playbooks"
 import RunLogModal from "./RunLogModal"
 
 const TERMINAL = ["success", "failed", "stalled", "cancelled", "partial", "blocked"]
@@ -23,13 +23,15 @@ function statusBadge(status: string | undefined) {
 
 interface Props {
   runs: FleetRun[]
+  skipped?: FleetSkip[]
   playbookTitle: string
   onClose: () => void
 }
 
 /** Fleet-install batch view — one row per server with live status and
- * click-through to each server's live log (Update 18). */
-export default function BatchRunModal({ runs, playbookTitle, onClose }: Props) {
+ * click-through to each server's live log (Update 18). Servers already running
+ * this playbook are listed as skipped (no duplicate install — Update 19 #2). */
+export default function BatchRunModal({ runs, skipped = [], playbookTitle, onClose }: Props) {
   const [logRun, setLogRun] = useState<FleetRun | null>(null)
   const runIds = runs.map((r) => r.run_id)
 
@@ -53,6 +55,7 @@ export default function BatchRunModal({ runs, playbookTitle, onClose }: Props) {
             <h2 className="font-semibold text-foreground">{playbookTitle}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
               Running on {runs.length} servers · {done} of {runs.length} done
+              {skipped.length > 0 ? ` · ${skipped.length} skipped` : ""}
             </p>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
@@ -88,6 +91,17 @@ export default function BatchRunModal({ runs, playbookTitle, onClose }: Props) {
               </button>
             )
           })}
+          {skipped.map((s) => (
+            <div
+              key={s.server_id}
+              className="flex w-full items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-background px-3 py-2.5 opacity-80"
+            >
+              <p className="min-w-0 truncate text-sm font-medium text-foreground">{s.server_name}</p>
+              <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-amber-500">
+                <Clock size={13} /> Already running — skipped
+              </span>
+            </div>
+          ))}
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-border px-6 py-4">

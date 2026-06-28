@@ -95,6 +95,8 @@ export interface ActiveRunSummary {
   server_id: string
   server_name: string
   title: string
+  playbook_id: string | null
+  user_script_id: string | null
   started_at: string | null
 }
 

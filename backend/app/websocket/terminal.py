@@ -703,18 +703,41 @@ async def playbook_run_ws(
 
             script = substitute_variables(script, variables)
 
-            # Create run record
-            run = PlaybookRun(
-                server_id=server.id,
-                user_id=server.user_id,
-                playbook_id=playbook_id_val,
-                user_script_id=user_script_id_val,
-                variables_used=variables,
-                status="running",
+            # Guard against a duplicate: if this same playbook/script is already
+            # running on this server, attach to that run instead of starting another.
+            dup_q = select(PlaybookRun.id).where(
+                PlaybookRun.server_id == server.id, PlaybookRun.status == "running",
             )
-            db.add(run)
-            await db.commit()
-            await db.refresh(run)
+            dup_q = (
+                dup_q.where(PlaybookRun.playbook_id == playbook_id_val)
+                if playbook_id_val is not None
+                else dup_q.where(PlaybookRun.user_script_id == user_script_id_val)
+            )
+            existing_id = (
+                await db.execute(dup_q.order_by(PlaybookRun.started_at.desc()))
+            ).scalars().first()
+
+            if existing_id is None:
+                # Create run record
+                run = PlaybookRun(
+                    server_id=server.id,
+                    user_id=server.user_id,
+                    playbook_id=playbook_id_val,
+                    user_script_id=user_script_id_val,
+                    variables_used=variables,
+                    status="running",
+                )
+                db.add(run)
+                await db.commit()
+                await db.refresh(run)
+
+        if existing_id is not None:
+            await websocket.send_text(json.dumps({
+                "type": "output",
+                "data": "ℹ This playbook is already running on this server — attaching to it.\n",
+            }))
+            await _attach_run(websocket, server, str(existing_id))
+            return
 
         await websocket.send_text(json.dumps({
             "type": "started",

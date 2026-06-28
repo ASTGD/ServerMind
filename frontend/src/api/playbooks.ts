@@ -43,13 +43,19 @@ export interface FleetRun {
   server_name: string
 }
 
-/** Run a playbook on several servers at once — one background run per server. */
+export interface FleetSkip {
+  server_id: string
+  server_name: string
+}
+
+/** Run a playbook on several servers at once — one background run per server.
+ * `skipped` lists servers that already had this playbook running (no duplicate). */
 export async function runMulti(
   playbookId: string,
   serverIds: string[],
   variables: Record<string, string>,
-): Promise<{ runs: FleetRun[] }> {
-  const { data } = await apiClient.post<{ runs: FleetRun[] }>(
+): Promise<{ runs: FleetRun[]; skipped: FleetSkip[] }> {
+  const { data } = await apiClient.post<{ runs: FleetRun[]; skipped: FleetSkip[] }>(
     `/api/playbooks/${playbookId}/run-multi`,
     { server_ids: serverIds, variables },
   )

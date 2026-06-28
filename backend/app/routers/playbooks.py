@@ -151,9 +151,26 @@ async def run_multi(
     if not playbook:
         raise HTTPException(status_code=404, detail="Playbook not found")
 
+    # Skip servers that already have THIS playbook running — no duplicate installs.
+    busy = set(
+        (
+            await db.execute(
+                select(PlaybookRun.server_id).where(
+                    PlaybookRun.server_id.in_(body.server_ids),
+                    PlaybookRun.playbook_id == playbook.id,
+                    PlaybookRun.status == "running",
+                )
+            )
+        ).scalars().all()
+    )
+
     pending: list[tuple[str, str, str, str]] = []  # (run_id, server_id, script, server_name)
+    skipped: list[dict] = []
     for sid in body.server_ids:
         server = await resolve_server(sid, current_user, db, need_execute=True)
+        if sid in busy:
+            skipped.append({"server_id": str(sid), "server_name": server.name})
+            continue
         raw = (
             playbook.script_powershell
             if (server.connection_type == "winrm" and playbook.script_powershell)
@@ -175,7 +192,7 @@ async def run_multi(
     for run_id, sid, script, server_name in pending:
         run_playbook_task.delay(run_id, sid, script)
         runs.append({"run_id": run_id, "server_id": sid, "server_name": server_name})
-    return {"runs": runs}
+    return {"runs": runs, "skipped": skipped}
 
 
 @router.post("/runs/status")

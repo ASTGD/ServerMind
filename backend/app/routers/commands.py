@@ -170,6 +170,8 @@ async def list_all_active_runs(
             "server_id": str(run.server_id),
             "server_name": server_name or "server",
             "title": pb_title or us_title or "Playbook",
+            "playbook_id": str(run.playbook_id) if run.playbook_id else None,
+            "user_script_id": str(run.user_script_id) if run.user_script_id else None,
             "started_at": run.started_at.isoformat() if run.started_at else None,
         }
         for run, server_name, pb_title, us_title in rows
