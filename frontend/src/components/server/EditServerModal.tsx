@@ -20,21 +20,16 @@ export default function EditServerModal({ server, onClose }: Props) {
   const [name, setName] = useState(server.name)
   const [host, setHost] = useState(server.host)
   const [port, setPort] = useState(String(server.port))
-  const [username, setUsername] = useState(server.username)
   const [tags, setTags] = useState((server.tags ?? []).join(", "))
   const [notes, setNotes] = useState(server.notes ?? "")
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const connChanged =
-        host.trim() !== server.host ||
-        Number(port) !== server.port ||
-        username.trim() !== server.username
+      const connChanged = host.trim() !== server.host || Number(port) !== server.port
       await updateServer(server.id, {
         name: name.trim(),
         host: host.trim(),
         port: Number(port) || server.port,
-        username: username.trim(),
         tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         notes: notes.trim() || null,
       })
@@ -54,7 +49,7 @@ export default function EditServerModal({ server, onClose }: Props) {
     },
   })
 
-  const canSave = !!(name.trim() && host.trim() && username.trim()) && !mutation.isPending
+  const canSave = !!(name.trim() && host.trim()) && !mutation.isPending
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
@@ -90,10 +85,6 @@ export default function EditServerModal({ server, onClose }: Props) {
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-foreground">Username</label>
-            <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" className={INPUT} />
-          </div>
-          <div>
             <label className="mb-1 block text-sm font-medium text-foreground">Tags</label>
             <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="prod, web (comma-separated)" className={INPUT} />
           </div>
@@ -102,7 +93,7 @@ export default function EditServerModal({ server, onClose }: Props) {
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={INPUT} />
           </div>
           <p className="text-xs text-muted-foreground">
-            Changing host, port or username re-checks the connection. To change the password or key,
+            Changing host or port re-checks the connection. To change the username, password or key,
             use <span className="font-medium text-foreground">Credentials</span>.
           </p>
           {mutation.isError && (
