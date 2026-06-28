@@ -48,6 +48,28 @@ export default function ServerCard({ server }: Props) {
               )}
             </div>
           )}
+          {server.status === "host_changed" && (
+            <div className="relative">
+              <button
+                type="button"
+                aria-label="Server identity changed — host key no longer matches"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowMsg((v) => !v) }}
+                className="flex h-6 w-6 items-center justify-center rounded-full text-red-500 hover:bg-red-500/10"
+              >
+                <AlertTriangle size={15} />
+              </button>
+              {showMsg && (
+                <div className="absolute right-0 top-7 z-20 w-64 rounded-lg border border-border bg-card p-3 text-left shadow-lg">
+                  <p className="text-xs font-semibold text-foreground">Server identity changed</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    This server's SSH key no longer matches the one we trusted. It may have been
+                    rebuilt — or the connection may be intercepted. Open it to review and trust the new key.
+                  </p>
+                  <span className="mt-2 inline-block text-xs font-medium text-primary">Open server to review →</span>
+                </div>
+              )}
+            </div>
+          )}
           <ConnectionStatus status={server.status} />
         </div>
       </div>

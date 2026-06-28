@@ -22,6 +22,8 @@ class ConnectionResult:
     ok: bool
     latency_ms: int
     error: str | None = None
+    fingerprint: str | None = None   # the server's current host-key fingerprint (ssh)
+    host_key_changed: bool = False   # True when it differs from the pinned one (Risk 3)
 
 
 async def test_connection(server: Server) -> ConnectionResult:
@@ -30,6 +32,7 @@ async def test_connection(server: Server) -> ConnectionResult:
         result = await ssh_service.test_connection(
             str(server.id), server.host, server.port,
             server.username, server.auth_type, server.encrypted_cred,
+            expected_fingerprint=server.fingerprint,
         )
         return ConnectionResult(**result)
 
@@ -54,7 +57,7 @@ async def execute(server: Server, command: str) -> tuple[str, str, int]:
         return await ssh_service.execute(
             str(server.id), server.host, server.port,
             server.username, server.auth_type, server.encrypted_cred,
-            command,
+            command, expected_fingerprint=server.fingerprint,
         )
     if server.connection_type == "winrm":
         return await winrm_service.execute(
@@ -71,7 +74,7 @@ async def execute_stream(server: Server, command: str) -> AsyncIterator[str]:
         return ssh_service.execute_stream(
             str(server.id), server.host, server.port,
             server.username, server.auth_type, server.encrypted_cred,
-            command,
+            command, expected_fingerprint=server.fingerprint,
         )
     if server.connection_type == "winrm":
         return winrm_service.execute_stream(

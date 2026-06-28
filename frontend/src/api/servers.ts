@@ -29,6 +29,13 @@ export interface TestConnectionResult {
   ok: boolean
   latency_ms: number
   error: string | null
+  host_key_changed?: boolean
+}
+
+export interface TrustKeyResult {
+  ok: boolean
+  fingerprint: string | null
+  error: string | null
 }
 
 export interface DetectOsResult {
@@ -64,6 +71,12 @@ export async function deleteServer(id: string): Promise<void> {
 
 export async function testConnection(id: string): Promise<TestConnectionResult> {
   const { data } = await apiClient.post<TestConnectionResult>(`/api/servers/${id}/test`)
+  return data
+}
+
+/** Trust the server's current host key (after a legitimate rebuild) — re-pins it. */
+export async function trustKey(id: string): Promise<TrustKeyResult> {
+  const { data } = await apiClient.post<TrustKeyResult>(`/api/servers/${id}/trust-key`)
   return data
 }
 

@@ -80,6 +80,8 @@ async def create_server(
         if result.ok:
             server.status = "online"
             server.last_seen = datetime.now(timezone.utc)
+            if result.fingerprint:
+                server.fingerprint = result.fingerprint  # pin identity on first connect
             try:
                 info = await metrics_service.detect_os(server)
                 server.os_type = info.get("os_type")
@@ -87,6 +89,8 @@ async def create_server(
                 server.arch = info.get("arch")
             except Exception:  # noqa: BLE001 — OS detect is a bonus; status is already set
                 pass
+        elif result.host_key_changed:
+            server.status = "host_changed"
         elif is_auth_error(message=result.error):
             server.status = "auth_failed"
         else:
@@ -201,11 +205,15 @@ async def test_server(
     except NotImplementedError as exc:
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc))
 
-    # Update status in DB — flag stale credentials distinctly from unreachable.
+    # Update status in DB — distinguish identity change / stale creds / unreachable.
     from app.services.ssh_service import is_auth_error
-    if result.ok:
+    if result.host_key_changed:
+        server.status = "host_changed"
+    elif result.ok:
         server.status = "online"
         server.last_seen = datetime.now(timezone.utc)
+        if result.fingerprint and not server.fingerprint:
+            server.fingerprint = result.fingerprint  # trust-on-first-use pin
     elif is_auth_error(message=result.error):
         server.status = "auth_failed"
     else:
@@ -216,7 +224,43 @@ async def test_server(
         "ok": result.ok,
         "latency_ms": result.latency_ms,
         "error": result.error,
+        "host_key_changed": result.host_key_changed,
     }
+
+
+@router.post("/{server_id}/trust-key")
+async def trust_server_key(
+    server_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Trust the server's CURRENT host key: clear the pinned fingerprint and re-pin
+    on a fresh connect. Use after legitimately rebuilding or replacing a server whose
+    identity changed. Requires manage rights; audited (security-sensitive)."""
+    server = await resolve_server(server_id, current_user, db, need_manage=True)
+    old_fp = server.fingerprint
+    server.fingerprint = None
+    await connection_manager.close(server)  # drop any cached connection
+    result = await connection_manager.test_connection(server)
+
+    from app.services.ssh_service import is_auth_error
+    if result.ok and result.fingerprint:
+        server.fingerprint = result.fingerprint
+        server.status = "online"
+        server.last_seen = datetime.now(timezone.utc)
+    elif is_auth_error(message=result.error):
+        server.status = "auth_failed"
+    else:
+        server.status = "offline"
+    await db.commit()
+    await audit_service.audit(
+        db, current_user, "server.trust_key",
+        target_type="server", target_id=server.id,
+        meta={"old_fingerprint": old_fp, "new_fingerprint": server.fingerprint},
+        request=request,
+    )
+    return {"ok": result.ok, "fingerprint": server.fingerprint, "error": result.error}
 
 
 # ── OS detection ──────────────────────────────────────────────────────────────

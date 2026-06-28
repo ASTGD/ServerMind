@@ -1,8 +1,8 @@
 import { useState } from "react"
 import { useParams, useNavigate, Link } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, Trash2, RefreshCw, Search, Loader2, MessageSquare, Terminal as TerminalIcon, Clock, Activity, FolderOpen, Shield, HardDriveDownload, Globe, KeyRound, Pencil } from "lucide-react"
-import { getServer, deleteServer, testConnection, detectOs } from "@/api/servers"
+import { ChevronLeft, Trash2, RefreshCw, Search, Loader2, MessageSquare, Terminal as TerminalIcon, Clock, Activity, FolderOpen, Shield, HardDriveDownload, Globe, KeyRound, Pencil, AlertTriangle } from "lucide-react"
+import { getServer, deleteServer, testConnection, detectOs, trustKey } from "@/api/servers"
 import ConnectionStatus from "@/components/server/ConnectionStatus"
 import ServerMetrics from "@/components/server/ServerMetrics"
 import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
@@ -42,6 +42,14 @@ export default function ServerDetail() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["servers"] })
       navigate("/servers", { replace: true })
+    },
+  })
+
+  const trustMutation = useMutation({
+    mutationFn: () => trustKey(id!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["server", id] })
+      qc.invalidateQueries({ queryKey: ["servers"] })
     },
   })
 
@@ -191,6 +199,39 @@ export default function ServerDetail() {
       )}
       {showCreds && (
         <UpdateCredentialsModal server={server} onClose={() => setShowCreds(false)} />
+      )}
+
+      {/* Server identity changed (host-key mismatch) — Risk 3 */}
+      {server.status === "host_changed" && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-500" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-foreground">Server identity changed</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                This server's SSH host key no longer matches the one ServerMind trusted on first
+                connect, so connections are blocked. If you rebuilt or replaced this server that's
+                expected — trust the new key. If you didn't, the connection may be intercepted; do
+                not trust it and investigate.
+              </p>
+              <button
+                onClick={() => trustMutation.mutate()}
+                disabled={trustMutation.isPending}
+                className="mt-3 flex items-center gap-2 rounded-md bg-red-500/90 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+              >
+                {trustMutation.isPending && <Loader2 size={13} className="animate-spin" />}
+                Trust new key
+              </button>
+              {trustMutation.data && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {trustMutation.data.ok
+                    ? "New key trusted — reconnected successfully."
+                    : `Couldn't reconnect: ${trustMutation.data.error ?? "unknown error"}`}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Test result */}

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import io
 import logging
 import time
@@ -20,6 +22,10 @@ _executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="ssh")
 
 # In-memory SSH client pool: {server_id_str: paramiko.SSHClient}
 _pool: dict[str, paramiko.SSHClient] = {}
+
+# Host-key fingerprint observed on the most recent connect per server, so a caller
+# with a DB session can persist it for trust-on-first-use (Risk 3).
+_fingerprints: dict[str, str] = {}
 
 
 class CommandError(Exception):
@@ -57,6 +63,38 @@ STALL_NOTE = (
 )
 
 
+class HostKeyMismatch(Exception):
+    """Raised when a server presents a host key different from the one pinned on
+    first connect — the server's identity changed (rebuilt / IP reused) or the
+    connection is being intercepted. We refuse rather than connect (Risk 3)."""
+
+    def __init__(self, expected: str, actual: str) -> None:
+        self.expected = expected
+        self.actual = actual
+        super().__init__(
+            "Server identity changed — the host key does not match the one trusted "
+            "before. The server may have been rebuilt, or the connection may be "
+            "intercepted. Refused for safety."
+        )
+
+
+def is_host_key_mismatch(exc: BaseException | None) -> bool:
+    """True when a failure is a pinned-host-key mismatch (server identity changed)."""
+    return isinstance(exc, HostKeyMismatch)
+
+
+def _key_fingerprint(key: paramiko.PKey) -> str:
+    """OpenSSH-style SHA256 fingerprint of a host key, e.g. 'SHA256:abc…'."""
+    digest = hashlib.sha256(key.asbytes()).digest()
+    return "SHA256:" + base64.b64encode(digest).decode("ascii").rstrip("=")
+
+
+def pop_captured_fingerprint(server_id: str) -> str | None:
+    """Return (and clear) the host-key fingerprint captured on the last connect for
+    this server, so the caller can persist it (trust-on-first-use)."""
+    return _fingerprints.pop(server_id, None)
+
+
 def is_auth_error(exc: BaseException | None = None, message: str | None = None) -> bool:
     """True when a connection failure is an authentication failure (wrong
     password/key) — i.e. the stored credentials are stale, as opposed to the server
@@ -69,8 +107,11 @@ def is_auth_error(exc: BaseException | None = None, message: str | None = None) 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _make_client(host: str, port: int, username: str, auth_type: str, credential: str) -> paramiko.SSHClient:
-    """Open and return an authenticated SSHClient (blocking)."""
+def _make_client(host: str, port: int, username: str, auth_type: str, credential: str) -> tuple[paramiko.SSHClient, str]:
+    """Open an authenticated SSHClient and capture its host-key fingerprint (blocking).
+
+    AutoAddPolicy accepts the key at the transport level; identity verification
+    against a pinned fingerprint happens in _get_client (Risk 3)."""
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
@@ -91,47 +132,80 @@ def _make_client(host: str, port: int, username: str, auth_type: str, credential
             raise ValueError("Unrecognised private key format")
         client.connect(host, port=port, username=username, pkey=pkey, timeout=15, banner_timeout=15)
 
-    return client
+    host_key = client.get_transport().get_remote_server_key()
+    return client, _key_fingerprint(host_key)
 
 
-def _get_client(server_id: str, host: str, port: int, username: str, auth_type: str, credential: str) -> paramiko.SSHClient:
-    """Return a pooled client, reconnecting if the transport is dead."""
+def _get_client(
+    server_id: str, host: str, port: int, username: str, auth_type: str, credential: str,
+    expected_fingerprint: str | None = None,
+) -> paramiko.SSHClient:
+    """Return a pooled client, reconnecting if the transport is dead.
+
+    On a fresh connect, the server's host-key fingerprint is checked against
+    ``expected_fingerprint`` (the pinned one); a mismatch raises HostKeyMismatch and
+    the connection is refused. The observed fingerprint is stashed for the caller to
+    persist on first connect (trust-on-first-use) (Risk 3)."""
     existing = _pool.get(server_id)
     if existing and existing.get_transport() and existing.get_transport().is_active():
         return existing
-    client = _make_client(host, port, username, auth_type, credential)
+    client, fingerprint = _make_client(host, port, username, auth_type, credential)
+    if expected_fingerprint and fingerprint != expected_fingerprint:
+        try:
+            client.close()
+        except Exception:
+            pass
+        raise HostKeyMismatch(expected_fingerprint, fingerprint)
+    _fingerprints[server_id] = fingerprint
     _pool[server_id] = client
     return client
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-async def test_connection(server_id: str, host: str, port: int, username: str, auth_type: str, encrypted_cred: str) -> dict:
-    """Test SSH connectivity. Returns {'ok': bool, 'latency_ms': int, 'error': str|None}."""
+async def test_connection(
+    server_id: str, host: str, port: int, username: str, auth_type: str, encrypted_cred: str,
+    expected_fingerprint: str | None = None,
+) -> dict:
+    """Test SSH connectivity and verify server identity.
+
+    Returns {'ok', 'latency_ms', 'error', 'fingerprint', 'host_key_changed'}. On a
+    pinned-key mismatch the connect is refused and host_key_changed is True (Risk 3)."""
     credential = decrypt(encrypted_cred)
     loop = asyncio.get_event_loop()
 
     def _test() -> dict:
         t0 = time.monotonic()
         try:
-            client = _get_client(server_id, host, port, username, auth_type, credential)
+            client = _get_client(server_id, host, port, username, auth_type, credential, expected_fingerprint)
             _, stdout, _ = client.exec_command("echo ok", timeout=10)
             stdout.read()
             latency_ms = int((time.monotonic() - t0) * 1000)
-            return {"ok": True, "latency_ms": latency_ms, "error": None}
+            return {
+                "ok": True, "latency_ms": latency_ms, "error": None,
+                "fingerprint": _fingerprints.get(server_id), "host_key_changed": False,
+            }
+        except HostKeyMismatch as exc:
+            return {
+                "ok": False, "latency_ms": 0, "error": str(exc),
+                "fingerprint": exc.actual, "host_key_changed": True,
+            }
         except Exception as exc:
-            return {"ok": False, "latency_ms": 0, "error": str(exc)}
+            return {
+                "ok": False, "latency_ms": 0, "error": str(exc),
+                "fingerprint": None, "host_key_changed": False,
+            }
 
     return await loop.run_in_executor(_executor, _test)
 
 
-async def execute(server_id: str, host: str, port: int, username: str, auth_type: str, encrypted_cred: str, command: str) -> tuple[str, str, int]:
+async def execute(server_id: str, host: str, port: int, username: str, auth_type: str, encrypted_cred: str, command: str, expected_fingerprint: str | None = None) -> tuple[str, str, int]:
     """Execute a command and return (stdout, stderr, exit_code)."""
     credential = decrypt(encrypted_cred)
     loop = asyncio.get_event_loop()
 
     def _run() -> tuple[str, str, int]:
-        client = _get_client(server_id, host, port, username, auth_type, credential)
+        client = _get_client(server_id, host, port, username, auth_type, credential, expected_fingerprint)
         _, stdout, stderr = client.exec_command(command, timeout=60)
         out = stdout.read().decode(errors="replace")
         err = stderr.read().decode(errors="replace")
@@ -141,7 +215,7 @@ async def execute(server_id: str, host: str, port: int, username: str, auth_type
     return await loop.run_in_executor(_executor, _run)
 
 
-async def execute_stream(server_id: str, host: str, port: int, username: str, auth_type: str, encrypted_cred: str, command: str) -> AsyncIterator[str]:
+async def execute_stream(server_id: str, host: str, port: int, username: str, auth_type: str, encrypted_cred: str, command: str, expected_fingerprint: str | None = None) -> AsyncIterator[str]:
     """Execute a command and yield stdout/stderr lines as they arrive.
 
     Watches for stalls (Update 16, Phase A): if no output arrives for
@@ -159,7 +233,7 @@ async def execute_stream(server_id: str, host: str, port: int, username: str, au
     def _stream() -> None:
         tail = b""  # rolling tail of recent raw output, shown if the command stalls
         try:
-            client = _get_client(server_id, host, port, username, auth_type, credential)
+            client = _get_client(server_id, host, port, username, auth_type, credential, expected_fingerprint)
             transport = client.get_transport()
             channel = transport.open_session()
             # Merge stderr into the same stream. Installers (apt, pip, etc.) write

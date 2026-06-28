@@ -15,6 +15,14 @@ const statusConfig = {
 
 export default function ConnectionStatus({ status, className }: Props) {
   const { t } = useTranslation()
+  if (status === "host_changed") {
+    return (
+      <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium text-red-600 dark:text-red-400", className)}>
+        <span className="h-2 w-2 rounded-full bg-red-500" />
+        Identity changed
+      </span>
+    )
+  }
   if (status === "auth_failed") {
     return (
       <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400", className)}>
