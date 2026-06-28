@@ -36,10 +36,19 @@ def _create_token(data: dict, expires_delta: timedelta) -> str:
 
 
 def create_access_token(user_id: str, token_version: int = 0) -> str:
-    """Create a short-lived access token carrying the user's token_version."""
+    """Create an access token carrying the user's token_version.
+
+    In development the token is long-lived (30 days) so dev/testing sessions don't
+    keep expiring; in production it uses the short ACCESS_TOKEN_EXPIRE_MINUTES.
+    """
+    expires = (
+        timedelta(days=30)
+        if settings.APP_ENV == "development"
+        else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
     return _create_token(
         {"sub": user_id, "type": "access", "tv": token_version},
-        timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+        expires,
     )
 
 
