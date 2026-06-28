@@ -11,6 +11,12 @@ Browser ──HTTPS──▶ CyberPanel OLS (Let's Encrypt) ──▶ 127.0.0.1:
 Backend ──▶ Postgres (Supabase)   ──▶ Redis (Upstash)
 ```
 
+> **Two ways to ship ServerMind.** This runbook is the **hosted (SaaS)** path — *we*
+> run it for customers. There's also a **self-hosted, licensed** path where customers
+> install it on their own VPS and activate a license (we never touch their data) — see
+> [docs/SELF-HOSTED-LICENSING.md](docs/SELF-HOSTED-LICENSING.md). Both use the same Docker
+> packaging below; the self-hosted edition adds a license check + a one-command installer.
+
 ---
 
 ## 1. Prerequisites
