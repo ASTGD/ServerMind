@@ -36,3 +36,7 @@
   `connection_type='ssh'`.
 - Servers added before this change get pinned on their next successful connect (or via
   the Test button); an unreachable server simply pins later.
+- A host-key mismatch is surfaced as `host_changed` from **every** status path — the
+  Test button *and* the background metrics worker — so a reinstalled server reads
+  "Identity changed" (with the Trust-new-key recovery) rather than a misleading
+  "offline".

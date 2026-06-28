@@ -60,10 +60,17 @@ async def _collect_server(server: Server) -> bool:
     try:
         data = await metrics_service.get_metrics(server)
     except Exception as exc:
-        from app.services.ssh_service import is_auth_error
+        from app.services.ssh_service import is_auth_error, is_host_key_mismatch
         logger.debug("Cannot reach %s for metrics: %s", server.name, exc)
-        # Stale credentials (needs a password update) vs simply unreachable.
-        new_status = "auth_failed" if is_auth_error(exc) else "offline"
+        # Distinguish identity change (host-key mismatch — e.g. the server was
+        # reinstalled) from stale credentials from simply unreachable, so the UI can
+        # offer the right recovery (trust new key / update password / retry).
+        if is_host_key_mismatch(exc):
+            new_status = "host_changed"
+        elif is_auth_error(exc):
+            new_status = "auth_failed"
+        else:
+            new_status = "offline"
         async with AsyncSessionLocal() as db:
             await db.execute(
                 sa_update(Server).where(Server.id == server.id).values(status=new_status)
