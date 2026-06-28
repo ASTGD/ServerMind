@@ -70,6 +70,32 @@ async def create_server(
     db.add(server)
     await db.commit()
     await db.refresh(server)
+
+    # Probe the new server so its status (and OS) reflect reality immediately,
+    # instead of sitting at "unknown" until the metrics worker runs.
+    from app.services import metrics_service
+    from app.services.ssh_service import is_auth_error
+    try:
+        result = await connection_manager.test_connection(server)
+        if result.ok:
+            server.status = "online"
+            server.last_seen = datetime.now(timezone.utc)
+            try:
+                info = await metrics_service.detect_os(server)
+                server.os_type = info.get("os_type")
+                server.os_version = info.get("os_version")
+                server.arch = info.get("arch")
+            except Exception:  # noqa: BLE001 — OS detect is a bonus; status is already set
+                pass
+        elif is_auth_error(message=result.error):
+            server.status = "auth_failed"
+        else:
+            server.status = "offline"
+        await db.commit()
+        await db.refresh(server)
+    except Exception:  # noqa: BLE001 — never let the probe fail the add
+        logger.debug("Post-create probe failed for %s", server.id, exc_info=True)
+
     await audit_service.audit(
         db, current_user, "server.create",
         target_type="server", target_id=server.id,
