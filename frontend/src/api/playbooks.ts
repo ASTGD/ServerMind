@@ -69,6 +69,26 @@ export interface RunStatus {
   failure_reason?: string | null
 }
 
+export interface ReadinessCheck {
+  label: string
+  ok: boolean
+  detail: string | null
+}
+
+export interface ReadinessResult {
+  ready: boolean
+  checks: ReadinessCheck[]
+}
+
+/** Check whether a server meets a playbook's requirements — no install (Tier 2). */
+export async function checkReadiness(playbookId: string, serverId: string): Promise<ReadinessResult> {
+  const { data } = await apiClient.post<ReadinessResult>(
+    `/api/playbooks/${playbookId}/readiness`,
+    { server_id: serverId },
+  )
+  return data
+}
+
 /** Current status of a batch of runs (for the fleet batch view). */
 export async function getRunsStatus(runIds: string[]): Promise<RunStatus[]> {
   const { data } = await apiClient.post<RunStatus[]>("/api/playbooks/runs/status", { run_ids: runIds })

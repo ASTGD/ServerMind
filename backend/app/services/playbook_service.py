@@ -112,6 +112,83 @@ def _with_preflight(script: str) -> str:
     return script[:cut] + _PREFLIGHT + script[cut:]
 
 
+# ── Server readiness check (Update 19, Tier 2) ────────────────────────────────
+# The same requirements the pre-flight guard enforces, but in *report* mode: gather
+# facts without installing, so the user can see whether a server is ready before a
+# failed attempt.
+_READINESS_SCRIPT = r'''echo "root=$([ "$(id -u)" -eq 0 ] && echo 1 || echo 0)"
+ram_mb=$(free -m 2>/dev/null | awk '/^Mem:/{print $2}'); echo "ram_mb=${ram_mb:-0}"
+ID=linux; PRETTY_NAME=Linux; [ -r /etc/os-release ] && . /etc/os-release; echo "os_id=${ID:-}"
+echo "os_pretty=$(printf %s "${PRETTY_NAME:-Linux}" | tr -d '"')"
+p=$(ss -tln 2>/dev/null | grep -cE ":80[[:space:]]"); echo "port80=${p:-0}"
+who=$(ss -tlnp 2>/dev/null | grep -E ":80[[:space:]]" | grep -oE '"[^"]+"' | head -1 | tr -d '"'); echo "port80_proc=${who}"
+echo "docker=$(command -v docker >/dev/null 2>&1 && echo 1 || echo 0)"
+panel=""; for entry in /usr/local/cpanel:cPanel /usr/local/CyberCP:CyberPanel /usr/local/hestia:HestiaCP /usr/local/directadmin:DirectAdmin /opt/psa:Plesk /www/server/panel:aaPanel /home/clp:CloudPanel; do d="${entry%%:*}"; n="${entry##*:}"; [ -e "$d" ] && panel="$n"; done; echo "panel=${panel}"
+'''
+
+
+def _extract_min_ram(script: str) -> int:
+    """The MIN_RAM_MB the playbook's pre-flight enforces (default 1024)."""
+    m = re.search(r"MIN_RAM_MB=(\d+)", script or "")
+    return int(m.group(1)) if m else 1024
+
+
+def _extract_supported_os(script: str) -> list[str]:
+    """Best-effort OS families from the playbook's ``case`` guard, e.g.
+    'ubuntu:20.04|almalinux:8*' → ['almalinux', 'ubuntu']. Empty when none found."""
+    m = re.search(r'case\s+"[^"]*ID[^"]*"\s+in\s+([^)]+)\)', script or "")
+    if not m:
+        return []
+    return sorted(set(re.findall(r"[a-z]+", m.group(1).lower())))
+
+
+async def check_readiness(server, playbook) -> dict:
+    """Probe a server (no install) and report whether it meets the playbook's
+    requirements as a green/red checklist (Update 19, Tier 2)."""
+    from app.services import connection_manager
+    out, _, _ = await connection_manager.execute(server, _READINESS_SCRIPT)
+    facts: dict[str, str] = {}
+    for line in out.splitlines():
+        k, sep, v = line.partition("=")
+        if sep:
+            facts[k.strip()] = v.strip()
+
+    script = playbook.script_bash or ""
+    needs_clean = "preflight" in script  # playbook requires a fresh, empty server
+    min_ram = _extract_min_ram(script)
+    supported = _extract_supported_os(script)
+    ram_mb = int(facts.get("ram_mb") or 0)
+    os_id = (facts.get("os_id") or "").lower()
+    os_pretty = facts.get("os_pretty") or os_id or "unknown"
+    port80 = (facts.get("port80") or "0") != "0"
+    proc = facts.get("port80_proc") or ""
+    panel = facts.get("panel") or ""
+    docker = (facts.get("docker") or "0") == "1"
+    root = (facts.get("root") or "0") == "1"
+
+    checks: list[dict] = [
+        {"label": "Connects as root", "ok": root, "detail": None if root else "not connecting as root"},
+    ]
+    if needs_clean:
+        checks.append({"label": "Port 80 is free", "ok": not port80,
+                       "detail": (f"in use by '{proc}'" if proc else "in use") if port80 else None})
+    checks.append({"label": f"At least {min_ram} MB memory", "ok": ram_mb >= min_ram,
+                   "detail": f"{ram_mb} MB available"})
+    if supported:
+        os_ok = any(os_id == s or os_id.startswith(s) for s in supported)
+        checks.append({"label": "Supported operating system", "ok": os_ok, "detail": os_pretty})
+    else:
+        checks.append({"label": "Operating system", "ok": True,
+                       "detail": f"{os_pretty} — confirm the panel supports this"})
+    if needs_clean:
+        checks.append({"label": "No other control panel installed", "ok": not panel,
+                       "detail": f"found {panel}" if panel else None})
+        checks.append({"label": "No Docker / existing web stack", "ok": not docker,
+                       "detail": "Docker is installed" if docker else None})
+
+    return {"ready": all(c["ok"] for c in checks), "checks": checks}
+
+
 # ── Non-interactive environment (Update 16, Phase A) ──────────────────────────
 # Stop installers from pausing to ask questions (apt/dpkg confirmations, the
 # Ubuntu "needrestart" service prompt, apt-listchanges). Injected into every bash

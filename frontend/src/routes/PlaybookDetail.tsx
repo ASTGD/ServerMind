@@ -11,11 +11,13 @@ import {
   Monitor,
   Loader2,
   AlertCircle,
+  ShieldCheck,
 } from "lucide-react"
 import { getPlaybook } from "@/api/playbooks"
 import { listServers } from "@/api/servers"
 import ScriptPreview from "@/components/playbooks/ScriptPreview"
 import RunPlaybookModal from "@/components/playbooks/RunPlaybookModal"
+import ReadinessModal from "@/components/playbooks/ReadinessModal"
 
 const CATEGORY_LABELS: Record<string, string> = {
   setup: "Setup",
@@ -36,6 +38,7 @@ export default function PlaybookDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [showRunModal, setShowRunModal] = useState(false)
+  const [showReadiness, setShowReadiness] = useState(false)
 
   const { data: playbook, isLoading, isError } = useQuery({
     queryKey: ["playbook", id],
@@ -124,14 +127,26 @@ export default function PlaybookDetail() {
             )}
           </div>
 
-          <button
-            onClick={() => setShowRunModal(true)}
-            disabled={compatible.length === 0}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-          >
-            <Play className="h-4 w-4" />
-            Run Playbook
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {playbook.category === "control-panel" && (
+              <button
+                onClick={() => setShowReadiness(true)}
+                disabled={compatible.length === 0}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border border-border text-foreground hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                Check readiness
+              </button>
+            )}
+            <button
+              onClick={() => setShowRunModal(true)}
+              disabled={compatible.length === 0}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Play className="h-4 w-4" />
+              Run Playbook
+            </button>
+          </div>
         </div>
 
         {compatible.length === 0 && servers.length > 0 && (
@@ -227,6 +242,15 @@ export default function PlaybookDetail() {
           playbook={playbook}
           servers={compatible.length > 0 ? compatible : servers}
           onClose={() => setShowRunModal(false)}
+        />
+      )}
+
+      {showReadiness && (
+        <ReadinessModal
+          playbookId={playbook.id}
+          playbookTitle={playbook.title}
+          servers={compatible.length > 0 ? compatible : servers}
+          onClose={() => setShowReadiness(false)}
         />
       )}
     </>

@@ -84,3 +84,18 @@ Safe by design: it only ever *recommends* (use a fresh VPS / resize / reinstall 
 OS); nothing destructive runs automatically. Guided remediation ("free port 80 by
 stopping litespeed — ⚠️ deletes its sites") is the AI-assisted Tier 3, for when an AI
 key is configured.
+
+## Follow-on — pre-install readiness check (Tier 2)
+
+Find out *before* a failed run. The control-panel playbook page gets a **Check
+readiness** button: pick a server and ServerMind probes it (nothing is changed) and
+reports a green/red checklist of the playbook's actual requirements — connects as
+root; port 80 free (naming the process using it); enough memory (the playbook's own
+MIN_RAM); supported OS; no other panel installed; no Docker/existing stack. Checks
+that don't apply (e.g. "clean server" for a non-pre-flight playbook) are omitted.
+
+`POST /api/playbooks/{id}/readiness {server_id}` runs a report-mode probe
+(`playbook_service.check_readiness`) and returns `{ready, checks[]}`. Requirements are
+read from the playbook's own script (`MIN_RAM_MB`; the OS `case` guard), so the check
+stays in sync with what the install actually enforces. Verified live: on a server with
+litespeed on port 80 it reports "Not ready — Port 80 in use by 'litespeed'", rest green.

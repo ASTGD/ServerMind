@@ -132,6 +132,10 @@ class RunStatusRequest(BaseModel):
     run_ids: list[uuid.UUID]
 
 
+class ReadinessRequest(BaseModel):
+    server_id: uuid.UUID
+
+
 @router.post("/{playbook_id}/run-multi")
 async def run_multi(
     playbook_id: uuid.UUID,
@@ -214,6 +218,30 @@ async def runs_status(
         {"id": str(i), "status": s, "server_id": str(sv), "failure_reason": fr}
         for i, s, sv, fr in rows
     ]
+
+
+@router.post("/{playbook_id}/readiness")
+async def playbook_readiness(
+    playbook_id: uuid.UUID,
+    body: ReadinessRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Check whether a server meets this playbook's requirements — without installing
+    anything (Update 19, Tier 2). Returns a green/red checklist."""
+    playbook = (
+        await db.execute(select(Playbook).where(Playbook.id == playbook_id, Playbook.is_public == True))
+    ).scalar_one_or_none()
+    if not playbook:
+        raise HTTPException(status_code=404, detail="Playbook not found")
+    server = await resolve_server(body.server_id, current_user, db)
+    if server.connection_type != "ssh":
+        raise HTTPException(status_code=400, detail="Readiness checks apply to Linux (SSH) servers")
+    from app.services import playbook_service
+    try:
+        return await playbook_service.check_readiness(server, playbook)
+    except Exception as exc:  # noqa: BLE001 — surface as a clean 502
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Couldn't reach the server: {exc}")
 
 
 @router.get("/{playbook_id}", response_model=PlaybookDetailOut)
