@@ -136,16 +136,16 @@ async def update_server(
         server.notes = body.notes
 
     conn_changed = False
-    if body.host is not None:
+    if body.host is not None and body.host != server.host:
         server.host = body.host; conn_changed = True
-    if body.port is not None:
+    if body.port is not None and body.port != server.port:
         server.port = body.port; conn_changed = True
-    if body.username is not None:
+    if body.username is not None and body.username != server.username:
         server.username = body.username; conn_changed = True
-    if body.auth_type is not None:
+    if body.auth_type is not None and body.auth_type != server.auth_type:
         server.auth_type = body.auth_type; conn_changed = True
     if body.credential is not None:
-        server.encrypted_cred = encrypt(body.credential); conn_changed = True
+        server.encrypted_cred = encrypt(body.credential); conn_changed = True  # new secret ⇒ always re-probe
 
     if conn_changed:
         # The pooled SSH connection (if any) was authenticated with the OLD creds —

@@ -1,11 +1,12 @@
 import { useState } from "react"
 import { useParams, useNavigate, Link } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, Trash2, RefreshCw, Search, Loader2, MessageSquare, Terminal as TerminalIcon, Clock, Activity, FolderOpen, Shield, HardDriveDownload, Globe, KeyRound } from "lucide-react"
+import { ChevronLeft, Trash2, RefreshCw, Search, Loader2, MessageSquare, Terminal as TerminalIcon, Clock, Activity, FolderOpen, Shield, HardDriveDownload, Globe, KeyRound, Pencil } from "lucide-react"
 import { getServer, deleteServer, testConnection, detectOs } from "@/api/servers"
 import ConnectionStatus from "@/components/server/ConnectionStatus"
 import ServerMetrics from "@/components/server/ServerMetrics"
 import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
+import EditServerModal from "@/components/server/EditServerModal"
 import type { Server } from "@/types"
 
 export default function ServerDetail() {
@@ -14,6 +15,7 @@ export default function ServerDetail() {
   const qc = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showCreds, setShowCreds] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
 
   const { data: server, isLoading } = useQuery<Server>({
     queryKey: ["server", id],
@@ -160,6 +162,14 @@ export default function ServerDetail() {
             Detect OS
           </button>
           <button
+            onClick={() => setShowEdit(true)}
+            title="Edit server"
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          >
+            <Pencil size={13} />
+            Edit
+          </button>
+          <button
             onClick={() => setShowCreds(true)}
             title="Update credentials"
             className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
@@ -176,6 +186,9 @@ export default function ServerDetail() {
         </div>
       </div>
 
+      {showEdit && (
+        <EditServerModal server={server} onClose={() => setShowEdit(false)} />
+      )}
       {showCreds && (
         <UpdateCredentialsModal server={server} onClose={() => setShowCreds(false)} />
       )}
