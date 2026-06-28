@@ -11,7 +11,7 @@ Planned in three independent phases:
 |---|---------|-----|--------|
 | 1 | Failure reason buried in a terminal popup | Show the reason inline on the row | ✅ shipped |
 | 2 | Re-selecting a busy server starts a duplicate install with no warning | "Installing now" badge in the picker + backend refuses duplicates | ✅ shipped |
-| 3 | Dashboard "Running now" is a full-width band | Compact card in the right rail, auto-hides when empty | ⏳ planned |
+| 3 | Dashboard "Running now" is a full-width band | Compact card in the right rail, auto-hides when empty | ✅ shipped |
 
 ## Phase 1 — failure reason inline (shipped)
 
@@ -54,3 +54,17 @@ and duplicates impossible.
 
 Verified: the busy query flags an in-progress server; `/api/active-runs` exposes the
 playbook id; 58 tests pass; build clean.
+
+## Phase 3 — compact "Running now" card (shipped)
+
+The full-width band gave transient background tasks more weight than they deserve
+and looked empty with one short line. Moved it into the dashboard right rail.
+
+- `RunningTasks` is now a compact card (`border-border bg-card`, matching the other
+  rail cards) at the **top of the right column**, above Quick actions. Rows are tight
+  single lines: a pulsing dot + `Title · Server` + short elapsed (`4m`) + chevron, in
+  a `max-h-64` scroll area. It still **auto-hides when nothing is running**, so the
+  rail collapses to Quick actions.
+
+Verified live: with two installs in progress the card shows "Running now (2)" in the
+rail with two compact rows; the full-width band is gone; build clean.

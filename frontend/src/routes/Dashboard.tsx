@@ -89,9 +89,6 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Running now (hidden when nothing is in progress) */}
-      <RunningTasks />
-
       {/* Main grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Fleet */}
@@ -135,6 +132,8 @@ export default function Dashboard() {
 
         {/* Sidebar column */}
         <div className="space-y-6">
+          {/* Running now — compact card, top of the rail, hidden when nothing runs */}
+          <RunningTasks />
           <QuickActions />
 
           {servers.length > 0 && (
