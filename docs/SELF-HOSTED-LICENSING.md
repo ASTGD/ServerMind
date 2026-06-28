@@ -85,20 +85,41 @@ install; agency/reseller tiers allow N installs.
 4. **Open the app** at their server's address → a **setup wizard**:
    - enter the **license key** → activate;
    - create the **admin account**;
-   - paste their **AI key** (see §7);
+   - **choose AI** — paste your own key (any provider) *or* subscribe to ServerMind AI (§7);
    - done.
 5. **Use it** — add servers, chat, run playbooks — exactly as today.
 
-## 7. The AI brain — "bring your own key" (recommended)
+## 7. The AI brain — two ways, the customer's choice
 
-Each customer connects **their own** Anthropic account (their own AI key). Why:
-- **Private:** their prompts go straight from their server to the AI — never through us.
-- **Zero AI cost to us**, and they pay only for what they use.
-- It's one extra step in the setup wizard; we guide them through getting a key.
+ServerMind needs an AI model to power chat + script generation. We offer **both**
+options in the setup wizard, so each customer picks their own privacy/convenience
+trade-off:
 
-(Alternative: we proxy AI and charge for usage — but that sends prompts through us and
-adds our cost/infra, partly undoing the privacy advantage. Not recommended for the
-self-hosted edition.)
+**A. Bring your own key (any provider) — maximum privacy.**
+The customer connects their own AI account and pastes their key. We support **multiple
+providers** — Anthropic (Claude), OpenAI (GPT), Google (Gemini), and others — so they
+use whatever they already have or trust. Their prompts go straight from their server to
+the provider; nothing passes through us; the AI cost is theirs. Best for
+privacy-conscious buyers, agencies, and the technical crowd.
+*Build:* a small provider-abstraction layer so the app can talk to any provider, plus a
+"pick provider + paste key" step in setup.
+
+**B. ServerMind AI subscription — no key needed, just works.**
+For customers who don't want to get an API key (the hardest setup step), we offer our
+own AI as a paid add-on. They pay us a monthly subscription (or usage credits); their
+requests go through a small **AI gateway** we run, which uses our keys and meters usage.
+Removes all AI setup friction and adds a recurring revenue stream.
+
+> **Privacy note to state plainly:** with **A**, nothing reaches us. With **B**, the AI
+> *conversation* (the request, server details, command output) passes through our
+> gateway — but **server passwords/keys never go to the AI in either case** (they're only
+> used to connect). So: own key = maximum privacy; our subscription = maximum
+> convenience. The customer decides.
+
+What we'd run for **B**: one small cloud service (the AI gateway), which can live
+alongside the license server. It needs usage caps/credits + abuse monitoring (so a
+runaway customer can't rack up huge AI bills) and pricing that covers the AI cost with a
+margin.
 
 ## 8. Updates
 
@@ -122,7 +143,9 @@ That shrinks "build a license system" down to a small, well-scoped piece.
 ## 10. Open decisions (to settle before building)
 
 - **Licensing platform:** Lemon Squeezy vs Gumroad vs Paddle (all handle keys + payment).
-- **AI key model:** bring-your-own (recommended) vs we-proxy.
+- **AI:** bring-your-own-key (multi-provider) is decided; whether to *also* run the
+  ServerMind AI subscription (option B) — recommended for reach + revenue, but adds a
+  small gateway service + AI-cost/abuse management to operate.
 - **Installs per license:** 1 active install for solo, N for agency/reseller tiers.
 - **On expiry:** keep working read-only, or disable paid features? (Lean: stays usable,
   but updates + support stop — least punishing to a paying customer.)

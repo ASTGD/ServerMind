@@ -1304,7 +1304,7 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [ ] CLI: `servermind run "install nginx" --server myserver`
 - [ ] API access for users (build on top of ServerMind)
 - [ ] White-label for agencies
-- [ ] **Self-hosted licensed edition** — license system (online activation + periodic re-check + grace period), one-command installer + setup wizard, bring-your-own AI key, in-app updater; sell keys via Lemon Squeezy/Gumroad/Paddle. Target agencies/MSPs. See [docs/SELF-HOSTED-LICENSING.md](docs/SELF-HOSTED-LICENSING.md)
+- [ ] **Self-hosted licensed edition** — license system (online activation + periodic re-check + grace period), one-command installer + setup wizard, multi-provider bring-your-own AI key (Claude/OpenAI/Gemini) **or** an optional hosted "ServerMind AI" subscription, in-app updater; sell keys via Lemon Squeezy/Gumroad/Paddle. Target agencies/MSPs. See [docs/SELF-HOSTED-LICENSING.md](docs/SELF-HOSTED-LICENSING.md)
 
 ---
 
