@@ -4,6 +4,7 @@ import ProtectedRoute from "@/components/shared/ProtectedRoute"
 import Dashboard from "@/routes/Dashboard"
 import Servers from "@/routes/Servers"
 import ServerDetail from "@/routes/ServerDetail"
+import ServerOverview from "@/routes/ServerOverview"
 import Chat from "@/routes/Chat"
 import Terminal from "@/routes/Terminal"
 import Playbooks from "@/routes/Playbooks"
@@ -41,20 +42,22 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="servers" element={<Servers />} />
-          <Route path="servers/:id" element={<ServerDetail />} />
+          <Route path="servers/:id" element={<ServerDetail />}>
+            <Route index element={<ServerOverview />} />
+            <Route path="files" element={<FileManager />} />
+            <Route path="monitoring" element={<Monitoring />} />
+            <Route path="security" element={<Security />} />
+            <Route path="backups" element={<Backups />} />
+            <Route path="scheduler" element={<Scheduler />} />
+            <Route path="hosting" element={<Hosting />} />
+            <Route path="installed" element={<Installed />} />
+          </Route>
           <Route path="servers/:id/chat" element={<Chat />} />
           <Route path="servers/:id/terminal" element={<Terminal />} />
           <Route path="playbooks" element={<Playbooks />} />
           <Route path="playbooks/:id" element={<PlaybookDetail />} />
           <Route path="scripts/generate" element={<ScriptGenerator />} />
           <Route path="scripts" element={<MyScripts />} />
-          <Route path="servers/:id/scheduler" element={<Scheduler />} />
-          <Route path="servers/:id/files" element={<FileManager />} />
-          <Route path="servers/:id/monitoring" element={<Monitoring />} />
-          <Route path="servers/:id/security" element={<Security />} />
-          <Route path="servers/:id/backups" element={<Backups />} />
-          <Route path="servers/:id/installed" element={<Installed />} />
-          <Route path="servers/:id/hosting" element={<Hosting />} />
           <Route path="logs" element={<Logs />} />
           <Route path="team" element={<Team />} />
           <Route path="team/accept/:token" element={<AcceptInvite />} />

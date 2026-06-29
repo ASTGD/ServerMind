@@ -1,19 +1,17 @@
 import { useState } from "react"
-import { useParams, useNavigate, Link, NavLink } from "react-router-dom"
+import { useParams, useNavigate, Link, NavLink, Outlet } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, Loader2, MessageSquare, AlertTriangle, KeyRound } from "lucide-react"
+import { ChevronLeft, Loader2, MessageSquare, Terminal as TerminalIcon, AlertTriangle, KeyRound } from "lucide-react"
 import { getServer, deleteServer, testConnection, detectOs, trustKey } from "@/api/servers"
 import ConnectionStatus from "@/components/server/ConnectionStatus"
-import ServerMetrics from "@/components/server/ServerMetrics"
 import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
 import EditServerModal from "@/components/server/EditServerModal"
 import ServerActionsMenu from "@/components/server/ServerActionsMenu"
-import InstalledWidget from "@/components/server/widgets/InstalledWidget"
-import SecurityWidget from "@/components/server/widgets/SecurityWidget"
-import BackupsWidget from "@/components/server/widgets/BackupsWidget"
-import RecentActivityWidget from "@/components/server/widgets/RecentActivityWidget"
 import type { Server } from "@/types"
 
+/** The server hub: a persistent shell (header + tab nav + alerts + actions) that wraps
+ * every server workspace. The active tab renders into the <Outlet />; the server object
+ * is shared with the child route via the outlet context. */
 export default function ServerDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -72,7 +70,6 @@ export default function ServerDetail() {
 
   const tabs = [
     { to: `/servers/${server.id}`, label: "Overview", end: true },
-    { to: `/servers/${server.id}/terminal`, label: "Terminal", end: false },
     { to: `/servers/${server.id}/files`, label: "Files", end: false },
     { to: `/servers/${server.id}/monitoring`, label: "Monitoring", end: false },
     { to: `/servers/${server.id}/security`, label: "Security", end: false },
@@ -81,17 +78,6 @@ export default function ServerDetail() {
     ...(server.connection_type === "hosting"
       ? [{ to: `/servers/${server.id}/hosting`, label: "Hosting", end: false }]
       : []),
-  ]
-
-  const info: { label: string; value: string }[] = [
-    { label: "OS", value: server.os_type ? `${server.os_type}${server.os_version ? ` ${server.os_version}` : ""}` : "—" },
-    { label: "Architecture", value: server.arch ?? "—" },
-    { label: "Shell", value: server.shell },
-    { label: "Connection", value: server.connection_type.toUpperCase() },
-    { label: "Host", value: server.host },
-    { label: "Port", value: String(server.port) },
-    { label: "Username", value: server.username },
-    { label: "Auth", value: server.auth_type },
   ]
 
   return (
@@ -117,6 +103,13 @@ export default function ServerDetail() {
           >
             <MessageSquare size={14} />
             AI Chat
+          </Link>
+          <Link
+            to={`/servers/${server.id}/terminal`}
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          >
+            <TerminalIcon size={14} />
+            Terminal
           </Link>
           <ServerActionsMenu
             onTest={() => testMutation.mutate()}
@@ -226,51 +219,8 @@ export default function ServerDetail() {
         </div>
       )}
 
-      {/* Overview — widget dashboard */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
-          <div className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-3 text-sm font-medium text-foreground">Server info</h3>
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
-              {info.map((f) => (
-                <div key={f.label}>
-                  <dt className="text-xs text-muted-foreground">{f.label}</dt>
-                  <dd className="truncate font-mono text-foreground capitalize">{f.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-
-          <InstalledWidget serverId={server.id} />
-          <RecentActivityWidget serverId={server.id} />
-
-          {server.notes && (
-            <div className="rounded-lg border border-border bg-card p-4">
-              <h3 className="mb-2 text-sm font-medium text-foreground">Notes</h3>
-              <p className="whitespace-pre-wrap text-sm text-muted-foreground">{server.notes}</p>
-            </div>
-          )}
-
-          {server.tags && server.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {server.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full border border-border px-3 py-0.5 text-xs text-muted-foreground"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-4">
-          <ServerMetrics serverId={server.id} />
-          <SecurityWidget serverId={server.id} />
-          <BackupsWidget serverId={server.id} />
-        </div>
-      </div>
+      {/* Active tab */}
+      <Outlet context={{ server }} />
 
       {/* Delete confirm */}
       {confirmDelete && (
