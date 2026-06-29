@@ -20,7 +20,7 @@ from app.services import llm_service, settings_service
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-_PROVIDERS = {"anthropic", "openai", "gemini", "openai_compatible"}
+_PROVIDERS = {"anthropic", "openai", "gemini", "openai_compatible", "servermind"}
 
 
 class AiSettingsBody(BaseModel):

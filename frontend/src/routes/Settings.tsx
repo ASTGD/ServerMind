@@ -646,12 +646,14 @@ export default function Settings() {
   )
 
   const AI_PROVIDERS: { value: AiProvider; label: string; placeholder: string }[] = [
+    { value: "servermind", label: "ServerMind AI (subscription — no key needed)", placeholder: "" },
     { value: "anthropic", label: "Anthropic (Claude)", placeholder: "claude-sonnet-4-20250514" },
     { value: "openai", label: "OpenAI (GPT)", placeholder: "gpt-4o" },
     { value: "gemini", label: "Google (Gemini)", placeholder: "gemini-1.5-pro" },
     { value: "openai_compatible", label: "OpenAI-compatible (custom)", placeholder: "model name" },
   ]
   const aiPlaceholder = AI_PROVIDERS.find((p) => p.value === aiProvider)?.placeholder ?? ""
+  const isServermind = aiProvider === "servermind"
 
   const aiSection = (
     <Section
@@ -679,31 +681,46 @@ export default function Settings() {
         </div>
         <div>
           <label className={labelCls}>
-            API key {aiHasKey && <span className="font-normal text-green-600">· a key is saved</span>}
+            {isServermind ? "Subscription token" : "API key"}{" "}
+            {aiHasKey && (
+              <span className="font-normal text-green-600">
+                · {isServermind ? "a token is saved" : "a key is saved"}
+              </span>
+            )}
           </label>
           <input
             type="password"
             value={aiKey}
             onChange={(e) => setAiKey(e.target.value)}
             autoComplete="new-password"
-            placeholder={aiHasKey ? "•••••••• (leave blank to keep)" : "Paste your API key"}
+            placeholder={
+              aiHasKey
+                ? "•••••••• (leave blank to keep)"
+                : isServermind
+                  ? "Paste your ServerMind AI token"
+                  : "Paste your API key"
+            }
             className={inputCls}
           />
           <p className="mt-1 text-xs text-muted-foreground">
-            Encrypted (AES-256-GCM) before storage — never shown again.
+            {isServermind
+              ? "From your ServerMind AI subscription — no AI key of your own needed. Stored encrypted."
+              : "Encrypted (AES-256-GCM) before storage — never shown again."}
           </p>
         </div>
-        <div>
-          <label className={labelCls}>
-            Model <span className="font-normal text-muted-foreground/70">(optional)</span>
-          </label>
-          <input
-            value={aiModel}
-            onChange={(e) => setAiModel(e.target.value)}
-            placeholder={aiPlaceholder}
-            className={inputCls}
-          />
-        </div>
+        {!isServermind && (
+          <div>
+            <label className={labelCls}>
+              Model <span className="font-normal text-muted-foreground/70">(optional)</span>
+            </label>
+            <input
+              value={aiModel}
+              onChange={(e) => setAiModel(e.target.value)}
+              placeholder={aiPlaceholder}
+              className={inputCls}
+            />
+          </div>
+        )}
         {aiProvider === "openai_compatible" && (
           <div>
             <label className={labelCls}>Base URL</label>

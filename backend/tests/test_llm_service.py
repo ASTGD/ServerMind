@@ -36,6 +36,16 @@ def test_resolve_gemini_uses_compatible_base(monkeypatch):
     assert "generativelanguage.googleapis.com" in (base or "")
 
 
+def test_resolve_servermind_uses_gateway(monkeypatch):
+    monkeypatch.setattr(settings, "AI_PROVIDER", "servermind")
+    monkeypatch.setattr(settings, "AI_API_KEY", "sm_live_token")
+    monkeypatch.setattr(settings, "AI_MODEL", "")
+    monkeypatch.setattr(settings, "AI_BASE_URL", "")
+    monkeypatch.setattr(settings, "AI_GATEWAY_URL", "https://gw.example/v1")
+    provider, key, _model, base = llm_service._resolve()
+    assert (provider, key, base) == ("servermind", "sm_live_token", "https://gw.example/v1")
+
+
 async def test_complete_routes_to_anthropic(monkeypatch):
     monkeypatch.setattr(settings, "AI_PROVIDER", "anthropic")
     monkeypatch.setattr(settings, "AI_API_KEY", "k")

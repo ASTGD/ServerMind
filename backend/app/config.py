@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     AI_API_KEY: str = ""
     AI_MODEL: str = ""
     AI_BASE_URL: str = ""
+    # Hosted "ServerMind AI" subscription (Update 20.3) — for customers without their
+    # own key. When AI_PROVIDER='servermind', AI_API_KEY is the subscription token and
+    # requests go to this gateway (which holds our upstream key + meters usage).
+    AI_GATEWAY_URL: str = "https://ai.servermind.app/v1"
 
     # JWT
     JWT_ALGORITHM: str = "HS256"

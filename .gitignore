@@ -77,3 +77,6 @@ backend/alembic/versions/*.pyc
 *.pfx
 id_rsa
 id_ed25519
+
+# Gateway local DB files
+gateway/*.db

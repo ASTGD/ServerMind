@@ -1,6 +1,6 @@
 import { apiClient } from "./client"
 
-export type AiProvider = "anthropic" | "openai" | "gemini" | "openai_compatible"
+export type AiProvider = "anthropic" | "openai" | "gemini" | "openai_compatible" | "servermind"
 
 export interface AiSettings {
   provider: AiProvider

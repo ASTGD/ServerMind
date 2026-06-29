@@ -24,6 +24,7 @@ _DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-4-20250514",
     "openai": "gpt-4o",
     "gemini": "gemini-1.5-pro",
+    "servermind": "servermind",  # the hosted gateway picks the real upstream model
 }
 
 # OpenAI-compatible base URLs for non-OpenAI providers reached via the openai SDK.
@@ -59,6 +60,14 @@ def clear_runtime_config() -> None:
     reset_clients()
 
 
+def _base_for(provider: str) -> str | None:
+    """Base URL for a provider reached via the OpenAI client. The hosted 'servermind'
+    gateway is config-driven; the rest are fixed OpenAI-compatible endpoints."""
+    if provider == "servermind":
+        return settings.AI_GATEWAY_URL or None
+    return _OPENAI_COMPATIBLE_BASE.get(provider)
+
+
 def _resolve() -> tuple[str, str, str, str | None]:
     """Resolve (provider, api_key, model, base_url). The Settings override wins when it
     has a key; otherwise fall back to .env / the legacy ANTHROPIC_* settings."""
@@ -67,12 +76,12 @@ def _resolve() -> tuple[str, str, str, str | None]:
         provider = cfg["provider"]
         key = cfg["api_key"]
         model = cfg.get("model") or _DEFAULT_MODELS.get(provider) or settings.ANTHROPIC_MODEL
-        base_url = cfg.get("base_url") or _OPENAI_COMPATIBLE_BASE.get(provider)
+        base_url = cfg.get("base_url") or _base_for(provider)
         return provider, key, model, base_url
     provider = (settings.AI_PROVIDER or "anthropic").lower()
     key = settings.AI_API_KEY or (settings.ANTHROPIC_API_KEY if provider == "anthropic" else "")
     model = settings.AI_MODEL or _DEFAULT_MODELS.get(provider) or settings.ANTHROPIC_MODEL
-    base_url = settings.AI_BASE_URL or _OPENAI_COMPATIBLE_BASE.get(provider)
+    base_url = settings.AI_BASE_URL or _base_for(provider)
     return provider, key, model, base_url
 
 

@@ -37,8 +37,25 @@ confirm the key + model work. Endpoints: `GET`/`PUT /api/settings/ai`, `POST
 /api/settings/ai/test`. (Currently any authenticated user can change it — tighten to an
 owner/admin role for multi-user instances.)
 
+## ServerMind AI subscription (shipped — Update 20.3)
+
+The hosted option for customers without their own key. A new provider **`servermind`**:
+in Settings → AI provider, pick **ServerMind AI (subscription)** and paste a subscription
+token; the instance then talks to our gateway (OpenAI-compatible) instead of a provider
+directly. Config: `AI_GATEWAY_URL` + `AI_API_KEY`=token.
+
+The gateway is a standalone service **we** run, in **`gateway/`**: it validates the
+subscription token, enforces a monthly request limit, forwards to a real provider with
+OUR upstream key, and meters usage. OpenAI-compatible (`POST /v1/chat/completions`);
+tokens are issued via `POST /admin/subscriptions` (admin-key — wire to a billing webhook
+later) and stored hashed. See `gateway/README.md`.
+
+Verified: the gateway test covers auth, issue, forward, monthly-limit 429, and bad-token
+401 (mocked upstream); the client `servermind` routing is unit-tested; 65 backend tests
+pass; build clean.
+
 ## Next
 
+- Wire `POST /admin/subscriptions` to the billing platform's webhook (auto-issue/revoke).
+- Token-accurate metering + usage reporting; per-token rate limiting.
 - The same provider/key step inside the **self-hosted setup wizard**.
-- The optional hosted **"ServerMind AI" subscription** gateway (option B in
-  [SELF-HOSTED-LICENSING.md §7](SELF-HOSTED-LICENSING.md)).

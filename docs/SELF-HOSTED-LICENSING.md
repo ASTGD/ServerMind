@@ -108,7 +108,9 @@ privacy-conscious buyers, agencies, and the technical crowd.
 For customers who don't want to get an API key (the hardest setup step), we offer our
 own AI as a paid add-on. They pay us a monthly subscription (or usage credits); their
 requests go through a small **AI gateway** we run, which uses our keys and meters usage.
-Removes all AI setup friction and adds a recurring revenue stream.
+Removes all AI setup friction and adds a recurring revenue stream. **Status: built** —
+the gateway lives in `gateway/` (validate token → forward with our key → meter monthly
+usage); the billing-platform webhook to auto-issue tokens is the remaining piece.
 
 > **Privacy note to state plainly:** with **A**, nothing reaches us. With **B**, the AI
 > *conversation* (the request, server details, command output) passes through our
