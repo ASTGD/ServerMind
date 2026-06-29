@@ -112,6 +112,182 @@ def _with_preflight(script: str) -> str:
     return script[:cut] + _PREFLIGHT + script[cut:]
 
 
+# ── Multi-distro layer (Update 22, Tier 2) ────────────────────────────────────
+# Web-stack playbooks used to hard-code apt + mysql-server + a pinned PHP version,
+# so they broke on Debian (no mysql-server), newer Ubuntu (php8.2 missing), and every
+# RHEL box (no apt). This shared preamble detects the OS family once and exposes
+# helpers — pkg_install / svc_enable / php_fpm_service / php_fpm_socket /
+# open_firewall — so a SINGLE script runs on Ubuntu/Debian (any version) AND
+# AlmaLinux/Rocky/CentOS. PHP is installed via unversioned meta-packages (php-fpm,
+# php-mysql/php-mysqlnd …) which resolve to each distro's default PHP — no PPA, no
+# pinned version. The DB is MariaDB (drop-in MySQL, present in every default repo).
+_DISTRO = r"""# --- ServerMind multi-distro layer ---
+. /etc/os-release 2>/dev/null || true
+OS_ID="${ID:-}"; OS_LIKE="${ID_LIKE:-}"
+case " $OS_ID $OS_LIKE " in
+  *ubuntu*|*debian*) FAMILY=debian; PM=apt ;;
+  *almalinux*|*rocky*|*centos*|*rhel*|*fedora*) FAMILY=rhel; PM=dnf ;;
+  *) echo ">>> ERROR: Unsupported OS: ${OS_ID:-unknown}. This playbook supports Ubuntu/Debian and AlmaLinux/Rocky/CentOS."; exit 1 ;;
+esac
+if [ "$FAMILY" = rhel ] && ! command -v dnf >/dev/null 2>&1; then PM=yum; fi
+echo ">>> Detected ${OS_ID:-linux} (${FAMILY} family)."
+pkg_refresh() {
+  if [ "$FAMILY" = debian ]; then export DEBIAN_FRONTEND=noninteractive; apt-get update -qq
+  else "$PM" -y makecache >/dev/null 2>&1 || true; fi
+}
+pkg_install() {
+  if [ "$FAMILY" = debian ]; then DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@"
+  else "$PM" install -y "$@"; fi
+}
+svc_enable() { systemctl enable --now "$1" >/dev/null 2>&1 || systemctl enable --now "$1"; }
+svc_restart() { systemctl restart "$1"; }
+php_fpm_service() {
+  if [ "$FAMILY" = debian ]; then echo "php$(php -r 'echo PHP_VERSION;' 2>/dev/null | cut -d. -f1,2)-fpm"
+  else echo "php-fpm"; fi
+}
+php_fpm_socket() {
+  if [ "$FAMILY" = debian ]; then
+    s="$(ls /run/php/php*-fpm.sock 2>/dev/null | head -1)"
+    [ -z "$s" ] && s="/run/php/php$(php -r 'echo PHP_VERSION;' 2>/dev/null | cut -d. -f1,2)-fpm.sock"
+    echo "$s"
+  else echo "/run/php-fpm/www.sock"; fi
+}
+open_firewall() {
+  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qi active; then ufw allow "${1}/tcp" >/dev/null 2>&1 || true
+  elif command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld 2>/dev/null; then
+    firewall-cmd --permanent --add-port="${1}/tcp" >/dev/null 2>&1 || true; firewall-cmd --reload >/dev/null 2>&1 || true
+  fi
+}
+# --- end multi-distro layer ---
+"""
+
+
+# LEMP — Nginx + MariaDB + PHP-FPM, multi-distro.
+_LEMP_BASH = "#!/bin/bash\nset -euo pipefail\n" + _DISTRO + r"""MYSQL_ROOT_PASS="{{MYSQL_ROOT_PASS}}"
+echo "=== Installing LEMP stack ==="
+pkg_refresh
+pkg_install nginx
+svc_enable nginx
+pkg_install mariadb-server
+svc_enable mariadb
+if [ "$FAMILY" = debian ]; then
+  pkg_install php-fpm php-mysql php-cli php-curl php-gd php-mbstring php-xml php-zip
+else
+  pkg_install php-fpm php-mysqlnd php-cli php-curl php-gd php-mbstring php-xml
+  sed -i 's/^user = .*/user = nginx/; s/^group = .*/group = nginx/' /etc/php-fpm.d/www.conf 2>/dev/null || true
+fi
+svc_enable "$(php_fpm_service)"
+if [ -n "$MYSQL_ROOT_PASS" ]; then
+  mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null \
+    || echo ">>> Note: could not set the database root password (it may already be set)."
+fi
+open_firewall 80; open_firewall 443
+echo "Nginx: $(nginx -v 2>&1)"
+echo "Database: $(mysql --version 2>/dev/null || echo MariaDB)"
+echo "PHP: $(php -v 2>/dev/null | head -1)"
+echo ">>> LEMP stack installed."
+"""
+
+
+# LAMP — Apache + MariaDB + PHP, multi-distro.
+_LAMP_BASH = "#!/bin/bash\nset -euo pipefail\n" + _DISTRO + r"""echo "=== Installing LAMP stack ==="
+pkg_refresh
+pkg_install mariadb-server
+svc_enable mariadb
+if [ "$FAMILY" = debian ]; then
+  pkg_install apache2 php php-mysql php-cli php-curl php-gd php-mbstring php-xml php-zip libapache2-mod-php
+  a2enmod rewrite >/dev/null 2>&1 || true
+  WEB_SVC=apache2
+else
+  pkg_install httpd php php-mysqlnd php-cli php-curl php-gd php-mbstring php-xml php-fpm
+  svc_enable php-fpm
+  WEB_SVC=httpd
+fi
+svc_enable "$WEB_SVC"
+svc_restart "$WEB_SVC"
+open_firewall 80; open_firewall 443
+echo "Web server: $WEB_SVC"
+echo "Database: $(mysql --version 2>/dev/null || echo MariaDB)"
+echo "PHP: $(php -v 2>/dev/null | head -1)"
+echo ">>> LAMP stack installed."
+"""
+
+
+# WordPress — Nginx + MariaDB + PHP-FPM + Let's Encrypt, multi-distro.
+_WORDPRESS_BASH = "#!/bin/bash\nset -euo pipefail\n" + _DISTRO + r"""DOMAIN="{{DOMAIN}}"
+DB_NAME="{{DB_NAME}}"
+DB_USER="{{DB_USER}}"
+DB_PASS="{{DB_PASS}}"
+ADMIN_EMAIL="{{ADMIN_EMAIL}}"
+WEB_ROOT="/var/www/${DOMAIN}"
+echo "=== Installing dependencies ==="
+pkg_refresh
+pkg_install nginx
+if [ "$FAMILY" = debian ]; then
+  pkg_install mariadb-server php-fpm php-mysql php-cli php-curl php-gd php-mbstring php-xml php-zip wget tar
+  WEB_USER=www-data
+  NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}"
+  PHP_LOC="include snippets/fastcgi-php.conf;"
+else
+  pkg_install epel-release || true
+  pkg_install mariadb-server php-fpm php-mysqlnd php-cli php-curl php-gd php-mbstring php-xml wget tar
+  sed -i 's/^user = .*/user = nginx/; s/^group = .*/group = nginx/' /etc/php-fpm.d/www.conf 2>/dev/null || true
+  WEB_USER=nginx
+  NGINX_CONF="/etc/nginx/conf.d/${DOMAIN}.conf"
+  PHP_LOC="include fastcgi_params; fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;"
+fi
+svc_enable mariadb
+svc_enable "$(php_fpm_service)"
+echo "=== Setting up database ==="
+mysql -e "CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
+mysql -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'localhost'; FLUSH PRIVILEGES;"
+echo "=== Installing WordPress ==="
+mkdir -p "$WEB_ROOT"
+wget -q https://wordpress.org/latest.tar.gz -O /tmp/wp.tar.gz
+tar -xzf /tmp/wp.tar.gz -C /tmp/
+cp -r /tmp/wordpress/* "$WEB_ROOT/"
+cp "${WEB_ROOT}/wp-config-sample.php" "${WEB_ROOT}/wp-config.php"
+sed -i "s/database_name_here/${DB_NAME}/; s/username_here/${DB_USER}/; s/password_here/${DB_PASS}/" "${WEB_ROOT}/wp-config.php"
+chown -R "${WEB_USER}:${WEB_USER}" "$WEB_ROOT"
+echo "=== Configuring Nginx ==="
+PHP_SOCK="$(php_fpm_socket)"
+cat > "$NGINX_CONF" <<NGINX
+server {
+    listen 80;
+    server_name ${DOMAIN};
+    root ${WEB_ROOT};
+    index index.php index.html;
+    location / { try_files \$uri \$uri/ /index.php?\$args; }
+    location ~ \.php\$ {
+        ${PHP_LOC}
+        fastcgi_pass unix:${PHP_SOCK};
+    }
+}
+NGINX
+if [ "$FAMILY" = debian ]; then
+  ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/
+  rm -f /etc/nginx/sites-enabled/default
+fi
+if [ "$FAMILY" = rhel ] && command -v setsebool >/dev/null 2>&1; then
+  setsebool -P httpd_can_network_connect 1 2>/dev/null || true
+  chcon -R -t httpd_sys_rw_content_t "$WEB_ROOT" 2>/dev/null || true
+fi
+open_firewall 80; open_firewall 443
+nginx -t
+svc_restart nginx
+echo "=== Requesting SSL certificate ==="
+pkg_install certbot python3-certbot-nginx || echo ">>> certbot unavailable — SSL will be skipped."
+if command -v certbot >/dev/null 2>&1; then
+  certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$ADMIN_EMAIL" --redirect \
+    || echo ">>> SSL skipped (check the domain's DNS points to this server and the email is valid). WordPress is still reachable over http://${DOMAIN}/."
+else
+  echo ">>> SSL skipped — certbot not installed."
+fi
+echo ">>> WordPress ready: open https://${DOMAIN}/wp-admin/install.php to finish setup."
+"""
+
+
 # ── Server readiness check (Update 19, Tier 2) ────────────────────────────────
 # The same requirements the pre-flight guard enforces, but in *report* mode: gather
 # facts without installing, so the user can see whether a server is ready before a
@@ -418,34 +594,11 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "script_type": "bash",
         "est_runtime_sec": 180,
         "tags": ["nginx", "mysql", "php", "lemp", "web-server"],
+        "supported_os": ["ubuntu", "debian", "almalinux", "rocky", "centos", "rhel", "fedora"],
         "variables": [
-            {"name": "PHP_VERSION", "label": "PHP Version", "default": "8.3", "required": True},
-            {"name": "MYSQL_ROOT_PASS", "label": "MySQL Root Password", "default": "", "required": True}
+            {"name": "MYSQL_ROOT_PASS", "label": "MySQL Root Password (optional)", "default": "", "required": False}
         ],
-        "script_bash": (
-            "#!/bin/bash\n"
-            "set -euo pipefail\n"
-            'PHP_VERSION="{{PHP_VERSION}}"\n'
-            'MYSQL_ROOT_PASS="{{MYSQL_ROOT_PASS}}"\n'
-            'echo "Installing LEMP stack..."\n'
-            "apt-get update -qq\n"
-            "apt-get install -y -qq nginx\n"
-            "systemctl enable --now nginx\n"
-            "apt-get install -y -qq mysql-server\n"
-            "systemctl enable --now mysql\n"
-            'if [ -n "$MYSQL_ROOT_PASS" ]; then\n'
-            "  mysql -e \"ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '$MYSQL_ROOT_PASS'; FLUSH PRIVILEGES;\"\n"
-            "fi\n"
-            "apt-get install -y -qq software-properties-common\n"
-            "add-apt-repository -y ppa:ondrej/php\n"
-            "apt-get update -qq\n"
-            'apt-get install -y -qq php${PHP_VERSION}-fpm php${PHP_VERSION}-mysql php${PHP_VERSION}-curl php${PHP_VERSION}-gd php${PHP_VERSION}-mbstring php${PHP_VERSION}-xml php${PHP_VERSION}-zip\n'
-            "systemctl enable --now php${PHP_VERSION}-fpm\n"
-            'echo "Nginx: $(nginx -v 2>&1)"\n'
-            'echo "MySQL: $(mysql --version)"\n'
-            'echo "PHP: $(php -v | head -1)"\n'
-            'echo "LEMP stack installed."\n'
-        ),
+        "script_bash": _LEMP_BASH,
     },
 
     {
@@ -457,26 +610,9 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "script_type": "bash",
         "est_runtime_sec": 180,
         "tags": ["apache", "mysql", "php", "lamp", "web-server"],
-        "variables": [
-            {"name": "PHP_VERSION", "label": "PHP Version", "default": "8.3", "required": True}
-        ],
-        "script_bash": (
-            "#!/bin/bash\n"
-            "set -euo pipefail\n"
-            'PHP_VERSION="{{PHP_VERSION}}"\n'
-            "apt-get update -qq\n"
-            "apt-get install -y -qq apache2 mysql-server\n"
-            "a2enmod rewrite\n"
-            "systemctl enable --now apache2 mysql\n"
-            "apt-get install -y -qq software-properties-common\n"
-            "add-apt-repository -y ppa:ondrej/php\n"
-            "apt-get update -qq\n"
-            'apt-get install -y -qq php${PHP_VERSION} libapache2-mod-php${PHP_VERSION} php${PHP_VERSION}-mysql php${PHP_VERSION}-curl php${PHP_VERSION}-gd php${PHP_VERSION}-mbstring php${PHP_VERSION}-xml php${PHP_VERSION}-zip\n'
-            "systemctl restart apache2\n"
-            'echo "Apache: $(apache2 -v | head -1)"\n'
-            'echo "PHP: $(php -v | head -1)"\n'
-            'echo "LAMP stack installed."\n'
-        ),
+        "supported_os": ["ubuntu", "debian", "almalinux", "rocky", "centos", "rhel", "fedora"],
+        "variables": [],
+        "script_bash": _LAMP_BASH,
     },
 
     # ── Security — Linux ──────────────────────────────────────────────────────
@@ -814,37 +950,8 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
             {"name": "DB_PASS", "label": "Database Password", "default": "", "required": True},
             {"name": "ADMIN_EMAIL", "label": "Admin Email", "default": "", "required": True}
         ],
-        "script_bash": (
-            "#!/bin/bash\n"
-            "set -euo pipefail\n"
-            'DOMAIN="{{DOMAIN}}"\n'
-            'DB_NAME="{{DB_NAME}}"\n'
-            'DB_USER="{{DB_USER}}"\n'
-            'DB_PASS="{{DB_PASS}}"\n'
-            'ADMIN_EMAIL="{{ADMIN_EMAIL}}"\n'
-            'WEB_ROOT="/var/www/${DOMAIN}"\n'
-            'echo "=== Installing dependencies ==="\n'
-            "apt-get update -qq\n"
-            "apt-get install -y -qq nginx mysql-server php8.2-fpm php8.2-mysql php8.2-curl php8.2-gd php8.2-mbstring php8.2-xml php8.2-zip certbot python3-certbot-nginx wget\n"
-            'echo "=== Setting up database ==="\n'
-            'mysql -e "CREATE DATABASE IF NOT EXISTS ${DB_NAME} CHARACTER SET utf8mb4;"\n'
-            'mysql -e "CREATE USER IF NOT EXISTS \'${DB_USER}\'@\'localhost\' IDENTIFIED BY \'${DB_PASS}\';"\n'
-            'mysql -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO \'${DB_USER}\'@\'localhost\'; FLUSH PRIVILEGES;"\n'
-            'echo "=== Installing WordPress ==="\n'
-            'mkdir -p "$WEB_ROOT"\n'
-            "wget -q https://wordpress.org/latest.tar.gz -O /tmp/wp.tar.gz\n"
-            "tar -xzf /tmp/wp.tar.gz -C /tmp/\n"
-            'cp -r /tmp/wordpress/* "$WEB_ROOT/"\n'
-            'chown -R www-data:www-data "$WEB_ROOT"\n'
-            'cp "${WEB_ROOT}/wp-config-sample.php" "${WEB_ROOT}/wp-config.php"\n'
-            'sed -i "s/database_name_here/$DB_NAME/; s/username_here/$DB_USER/; s/password_here/$DB_PASS/" "${WEB_ROOT}/wp-config.php"\n'
-            'echo "=== Configuring Nginx ==="\n'
-            'printf "server {\\n  listen 80;\\n  server_name %s;\\n  root %s;\\n  index index.php;\\n  location / { try_files \\$uri \\$uri/ /index.php?\\$args; }\\n  location ~ \\.php$ { include snippets/fastcgi-php.conf; fastcgi_pass unix:/run/php/php8.2-fpm.sock; }\\n}\\n" "$DOMAIN" "$WEB_ROOT" > "/etc/nginx/sites-available/${DOMAIN}"\n'
-            'ln -sf "/etc/nginx/sites-available/${DOMAIN}" /etc/nginx/sites-enabled/\n'
-            "nginx -t && systemctl reload nginx\n"
-            'certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$ADMIN_EMAIL" --redirect || echo "SSL skipped"\n'
-            'echo "WordPress ready: https://${DOMAIN}/wp-admin/install.php"\n'
-        ),
+        "supported_os": ["ubuntu", "debian", "almalinux", "rocky", "centos", "rhel", "fedora"],
+        "script_bash": _WORDPRESS_BASH,
     },
 
     {
@@ -1856,6 +1963,7 @@ def _build_playbook(item: dict) -> Playbook:
         tags=item.get("tags"),
         variables=item.get("variables", []),
         access_info=item.get("access"),
+        supported_os=item.get("supported_os"),
         script_bash=_script_for(item),
         script_powershell=item.get("script_powershell"),
         is_official=True,
@@ -1895,6 +2003,8 @@ async def resync_official_scripts(db: AsyncSession) -> dict:
                     script_bash=_script_for(item),
                     script_powershell=item.get("script_powershell"),
                     access_info=item.get("access"),
+                    variables=item.get("variables", []),
+                    supported_os=item.get("supported_os"),
                 )
             )
             updated += 1
