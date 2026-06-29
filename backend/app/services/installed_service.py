@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.playbook import Playbook, PlaybookRun
 from app.models.server import Server
 from app.services import connection_manager
-from app.services.secret_vars import is_secret, mask_variables
+from app.services.secret_vars import is_secret, mask_variables, decrypt_variable
 
 
 def _fill(template: str | None, host: str | None, variables: dict | None) -> str | None:
@@ -78,9 +78,54 @@ async def installed_from_records(db: AsyncSession, server: Server) -> list[dict]
                 "installed_at": when.isoformat() if when else None,
                 "access": card,
                 "variables": mask_variables(run.variables_used),
+                "has_secrets": any(is_secret(k) for k in (run.variables_used or {})),
             }
         )
     return items
+
+
+def _resolve_card_revealed(access_info: dict | None, host: str | None, variables: dict | None) -> dict | None:
+    """Resolve an access card filling every field with the real (decrypted) values — for
+    the owner-only reveal endpoint. Unlike resolve_access_card, secret fields are kept."""
+    if not access_info:
+        return None
+
+    def fill(tpl: str | None) -> str | None:
+        if not tpl:
+            return None
+        out = tpl.replace("{{HOST}}", host or "")
+        for key, value in (variables or {}).items():
+            out = out.replace("{{" + key + "}}", str(value))
+        return out or None
+
+    return {
+        "name": access_info.get("name"),
+        "url": fill(access_info.get("url")),
+        "username": fill(access_info.get("username")),
+        "password": fill(access_info.get("password")),
+        "note": access_info.get("note"),
+    }
+
+
+async def reveal_install(db: AsyncSession, server: Server, run_id) -> dict | None:
+    """Owner-only: decrypt and return the credentials + install inputs for one run.
+    The list/scan endpoints stay masked — decryption only happens here, on explicit reveal."""
+    row = (
+        await db.execute(
+            select(PlaybookRun, Playbook)
+            .join(Playbook, Playbook.id == PlaybookRun.playbook_id)
+            .where(PlaybookRun.id == run_id, PlaybookRun.server_id == server.id)
+        )
+    ).first()
+    if not row:
+        return None
+    run, pb = row
+    decrypted = {k: decrypt_variable(v) for k, v in (run.variables_used or {}).items()}
+    return {
+        "access": _resolve_card_revealed(pb.access_info, server.host, decrypted),
+        "variables": decrypted,
+        "playbook_title": pb.title,
+    }
 
 
 # Read-only probe: detect common web stacks, databases, runtimes, containers, panels and

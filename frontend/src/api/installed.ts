@@ -10,6 +10,13 @@ export interface InstalledItem {
   installed_at: string | null
   access: PlaybookAccessInfo | null
   variables: Record<string, string>
+  has_secrets: boolean
+}
+
+/** Decrypted credentials + inputs for one install (owner-only reveal endpoint). */
+export interface InstalledReveal {
+  access: PlaybookAccessInfo | null
+  variables: Record<string, string>
 }
 
 /** Live read-only inventory of a server. */
@@ -35,5 +42,13 @@ export async function getInstalled(serverId: string): Promise<InstalledItem[]> {
 /** Run a live read-only scan of the server for installed software. */
 export async function scanServer(serverId: string): Promise<ScanResult> {
   const { data } = await apiClient.post<ScanResult>(`/api/servers/${serverId}/installed/scan`)
+  return data
+}
+
+/** Decrypt and return the credentials + inputs for one install (audited, owner-only). */
+export async function revealInstall(serverId: string, runId: string): Promise<InstalledReveal> {
+  const { data } = await apiClient.get<InstalledReveal>(
+    `/api/servers/${serverId}/installed/${runId}/reveal`,
+  )
   return data
 }
