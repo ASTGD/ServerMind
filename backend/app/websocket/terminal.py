@@ -732,13 +732,14 @@ async def playbook_run_ws(
             ).scalars().first()
 
             if existing_id is None:
-                # Create run record
+                # Create run record (secret-named inputs encrypted at rest)
+                from app.services.secret_vars import encrypt_variables
                 run = PlaybookRun(
                     server_id=server.id,
                     user_id=server.user_id,
                     playbook_id=playbook_id_val,
                     user_script_id=user_script_id_val,
-                    variables_used=variables,
+                    variables_used=encrypt_variables(variables),
                     status="running",
                 )
                 db.add(run)

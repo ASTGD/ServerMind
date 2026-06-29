@@ -18,6 +18,7 @@ from app.models.playbook import Playbook, PlaybookRun
 from app.models.user import User
 from app.schemas.playbook import PlaybookOut, PlaybookDetailOut, PlaybookRunOut
 from app.services.playbook_service import substitute_variables, supported_os_for, os_matches
+from app.services.secret_vars import encrypt_variables
 from app.services.redis_service import get_redis
 from app.workers.playbook_tasks import run_log_key, run_playbook_task
 
@@ -196,7 +197,7 @@ async def run_multi(
         script = substitute_variables(raw, body.variables)
         run = PlaybookRun(
             server_id=sid, user_id=current_user.id, playbook_id=playbook.id,
-            variables_used=body.variables, status="running",
+            variables_used=encrypt_variables(body.variables), status="running",
         )
         db.add(run)
         await db.flush()  # populate run.id

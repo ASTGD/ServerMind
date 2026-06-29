@@ -3,27 +3,13 @@ read-only scan of the box. Secrets in stored install inputs are always masked he
 never re-display a credential a user typed during an install."""
 from __future__ import annotations
 
-import re
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.playbook import Playbook, PlaybookRun
 from app.models.server import Server
 from app.services import connection_manager
-
-# A variable is treated as a secret (and masked) when its NAME looks credential-ish.
-_SECRET_RE = re.compile(r"(PASS|PASSWORD|PWD|SECRET|TOKEN|KEY|CRED)", re.IGNORECASE)
-_MASK = "••••••"
-
-
-def _is_secret(name: str) -> bool:
-    return bool(_SECRET_RE.search(name or ""))
-
-
-def mask_variables(variables: dict | None) -> dict:
-    """Install inputs with secret-named values masked — never expose stored credentials."""
-    return {k: (_MASK if _is_secret(k) else str(v)) for k, v in (variables or {}).items()}
+from app.services.secret_vars import is_secret, mask_variables
 
 
 def _fill(template: str | None, host: str | None, variables: dict | None) -> str | None:
@@ -35,7 +21,7 @@ def _fill(template: str | None, host: str | None, variables: dict | None) -> str
     for key, value in (variables or {}).items():
         placeholder = "{{" + key + "}}"
         if placeholder in out:
-            if _is_secret(key):
+            if is_secret(key):
                 return None  # field would expose a secret — drop it
             out = out.replace(placeholder, str(value))
     return out or None

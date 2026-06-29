@@ -21,10 +21,12 @@ looks credential-ish (`PASS`/`PASSWORD`/`PWD`/`SECRET`/`TOKEN`/`KEY`/`CRED`): th
 shows `••••••`, and an access-card field (e.g. `password`) that references a secret var is
 dropped entirely. We never re-display a stored credential.
 
-> ⚠️ **Related finding:** `playbook_runs.variables_used` currently **stores** those secrets
-> in plaintext (e.g. `DB_PASS`, `ADMIN_PASSWORD`). This view masks them on display, but the
-> storage should also stop persisting them in plaintext (it violates the "never store
-> credentials in plaintext" rule). Flagged as a follow-up.
+> ✅ **Encrypted at rest (Update 23.1):** secret-named install inputs (`DB_PASS`,
+> `ADMIN_PASSWORD`, …) are encrypted with the same AES-256-GCM used for SSH credentials
+> (`app/services/secret_vars.py`) *before* they're written to `playbook_runs.variables_used`,
+> and existing rows were backfilled (migration `017`). Non-secret inputs stay plaintext; the
+> view still masks secrets. Net result: **all credentials are encrypted at rest** — a clean
+> security line for the self-hosted edition.
 
 ## Reuse
 
