@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
 
+    # AI provider (Update 20 — multi-provider, bring-your-own-key). AI_PROVIDER picks
+    # the brain: 'anthropic' | 'openai' | 'gemini' | 'openai_compatible'.
+    # AI_API_KEY / AI_MODEL / AI_BASE_URL configure it; empty values fall back to the
+    # ANTHROPIC_* settings above, so existing setups keep working unchanged.
+    AI_PROVIDER: str = "anthropic"
+    AI_API_KEY: str = ""
+    AI_MODEL: str = ""
+    AI_BASE_URL: str = ""
+
     # JWT
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15

@@ -1362,6 +1362,7 @@ i18n: add Bengali translations for chat UI
 | 2026-06-23 | Built Dashboard, Activity Log (+ `/api/activity`), Settings pages | Replaced Phase-1 placeholders with real, data-driven pages |
 | 2026-06-23 | Local dev: backend :8888, frontend :5190, Vite proxy → 127.0.0.1 | 8000/8080/5173 taken by other local projects; IPv4 avoids the localhost→::1 miss (see OPS.md) |
 | 2026-06-28 | Offer a self-hosted, licensed edition (not only SaaS) | Privacy — credentials never leave the customer's box — is a strong differentiator for a credentials-handling tool; near-zero infra cost/liability; app already Docker-packaged. Target agencies/MSPs. See docs/SELF-HOSTED-LICENSING.md |
+| 2026-06-29 | Multi-provider AI via `llm_service` (bring-your-own-key) | Decouple from a single vendor; customers use Claude/OpenAI/Gemini/OpenAI-compatible with their own key — foundation for the self-hosted edition. `anthropic` stays the default (backward-compatible). See docs/UPDATE-20-MULTI-PROVIDER-AI.md |
 
 ---
 

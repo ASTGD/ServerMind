@@ -1,25 +1,19 @@
-"""AI service — Claude API integration for command planning and output explanation."""
+"""AI service — command planning, script generation, and output explanation.
+
+The prompts live here; the actual model call is routed through ``llm_service``, which
+talks to whichever provider the instance is configured for (Anthropic / OpenAI /
+Gemini / OpenAI-compatible) — see Update 20, multi-provider AI.
+"""
 from __future__ import annotations
 
 import json
 import logging
 import re
 
-from anthropic import AsyncAnthropic
-
-from app.config import settings
 from app.models.server import Server
+from app.services import llm_service
 
 logger = logging.getLogger(__name__)
-
-_client: AsyncAnthropic | None = None
-
-
-def _get_client() -> AsyncAnthropic:
-    global _client
-    if _client is None:
-        _client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    return _client
 
 
 # ── System prompts ────────────────────────────────────────────────────────────
@@ -178,14 +172,7 @@ async def plan_commands(
     if server.connection_type == "hosting":
         system += _HOSTING_NOTE.format(panel_type=server.panel_type or "control panel")
 
-    message = await _get_client().messages.create(
-        model=settings.ANTHROPIC_MODEL,
-        max_tokens=2048,
-        system=system,
-        messages=[{"role": "user", "content": user_input}],
-    )
-
-    raw = _extract_json(message.content[0].text)
+    raw = _extract_json(await llm_service.complete(system, user_input, max_tokens=2048))
     try:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -202,24 +189,12 @@ async def explain_output(
     system = _EXPLAIN_SYSTEM.format(user_language=user_language)
     prompt = f"Plan: {plan_summary}\n\nOutput:\n{output[:3000]}"
 
-    message = await _get_client().messages.create(
-        model=settings.ANTHROPIC_MODEL,
-        max_tokens=512,
-        system=system,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return message.content[0].text.strip()
+    return (await llm_service.complete(system, prompt, max_tokens=512)).strip()
 
 
 async def parse_schedule(human_input: str) -> dict:
     """Convert natural language schedule description to a cron expression via Claude."""
-    message = await _get_client().messages.create(
-        model=settings.ANTHROPIC_MODEL,
-        max_tokens=128,
-        system=_SCHEDULE_SYSTEM,
-        messages=[{"role": "user", "content": human_input}],
-    )
-    raw = _extract_json(message.content[0].text)
+    raw = _extract_json(await llm_service.complete(_SCHEDULE_SYSTEM, human_input, max_tokens=128))
     try:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -240,14 +215,7 @@ async def generate_script(
         user_language=user_language,
     )
 
-    message = await _get_client().messages.create(
-        model=settings.ANTHROPIC_MODEL,
-        max_tokens=4096,
-        system=system,
-        messages=[{"role": "user", "content": request}],
-    )
-
-    raw = _extract_json(message.content[0].text)
+    raw = _extract_json(await llm_service.complete(system, request, max_tokens=4096))
     try:
         return json.loads(raw)
     except json.JSONDecodeError as exc:

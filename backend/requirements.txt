@@ -40,8 +40,10 @@ redis==5.0.4
 apscheduler==3.10.4
 croniter>=2.0.0
 
-# Claude API
+# AI providers (multi-provider — Anthropic by default; the openai SDK also covers
+# OpenAI, Gemini via its OpenAI-compatible endpoint, and other OpenAI-compatible APIs)
 anthropic==0.28.0
+openai>=1.40.0,<2.0.0
 
 # HTTP
 requests==2.31.0
