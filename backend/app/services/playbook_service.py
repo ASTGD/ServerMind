@@ -140,15 +140,29 @@ pkg_install() {
   else "$PM" install -y "$@"; fi
 }
 svc_enable() { systemctl enable --now "$1" >/dev/null 2>&1 || systemctl enable --now "$1"; }
-svc_restart() { systemctl restart "$1"; }
+svc_restart() {
+  if ! systemctl restart "$1" 2>/tmp/sm_svc.log; then
+    echo ">>> ERROR: $1 failed to start. Most recent log:"
+    journalctl -u "$1" --no-pager -n 12 2>/dev/null | tail -12 || cat /tmp/sm_svc.log 2>/dev/null
+    exit 1
+  fi
+}
+# Debian: the version of php-fpm that is actually INSTALLED (which can differ from the
+# php CLI on a box with leftover packages) — used for both the service name and socket.
+php_fpm_ver() {
+  v="$(systemctl list-unit-files --no-legend 'php*-fpm.service' 2>/dev/null | sed -n 's/^php\([0-9.]*\)-fpm\.service.*/\1/p' | head -1)"
+  [ -z "$v" ] && v="$(php -r 'echo PHP_VERSION;' 2>/dev/null | cut -d. -f1,2)"
+  echo "$v"
+}
 php_fpm_service() {
-  if [ "$FAMILY" = debian ]; then echo "php$(php -r 'echo PHP_VERSION;' 2>/dev/null | cut -d. -f1,2)-fpm"
+  if [ "$FAMILY" = debian ]; then echo "php$(php_fpm_ver)-fpm"
   else echo "php-fpm"; fi
 }
 php_fpm_socket() {
   if [ "$FAMILY" = debian ]; then
-    s="$(ls /run/php/php*-fpm.sock 2>/dev/null | head -1)"
-    [ -z "$s" ] && s="/run/php/php$(php -r 'echo PHP_VERSION;' 2>/dev/null | cut -d. -f1,2)-fpm.sock"
+    v="$(php_fpm_ver)"; s="/run/php/php${v}-fpm.sock"
+    [ -S "$s" ] || s="$(ls /run/php/php*-fpm.sock 2>/dev/null | head -1)"
+    [ -z "$s" ] && s="/run/php/php${v}-fpm.sock"
     echo "$s"
   else echo "/run/php-fpm/www.sock"; fi
 }
@@ -274,7 +288,14 @@ if [ "$FAMILY" = rhel ] && command -v setsebool >/dev/null 2>&1; then
   chcon -R -t httpd_sys_rw_content_t "$WEB_ROOT" 2>/dev/null || true
 fi
 open_firewall 80; open_firewall 443
-nginx -t
+if command -v ss >/dev/null 2>&1 && ss -tln 2>/dev/null | grep -qE ':80[[:space:]]'; then
+  who="$(ss -tlnp 2>/dev/null | grep -E ':80[[:space:]]' | grep -oE '"[^"]+"' | head -1 | tr -d '"')"
+  if [ -n "$who" ] && [ "$who" != "nginx" ]; then
+    echo ">>> ERROR: Port 80 is already in use by '$who' — this server isn't clean (a previous install is still running). Stop or remove it, or use a fresh server."
+    exit 1
+  fi
+fi
+nginx -t 2>/tmp/sm_nginx.log || { echo ">>> ERROR: Nginx configuration test failed:"; cat /tmp/sm_nginx.log; exit 1; }
 svc_restart nginx
 echo "=== Requesting SSL certificate ==="
 pkg_install certbot python3-certbot-nginx || echo ">>> certbot unavailable — SSL will be skipped."

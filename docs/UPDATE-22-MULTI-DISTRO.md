@@ -60,3 +60,19 @@ surfaces a plain reason rather than a cryptic crash.
 Other apt-based playbooks (e.g. `nodejs-pm2`, `python-env`, app deploys) are still
 Debian/Ubuntu-only and remain correctly guarded by Tier 1. They can get the same
 `_DISTRO` treatment incrementally.
+
+## Post-test hardening (after live run #1)
+
+First real fleet run: **Debian 12 succeeded**; three dirty test boxes exposed two gaps,
+now fixed:
+
+- **`php8.3-fpm.service does not exist`** (Ubuntu box with leftover `ppa:ondrej/php`) —
+  `php_fpm_service`/`php_fpm_socket` trusted the php **CLI** version, which differed from
+  the **installed** FPM. New `php_fpm_ver()` reads the actually-installed unit
+  (`systemctl list-unit-files 'php*-fpm.service'`) and drives both the service name and
+  the socket from it, so they always match what's on disk.
+- **`See "systemctl status nginx.service" …`** (cryptic) — nginx failures are now
+  legible: before starting nginx the script checks **who holds port 80** and aborts with
+  *"Port 80 is already in use by 'apache2' — this server isn't clean"*; `nginx -t` output
+  is captured; and `svc_restart` dumps the `journalctl` tail on any start failure instead
+  of telling the user to go read logs.
