@@ -14,6 +14,7 @@ from app.routers import backups as backups_router
 from app.routers import commands as commands_router
 from app.routers import files as files_router
 from app.routers import hosting as hosting_router
+from app.routers import installed as installed_router
 from app.routers import monitoring as monitoring_router
 from app.routers import notifications as notifications_router
 from app.routers import playbooks as playbooks_router
@@ -104,6 +105,7 @@ app.include_router(backups_router.router)
 app.include_router(team_router.router)
 app.include_router(settings_router.router)
 app.include_router(hosting_router.router)
+app.include_router(installed_router.router)
 app.include_router(ws_handlers.router)
 
 

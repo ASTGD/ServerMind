@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useParams, useNavigate, Link } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, Trash2, RefreshCw, Search, Loader2, MessageSquare, Terminal as TerminalIcon, Clock, Activity, FolderOpen, Shield, HardDriveDownload, Globe, KeyRound, Pencil, AlertTriangle } from "lucide-react"
+import { ChevronLeft, Trash2, RefreshCw, Search, Loader2, MessageSquare, Terminal as TerminalIcon, Clock, Activity, FolderOpen, Shield, HardDriveDownload, Globe, KeyRound, Pencil, AlertTriangle, Package } from "lucide-react"
 import { getServer, deleteServer, testConnection, detectOs, trustKey } from "@/api/servers"
 import ConnectionStatus from "@/components/server/ConnectionStatus"
 import ServerMetrics from "@/components/server/ServerMetrics"
@@ -150,6 +150,13 @@ export default function ServerDetail() {
           >
             <HardDriveDownload size={13} />
             Backups
+          </Link>
+          <Link
+            to={`/servers/${server.id}/installed`}
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          >
+            <Package size={13} />
+            Installed
           </Link>
           <button
             onClick={() => testMutation.mutate()}
