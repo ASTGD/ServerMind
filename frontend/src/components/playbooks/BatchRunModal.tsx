@@ -104,8 +104,8 @@ export default function BatchRunModal({ runs, skipped = [], playbookTitle, onClo
               className="flex w-full items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-background px-3 py-2.5 opacity-80"
             >
               <p className="min-w-0 truncate text-sm font-medium text-foreground">{s.server_name}</p>
-              <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-amber-500">
-                <Clock size={13} /> Already running — skipped
+              <span className="flex shrink-0 items-center gap-1 text-right text-xs font-medium text-amber-500">
+                <Ban size={13} className="shrink-0" /> Skipped — {s.reason ?? "already running"}
               </span>
             </div>
           ))}

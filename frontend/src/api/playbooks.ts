@@ -46,6 +46,7 @@ export interface FleetRun {
 export interface FleetSkip {
   server_id: string
   server_name: string
+  reason?: string
 }
 
 /** Run a playbook on several servers at once — one background run per server.

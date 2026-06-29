@@ -703,6 +703,20 @@ async def playbook_run_ws(
 
             script = substitute_variables(script, variables)
 
+            # OS guard (Update 21): refuse a playbook built for another OS family.
+            from app.services.playbook_service import infer_supported_os, os_matches
+            _supported = infer_supported_os(script)
+            if not os_matches(server, _supported):
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "message": (
+                        f"This playbook is built for {', '.join(_supported or [])} — "
+                        f"{server.name} runs {server.os_type or 'an unknown OS'}. Use a matching server."
+                    ),
+                }))
+                await websocket.close()
+                return
+
             # Guard against a duplicate: if this same playbook/script is already
             # running on this server, attach to that run instead of starting another.
             dup_q = select(PlaybookRun.id).where(

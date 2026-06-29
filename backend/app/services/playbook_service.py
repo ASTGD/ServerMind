@@ -142,6 +142,46 @@ def _extract_supported_os(script: str) -> list[str]:
     return sorted(set(re.findall(r"[a-z]+", m.group(1).lower())))
 
 
+_DEBIAN_FAMILY = ["ubuntu", "debian"]
+_RHEL_FAMILY = ["almalinux", "rocky", "centos", "rhel", "fedora"]
+
+
+def infer_supported_os(script: str) -> list[str] | None:
+    """OS families a Linux playbook supports (Update 21 — per-playbook OS guard).
+    Prefers an explicit ``case "${ID}"`` guard; otherwise infers from the package
+    manager the script uses (apt → Debian/Ubuntu, dnf/yum → RHEL family). Returns None
+    when it's OS-agnostic (uses both managers, or neither)."""
+    explicit = _extract_supported_os(script)
+    if explicit:
+        return explicit
+    s = script or ""
+    uses_apt = bool(re.search(r"\bapt(-get)?\b", s))
+    uses_rpm = bool(re.search(r"\b(dnf|yum|microdnf)\b", s))
+    if uses_apt and not uses_rpm:
+        return list(_DEBIAN_FAMILY)
+    if uses_rpm and not uses_apt:
+        return list(_RHEL_FAMILY)
+    return None
+
+
+def supported_os_for(playbook) -> list[str] | None:
+    """OS families a playbook supports — its declared ``supported_os`` if set, else
+    inferred from its bash script. None means OS-agnostic."""
+    if playbook.supported_os:
+        return [o.lower() for o in playbook.supported_os]
+    return infer_supported_os(playbook.script_bash or "")
+
+
+def os_matches(server, supported: list[str] | None) -> bool:
+    """True if a Linux server's OS is compatible with ``supported`` (or there's no
+    constraint, or the OS is unknown — never block on uncertainty). winrm/hosting
+    servers are judged elsewhere and always pass here."""
+    if getattr(server, "connection_type", "ssh") != "ssh" or not supported:
+        return True
+    os_id = (getattr(server, "os_type", "") or "").lower()
+    return not os_id or os_id == "linux" or os_id in supported
+
+
 async def check_readiness(server, playbook) -> dict:
     """Probe a server (no install) and report whether it meets the playbook's
     requirements as a green/red checklist (Update 19, Tier 2)."""
@@ -156,7 +196,7 @@ async def check_readiness(server, playbook) -> dict:
     script = playbook.script_bash or ""
     needs_clean = "preflight" in script  # playbook requires a fresh, empty server
     min_ram = _extract_min_ram(script)
-    supported = _extract_supported_os(script)
+    supported = supported_os_for(playbook)
     ram_mb = int(facts.get("ram_mb") or 0)
     os_id = (facts.get("os_id") or "").lower()
     os_pretty = facts.get("os_pretty") or os_id or "unknown"

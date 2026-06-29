@@ -11,6 +11,7 @@ import { cancelPlaybookRun, runMulti, type FleetRun, type FleetSkip } from "@/ap
 import { getActiveRuns, getAllActiveRuns } from "@/api/servers"
 import BatchRunModal from "./BatchRunModal"
 import { failureRemedy } from "@/lib/preflightRemedy"
+import { osCompatible } from "@/lib/osCompat"
 
 /**
  * WebSocket base URL — derived from the page origin so the modal works from
@@ -169,9 +170,16 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
       .filter((r) => (isUserScript ? r.user_script_id === playbook.id : r.playbook_id === playbook.id))
       .map((r) => r.server_id),
   )
-  // Single-run targets the first selected server that isn't already busy.
-  const serverId = (selectedIds.find((id) => !busyServerIds.has(id)) ?? selectedIds[0]) ?? ""
-  const selectableCount = selectedIds.filter((id) => !busyServerIds.has(id)).length
+  // Servers whose OS the playbook doesn't support (Update 21). Not applied to user scripts.
+  const incompatibleIds = new Set(
+    isUserScript
+      ? []
+      : servers.filter((s) => !osCompatible(s.os_type, playbook.supported_os)).map((s) => s.id),
+  )
+  const blocked = (id: string) => busyServerIds.has(id) || incompatibleIds.has(id)
+  // Single-run targets the first selected server that isn't blocked.
+  const serverId = (selectedIds.find((id) => !blocked(id)) ?? selectedIds[0]) ?? ""
+  const selectableCount = selectedIds.filter((id) => !blocked(id)).length
   const [batchRuns, setBatchRuns] = useState<FleetRun[] | null>(null)
   const [batchSkipped, setBatchSkipped] = useState<FleetSkip[]>([])
   const [vars, setVars] = useState<Record<string, string>>(() => {
@@ -326,7 +334,7 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
   )
 
   function toggleServer(id: string) {
-    if (busyServerIds.has(id)) return // can't queue a duplicate on a busy server
+    if (blocked(id)) return // busy or OS-incompatible
     // Fleet install is for official playbooks; user scripts stay single-server.
     if (isUserScript) {
       setSelectedIds([id])
@@ -336,7 +344,7 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
   }
 
   const handleRun = useCallback(async () => {
-    const targets = selectedIds.filter((id) => !busyServerIds.has(id))
+    const targets = selectedIds.filter((id) => !busyServerIds.has(id) && !incompatibleIds.has(id))
     if (targets.length === 0 || !token) return
     const missingRequired = (playbook.variables ?? []).filter(
       (v) => v.required && !vars[v.name]?.trim()
@@ -378,7 +386,7 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
     }, 1000)
 
     await connect("run")
-  }, [selectedIds, busyServerIds, isUserScript, token, playbook, vars, selectedServer, stopTick, connect])
+  }, [selectedIds, busyServerIds, incompatibleIds, isUserScript, token, playbook, vars, selectedServer, stopTick, connect])
 
   const handleCancel = useCallback(async () => {
     const rid = runIdRef.current
@@ -483,17 +491,25 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
               <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-border p-1.5">
                 {servers.map((s) => {
                   const busy = busyServerIds.has(s.id)
-                  const checked = selectedIds.includes(s.id) && !busy
+                  const incompatible = incompatibleIds.has(s.id)
+                  const isBlocked = busy || incompatible
+                  const checked = selectedIds.includes(s.id) && !isBlocked
                   return (
                     <label
                       key={s.id}
-                      title={busy ? `${playbook.title} is already running on ${s.name}` : undefined}
-                      className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors ${busy ? "cursor-not-allowed opacity-70" : "cursor-pointer"} ${checked ? "bg-primary/10" : busy ? "" : "hover:bg-accent"} ${!canRun ? "pointer-events-none opacity-50" : ""}`}
+                      title={
+                        incompatible
+                          ? `${playbook.title} needs ${(playbook.supported_os ?? []).join("/")} — ${s.name} runs ${s.os_type || "an unknown OS"}`
+                          : busy
+                            ? `${playbook.title} is already running on ${s.name}`
+                            : undefined
+                      }
+                      className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors ${isBlocked ? "cursor-not-allowed opacity-70" : "cursor-pointer"} ${checked ? "bg-primary/10" : isBlocked ? "" : "hover:bg-accent"} ${!canRun ? "pointer-events-none opacity-50" : ""}`}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
-                        disabled={!canRun || busy}
+                        disabled={!canRun || isBlocked}
                         onChange={() => toggleServer(s.id)}
                         className="h-4 w-4 rounded border-border accent-primary"
                       />
@@ -503,6 +519,11 @@ export default function RunPlaybookModal({ playbook, servers, onClose, isUserScr
                         <span className="ml-auto flex shrink-0 items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
                           <Loader2 size={11} className="animate-spin" />
                           Installing now
+                        </span>
+                      )}
+                      {incompatible && !busy && (
+                        <span className="ml-auto flex shrink-0 items-center rounded-md bg-red-500/10 px-1.5 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400">
+                          Needs {(playbook.supported_os ?? []).join("/")}
                         </span>
                       )}
                     </label>

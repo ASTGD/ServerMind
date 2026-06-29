@@ -128,7 +128,8 @@ export default function PlaybookDetail() {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {playbook.category === "control-panel" && (
+            {(playbook.category === "control-panel" ||
+              (playbook.supported_os && playbook.supported_os.length > 0)) && (
               <button
                 onClick={() => setShowReadiness(true)}
                 disabled={compatible.length === 0}

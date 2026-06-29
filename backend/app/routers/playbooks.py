@@ -17,7 +17,7 @@ from app.dependencies.auth import get_current_user
 from app.models.playbook import Playbook, PlaybookRun
 from app.models.user import User
 from app.schemas.playbook import PlaybookOut, PlaybookDetailOut, PlaybookRunOut
-from app.services.playbook_service import substitute_variables
+from app.services.playbook_service import substitute_variables, supported_os_for, os_matches
 from app.services.redis_service import get_redis
 from app.workers.playbook_tasks import run_log_key, run_playbook_task
 
@@ -50,7 +50,10 @@ async def list_playbooks(
         )
     stmt = stmt.order_by(Playbook.category, Playbook.title)
     result = await db.execute(stmt)
-    return list(result.scalars().all())
+    playbooks = list(result.scalars().all())
+    for p in playbooks:
+        p.supported_os = supported_os_for(p)  # computed in-memory (Update 21)
+    return playbooks
 
 
 @router.get("/categories")
@@ -168,12 +171,19 @@ async def run_multi(
         ).scalars().all()
     )
 
+    supported = supported_os_for(playbook)
     pending: list[tuple[str, str, str, str]] = []  # (run_id, server_id, script, server_name)
     skipped: list[dict] = []
     for sid in body.server_ids:
         server = await resolve_server(sid, current_user, db, need_execute=True)
         if sid in busy:
-            skipped.append({"server_id": str(sid), "server_name": server.name})
+            skipped.append({"server_id": str(sid), "server_name": server.name, "reason": "already running"})
+            continue
+        if not os_matches(server, supported):
+            skipped.append({
+                "server_id": str(sid), "server_name": server.name,
+                "reason": f"needs {', '.join(supported or [])} — this is {server.os_type or 'unknown'}",
+            })
             continue
         raw = (
             playbook.script_powershell
@@ -181,7 +191,8 @@ async def run_multi(
             else playbook.script_bash
         )
         if not raw:
-            continue  # no script compatible with this server's OS — skip it
+            skipped.append({"server_id": str(sid), "server_name": server.name, "reason": "no script for this server's OS"})
+            continue
         script = substitute_variables(raw, body.variables)
         run = PlaybookRun(
             server_id=sid, user_id=current_user.id, playbook_id=playbook.id,
@@ -257,4 +268,5 @@ async def get_playbook(
     playbook = result.scalar_one_or_none()
     if not playbook:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playbook not found")
+    playbook.supported_os = supported_os_for(playbook)  # computed in-memory (Update 21)
     return playbook
