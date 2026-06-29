@@ -240,7 +240,7 @@ export default function ServerDetail() {
             <div className="flex-1">
               <p className="text-sm font-semibold text-foreground">Server identity changed</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                This server's SSH host key no longer matches the one ServerMind trusted on first
+                This server's SSH host key no longer matches the one ServerAlly trusted on first
                 connect, so connections are blocked. If you rebuilt or replaced this server that's
                 expected — trust the new key. If you didn't, the connection may be intercepted; do
                 not trust it and investigate.

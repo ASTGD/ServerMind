@@ -1,6 +1,6 @@
 """Hosting service — control panel API integration (Hosting Mode).
 
-When ``connection_type == 'hosting'`` ServerMind talks to a control panel's REST
+When ``connection_type == 'hosting'`` ServerAlly talks to a control panel's REST
 API instead of opening a shell. Each panel has its own auth scheme and endpoints,
 so this module provides a small adapter per panel behind a uniform dispatch.
 

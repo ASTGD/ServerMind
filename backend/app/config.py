@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     # App
     APP_ENV: str = "development"
-    APP_NAME: str = "ServerMind"
+    APP_NAME: str = "ServerAlly"
     APP_VERSION: str = "1.0.0"
     SECRET_KEY: str = "change-me-in-production"
     ENCRYPTION_KEY: str = "change-me-in-production"
@@ -38,10 +38,10 @@ class Settings(BaseSettings):
     AI_API_KEY: str = ""
     AI_MODEL: str = ""
     AI_BASE_URL: str = ""
-    # Hosted "ServerMind AI" subscription (Update 20.3) — for customers without their
+    # Hosted "ServerAlly AI" subscription (Update 20.3) — for customers without their
     # own key. When AI_PROVIDER='servermind', AI_API_KEY is the subscription token and
     # requests go to this gateway (which holds our upstream key + meters usage).
-    AI_GATEWAY_URL: str = "https://ai.servermind.app/v1"
+    AI_GATEWAY_URL: str = "https://ai.serverally.app/v1"
 
     # JWT
     JWT_ALGORITHM: str = "HS256"
@@ -87,13 +87,13 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
-    EMAIL_FROM: str = "noreply@servermind.ai"
+    EMAIL_FROM: str = "noreply@serverally.ai"
 
     # Cloudflare R2
     R2_ACCOUNT_ID: str = ""
     R2_ACCESS_KEY: str = ""
     R2_SECRET_KEY: str = ""
-    R2_BUCKET: str = "servermind-logs"
+    R2_BUCKET: str = "serverally-logs"
 
 
 settings = Settings()

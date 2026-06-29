@@ -1,6 +1,6 @@
 # Update 19 — Make background work legible & safe
 
-> Three observations from dogfooding the fleet install, all one gap: ServerMind now
+> Three observations from dogfooding the fleet install, all one gap: ServerAlly now
 > does real work in the *background* (durable installs across a fleet), but the UI
 > doesn't make that state legible/safe. Why did it fail? Is this server already busy?
 > What's running right now?
@@ -88,7 +88,7 @@ key is configured.
 ## Follow-on — pre-install readiness check (Tier 2)
 
 Find out *before* a failed run. The control-panel playbook page gets a **Check
-readiness** button: pick a server and ServerMind probes it (nothing is changed) and
+readiness** button: pick a server and ServerAlly probes it (nothing is changed) and
 reports a green/red checklist of the playbook's actual requirements — connects as
 root; port 80 free (naming the process using it); enough memory (the playbook's own
 MIN_RAM); supported OS; no other panel installed; no Docker/existing stack. Checks

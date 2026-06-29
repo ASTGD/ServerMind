@@ -115,9 +115,9 @@ async def _send_verification_email(user: User, request: Request) -> None:
     link = f"{base}/verify-email?token={token}"
     await notification_service.send_email(
         user.email,
-        "Verify your ServerMind email",
+        "Verify your ServerAlly email",
         (
-            "Welcome to ServerMind! Confirm your email to activate your account:\n\n"
+            "Welcome to ServerAlly! Confirm your email to activate your account:\n\n"
             f"{link}\n\n"
             f"This link expires in {settings.EMAIL_VERIFICATION_TOKEN_HOURS} hours. "
             "If you didn't sign up, you can ignore this email."

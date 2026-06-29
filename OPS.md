@@ -1,6 +1,6 @@
-# ServerMind — Local Dev Operations
+# ServerAlly — Local Dev Operations
 
-Day-to-day guide for running ServerMind on this machine.
+Day-to-day guide for running ServerAlly on this machine.
 (For production deployment, see `DEPLOY.md`. For credentials, see your exported PDF.)
 
 ---
@@ -24,20 +24,20 @@ Order matters: **DB → backend → frontend**. The backend connects to Postgres
 
 **Terminal 1 — Database**
 ```bash
-cd /Users/shafin/Documents/ServerMind
+cd /Users/shafin/Documents/ServerAlly
 docker compose up -d postgres
 ```
 
 **Terminal 2 — Backend** (wait until Postgres is healthy)
 ```bash
-cd /Users/shafin/Documents/ServerMind/backend
+cd /Users/shafin/Documents/ServerAlly/backend
 source venv/bin/activate
 uvicorn main:app --reload --port 8888
 ```
 
 **Terminal 3 — Frontend**
 ```bash
-cd /Users/shafin/Documents/ServerMind/frontend
+cd /Users/shafin/Documents/ServerAlly/frontend
 npm run dev
 ```
 
@@ -46,7 +46,7 @@ Then open **http://localhost:5190**. Leave Terminals 2 & 3 running (both hot-rel
 ### Durable execution (optional — Update 15)
 By default playbook **and** AI-chat command execution run in the backend process (`EXECUTION_BACKEND=inline`, no worker needed). The durable Celery path makes a run survive client disconnects + web restarts, reconnectable, and cancellable. To use it, set `EXECUTION_BACKEND=celery` in `backend/.env` and run a worker in a 4th terminal (needs Redis up):
 ```bash
-cd /Users/shafin/Documents/ServerMind/backend && source venv/bin/activate
+cd /Users/shafin/Documents/ServerAlly/backend && source venv/bin/activate
 celery -A app.celery_app worker --loglevel=info
 ```
 …or run it in Docker instead of a 4th terminal (connects to the host's Postgres/Redis):

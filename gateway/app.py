@@ -1,12 +1,12 @@
-"""ServerMind AI Gateway (Update 20.3).
+"""ServerAlly AI Gateway (Update 20.3).
 
-A small, standalone service WE run — NOT part of a customer's ServerMind install. It
-lets customers without their own AI key use "ServerMind AI" via a subscription: their
-ServerMind instance points at this gateway (AI_PROVIDER=servermind, AI_API_KEY=<token>),
+A small, standalone service WE run — NOT part of a customer's ServerAlly install. It
+lets customers without their own AI key use "ServerAlly AI" via a subscription: their
+ServerAlly instance points at this gateway (AI_PROVIDER=servermind, AI_API_KEY=<token>),
 and the gateway forwards to a real provider with OUR upstream key, validating the
 subscription and metering usage.
 
-It speaks the OpenAI protocol, so ServerMind reaches it with the openai SDK — the one
+It speaks the OpenAI protocol, so ServerAlly reaches it with the openai SDK — the one
 inference endpoint is ``POST /v1/chat/completions``. Subscriptions are issued via
 ``POST /admin/subscriptions`` (protected by GATEWAY_ADMIN_KEY); wire that to your billing
 platform's webhook later. Tokens are stored hashed; only the hash is kept.
@@ -73,7 +73,7 @@ def _hash(token: str) -> str:
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="ServerMind AI Gateway")
+app = FastAPI(title="ServerAlly AI Gateway")
 
 
 @app.on_event("startup")
@@ -155,7 +155,7 @@ def _within_limit(sub: Subscription) -> bool:
 
 
 async def _upstream(messages: list[dict]) -> str:
-    """Forward the chat to the real provider with OUR key. ServerMind only ever sends a
+    """Forward the chat to the real provider with OUR key. ServerAlly only ever sends a
     system + user message, so we collapse them per provider."""
     if not UPSTREAM_KEY:
         raise HTTPException(status_code=503, detail="Gateway upstream key not configured")

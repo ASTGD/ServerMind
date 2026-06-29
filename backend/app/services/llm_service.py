@@ -3,7 +3,7 @@
 Routes AI calls to whichever provider the instance is configured for, so a customer
 can bring their own key from the provider they trust — Anthropic (Claude), OpenAI
 (GPT), Google (Gemini), or any OpenAI-compatible endpoint (Mistral, Groq, DeepSeek,
-a local model, …). All of ServerMind's AI features make one shape of call — a system
+a local model, …). All of ServerAlly's AI features make one shape of call — a system
 prompt + a single user message → text — which this module unifies.
 
 Anthropic goes through the ``anthropic`` SDK; everything else goes through the

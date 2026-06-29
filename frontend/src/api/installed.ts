@@ -1,7 +1,7 @@
 import { apiClient } from "./client"
 import type { PlaybookAccessInfo } from "@/types"
 
-/** One thing ServerMind installed on a server (from our own run history). */
+/** One thing ServerAlly installed on a server (from our own run history). */
 export interface InstalledItem {
   run_id: string
   playbook_slug: string
@@ -24,7 +24,7 @@ export interface ScanResult {
   ports: string[]
 }
 
-/** What ServerMind installed here, with re-derived access cards (secrets masked). */
+/** What ServerAlly installed here, with re-derived access cards (secrets masked). */
 export async function getInstalled(serverId: string): Promise<InstalledItem[]> {
   const { data } = await apiClient.get<{ items: InstalledItem[] }>(
     `/api/servers/${serverId}/installed`,

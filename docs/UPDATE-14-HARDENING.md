@@ -1,6 +1,6 @@
 # Update 14 — Production Hardening · Build Spec
 
-> Status: **COMPLETE** (14.1–14.8 + 14.3b). Goal: make ServerMind safe for untrusted, multi-tenant signup.
+> Status: **COMPLETE** (14.1–14.8 + 14.3b). Goal: make ServerAlly safe for untrusted, multi-tenant signup.
 > **Backward-compatible** — every gate is behind a config flag defaulting to today's
 > behavior. Closes CLAUDE.md security rule **#8** (rate limiting); rule **#6** (SSH
 > host-key verification) is tracked as an optional follow-up.

@@ -21,7 +21,7 @@ import { getServer } from "@/api/servers"
 import { getInstalled, scanServer, type InstalledItem, type ScanResult } from "@/api/installed"
 import { AccessCard } from "@/components/playbooks/AccessCard"
 
-/** One installed-by-ServerMind item: title, when, access card, and masked install inputs. */
+/** One installed-by-ServerAlly item: title, when, access card, and masked install inputs. */
 function InstalledCard({ item }: { item: InstalledItem }) {
   const [open, setOpen] = useState(false)
   const vars = Object.entries(item.variables ?? {})
@@ -142,14 +142,14 @@ export default function Installed() {
       </div>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-foreground">Installed by ServerMind</h2>
+        <h2 className="text-sm font-semibold text-foreground">Installed by ServerAlly</h2>
         {isLoading ? (
           <div className="flex items-center gap-2 text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading…
           </div>
         ) : items.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-            Nothing installed through ServerMind yet. Run a playbook, or scan the server below to
+            Nothing installed through ServerAlly yet. Run a playbook, or scan the server below to
             see what's already there.
           </div>
         ) : (
@@ -166,7 +166,7 @@ export default function Installed() {
           <div>
             <h2 className="text-sm font-semibold text-foreground">Detected on the server</h2>
             <p className="text-xs text-muted-foreground">
-              A live read-only scan — catches anything installed outside ServerMind too.
+              A live read-only scan — catches anything installed outside ServerAlly too.
             </p>
           </div>
           <button

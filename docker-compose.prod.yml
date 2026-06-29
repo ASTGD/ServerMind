@@ -1,4 +1,4 @@
-# ServerMind — production stack.
+# ServerAlly — production stack.
 #
 # Postgres and Redis are expected to be MANAGED services (Supabase / Upstash) set
 # via DATABASE_URL / REDIS_URL in .env.prod. To self-host them on the VPS instead,
@@ -62,7 +62,7 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL}
         VITE_WS_URL: ${VITE_WS_URL}
-        VITE_APP_NAME: ${VITE_APP_NAME:-ServerMind}
+        VITE_APP_NAME: ${VITE_APP_NAME:-ServerAlly}
         VITE_APP_TAGLINE: ${VITE_APP_TAGLINE:-Manage any server in natural language}
     image: servermind-frontend:latest
     container_name: servermind_frontend

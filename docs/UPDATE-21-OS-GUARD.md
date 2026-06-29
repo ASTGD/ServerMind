@@ -1,7 +1,7 @@
 # Update 21 — Per-playbook OS guard (Tier 1)
 
 > Running a Debian/Ubuntu playbook on an AlmaLinux box gave a cryptic
-> "`apt-get: command not found`". Now ServerMind knows which OS each playbook supports
+> "`apt-get: command not found`". Now ServerAlly knows which OS each playbook supports
 > and won't run it on an incompatible server — it says so plainly instead. (Tier 1 of
 > the "wrong OS" problem; Tier 2 = make popular playbooks multi-distro; Tier 3 =
 > AI-tailored installs.)

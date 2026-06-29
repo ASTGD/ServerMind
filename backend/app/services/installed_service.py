@@ -46,7 +46,7 @@ def resolve_access_card(
 
 
 async def installed_from_records(db: AsyncSession, server: Server) -> list[dict]:
-    """What ServerMind has installed on this server, from our own run history: the latest
+    """What ServerAlly has installed on this server, from our own run history: the latest
     SUCCESSFUL run per (playbook, access URL), newest first, each with a resolved card."""
     rows = (
         await db.execute(

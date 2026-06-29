@@ -1,12 +1,12 @@
 # Update 23 — "Installed" tab per server
 
 > "I ran WordPress on TS3, closed the window, and lost the post-install info." Now every
-> server has an **Installed** tab that re-shows what ServerMind installed (with the access
+> server has an **Installed** tab that re-shows what ServerAlly installed (with the access
 > card) and can live-scan the box for everything that's actually running.
 
 ## Two sources
 
-- **Installed by ServerMind (from records):** the latest successful playbook run per
+- **Installed by ServerAlly (from records):** the latest successful playbook run per
   (playbook, access URL), with its access card re-derived from the playbook's
   `access_info` + that run's inputs — `GET /api/servers/{id}/installed`. No server access
   needed; works even if the box is offline.

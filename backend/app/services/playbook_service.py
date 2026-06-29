@@ -121,7 +121,7 @@ def _with_preflight(script: str) -> str:
 # AlmaLinux/Rocky/CentOS. PHP is installed via unversioned meta-packages (php-fpm,
 # php-mysql/php-mysqlnd …) which resolve to each distro's default PHP — no PPA, no
 # pinned version. The DB is MariaDB (drop-in MySQL, present in every default repo).
-_DISTRO = r"""# --- ServerMind multi-distro layer ---
+_DISTRO = r"""# --- ServerAlly multi-distro layer ---
 . /etc/os-release 2>/dev/null || true
 OS_ID="${ID:-}"; OS_LIKE="${ID_LIKE:-}"
 case " $OS_ID $OS_LIKE " in
@@ -808,7 +808,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "script_bash": (
             "#!/bin/bash\n"
             "set -uo pipefail\n"
-            'echo "=== ServerMind Security Audit: $(date) ==="\n'
+            'echo "=== ServerAlly Security Audit: $(date) ==="\n'
             'echo ""\n'
             'echo "--- OS ---"\n'
             "cat /etc/os-release | grep PRETTY_NAME; uname -r\n"
@@ -1197,7 +1197,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
             "Installs CyberPanel — a free, open-source hosting control panel built on "
             "OpenLiteSpeed. Requires a FRESH server (Ubuntu 20.04/22.04 or AlmaLinux 8) "
             "with no other web server or panel. After install, you can re-add this server "
-            "in Hosting Mode to manage sites, databases and email from ServerMind."
+            "in Hosting Mode to manage sites, databases and email from ServerAlly."
         ),
         "category": "control-panel",
         "os_family": "linux",
@@ -1950,7 +1950,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "variables": [],
         "script_powershell": (
             "#Requires -Version 5.1\n"
-            "Write-Host '=== ServerMind Windows Security Audit ==='\n"
+            "Write-Host '=== ServerAlly Windows Security Audit ==='\n"
             "Write-Host \"Date: $(Get-Date)\"\n"
             "Write-Host ''\n"
             "Write-Host '--- OS Info ---'\n"

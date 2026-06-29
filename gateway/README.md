@@ -1,11 +1,11 @@
-# ServerMind AI Gateway
+# ServerAlly AI Gateway
 
-The hosted **"ServerMind AI" subscription** backend (Update 20.3). **We** run this;
-customers never do. It lets a self-hosted ServerMind use our AI without their own key:
+The hosted **"ServerAlly AI" subscription** backend (Update 20.3). **We** run this;
+customers never do. It lets a self-hosted ServerAlly use our AI without their own key:
 their instance points here with a subscription token, and we forward to a real provider
 with our upstream key — validating the subscription and metering usage.
 
-It speaks the **OpenAI protocol**, so ServerMind talks to it with the openai SDK.
+It speaks the **OpenAI protocol**, so ServerAlly talks to it with the openai SDK.
 
 ## Run
 
@@ -30,9 +30,9 @@ The token is shown **once** (only its hash is stored). Later, wire
 `POST /admin/subscriptions` to your billing platform's webhook (Lemon Squeezy / Gumroad
 / Paddle) so a purchase issues a token automatically.
 
-## Point a ServerMind instance at it
+## Point a ServerAlly instance at it
 
-In that ServerMind's **Settings → AI provider**, choose **ServerMind AI (subscription)**
+In that ServerAlly's **Settings → AI provider**, choose **ServerAlly AI (subscription)**
 and paste the token. (Equivalently: `AI_PROVIDER=servermind`, `AI_API_KEY=<token>`,
 `AI_GATEWAY_URL=<this gateway>/v1`.)
 

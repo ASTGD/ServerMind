@@ -1,2 +1,2 @@
-# ServerMind
-Manage any server in natural language
+# ServerAlly
+Your AI companion to manage, automate, and secure any server — without the expertise.

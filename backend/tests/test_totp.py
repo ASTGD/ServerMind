@@ -32,7 +32,7 @@ def test_secret_stored_encrypted_and_fits_column():
 def test_provisioning_uri_format():
     uri = t.provisioning_uri(t.generate_secret(), "alice@example.com")
     assert uri.startswith("otpauth://totp/")
-    assert "ServerMind" in uri
+    assert "ServerAlly" in uri
 
 
 def test_recovery_codes_generation():

@@ -1,4 +1,4 @@
-# ServerMind — Manual QA / Dogfooding Checklist
+# ServerAlly — Manual QA / Dogfooding Checklist
 
 > Use the app like a brand-new, non-technical customer. For anything that doesn't
 > match **Expect**, note: the item number, what you saw, what you expected. That

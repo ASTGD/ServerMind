@@ -1,4 +1,4 @@
-"""ServerMind AI Gateway — auth, metering, and OpenAI-compatible forwarding."""
+"""ServerAlly AI Gateway — auth, metering, and OpenAI-compatible forwarding."""
 import os
 
 os.environ.setdefault("GATEWAY_DATABASE_URL", "sqlite+aiosqlite:////tmp/sm_test_gateway.db")

@@ -17,7 +17,7 @@ from app.services import crypto_service
 
 logger = logging.getLogger(__name__)
 
-ISSUER = "ServerMind"
+ISSUER = "ServerAlly"
 RECOVERY_CODE_COUNT = 10
 
 

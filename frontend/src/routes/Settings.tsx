@@ -646,7 +646,7 @@ export default function Settings() {
   )
 
   const AI_PROVIDERS: { value: AiProvider; label: string; placeholder: string }[] = [
-    { value: "servermind", label: "ServerMind AI (subscription — no key needed)", placeholder: "" },
+    { value: "servermind", label: "ServerAlly AI (subscription — no key needed)", placeholder: "" },
     { value: "anthropic", label: "Anthropic (Claude)", placeholder: "claude-sonnet-4-20250514" },
     { value: "openai", label: "OpenAI (GPT)", placeholder: "gpt-4o" },
     { value: "gemini", label: "Google (Gemini)", placeholder: "gemini-1.5-pro" },
@@ -697,14 +697,14 @@ export default function Settings() {
               aiHasKey
                 ? "•••••••• (leave blank to keep)"
                 : isServermind
-                  ? "Paste your ServerMind AI token"
+                  ? "Paste your ServerAlly AI token"
                   : "Paste your API key"
             }
             className={inputCls}
           />
           <p className="mt-1 text-xs text-muted-foreground">
             {isServermind
-              ? "From your ServerMind AI subscription — no AI key of your own needed. Stored encrypted."
+              ? "From your ServerAlly AI subscription — no AI key of your own needed. Stored encrypted."
               : "Encrypted (AES-256-GCM) before storage — never shown again."}
           </p>
         </div>

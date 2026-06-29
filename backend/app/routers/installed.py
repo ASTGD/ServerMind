@@ -1,4 +1,4 @@
-"""Installed-software router — what ServerMind installed on a server (from our own run
+"""Installed-software router — what ServerAlly installed on a server (from our own run
 history) and a live read-only scan of the box."""
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 @router.get("/servers/{server_id}/installed")
 async def list_installed(server_id: str, db: DBDep, user: CurrentUser) -> dict:
-    """What ServerMind has installed on this server, from our run history (read-only)."""
+    """What ServerAlly has installed on this server, from our run history (read-only)."""
     server = await resolve_server(server_id, user, db)
     items = await installed_service.installed_from_records(db, server)
     return {"items": items}

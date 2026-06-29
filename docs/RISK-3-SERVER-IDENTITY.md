@@ -1,6 +1,6 @@
 # Risk 3 — Server identity verification (SSH host-key pinning)
 
-> From the PM security audit: ServerMind connected to servers without verifying their
+> From the PM security audit: ServerAlly connected to servers without verifying their
 > identity (Paramiko `AutoAddPolicy` accepts any host key). If a server's host key
 > changed — rebuilt, IP reused, or a man-in-the-middle — it would connect anyway. For
 > a tool that stores credentials and runs commands as root, that was the last

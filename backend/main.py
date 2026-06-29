@@ -118,7 +118,7 @@ async def health() -> dict[str, str]:
 @app.on_event("startup")
 async def on_startup() -> None:
     """Run on application startup."""
-    logger.info("ServerMind backend starting up...")
+    logger.info("ServerAlly backend starting up...")
     async with AsyncSessionLocal() as db:
         await playbook_service.seed_if_empty(db)
         # Apply the saved AI provider config (Settings UI) over the .env default.
@@ -158,5 +158,5 @@ async def on_startup() -> None:
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
     """Run on application shutdown."""
-    logger.info("ServerMind backend shutting down...")
+    logger.info("ServerAlly backend shutting down...")
     scheduler_service.shutdown()

@@ -1,4 +1,4 @@
-# ServerMind — Claude Code Master Instructions
+# ServerAlly — Claude Code Master Instructions
 > **VERSION 3.0** — Updated with official name/tagline, Windows Server support, WinRM layer, hosting environment mode, multilingual AI, and full feature roadmap.
 > Read this file FULLY before doing anything. Update checklists as you complete tasks.
 
@@ -6,8 +6,8 @@
 
 ## 🧠 Product Identity
 
-**Product Name:** ServerMind
-**Tagline:** Manage any server in natural language
+**Product Name:** ServerAlly
+**Tagline:** Your AI companion to manage, automate, and secure any server — without the expertise.
 **Category:** AI-powered server management platform
 
 **Core value proposition:**
@@ -74,7 +74,7 @@
 
 ## 🤖 AI Multilingual Support
 
-ServerMind AI responds in the user's preferred language.
+ServerAlly AI responds in the user's preferred language.
 The AI system prompt always includes: `"Respond in {user_language}. User may write in {user_language}."`
 
 **Launch languages:**
@@ -615,7 +615,7 @@ CONFIRM_PATTERNS = [
 
 ### Chat System Prompt (all platforms)
 ```
-You are ServerMind AI, an expert server administrator.
+You are ServerAlly AI, an expert server administrator.
 You help non-technical users manage their servers safely using natural language.
 
 SERVER CONTEXT:
@@ -662,7 +662,7 @@ ALWAYS RESPOND WITH VALID JSON ONLY:
 
 ### Script Generator Prompt
 ```
-You are ServerMind Script Generator.
+You are ServerAlly Script Generator.
 Create production-ready scripts for server administration.
 
 Target OS family: {os_family}       ← linux | windows | both
@@ -683,7 +683,7 @@ For PowerShell scripts:
 - Use Write-Host for progress messages
 
 Both:
-- Clear header comment (title, description, author: ServerMind AI, date)
+- Clear header comment (title, description, author: ServerAlly AI, date)
 - Check prerequisites before running
 - Clear progress messages
 - Handle errors gracefully
@@ -727,7 +727,7 @@ user_input (any language)
 
 ## 🌐 Hosting Mode Feature Design
 
-When `connection_type = "hosting"`, ServerMind connects via panel API instead of raw SSH.
+When `connection_type = "hosting"`, ServerAlly connects via panel API instead of raw SSH.
 
 ### What AI can do in Hosting Mode
 
@@ -1080,7 +1080,7 @@ AI parses natural language → cron expression → shown to user for confirmatio
 ```bash
 # App
 APP_ENV=development
-APP_NAME=ServerMind
+APP_NAME=ServerAlly
 SECRET_KEY=                     # python -c "import secrets; print(secrets.token_hex(32))"
 ENCRYPTION_KEY=                 # python -c "import secrets; print(secrets.token_hex(32))"
 
@@ -1107,19 +1107,19 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=
 SMTP_PASSWORD=
-EMAIL_FROM=noreply@servermind.ai
+EMAIL_FROM=noreply@serverally.ai
 
 # Cloudflare R2
 R2_ACCOUNT_ID=
 R2_ACCESS_KEY=
 R2_SECRET_KEY=
-R2_BUCKET=servermind-logs
+R2_BUCKET=serverally-logs
 
 # Frontend
 VITE_API_URL=http://localhost:8000
 VITE_WS_URL=ws://localhost:8000
-VITE_APP_NAME=ServerMind
-VITE_APP_TAGLINE=Manage any server in natural language
+VITE_APP_NAME=ServerAlly
+VITE_APP_TAGLINE=Your AI companion to manage, automate, and secure any server — without the expertise.
 ```
 
 ---
@@ -1282,7 +1282,7 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [ ] DigitalOcean API: import droplets
 - [ ] Hetzner API: import cloud servers
 - [ ] AWS EC2: import instances
-- [ ] Cloudflare API: manage DNS from ServerMind
+- [ ] Cloudflare API: manage DNS from ServerAlly
 - [ ] Slack bot: alerts + commands from Slack
 - [ ] Telegram bot: mobile management
 - [ ] Zapier / n8n webhooks
@@ -1302,9 +1302,9 @@ VITE_APP_TAGLINE=Manage any server in natural language
 - [ ] Desktop app (Electron)
 - [ ] Mobile app (React Native)
 - [ ] CLI: `servermind run "install nginx" --server myserver`
-- [ ] API access for users (build on top of ServerMind)
+- [ ] API access for users (build on top of ServerAlly)
 - [ ] White-label for agencies
-- [ ] **Self-hosted licensed edition** — license system (online activation + periodic re-check + grace period), one-command installer + setup wizard, multi-provider bring-your-own AI key (Claude/OpenAI/Gemini) **or** an optional hosted "ServerMind AI" subscription, in-app updater; sell keys via Lemon Squeezy/Gumroad/Paddle. Target agencies/MSPs. See [docs/SELF-HOSTED-LICENSING.md](docs/SELF-HOSTED-LICENSING.md)
+- [ ] **Self-hosted licensed edition** — license system (online activation + periodic re-check + grace period), one-command installer + setup wizard, multi-provider bring-your-own AI key (Claude/OpenAI/Gemini) **or** an optional hosted "ServerAlly AI" subscription, in-app updater; sell keys via Lemon Squeezy/Gumroad/Paddle. Target agencies/MSPs. See [docs/SELF-HOSTED-LICENSING.md](docs/SELF-HOSTED-LICENSING.md)
 
 ---
 
@@ -1343,7 +1343,7 @@ i18n: add Bengali translations for chat UI
 
 | Date | Decision | Reason |
 |---|---|---|
-| Day 1 | Product name: ServerMind | Clear, memorable, AI-native |
+| Day 1 | Product name: ServerAlly | Clear, memorable, AI-native |
 | Day 1 | Tagline: Manage any server in natural language | Clear double meaning, six words |
 | Day 1 | Removed "Linux" from positioning | Support any OS — bigger market |
 | Day 1 | Python + FastAPI backend | Best LLM ecosystem |
@@ -1363,10 +1363,11 @@ i18n: add Bengali translations for chat UI
 | 2026-06-23 | Local dev: backend :8888, frontend :5190, Vite proxy → 127.0.0.1 | 8000/8080/5173 taken by other local projects; IPv4 avoids the localhost→::1 miss (see OPS.md) |
 | 2026-06-28 | Offer a self-hosted, licensed edition (not only SaaS) | Privacy — credentials never leave the customer's box — is a strong differentiator for a credentials-handling tool; near-zero infra cost/liability; app already Docker-packaged. Target agencies/MSPs. See docs/SELF-HOSTED-LICENSING.md |
 | 2026-06-29 | Multi-provider AI via `llm_service` (bring-your-own-key) | Decouple from a single vendor; customers use Claude/OpenAI/Gemini/OpenAI-compatible with their own key — foundation for the self-hosted edition. `anthropic` stays the default (backward-compatible). See docs/UPDATE-20-MULTI-PROVIDER-AI.md |
-| 2026-06-29 | Hosted "ServerMind AI" subscription via a standalone gateway (`gateway/`) | Customers without an AI key can use our AI for a subscription — broader reach + recurring revenue. OpenAI-compatible proxy: validates the subscription token, forwards to our upstream key, meters monthly usage. Billing-webhook + token metering are follow-ups. See docs/UPDATE-20-MULTI-PROVIDER-AI.md |
+| 2026-06-29 | Hosted "ServerAlly AI" subscription via a standalone gateway (`gateway/`) | Customers without an AI key can use our AI for a subscription — broader reach + recurring revenue. OpenAI-compatible proxy: validates the subscription token, forwards to our upstream key, meters monthly usage. Billing-webhook + token metering are follow-ups. See docs/UPDATE-20-MULTI-PROVIDER-AI.md |
 | 2026-06-29 | Per-playbook OS guard (Tier 1) — infer supported OS from the script; grey-out/refuse incompatible servers | Stop cryptic cross-OS failures (apt on AlmaLinux); be honest about which OS each playbook supports. Inferred from package manager (apt→Debian/Ubuntu, dnf→RHEL); never blocks on unknown OS. Tier 2 = make popular playbooks multi-distro. See docs/UPDATE-21-OS-GUARD.md |
 | 2026-06-29 | Multi-distro web stacks (Tier 2) — WordPress/LAMP/LEMP run on Debian/Ubuntu + RHEL via a shared `_DISTRO` layer | Fix within-family failures (mysql-server on Debian, php8.2 on Ubuntu) + extend to RHEL. MariaDB everywhere, unversioned PHP (runtime-detected fpm service/socket), apt\|dnf, ufw\|firewalld, SELinux. `supported_os` now includes almalinux/rocky/centos so Tier 1 allows them. RHEL path needs a live smoke test. See docs/UPDATE-22-MULTI-DISTRO.md |
 | 2026-06-29 | Per-server "Installed" tab — records (re-derived access cards) + live read-only scan | Recover post-install info after the run window is closed; show what's actually on the box. Latest successful run per (playbook, URL) with `access_info` resolved, plus an SSH probe (OS/web/db/runtimes/containers/panels/ports). Secret-named install inputs are encrypted at rest (AES-256-GCM via `secret_vars`; migration 017 backfills) and masked in the view — all credentials encrypted at rest. See docs/UPDATE-23-INSTALLED.md |
+| 2026-06-29 | **Renamed ServerMind → ServerAlly** + new tagline | "ServerMind" was already taken by ≥2 same-category products (servermind.io control plane; servermind.dev — a near-identical AI VPS assistant) plus a hardware reseller, with every major TLD gone → brand collision + SEO/trademark risk. Rebranded all user-facing strings, docs, env, and the AI gateway/subscription naming; **kept infra identifiers** (DB name/user `servermind`, container names, the `servermind` AI-provider key) to avoid breakage. New tagline: "Your AI companion to manage, automate, and secure any server — without the expertise." Domain targets: `serverallyhq.com` / `serverally.ai` (bare `serverally.com` is taken). |
 
 ---
 
@@ -1407,7 +1408,7 @@ open http://localhost:8000/docs
 
 ## 📌 CURRENT STATUS → ALL PHASES COMPLETE 🎉
 
-Every build phase (0–13, incl. 2B) is done. ServerMind is feature-complete:
+Every build phase (0–13, incl. 2B) is done. ServerAlly is feature-complete:
 auth, Linux SSH + Windows WinRM + hosting-panel management, AI chat/terminal,
 playbooks, AI script generator, scheduler, file manager, monitoring & alerts,
 security audit, backups, team management with role enforcement, and a production

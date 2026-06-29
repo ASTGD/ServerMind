@@ -1,4 +1,4 @@
-# ServerMind — Security Review
+# ServerAlly — Security Review
 
 Scope: authentication, session/token handling, access control, credential
 encryption, and command-execution safety. Reviewed at the end of Phase 13.

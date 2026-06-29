@@ -120,17 +120,17 @@ async def fire_alert(
     target = str(alert.channel_target)  # type: ignore[attr-defined]
 
     subject = (
-        f"[ServerMind] {server_name}: {metric_label} {condition_label} "
+        f"[ServerAlly] {server_name}: {metric_label} {condition_label} "
         f"{threshold:.0f}% (currently {current_value:.1f}%)"
     )
     body = (
-        f"ServerMind Alert\n"
+        f"ServerAlly Alert\n"
         f"{'=' * 40}\n\n"
         f"Server:    {server_name}\n"
         f"Metric:    {metric_label}\n"
         f"Condition: {condition_label} {threshold:.0f}%\n"
         f"Value now: {current_value:.1f}%\n\n"
-        f"Log in to ServerMind to investigate.\n"
+        f"Log in to ServerAlly to investigate.\n"
     )
 
     if channel == "email":
@@ -144,7 +144,7 @@ async def fire_alert(
             "condition": alert.condition,  # type: ignore[attr-defined]
             "threshold": threshold,
             "current_value": round(current_value, 1),
-            "source": "ServerMind",
+            "source": "ServerAlly",
         }
         # Slack uses `text` at top level; generic webhooks get the full dict
         await send_webhook(target, payload)

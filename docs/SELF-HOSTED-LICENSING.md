@@ -1,6 +1,6 @@
-# ServerMind — Self-hosted, licensed edition (strategy + how it works)
+# ServerAlly — Self-hosted, licensed edition (strategy + how it works)
 
-> Plain-English product doc. Two ways to sell ServerMind:
+> Plain-English product doc. Two ways to sell ServerAlly:
 > 1. **Hosted (SaaS)** — we run it, customers pay a subscription, use it on our
 >    website. Setup: see [DEPLOY.md](../DEPLOY.md).
 > 2. **Self-hosted (this doc)** — customers buy a package, install it on *their own*
@@ -13,13 +13,13 @@
 
 ## 1. The idea
 
-Sell ServerMind as a downloadable package. A customer buys it, installs it on their
+Sell ServerAlly as a downloadable package. A customer buys it, installs it on their
 own VPS with one command, enters a license key to activate it, and uses it. We provide
 updates and support; we don't host anything for them.
 
-## 2. Why this fits ServerMind unusually well
+## 2. Why this fits ServerAlly unusually well
 
-- **Privacy is the killer pitch.** ServerMind holds people's server passwords and SSH
+- **Privacy is the killer pitch.** ServerAlly holds people's server passwords and SSH
   keys. The biggest objection to *any* hosted tool is "you have my server logins."
   Self-hosted turns that into your strongest line: **"Your credentials never leave your
   own box — we never see them."** For a credentials-handling tool, that removes the #1
@@ -34,7 +34,7 @@ updates and support; we don't host anything for them.
 
 ## 3. The honest trade-offs
 
-- **Self-hosting is technical**, but ServerMind's end users are non-technical. So this
+- **Self-hosting is technical**, but ServerAlly's end users are non-technical. So this
   model skews the *buyer* more technical. The upside: that points at **agencies and
   hosting/IT providers** — who buy one license and manage all their clients' servers
   with it. Often a *better-paying* customer than a lone blogger.
@@ -55,7 +55,7 @@ we can start self-hosted and add SaaS down the road.
 Think of it like activating any paid app (Windows, a game, design software):
 
 1. **Buy → get a key.** On purchase, the customer receives a license key (a code).
-2. **Install → app asks for the key.** On first run, ServerMind's setup wizard asks for
+2. **Install → app asks for the key.** On first run, ServerAlly's setup wizard asks for
    the key.
 3. **Activate → app checks the key** with our small license service: "is this key valid,
    paid, and not expired?" If yes, the app unlocks and remembers it.
@@ -79,19 +79,19 @@ install; agency/reseller tiers allow N installs.
 
 1. **Buy** on our store page → receives the license key + a download/install link by email.
 2. **Get a VPS** (any provider — DigitalOcean, Hetzner, Vultr…). A small box is enough.
-3. **Install** — paste **one command** into the VPS. It pulls ServerMind, sets up the
+3. **Install** — paste **one command** into the VPS. It pulls ServerAlly, sets up the
    bundled database + cache, and starts everything. (Goal: under five minutes, no
    technical knowledge beyond copy-paste.)
 4. **Open the app** at their server's address → a **setup wizard**:
    - enter the **license key** → activate;
    - create the **admin account**;
-   - **choose AI** — paste your own key (any provider) *or* subscribe to ServerMind AI (§7);
+   - **choose AI** — paste your own key (any provider) *or* subscribe to ServerAlly AI (§7);
    - done.
 5. **Use it** — add servers, chat, run playbooks — exactly as today.
 
 ## 7. The AI brain — two ways, the customer's choice
 
-ServerMind needs an AI model to power chat + script generation. We offer **both**
+ServerAlly needs an AI model to power chat + script generation. We offer **both**
 options in the setup wizard, so each customer picks their own privacy/convenience
 trade-off:
 
@@ -104,7 +104,7 @@ privacy-conscious buyers, agencies, and the technical crowd.
 *Build:* a small provider-abstraction layer so the app can talk to any provider, plus a
 "pick provider + paste key" step in setup.
 
-**B. ServerMind AI subscription — no key needed, just works.**
+**B. ServerAlly AI subscription — no key needed, just works.**
 For customers who don't want to get an API key (the hardest setup step), we offer our
 own AI as a paid add-on. They pay us a monthly subscription (or usage credits); their
 requests go through a small **AI gateway** we run, which uses our keys and meters usage.
@@ -146,7 +146,7 @@ That shrinks "build a license system" down to a small, well-scoped piece.
 
 - **Licensing platform:** Lemon Squeezy vs Gumroad vs Paddle (all handle keys + payment).
 - **AI:** bring-your-own-key (multi-provider) is decided; whether to *also* run the
-  ServerMind AI subscription (option B) — recommended for reach + revenue, but adds a
+  ServerAlly AI subscription (option B) — recommended for reach + revenue, but adds a
   small gateway service + AI-cost/abuse management to operate.
 - **Installs per license:** 1 active install for solo, N for agency/reseller tiers.
 - **On expiry:** keep working read-only, or disable paid features? (Lean: stays usable,

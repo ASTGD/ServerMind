@@ -1,7 +1,7 @@
 {
   "app": {
-    "name": "ServerMind",
-    "tagline": "Manage any server in natural language"
+    "name": "ServerAlly",
+    "tagline": "Your AI companion to manage, automate, and secure any server — without the expertise."
   },
   "nav": {
     "dashboard": "Dashboard",

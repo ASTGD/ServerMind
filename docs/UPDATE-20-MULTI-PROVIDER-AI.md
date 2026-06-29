@@ -1,6 +1,6 @@
 # Update 20 — Multi-provider AI (bring your own key)
 
-> ServerMind's AI was hard-wired to Anthropic (Claude). It now works with the
+> ServerAlly's AI was hard-wired to Anthropic (Claude). It now works with the
 > customer's choice of provider, so they can bring a key from whichever AI they trust —
 > the foundation for the self-hosted edition's "paste your own key" setup (see
 > [SELF-HOSTED-LICENSING.md §7](SELF-HOSTED-LICENSING.md)) and useful in the hosted
@@ -37,10 +37,10 @@ confirm the key + model work. Endpoints: `GET`/`PUT /api/settings/ai`, `POST
 /api/settings/ai/test`. (Currently any authenticated user can change it — tighten to an
 owner/admin role for multi-user instances.)
 
-## ServerMind AI subscription (shipped — Update 20.3)
+## ServerAlly AI subscription (shipped — Update 20.3)
 
 The hosted option for customers without their own key. A new provider **`servermind`**:
-in Settings → AI provider, pick **ServerMind AI (subscription)** and paste a subscription
+in Settings → AI provider, pick **ServerAlly AI (subscription)** and paste a subscription
 token; the instance then talks to our gateway (OpenAI-compatible) instead of a provider
 directly. Config: `AI_GATEWAY_URL` + `AI_API_KEY`=token.
 

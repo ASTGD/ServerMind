@@ -1,4 +1,4 @@
-# ServerMind — Production Deployment Runbook
+# ServerAlly — Production Deployment Runbook
 
 Deploys the full stack (FastAPI backend + built React frontend) with Docker
 Compose, behind a CyberPanel / OpenLiteSpeed reverse proxy that terminates SSL.
@@ -11,7 +11,7 @@ Browser ──HTTPS──▶ CyberPanel OLS (Let's Encrypt) ──▶ 127.0.0.1:
 Backend ──▶ Postgres (Supabase)   ──▶ Redis (Upstash)
 ```
 
-> **Two ways to ship ServerMind.** This runbook is the **hosted (SaaS)** path — *we*
+> **Two ways to ship ServerAlly.** This runbook is the **hosted (SaaS)** path — *we*
 > run it for customers. There's also a **self-hosted, licensed** path where customers
 > install it on their own VPS and activate a license (we never touch their data) — see
 > [docs/SELF-HOSTED-LICENSING.md](docs/SELF-HOSTED-LICENSING.md). Both use the same Docker
@@ -86,8 +86,8 @@ EMAIL_FROM=noreply@example.com
 # Frontend build args (baked into the bundle — must be your PUBLIC https/wss URLs)
 VITE_API_URL=https://app.example.com
 VITE_WS_URL=wss://app.example.com
-VITE_APP_NAME=ServerMind
-VITE_APP_TAGLINE=Manage any server in natural language
+VITE_APP_NAME=ServerAlly
+VITE_APP_TAGLINE=Your AI companion to manage, automate, and secure any server — without the expertise.
 ```
 
 > `.env.prod` is git-ignored. Keep it off version control.
@@ -108,7 +108,7 @@ Check status:
 
 ```bash
 docker compose -f docker-compose.prod.yml ps
-curl -s http://127.0.0.1:8080/health      # {"status":"ok","app":"ServerMind"}
+curl -s http://127.0.0.1:8080/health      # {"status":"ok","app":"ServerAlly"}
 ```
 
 ### Durable execution worker
@@ -224,7 +224,7 @@ others, then load-balance across them. The `worker` service already runs with
 `ENABLE_SCHEDULER=false`; scale it with `--scale worker=N` for more execution
 throughput.
 
-### Backups of ServerMind itself
+### Backups of ServerAlly itself
 Back up the Postgres database regularly (Supabase has automatic backups; for
 self-host, `pg_dump`). The `ENCRYPTION_KEY` is required to decrypt stored server
 credentials — store it in a password manager. Losing it means re-adding every
