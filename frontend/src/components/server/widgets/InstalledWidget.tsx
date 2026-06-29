@@ -41,19 +41,19 @@ export default function InstalledWidget({ serverId }: { serverId: string }) {
         <div className="space-y-2">
           {items.slice(0, 4).map((it) => (
             <div key={it.run_id} className="rounded-md border border-border/60 bg-background px-3 py-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-sm font-medium text-foreground">{it.playbook_title}</span>
-                {it.access?.url && (
-                  <a
-                    href={it.access.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex shrink-0 items-center gap-1 text-xs text-primary hover:underline"
-                  >
-                    Open <ExternalLink size={11} />
-                  </a>
-                )}
-              </div>
+              <p className="truncate text-sm font-medium text-foreground">{it.playbook_title}</p>
+              {it.access?.url && (
+                <a
+                  href={it.access.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`Open ${it.access.url} in a new tab`}
+                  className="mt-1 flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  <ExternalLink size={11} className="shrink-0" />
+                  <span className="truncate">{it.access.url.replace(/^https?:\/\//, "")}</span>
+                </a>
+              )}
               {it.access?.note && (
                 <p className="mt-0.5 truncate text-xs text-muted-foreground">{it.access.note}</p>
               )}
