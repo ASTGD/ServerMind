@@ -27,9 +27,18 @@ Routing unit-tested for Anthropic + OpenAI (mocked SDKs), plus the resolve/fallb
 logic and the no-key error. 64 tests pass; backend imports clean. (No live key on hand,
 so this is mock-verified end to end — real keys per provider need a live smoke test.)
 
+## Settings UI (shipped — Update 20.1)
+
+Pick the provider + paste the key + choose a model from **Settings → AI provider** (no
+`.env` editing). The key is encrypted (AES-256-GCM) and stored instance-wide in a new
+`app_settings` table (migration 016); the live override is applied immediately and
+re-loaded on startup, falling back to `.env`. A **Test** button sends a tiny prompt to
+confirm the key + model work. Endpoints: `GET`/`PUT /api/settings/ai`, `POST
+/api/settings/ai/test`. (Currently any authenticated user can change it — tighten to an
+owner/admin role for multi-user instances.)
+
 ## Next
 
-- A **Settings UI / setup-wizard step** to pick the provider + paste the key + choose a
-  model at runtime (instead of editing `.env`) — pairs with the self-hosted setup wizard.
+- The same provider/key step inside the **self-hosted setup wizard**.
 - The optional hosted **"ServerMind AI" subscription** gateway (option B in
   [SELF-HOSTED-LICENSING.md §7](SELF-HOSTED-LICENSING.md)).

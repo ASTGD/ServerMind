@@ -35,10 +35,40 @@ _OPENAI_COMPATIBLE_BASE = {
 _anthropic_client = None
 _openai_client = None
 
+# Runtime override chosen in Settings (DB-backed), loaded at startup. When it has a
+# key, it takes precedence over the .env config (Update 20.1).
+_runtime_config: dict | None = None
+
+
+def set_runtime_config(provider: str, api_key: str, model: str, base_url: str) -> None:
+    """Apply an AI config chosen in Settings (overrides .env). Resets cached clients."""
+    global _runtime_config
+    _runtime_config = {
+        "provider": (provider or "anthropic").lower(),
+        "api_key": api_key or "",
+        "model": model or "",
+        "base_url": base_url or "",
+    }
+    reset_clients()
+
+
+def clear_runtime_config() -> None:
+    """Drop the runtime override; fall back to the .env config. Resets cached clients."""
+    global _runtime_config
+    _runtime_config = None
+    reset_clients()
+
 
 def _resolve() -> tuple[str, str, str, str | None]:
-    """Resolve (provider, api_key, model, base_url) from config, with fallbacks to
-    the legacy ANTHROPIC_* settings so existing setups keep working."""
+    """Resolve (provider, api_key, model, base_url). The Settings override wins when it
+    has a key; otherwise fall back to .env / the legacy ANTHROPIC_* settings."""
+    cfg = _runtime_config
+    if cfg and cfg.get("api_key"):
+        provider = cfg["provider"]
+        key = cfg["api_key"]
+        model = cfg.get("model") or _DEFAULT_MODELS.get(provider) or settings.ANTHROPIC_MODEL
+        base_url = cfg.get("base_url") or _OPENAI_COMPATIBLE_BASE.get(provider)
+        return provider, key, model, base_url
     provider = (settings.AI_PROVIDER or "anthropic").lower()
     key = settings.AI_API_KEY or (settings.ANTHROPIC_API_KEY if provider == "anthropic" else "")
     model = settings.AI_MODEL or _DEFAULT_MODELS.get(provider) or settings.ANTHROPIC_MODEL

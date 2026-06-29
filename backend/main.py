@@ -21,6 +21,7 @@ from app.routers import scheduler as scheduler_router
 from app.routers import scripts as scripts_router
 from app.routers import security as security_router
 from app.routers import servers as servers_router
+from app.routers import settings as settings_router
 from app.routers import team as team_router
 from app.services import backup_service, playbook_service, scheduler_service
 from app.services.rate_limit_service import limiter
@@ -101,6 +102,7 @@ app.include_router(files_router.router)
 app.include_router(security_router.router)
 app.include_router(backups_router.router)
 app.include_router(team_router.router)
+app.include_router(settings_router.router)
 app.include_router(hosting_router.router)
 app.include_router(ws_handlers.router)
 
@@ -117,6 +119,17 @@ async def on_startup() -> None:
     logger.info("ServerMind backend starting up...")
     async with AsyncSessionLocal() as db:
         await playbook_service.seed_if_empty(db)
+        # Apply the saved AI provider config (Settings UI) over the .env default.
+        from app.services import llm_service, settings_service
+        try:
+            ai_cfg = await settings_service.get_ai_config(db)
+            if ai_cfg and ai_cfg.get("api_key"):
+                llm_service.set_runtime_config(
+                    ai_cfg["provider"], ai_cfg["api_key"], ai_cfg["model"], ai_cfg["base_url"]
+                )
+                logger.info("Loaded AI provider from settings: %s", ai_cfg["provider"])
+        except Exception as exc:  # noqa: BLE001 — never block startup on settings
+            logger.warning("Could not load AI settings: %s", exc)
 
     # The scheduler/metrics jobs must run in exactly ONE process. When scaling
     # web workers horizontally, set ENABLE_SCHEDULER=false on the extra workers

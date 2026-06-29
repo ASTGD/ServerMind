@@ -1,12 +1,13 @@
-import { useState, type ReactNode } from "react"
+import { useState, useRef, useEffect, type ReactNode } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, History, Check, Loader2 } from "lucide-react"
+import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, History, Check, Loader2, Sparkles } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { listAudit } from "@/api/audit"
 import {
   updateProfile, updateLanguage, changePassword,
   setup2fa, verify2fa, disable2fa, regenerateRecoveryCodes, type TotpSetupResponse,
 } from "@/api/auth"
+import { getAiSettings, updateAiSettings, testAiSettings, type AiProvider, type AiSettings } from "@/api/settings"
 import { useAuthStore } from "@/store/authStore"
 import i18n from "@/i18n"
 import type { User } from "@/types"
@@ -114,6 +115,42 @@ export default function Settings() {
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null)
   const [showRegen, setShowRegen] = useState(false)
   const [regenCode, setRegenCode] = useState("")
+
+  // AI provider config (Update 20.1)
+  const [aiProvider, setAiProvider] = useState<AiProvider>("anthropic")
+  const [aiKey, setAiKey] = useState("")
+  const [aiModel, setAiModel] = useState("")
+  const [aiBaseUrl, setAiBaseUrl] = useState("")
+  const [aiMsg, setAiMsg] = useState("")
+  const [aiHasKey, setAiHasKey] = useState(false)
+  const [aiTest, setAiTest] = useState<{ ok: boolean; text: string } | null>(null)
+  const aiSeeded = useRef(false)
+  const aiQuery = useQuery({ queryKey: ["ai-settings"], queryFn: getAiSettings })
+  useEffect(() => {
+    const d = aiQuery.data
+    if (d && !aiSeeded.current) {
+      aiSeeded.current = true
+      setAiProvider(d.provider)
+      setAiModel(d.model)
+      setAiBaseUrl(d.base_url)
+      setAiHasKey(d.has_key)
+    }
+  }, [aiQuery.data])
+  const aiMut = useMutation({
+    mutationFn: () =>
+      updateAiSettings({ provider: aiProvider, api_key: aiKey || undefined, model: aiModel, base_url: aiBaseUrl }),
+    onSuccess: (data: AiSettings) => {
+      setAiHasKey(data.has_key)
+      setAiKey("")
+      setAiMsg("Saved")
+      setAiTest(null)
+      setTimeout(() => setAiMsg(""), 2000)
+    },
+  })
+  const aiTestMut = useMutation({
+    mutationFn: testAiSettings,
+    onSuccess: (r) => setAiTest({ ok: r.ok, text: r.ok ? r.reply || "OK" : r.error || "failed" }),
+  })
 
   const syncUser = (u: User) => {
     if (token) setAuth(u, token)
@@ -608,6 +645,105 @@ export default function Settings() {
     </Section>
   )
 
+  const AI_PROVIDERS: { value: AiProvider; label: string; placeholder: string }[] = [
+    { value: "anthropic", label: "Anthropic (Claude)", placeholder: "claude-sonnet-4-20250514" },
+    { value: "openai", label: "OpenAI (GPT)", placeholder: "gpt-4o" },
+    { value: "gemini", label: "Google (Gemini)", placeholder: "gemini-1.5-pro" },
+    { value: "openai_compatible", label: "OpenAI-compatible (custom)", placeholder: "model name" },
+  ]
+  const aiPlaceholder = AI_PROVIDERS.find((p) => p.value === aiProvider)?.placeholder ?? ""
+
+  const aiSection = (
+    <Section
+      icon={Sparkles}
+      title="AI provider"
+      description="Powers chat and script generation — bring your own key from any provider."
+    >
+      <div className="space-y-4">
+        <div>
+          <label className={labelCls}>Provider</label>
+          <select
+            value={aiProvider}
+            onChange={(e) => {
+              setAiProvider(e.target.value as AiProvider)
+              setAiTest(null)
+            }}
+            className={inputCls}
+          >
+            {AI_PROVIDERS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls}>
+            API key {aiHasKey && <span className="font-normal text-green-600">· a key is saved</span>}
+          </label>
+          <input
+            type="password"
+            value={aiKey}
+            onChange={(e) => setAiKey(e.target.value)}
+            autoComplete="new-password"
+            placeholder={aiHasKey ? "•••••••• (leave blank to keep)" : "Paste your API key"}
+            className={inputCls}
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Encrypted (AES-256-GCM) before storage — never shown again.
+          </p>
+        </div>
+        <div>
+          <label className={labelCls}>
+            Model <span className="font-normal text-muted-foreground/70">(optional)</span>
+          </label>
+          <input
+            value={aiModel}
+            onChange={(e) => setAiModel(e.target.value)}
+            placeholder={aiPlaceholder}
+            className={inputCls}
+          />
+        </div>
+        {aiProvider === "openai_compatible" && (
+          <div>
+            <label className={labelCls}>Base URL</label>
+            <input
+              value={aiBaseUrl}
+              onChange={(e) => setAiBaseUrl(e.target.value)}
+              placeholder="https://your-endpoint/v1"
+              className={inputCls}
+            />
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <button onClick={() => aiMut.mutate()} disabled={aiMut.isPending} className={btnCls}>
+            {aiMut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Save
+          </button>
+          <button
+            onClick={() => aiTestMut.mutate()}
+            disabled={aiTestMut.isPending || !aiHasKey}
+            title={!aiHasKey ? "Save a key first" : "Send a tiny test prompt"}
+            className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-muted/50 disabled:opacity-50"
+          >
+            {aiTestMut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Test
+          </button>
+          {aiMsg && (
+            <span className="flex items-center gap-1 text-sm text-green-600">
+              <Check size={15} /> {aiMsg}
+            </span>
+          )}
+        </div>
+        {aiTest && (
+          <p className={`text-sm ${aiTest.ok ? "text-green-600" : "text-red-500"}`}>
+            {aiTest.ok ? `Working — replied "${aiTest.text}"` : `Failed: ${aiTest.text}`}
+          </p>
+        )}
+      </div>
+    </Section>
+  )
+
   return (
     <div className="space-y-6">
       <div>
@@ -619,6 +755,7 @@ export default function Settings() {
         <div className="space-y-6">
           {profileSection}
           {accountSection}
+          {aiSection}
         </div>
         <div className="space-y-6">
           {languageSection}
