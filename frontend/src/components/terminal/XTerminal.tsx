@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, forwardRef, useImperativeHandle } from "react"
 import { Terminal } from "xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
@@ -8,6 +8,11 @@ import "xterm/css/xterm.css"
 
 interface Props {
   serverId: string
+}
+
+export interface XTerminalHandle {
+  /** The last `maxLines` of terminal text (scrollback + viewport) — for "Hand to AI". */
+  getRecentOutput: (maxLines?: number) => string
 }
 
 function wsBase(): string {
@@ -21,8 +26,27 @@ function wsBase(): string {
 }
 const WS_BASE = wsBase()
 
-export default function XTerminal({ serverId }: Props) {
+const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ serverId }, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const termRef = useRef<Terminal | null>(null)
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      getRecentOutput(maxLines = 40) {
+        const term = termRef.current
+        if (!term) return ""
+        const buf = term.buffer.active
+        const total = buf.length
+        const lines: string[] = []
+        for (let i = Math.max(0, total - maxLines); i < total; i++) {
+          lines.push(buf.getLine(i)?.translateToString(true) ?? "")
+        }
+        return lines.join("\n").replace(/^\s+|\s+$/g, "")
+      },
+    }),
+    [],
+  )
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -63,6 +87,7 @@ export default function XTerminal({ serverId }: Props) {
     terminal.loadAddon(linksAddon)
     terminal.open(containerRef.current)
     fitAddon.fit()
+    termRef.current = terminal
 
     // WebSocket connection — fetch a single-use ticket first so the JWT stays
     // out of the URL (falls back to the token if unavailable).
@@ -118,6 +143,7 @@ export default function XTerminal({ serverId }: Props) {
       observer.disconnect()
       ws?.close()
       terminal.dispose()
+      termRef.current = null
     }
   }, [serverId])
 
@@ -127,4 +153,6 @@ export default function XTerminal({ serverId }: Props) {
       className="h-full w-full overflow-hidden rounded-lg bg-[#0d0d0d]"
     />
   )
-}
+})
+
+export default XTerminal

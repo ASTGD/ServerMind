@@ -10,6 +10,8 @@ import type { CommandItem } from "@/types"
 
 interface Props {
   serverId: string
+  /** A one-shot prompt to auto-send once the socket opens (the "Hand to AI" handoff). */
+  seed?: { text: string; key: number } | null
 }
 
 interface PendingPlan {
@@ -23,7 +25,7 @@ interface PendingPlan {
 let _msgId = 0
 function nextId() { return String(++_msgId) }
 
-export default function ChatWindow({ serverId }: Props) {
+export default function ChatWindow({ serverId, seed }: Props) {
   const user = useAuthStore((s) => s.user)
   const language = user?.preferred_language ?? "en"
   const [messages, setMessages] = useState<ChatMessageData[]>([])
@@ -169,6 +171,16 @@ export default function ChatWindow({ serverId }: Props) {
     send({ type: "message", content, language })
     setPending(null)
   }
+
+  // "Hand to AI" handoff — auto-send the seeded prompt once, after the socket is open.
+  const lastSeedKey = useRef(0)
+  useEffect(() => {
+    if (seed && seed.key !== lastSeedKey.current && status === "open" && seed.text.trim()) {
+      lastSeedKey.current = seed.key
+      handleSend(seed.text)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed, status])
 
   function handleApprove() {
     send({ type: "approve" })

@@ -14,10 +14,12 @@ export default function AICompanionDrawer({
   server,
   open,
   onClose,
+  seed,
 }: {
   server: Server
   open: boolean
   onClose: () => void
+  seed?: { text: string; key: number } | null
 }) {
   // Mount the chat (and its WebSocket) lazily on first open, then keep it alive.
   const [mounted, setMounted] = useState(false)
@@ -67,7 +69,7 @@ export default function AICompanionDrawer({
         </div>
 
         <div className="min-h-0 flex-1 overflow-hidden">
-          {mounted && <ChatWindow serverId={server.id} />}
+          {mounted && <ChatWindow serverId={server.id} seed={seed} />}
         </div>
       </aside>
     </>
