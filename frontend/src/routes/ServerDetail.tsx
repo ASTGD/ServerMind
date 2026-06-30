@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import { useParams, useNavigate, Link, NavLink, Outlet } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, Loader2, MessageSquare, AlertTriangle, KeyRound } from "lucide-react"
+import { ChevronLeft, Loader2, MessageSquare, Terminal as TerminalIcon, AlertTriangle, KeyRound } from "lucide-react"
 import { getServer, deleteServer, testConnection, detectOs, trustKey } from "@/api/servers"
 import ConnectionStatus from "@/components/server/ConnectionStatus"
 import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
@@ -93,7 +93,6 @@ export default function ServerDetail() {
 
   const tabs = [
     { to: `/servers/${server.id}`, label: "Overview", end: true },
-    { to: `/servers/${server.id}/terminal`, label: "Terminal", end: false },
     { to: `/servers/${server.id}/files`, label: "Files", end: false },
     { to: `/servers/${server.id}/monitoring`, label: "Monitoring", end: false },
     { to: `/servers/${server.id}/security`, label: "Security", end: false },
@@ -146,23 +145,39 @@ export default function ServerDetail() {
       </div>
 
       {/* Tab navigation */}
-      <div className="flex gap-5 overflow-x-auto border-b border-border">
-        {tabs.map((t) => (
-          <NavLink
-            key={t.to}
-            to={t.to}
-            end={t.end}
-            className={({ isActive }) =>
-              `whitespace-nowrap border-b-2 pb-2.5 text-sm transition-colors ${
-                isActive
-                  ? "border-foreground font-medium text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`
-            }
-          >
-            {t.label}
-          </NavLink>
-        ))}
+      <div className="flex items-center justify-between gap-4 border-b border-border">
+        <div className="flex gap-5 overflow-x-auto">
+          {tabs.map((t) => (
+            <NavLink
+              key={t.to}
+              to={t.to}
+              end={t.end}
+              className={({ isActive }) =>
+                `whitespace-nowrap border-b-2 pb-2.5 text-sm transition-colors ${
+                  isActive
+                    ? "border-foreground font-medium text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`
+              }
+            >
+              {t.label}
+            </NavLink>
+          ))}
+        </div>
+        {/* Terminal — a distinct red pill (direct shell access), set apart from the tabs. */}
+        <NavLink
+          to={`/servers/${server.id}/terminal`}
+          className={({ isActive }) =>
+            `mb-1.5 flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+              isActive
+                ? "bg-red-500 text-white"
+                : "border border-red-500/50 text-red-600 hover:bg-red-500/10 dark:text-red-400"
+            }`
+          }
+        >
+          <TerminalIcon size={14} />
+          Terminal
+        </NavLink>
       </div>
 
       {showEdit && <EditServerModal server={server} onClose={() => setShowEdit(false)} />}
