@@ -145,26 +145,24 @@ export default function ServerDetail() {
       </div>
 
       {/* Tab navigation */}
-      <div className="flex items-center justify-between gap-4 border-b border-border">
-        <div className="flex gap-5 overflow-x-auto">
-          {tabs.map((t) => (
-            <NavLink
-              key={t.to}
-              to={t.to}
-              end={t.end}
-              className={({ isActive }) =>
-                `whitespace-nowrap border-b-2 pb-2.5 text-sm transition-colors ${
-                  isActive
-                    ? "border-foreground font-medium text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`
-              }
-            >
-              {t.label}
-            </NavLink>
-          ))}
-        </div>
-        {/* Terminal — a distinct red pill (direct shell access), set apart from the tabs. */}
+      <div className="flex items-center gap-5 overflow-x-auto border-b border-border">
+        {tabs.map((t) => (
+          <NavLink
+            key={t.to}
+            to={t.to}
+            end={t.end}
+            className={({ isActive }) =>
+              `whitespace-nowrap border-b-2 pb-2.5 text-sm transition-colors ${
+                isActive
+                  ? "border-foreground font-medium text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`
+            }
+          >
+            {t.label}
+          </NavLink>
+        ))}
+        {/* Terminal — a distinct red pill (direct shell access), inline after the tabs. */}
         <NavLink
           to={`/servers/${server.id}/terminal`}
           className={({ isActive }) =>
