@@ -12,7 +12,6 @@ import ScriptGenerator from "@/routes/ScriptGenerator"
 import MyScripts from "@/routes/MyScripts"
 import Scheduler from "@/routes/Scheduler"
 import FileManager from "@/routes/FileManager"
-import Monitoring from "@/routes/Monitoring"
 import Security from "@/routes/Security"
 import Backups from "@/routes/Backups"
 import Installed from "@/routes/Installed"
@@ -45,7 +44,6 @@ export default function App() {
             <Route index element={<ServerOverview />} />
             <Route path="terminal" element={<TerminalTab />} />
             <Route path="files" element={<FileManager />} />
-            <Route path="monitoring" element={<Monitoring />} />
             <Route path="security" element={<Security />} />
             <Route path="backups" element={<Backups />} />
             <Route path="scheduler" element={<Scheduler />} />

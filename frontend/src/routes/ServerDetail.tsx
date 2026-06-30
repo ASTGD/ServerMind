@@ -94,7 +94,6 @@ export default function ServerDetail() {
   const tabs = [
     { to: `/servers/${server.id}`, label: "Overview", end: true },
     { to: `/servers/${server.id}/files`, label: "Files", end: false },
-    { to: `/servers/${server.id}/monitoring`, label: "Monitoring", end: false },
     { to: `/servers/${server.id}/security`, label: "Security", end: false },
     { to: `/servers/${server.id}/backups`, label: "Backups", end: false },
     { to: `/servers/${server.id}/scheduler`, label: "Scheduler", end: false },
