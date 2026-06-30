@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 # 7 days of history at 5-min intervals = 2 016 points per server
 RETENTION_HOURS = 168
 
+# A server is only marked "offline" after this many CONSECUTIVE failed checks, so a single
+# transient blip (a slow SSH handshake, a momentary network drop) doesn't flap a healthy
+# server to offline. Identity/credential problems are surfaced immediately — they're real,
+# not transient. Counter is per-process and reset the moment the server is reachable again.
+_OFFLINE_STRIKES = 2
+_offline_strikes: dict[str, int] = {}
+
 
 async def collect_all_metrics() -> None:
     """Entry point called by APScheduler every 5 minutes.
@@ -62,14 +69,28 @@ async def _collect_server(server: Server) -> bool:
     except Exception as exc:
         from app.services.ssh_service import is_auth_error, is_host_key_mismatch
         logger.debug("Cannot reach %s for metrics: %s", server.name, exc)
+        sid = str(server.id)
         # Distinguish identity change (host-key mismatch — e.g. the server was
         # reinstalled) from stale credentials from simply unreachable, so the UI can
         # offer the right recovery (trust new key / update password / retry).
         if is_host_key_mismatch(exc):
-            new_status = "host_changed"
+            new_status = "host_changed"          # definitive — surface immediately
+            _offline_strikes.pop(sid, None)
         elif is_auth_error(exc):
-            new_status = "auth_failed"
+            new_status = "auth_failed"           # definitive — surface immediately
+            _offline_strikes.pop(sid, None)
         else:
+            # Generic "unreachable" is often a momentary blip. Only flip to offline after
+            # _OFFLINE_STRIKES consecutive misses; until then keep the prior status so a
+            # single slow/dropped check doesn't flap a healthy server.
+            strikes = _offline_strikes.get(sid, 0) + 1
+            _offline_strikes[sid] = strikes
+            if strikes < _OFFLINE_STRIKES:
+                logger.info(
+                    "Metrics check failed for %s (%d/%d) — keeping current status, rechecking next cycle",
+                    server.name, strikes, _OFFLINE_STRIKES,
+                )
+                return False
             new_status = "offline"
         async with AsyncSessionLocal() as db:
             await db.execute(
@@ -77,6 +98,9 @@ async def _collect_server(server: Server) -> bool:
             )
             await db.commit()
         return False
+
+    # Reachable again (no connection error) — clear any pending strikes.
+    _offline_strikes.pop(str(server.id), None)
 
     if not data or data.get("error"):
         return False
