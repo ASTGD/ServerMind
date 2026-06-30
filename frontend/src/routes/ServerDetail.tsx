@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useParams, useNavigate, Link, NavLink, Outlet } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { ChevronLeft, Loader2, MessageSquare, Terminal as TerminalIcon, AlertTriangle, KeyRound } from "lucide-react"
@@ -7,6 +7,7 @@ import ConnectionStatus from "@/components/server/ConnectionStatus"
 import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
 import EditServerModal from "@/components/server/EditServerModal"
 import ServerActionsMenu from "@/components/server/ServerActionsMenu"
+import AICompanionDrawer from "@/components/server/AICompanionDrawer"
 import type { Server } from "@/types"
 
 /** The server hub: a persistent shell (header + tab nav + alerts + actions) that wraps
@@ -19,6 +20,7 @@ export default function ServerDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showCreds, setShowCreds] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
 
   const { data: server, isLoading } = useQuery<Server>({
     queryKey: ["server", id],
@@ -48,6 +50,20 @@ export default function ServerDetail() {
       qc.invalidateQueries({ queryKey: ["servers"] })
     },
   })
+
+  // Toggle the AI companion with ⌘/Ctrl-J; Escape closes it.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+        e.preventDefault()
+        setAiOpen((o) => !o)
+      } else if (e.key === "Escape") {
+        setAiOpen(false)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
 
   if (isLoading) {
     return (
@@ -81,7 +97,7 @@ export default function ServerDetail() {
   ]
 
   return (
-    <div className="space-y-5">
+    <div className={`space-y-5 transition-[padding] duration-300 ${aiOpen ? "md:pr-[28rem]" : ""}`}>
       {/* Header */}
       <div className="flex items-center gap-3">
         <Link to="/servers" className="flex items-center rounded p-1 text-muted-foreground hover:text-foreground">
@@ -97,13 +113,18 @@ export default function ServerDetail() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            to={`/servers/${server.id}/chat`}
-            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          <button
+            onClick={() => setAiOpen((o) => !o)}
+            title="AI companion (⌘J)"
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              aiOpen
+                ? "bg-primary/15 text-primary"
+                : "bg-primary text-primary-foreground hover:bg-primary/90"
+            }`}
           >
             <MessageSquare size={14} />
             AI Chat
-          </Link>
+          </button>
           <Link
             to={`/servers/${server.id}/terminal`}
             className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
@@ -249,6 +270,8 @@ export default function ServerDetail() {
           </div>
         </div>
       )}
+
+      <AICompanionDrawer server={server} open={aiOpen} onClose={() => setAiOpen(false)} />
     </div>
   )
 }
