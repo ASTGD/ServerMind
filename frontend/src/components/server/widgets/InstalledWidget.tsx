@@ -2,8 +2,8 @@ import { useState, type ReactNode } from "react"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import { formatDistanceToNow } from "date-fns"
 import {
-  Package, ScanLine, Loader2, ExternalLink, ChevronDown, ChevronRight, Eye, EyeOff,
-  Copy, Check, AlertTriangle,
+  Package, RefreshCw, Loader2, ExternalLink, ChevronDown, ChevronRight, Eye, EyeOff,
+  Copy, Check,
 } from "lucide-react"
 import { getInstalled, scanServer, revealInstall, type InstalledItem } from "@/api/installed"
 
@@ -51,17 +51,8 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** One install — collapsed to title + age; expands to full detail with a reveal toggle
- * that decrypts credentials on demand. `detectedPorts` (from a live scan) lets us flag a
- * record that isn't actually running anymore (e.g. wiped by a server rebuild). */
-function InstalledItemRow({
-  serverId,
-  item,
-  detectedPorts,
-}: {
-  serverId: string
-  item: InstalledItem
-  detectedPorts: string[] | null
-}) {
+ * that decrypts credentials on demand. */
+function InstalledItemRow({ serverId, item }: { serverId: string; item: InstalledItem }) {
   const [open, setOpen] = useState(false)
   const [shown, setShown] = useState(false)
   const reveal = useMutation({
@@ -72,11 +63,6 @@ function InstalledItemRow({
   const access = revealed?.access ?? item.access
   const vars = Object.entries(revealed?.variables ?? item.variables ?? {})
 
-  // After a scan, a record with a distinctive (non-80/443) port that isn't listening is a
-  // ghost — it was installed once but isn't running now.
-  const port = urlPort(item.access?.url)
-  const notDetected = detectedPorts !== null && port !== null && !detectedPorts.includes(port)
-
   function toggleReveal() {
     if (shown) setShown(false)
     else if (reveal.data) setShown(true)
@@ -84,7 +70,7 @@ function InstalledItemRow({
   }
 
   return (
-    <div className={`rounded-md border bg-background ${notDetected ? "border-amber-500/40" : "border-border/60"}`}>
+    <div className="rounded-md border border-border/60 bg-background">
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left"
@@ -95,11 +81,6 @@ function InstalledItemRow({
           <ChevronRight size={15} className="shrink-0 text-muted-foreground" />
         )}
         <span className="truncate text-base font-medium text-foreground">{item.playbook_title}</span>
-        {notDetected && (
-          <span className="ml-1 shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-            not detected
-          </span>
-        )}
         {item.installed_at && (
           <span className="ml-auto shrink-0 text-sm text-muted-foreground">
             {formatDistanceToNow(new Date(item.installed_at), { addSuffix: true })}
@@ -109,16 +90,6 @@ function InstalledItemRow({
 
       {open && (
         <div className="space-y-2 border-t border-border/60 px-3.5 py-3 text-sm">
-          {notDetected && (
-            <div className="flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-2 text-amber-600 dark:text-amber-400">
-              <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-              <span>
-                Not running on the server right now — it may have been removed, or the server was
-                rebuilt since this was installed.
-              </span>
-            </div>
-          )}
-
           <Row label="Installed">
             <span className="text-foreground">{fmtInstalled(item.installed_at)}</span>
           </Row>
@@ -187,20 +158,37 @@ function InstalledItemRow({
   )
 }
 
-/** Read-only "what's installed" widget — expandable items with details + reveal, plus an
- * on-demand live scan that also flags records no longer running on the box. */
+/** "What's installed" widget. Records come from our run history, but the widget shows only
+ * what's CURRENTLY running: it auto-verifies against a live scan (cached 5 min) and hides
+ * any record whose service isn't listening (e.g. wiped by a server rebuild). */
 export default function InstalledWidget({ serverId }: { serverId: string }) {
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["installed", serverId],
     queryFn: () => getInstalled(serverId),
   })
-  const scan = useMutation({ mutationFn: () => scanServer(serverId) })
+  const scanQ = useQuery({
+    queryKey: ["installed-scan", serverId],
+    queryFn: () => scanServer(serverId),
+    staleTime: 5 * 60_000,
+    retry: false,
+  })
 
-  const scanOk = scan.data && scan.data.supported !== false
-  const detectedPorts = scanOk ? scan.data!.ports : null
+  const scanOk = scanQ.data && scanQ.data.supported !== false
+  const detectedPorts = scanOk ? scanQ.data!.ports : null
   const detected = scanOk
-    ? [scan.data!.os, ...scan.data!.web_servers, ...scan.data!.databases, ...scan.data!.runtimes].filter(Boolean)
+    ? [scanQ.data!.os, ...scanQ.data!.web_servers, ...scanQ.data!.databases, ...scanQ.data!.runtimes].filter(Boolean)
     : []
+
+  // A record is a ghost when the scan confirms its distinctive port (e.g. a panel on
+  // :10000) isn't listening. Until the scan returns (detectedPorts === null) we show
+  // everything; 80/443 web apps are never hidden (we can't disprove them by port).
+  function isGhost(it: InstalledItem): boolean {
+    if (detectedPorts === null) return false
+    const port = urlPort(it.access?.url)
+    return port !== null && !detectedPorts.includes(port)
+  }
+  const visible = items.filter((it) => !isGhost(it))
+  const hidden = items.length - visible.length
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -209,27 +197,36 @@ export default function InstalledWidget({ serverId }: { serverId: string }) {
           <Package size={16} /> Installed
         </h3>
         <button
-          onClick={() => scan.mutate()}
-          disabled={scan.isPending}
+          onClick={() => scanQ.refetch()}
+          disabled={scanQ.isFetching}
+          title="Re-check what's running on the server"
           className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent disabled:opacity-50"
         >
-          {scan.isPending ? <Loader2 size={14} className="animate-spin" /> : <ScanLine size={14} />}
-          {scan.isPending ? "Scanning…" : "Scan"}
+          {scanQ.isFetching ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          {scanQ.isFetching ? "Checking…" : "Rescan"}
         </button>
       </div>
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : items.length === 0 ? (
+      ) : visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nothing installed through ServerAlly yet — run a playbook, or scan to see what's already here.
+          {items.length === 0
+            ? "Nothing installed through ServerAlly yet — run a playbook, or rescan to see what's already here."
+            : "Nothing from ServerAlly is currently running on this server."}
         </p>
       ) : (
         <div className="space-y-2">
-          {items.slice(0, 6).map((it) => (
-            <InstalledItemRow key={it.run_id} serverId={serverId} item={it} detectedPorts={detectedPorts} />
+          {visible.slice(0, 6).map((it) => (
+            <InstalledItemRow key={it.run_id} serverId={serverId} item={it} />
           ))}
         </div>
+      )}
+
+      {hidden > 0 && visible.length > 0 && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {hidden} earlier install{hidden > 1 ? "s are" : " is"} hidden — no longer running on this server.
+        </p>
       )}
 
       {detected.length > 0 && (
@@ -240,7 +237,9 @@ export default function InstalledWidget({ serverId }: { serverId: string }) {
           ))}
         </div>
       )}
-      {scan.isError && <p className="mt-2 text-sm text-red-400">Scan failed — the server may be offline.</p>}
+      {scanQ.isError && (
+        <p className="mt-2 text-sm text-muted-foreground">Couldn't verify against the server (it may be offline) — showing recorded installs.</p>
+      )}
     </div>
   )
 }
