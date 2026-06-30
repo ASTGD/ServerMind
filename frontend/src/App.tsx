@@ -5,8 +5,7 @@ import Dashboard from "@/routes/Dashboard"
 import Servers from "@/routes/Servers"
 import ServerDetail from "@/routes/ServerDetail"
 import ServerOverview from "@/routes/ServerOverview"
-import Chat from "@/routes/Chat"
-import Terminal from "@/routes/Terminal"
+import TerminalTab from "@/routes/TerminalTab"
 import Playbooks from "@/routes/Playbooks"
 import PlaybookDetail from "@/routes/PlaybookDetail"
 import ScriptGenerator from "@/routes/ScriptGenerator"
@@ -44,6 +43,7 @@ export default function App() {
           <Route path="servers" element={<Servers />} />
           <Route path="servers/:id" element={<ServerDetail />}>
             <Route index element={<ServerOverview />} />
+            <Route path="terminal" element={<TerminalTab />} />
             <Route path="files" element={<FileManager />} />
             <Route path="monitoring" element={<Monitoring />} />
             <Route path="security" element={<Security />} />
@@ -52,8 +52,6 @@ export default function App() {
             <Route path="hosting" element={<Hosting />} />
             <Route path="installed" element={<Installed />} />
           </Route>
-          <Route path="servers/:id/chat" element={<Chat />} />
-          <Route path="servers/:id/terminal" element={<Terminal />} />
           <Route path="playbooks" element={<Playbooks />} />
           <Route path="playbooks/:id" element={<PlaybookDetail />} />
           <Route path="scripts/generate" element={<ScriptGenerator />} />

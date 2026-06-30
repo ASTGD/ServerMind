@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import { useParams, useNavigate, Link, NavLink, Outlet } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, Loader2, MessageSquare, Terminal as TerminalIcon, AlertTriangle, KeyRound } from "lucide-react"
+import { ChevronLeft, Loader2, MessageSquare, AlertTriangle, KeyRound } from "lucide-react"
 import { getServer, deleteServer, testConnection, detectOs, trustKey } from "@/api/servers"
 import ConnectionStatus from "@/components/server/ConnectionStatus"
 import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
@@ -21,6 +21,7 @@ export default function ServerDetail() {
   const [showCreds, setShowCreds] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
+  const [seed, setSeed] = useState<{ text: string; key: number } | null>(null)
 
   const { data: server, isLoading } = useQuery<Server>({
     queryKey: ["server", id],
@@ -65,6 +66,12 @@ export default function ServerDetail() {
     return () => window.removeEventListener("keydown", onKey)
   }, [])
 
+  // Open the AI companion, optionally seeded with a prompt (e.g. terminal "Hand to AI").
+  function openAI(seedText?: string) {
+    if (seedText) setSeed({ text: seedText, key: Date.now() })
+    setAiOpen(true)
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
@@ -86,6 +93,7 @@ export default function ServerDetail() {
 
   const tabs = [
     { to: `/servers/${server.id}`, label: "Overview", end: true },
+    { to: `/servers/${server.id}/terminal`, label: "Terminal", end: false },
     { to: `/servers/${server.id}/files`, label: "Files", end: false },
     { to: `/servers/${server.id}/monitoring`, label: "Monitoring", end: false },
     { to: `/servers/${server.id}/security`, label: "Security", end: false },
@@ -125,13 +133,6 @@ export default function ServerDetail() {
             <MessageSquare size={14} />
             AI Chat
           </button>
-          <Link
-            to={`/servers/${server.id}/terminal`}
-            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-          >
-            <TerminalIcon size={14} />
-            Terminal
-          </Link>
           <ServerActionsMenu
             onTest={() => testMutation.mutate()}
             onDetect={() => detectMutation.mutate()}
@@ -241,7 +242,7 @@ export default function ServerDetail() {
       )}
 
       {/* Active tab */}
-      <Outlet context={{ server }} />
+      <Outlet context={{ server, openAI }} />
 
       {/* Delete confirm */}
       {confirmDelete && (
@@ -271,7 +272,7 @@ export default function ServerDetail() {
         </div>
       )}
 
-      <AICompanionDrawer server={server} open={aiOpen} onClose={() => setAiOpen(false)} />
+      <AICompanionDrawer server={server} open={aiOpen} onClose={() => setAiOpen(false)} seed={seed} />
     </div>
   )
 }
