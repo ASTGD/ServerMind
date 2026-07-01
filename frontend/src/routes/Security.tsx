@@ -183,7 +183,6 @@ export default function Security() {
   const qc = useQueryClient()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [showPassing, setShowPassing] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
 
   const { data: scans = [], isLoading } = useQuery({
@@ -333,54 +332,59 @@ export default function Security() {
             </div>
           </div>
 
-          {/* Issues */}
-          {grouped.issues.length > 0 && (
+          {/* 2-column: Issues (left) + Passing (right) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            {/* Left column — issues + informational */}
             <div className="space-y-3">
-              <h2 className="text-sm font-semibold text-foreground">
-                Issues ({grouped.issues.length})
-              </h2>
-              {grouped.issues.map((f) => (
-                <FindingCard key={f.id} finding={f} />
-              ))}
-            </div>
-          )}
-
-          {/* Informational */}
-          {grouped.informational.length > 0 && (
-            <div className="space-y-3">
-              <h2 className="text-sm font-semibold text-muted-foreground">
-                Informational ({grouped.informational.length})
-              </h2>
-              {grouped.informational.map((f) => (
-                <FindingCard key={f.id} finding={f} />
-              ))}
-            </div>
-          )}
-
-          {/* Passing (collapsed) */}
-          {grouped.passing.length > 0 && (
-            <div>
-              <button
-                onClick={() => setShowPassing((v) => !v)}
-                className="flex items-center gap-1.5 text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
-              >
-                {showPassing ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                <CheckCircle2 className="h-4 w-4" />
-                {grouped.passing.length} passing checks
-              </button>
-              {showPassing && (
-                <div className="mt-3 space-y-2">
-                  {grouped.passing.map((f) => (
-                    <div key={f.id} className="flex items-center gap-2 rounded-lg border border-emerald-500/15 bg-emerald-500/5 px-3 py-2">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                      <span className="text-sm text-foreground">{f.title}</span>
-                      {f.detail && <span className="text-xs text-muted-foreground truncate">— {f.detail}</span>}
-                    </div>
+              {grouped.issues.length > 0 ? (
+                <>
+                  <h2 className="text-sm font-semibold text-foreground">
+                    Issues ({grouped.issues.length + grouped.informational.length})
+                  </h2>
+                  {grouped.issues.map((f) => (
+                    <FindingCard key={f.id} finding={f} />
                   ))}
+                  {grouped.informational.map((f) => (
+                    <FindingCard key={f.id} finding={f} />
+                  ))}
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-emerald-500/20 bg-emerald-500/5 py-12 text-center">
+                  <ShieldCheck className="h-8 w-8 text-emerald-400/60 mb-2" />
+                  <p className="text-sm font-medium text-emerald-400">No issues found</p>
+                  <p className="text-xs text-muted-foreground mt-1">This server passed all checks.</p>
                 </div>
               )}
             </div>
-          )}
+
+            {/* Right column — passing checks */}
+            <div className="space-y-3">
+              {grouped.passing.length > 0 && (
+                <>
+                  <h2 className="text-sm font-semibold text-emerald-400 flex items-center gap-1.5">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Passing ({grouped.passing.length})
+                  </h2>
+                  <div className="space-y-1.5">
+                    {grouped.passing.map((f) => (
+                      <div
+                        key={f.id}
+                        className="flex items-start gap-2.5 rounded-lg border border-emerald-500/15 bg-emerald-500/5 px-3 py-2.5"
+                      >
+                        <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="text-sm text-foreground">{f.title}</p>
+                          {f.detail && (
+                            <p className="text-xs text-muted-foreground mt-0.5 break-words">{f.detail}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
 
           {/* Scan history */}
           {scans.length > 1 && (
