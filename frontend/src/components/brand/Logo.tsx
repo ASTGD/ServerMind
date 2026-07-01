@@ -40,16 +40,17 @@ export function LogoMark({ size = 32, className }: MarkProps) {
       <rect x="2" y="2" width="36" height="36" rx="11" fill="url(#sa-grad)" />
       <rect x="2" y="2" width="36" height="36" rx="11" fill="url(#sa-hi)" />
 
-      {/* AI spark */}
+      {/* Ally shield */}
       <path
-        d="M20 6.5 Q20.7 13 26.5 14.5 Q20.7 16 20 22.5 Q19.3 16 13.5 14.5 Q19.3 13 20 6.5 Z"
+        d="M12 11 Q12 10 13 10 L27 10 Q28 10 28 11 V19 Q28 25.5 20 31 Q12 25.5 12 19 Z"
         fill="#FFFFFF"
       />
 
-      {/* Server bar with status lights */}
-      <rect x="9.5" y="25" width="21" height="6" rx="3" fill="#FFFFFF" />
-      <circle cx="13.6" cy="28" r="1.15" fill="#7C3AED" />
-      <circle cx="17" cy="28" r="1.15" fill="#7C3AED" />
+      {/* AI spark */}
+      <path
+        d="M20 13 Q20.5 17.3 24.3 18.3 Q20.5 19.3 20 23.5 Q19.5 19.3 15.7 18.3 Q20.5 17.3 20 13 Z"
+        fill="#7C3AED"
+      />
     </svg>
   )
 }
