@@ -7,9 +7,10 @@ import { useAuthStore } from "@/store/authStore"
 import { WifiOff, Square } from "lucide-react"
 import { cancelCommand } from "@/api/commands"
 import type { CommandItem } from "@/types"
+import type { AssistantTarget } from "@/store/assistantStore"
 
 interface Props {
-  serverId: string
+  target: AssistantTarget
   /** A one-shot prompt to auto-send once the socket opens (the "Hand to AI" handoff). */
   seed?: { text: string; key: number } | null
 }
@@ -25,7 +26,7 @@ interface PendingPlan {
 let _msgId = 0
 function nextId() { return String(++_msgId) }
 
-export default function ChatWindow({ serverId, seed }: Props) {
+export default function ChatWindow({ target, seed }: Props) {
   const user = useAuthStore((s) => s.user)
   const language = user?.preferred_language ?? "en"
   const [messages, setMessages] = useState<ChatMessageData[]>([])
@@ -40,7 +41,7 @@ export default function ChatWindow({ serverId, seed }: Props) {
     setMessages((prev) => [...prev, msg])
   }, [])
 
-  const { send, status } = useWebSocket(`/ws/chat/${serverId}`, {
+  const { send, status } = useWebSocket(target.kind === "server" ? `/ws/chat/${target.server.id}` : "/ws/chat", {
     onMessage: useCallback((raw: unknown) => {
       const msg = raw as Record<string, unknown>
       switch (msg.type) {
@@ -115,6 +116,18 @@ export default function ChatWindow({ serverId, seed }: Props) {
             explanation: msg.explanation as string ?? "",
             status: msg.status as string ?? "success",
             suggestions: (msg.follow_up_suggestions as string[]) ?? [],
+          })
+          break
+
+        case "answer":
+          setIsLoading(false)
+          setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "thinking")))
+          addMsg({
+            id: nextId(),
+            role: "assistant",
+            kind: "answer",
+            content: (msg.content as string) ?? "",
+            suggestions: (msg.suggestions as string[]) ?? [],
           })
           break
 
@@ -216,10 +229,17 @@ export default function ChatWindow({ serverId, seed }: Props) {
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
         {messages.length === 0 && (
           <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
-            <div>
-              <p className="font-medium text-foreground">Ask AI to manage this server</p>
-              <p className="mt-1 text-xs">Try: "Install nginx", "Check disk space", "List running processes"</p>
-            </div>
+            {target.kind === "server" ? (
+              <div>
+                <p className="font-medium text-foreground">Ask AI to manage this server</p>
+                <p className="mt-1 text-xs">Try: "Install nginx", "Check disk space", "List running processes"</p>
+              </div>
+            ) : (
+              <div>
+                <p className="font-medium text-foreground">Ask about any of your servers</p>
+                <p className="mt-1 text-xs">Try: "Which servers need attention?", "Best playbook for a Node app"</p>
+              </div>
+            )}
           </div>
         )}
 

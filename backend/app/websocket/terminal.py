@@ -107,6 +107,36 @@ async def _auth_and_get_server(
         return user, access.server
 
 
+async def _auth_user(token: str, ticket: str) -> User | None:
+    """Authenticate a WebSocket to a user (no server scope) — for the fleet assistant."""
+    via_ticket = bool(ticket)
+    token_tv = 0
+    if via_ticket:
+        try:
+            user_id = await get_redis().getdel(f"ws_ticket:{ticket}")
+        except Exception:  # noqa: BLE001
+            user_id = None
+    else:
+        payload = decode_token(token)
+        if not payload or payload.get("type") != "access":
+            return None
+        user_id = payload.get("sub")
+        token_tv = payload.get("tv", 0)
+    if not user_id:
+        return None
+    async with AsyncSessionLocal() as db:
+        try:
+            uid = uuid.UUID(user_id)
+        except (ValueError, TypeError):
+            return None
+        user = (await db.execute(select(User).where(User.id == uid))).scalar_one_or_none()
+        if user is None or not user.is_active:
+            return None
+        if not via_ticket and token_tv != user.token_version:
+            return None
+        return user
+
+
 # ── Terminal WebSocket ────────────────────────────────────────────────────────
 
 def _read_channel(channel: paramiko.Channel) -> bytes | None:
@@ -265,6 +295,63 @@ async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
             continue
 
         await _handle_message(ws, server, user_input, user_language, os_family)
+
+
+# ── Fleet chat WebSocket (global assistant, advisory) ─────────────────────────
+
+@router.websocket("/ws/chat")
+async def fleet_chat_ws(
+    websocket: WebSocket,
+    token: str = Query(default=""),
+    ticket: str = Query(default=""),
+) -> None:
+    """Fleet-wide AI assistant — advisory chat across all of the user's servers.
+
+    Not scoped to one server and does NOT execute commands: it answers questions,
+    recommends playbooks, and guides the user. Actual execution stays in the
+    per-server assistant (``/ws/chat/{server_id}``) where safety + approval live.
+    """
+    user = await _auth_user(token, ticket)
+    if not user:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+    await websocket.accept()
+    try:
+        await _fleet_loop(websocket, user)
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Fleet chat WS error")
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+        except Exception:
+            pass
+
+
+async def _fleet_loop(ws: WebSocket, user: User) -> None:
+    while True:
+        raw = await ws.receive_text()
+        msg = json.loads(raw)
+        if msg.get("type") != "message":
+            continue
+        text = msg.get("content", "").strip()
+        lang = msg.get("language", "en")
+        if not text:
+            continue
+
+        await ws.send_text(json.dumps({"type": "thinking"}))
+        async with AsyncSessionLocal() as db:
+            servers = await team_service.accessible_servers(db, user)
+        try:
+            data = await ai_service.fleet_chat(text, servers, lang)
+        except Exception as exc:  # noqa: BLE001
+            await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
+            continue
+        await ws.send_text(json.dumps({
+            "type": "answer",
+            "content": data.get("answer", ""),
+            "suggestions": data.get("follow_up_suggestions", []),
+        }))
 
 
 async def _handle_message(

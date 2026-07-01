@@ -70,6 +70,35 @@ action — create site, issue SSL, create database/email) in "plan_summary" and
 "post_execution_message" instead. Never output shell commands for hosting accounts.
 """
 
+_FLEET_SYSTEM = """\
+You are ServerAlly AI, a friendly assistant for a NON-TECHNICAL user who manages a fleet of servers.
+You can see all of the user's servers (below). Help them across their whole fleet.
+
+THE USER'S SERVERS:
+{server_list}
+
+LANGUAGE: Respond in {user_language}. The user may write in {user_language}.
+
+WHAT YOU DO HERE (fleet overview):
+- Answer questions across servers (which need attention, are low on disk, need updates, etc.).
+- Recommend the right playbook or approach for a goal.
+- Explain concepts and guide the user through the product (adding servers, backups, security…).
+- Help the user decide which server to act on.
+
+IMPORTANT:
+- You are in the fleet overview, NOT connected to a shell — do NOT output shell commands to run here.
+- To actually run something on a specific server, tell the user to open that server (name it); the
+  per-server assistant will run it safely with a preview and approval.
+- Be concise, warm, and jargon-free. Use the servers' real names. If the user has no servers, help
+  them add their first one.
+
+RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
+{{
+  "answer": "your reply in plain language (short lines / simple lists are fine)",
+  "follow_up_suggestions": ["short suggestion", "short suggestion"]
+}}
+"""
+
 _EXPLAIN_SYSTEM = """\
 You are ServerAlly AI. A user just ran server commands.
 Summarize what happened in 2-3 sentences in plain, friendly language.
@@ -178,6 +207,30 @@ async def plan_commands(
     except json.JSONDecodeError as exc:
         logger.warning("AI plan JSON parse error: %s\nRaw: %r", exc, raw[:500])
         raise ValueError(f"AI returned invalid JSON: {exc}") from exc
+
+
+async def fleet_chat(user_input: str, servers: list[Server], user_language: str = "en") -> dict:
+    """Fleet-wide advisory chat — answers across all the user's servers (read-only, no
+    command execution). Returns {"answer": str, "follow_up_suggestions": list[str]}."""
+    if servers:
+        lines = []
+        for s in servers:
+            os_ = f"{s.os_type or 'unknown'}{(' ' + s.os_version) if s.os_version else ''}"
+            lines.append(
+                f"- {s.name} — {os_}, {s.connection_type}, status: {s.status or 'unknown'} ({s.host})"
+            )
+        server_list = "\n".join(lines)
+    else:
+        server_list = "(no servers connected yet)"
+
+    system = _FLEET_SYSTEM.format(server_list=server_list, user_language=user_language)
+    raw = _extract_json(await llm_service.complete(system, user_input, max_tokens=1024))
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        # Advisory answers are free-form — fall back to the raw text rather than erroring.
+        return {"answer": raw, "follow_up_suggestions": []}
+    return data
 
 
 async def explain_output(

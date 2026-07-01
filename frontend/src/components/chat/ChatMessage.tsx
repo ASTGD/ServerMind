@@ -7,6 +7,7 @@ export type ChatMessageData =
   | { id: string; role: "assistant"; kind: "clarification"; message: string }
   | { id: string; role: "assistant"; kind: "output"; content: string; done?: boolean }
   | { id: string; role: "assistant"; kind: "complete"; explanation: string; status: string; suggestions: string[] }
+  | { id: string; role: "assistant"; kind: "answer"; content: string; suggestions: string[] }
   | { id: string; role: "assistant"; kind: "blocked"; reason: string }
   | { id: string; role: "assistant"; kind: "error"; message: string }
 
@@ -75,6 +76,27 @@ export default function ChatMessage({ message, onSuggestion }: Props) {
                   ? <XCircle size={14} className="mt-0.5 shrink-0" />
                   : <AlertTriangle size={14} className="mt-0.5 shrink-0" />}
               <span>{message.explanation}</span>
+            </div>
+            {message.suggestions.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {message.suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onSuggestion?.(s)}
+                    className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {message.role === "assistant" && message.kind === "answer" && (
+          <div className="space-y-2">
+            <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2 text-sm text-foreground">
+              {message.content}
             </div>
             {message.suggestions.length > 0 && (
               <div className="flex flex-wrap gap-1.5">

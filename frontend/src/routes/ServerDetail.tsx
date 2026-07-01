@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useParams, useNavigate, Link, NavLink, Outlet } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { ChevronLeft, Loader2, MessageSquare, Terminal as TerminalIcon, AlertTriangle, KeyRound } from "lucide-react"
@@ -7,7 +7,7 @@ import ConnectionStatus from "@/components/server/ConnectionStatus"
 import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
 import EditServerModal from "@/components/server/EditServerModal"
 import ServerActionsMenu from "@/components/server/ServerActionsMenu"
-import AICompanionDrawer from "@/components/server/AICompanionDrawer"
+import { useAssistantStore } from "@/store/assistantStore"
 import type { Server } from "@/types"
 
 /** The server hub: a persistent shell (header + tab nav + alerts + actions) that wraps
@@ -20,8 +20,7 @@ export default function ServerDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showCreds, setShowCreds] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
-  const [aiOpen, setAiOpen] = useState(false)
-  const [seed, setSeed] = useState<{ text: string; key: number } | null>(null)
+  const openServer = useAssistantStore((s) => s.openServer)
 
   const { data: server, isLoading } = useQuery<Server>({
     queryKey: ["server", id],
@@ -52,24 +51,10 @@ export default function ServerDetail() {
     },
   })
 
-  // Toggle the AI companion with ⌘/Ctrl-J; Escape closes it.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
-        e.preventDefault()
-        setAiOpen((o) => !o)
-      } else if (e.key === "Escape") {
-        setAiOpen(false)
-      }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [])
-
-  // Open the AI companion, optionally seeded with a prompt (e.g. terminal "Hand to AI").
+  // Open the global assistant scoped to this server, optionally seeded with a prompt
+  // (e.g. terminal "Hand to AI"). The drawer itself lives in the app shell.
   function openAI(seedText?: string) {
-    if (seedText) setSeed({ text: seedText, key: Date.now() })
-    setAiOpen(true)
+    if (server) openServer(server, seedText)
   }
 
   if (isLoading) {
@@ -103,8 +88,7 @@ export default function ServerDetail() {
   ]
 
   return (
-    <>
-    <div className={`space-y-5 transition-[padding] duration-300 ${aiOpen ? "md:pr-[28rem]" : ""}`}>
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
         <Link to="/servers" className="flex items-center rounded p-1 text-muted-foreground hover:text-foreground">
@@ -121,13 +105,9 @@ export default function ServerDetail() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setAiOpen((o) => !o)}
-            title="AI companion (⌘J)"
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              aiOpen
-                ? "bg-primary/15 text-primary"
-                : "bg-primary text-primary-foreground hover:bg-primary/90"
-            }`}
+            onClick={() => openServer(server)}
+            title="Ask AI about this server"
+            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             <MessageSquare size={14} />
             AI Chat
@@ -286,10 +266,5 @@ export default function ServerDetail() {
       )}
 
     </div>
-
-    {/* Fixed overlay — kept OUTSIDE the space-y-5 flow so the utility's injected
-        top-margin doesn't push the drawer 20px below the topbar. */}
-    <AICompanionDrawer server={server} open={aiOpen} onClose={() => setAiOpen(false)} seed={seed} />
-    </>
   )
 }
