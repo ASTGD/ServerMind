@@ -1,10 +1,15 @@
 import { cn } from "@/lib/utils"
-import { Bot, User, AlertTriangle, CheckCircle2, XCircle, Server as ServerIcon, ArrowRight } from "lucide-react"
+import { Bot, User, AlertTriangle, CheckCircle2, XCircle, Server as ServerIcon, ArrowRight, Layers } from "lucide-react"
 
 export interface Handoff {
   serverId: string
   serverName: string
   prompt: string
+}
+
+export interface BatchSpec {
+  prompt: string
+  targets: { serverId: string; serverName: string }[]
 }
 
 export type ChatMessageData =
@@ -13,7 +18,7 @@ export type ChatMessageData =
   | { id: string; role: "assistant"; kind: "clarification"; message: string }
   | { id: string; role: "assistant"; kind: "output"; content: string; done?: boolean }
   | { id: string; role: "assistant"; kind: "complete"; explanation: string; status: string; suggestions: string[] }
-  | { id: string; role: "assistant"; kind: "answer"; content: string; suggestions: string[]; handoff?: Handoff | null }
+  | { id: string; role: "assistant"; kind: "answer"; content: string; suggestions: string[]; handoff?: Handoff | null; batch?: BatchSpec | null }
   | { id: string; role: "assistant"; kind: "blocked"; reason: string }
   | { id: string; role: "assistant"; kind: "error"; message: string }
 
@@ -21,9 +26,10 @@ interface Props {
   message: ChatMessageData
   onSuggestion?: (text: string) => void
   onHandoff?: (handoff: Handoff) => void
+  onBatch?: (batch: BatchSpec) => void
 }
 
-export default function ChatMessage({ message, onSuggestion, onHandoff }: Props) {
+export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch }: Props) {
   const isUser = message.role === "user"
 
   return (
@@ -114,6 +120,31 @@ export default function ChatMessage({ message, onSuggestion, onHandoff }: Props)
                 Run on {message.handoff.serverName}
                 <ArrowRight size={13} />
               </button>
+            )}
+            {message.batch && message.batch.targets.length > 0 && (
+              <div className="rounded-xl border border-indigo-500/25 bg-indigo-500/5 p-3">
+                <p className="mb-2 text-xs font-medium text-foreground">
+                  Run on {message.batch.targets.length} servers
+                </p>
+                <div className="mb-2.5 flex flex-wrap gap-1">
+                  {message.batch.targets.map((t) => (
+                    <span
+                      key={t.serverId}
+                      className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] text-muted-foreground"
+                    >
+                      {t.serverName}
+                    </span>
+                  ))}
+                </div>
+                <button
+                  onClick={() => onBatch?.(message.batch!)}
+                  className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                >
+                  <Layers size={13} />
+                  Run on all
+                  <ArrowRight size={13} />
+                </button>
+              </div>
             )}
             {message.suggestions.length > 0 && (
               <div className="flex flex-wrap gap-1.5">

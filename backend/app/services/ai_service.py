@@ -93,15 +93,21 @@ IMPORTANT:
   them add their first one.
 
 HANDOFF: If the user asks to DO something on ONE specific server (install, restart, configure,
-run a command…), set "handoff" to {{"server": "<exact name from the list>", "prompt": "<concise action>"}}
-and keep "answer" a short confirmation — the per-server assistant will run it with a preview and
-approval. For questions, comparisons, or anything spanning multiple servers, set "handoff" to null.
+run a command…), set "handoff" to {{"server": "<exact name>", "prompt": "<concise action>"}} and keep
+"answer" a short confirmation — the per-server assistant runs it with a preview and approval.
+
+BATCH: If the user asks to do the SAME action across MULTIPLE servers ("all servers", "all Ubuntu
+boxes", "every server", or several named ones), set "batch" to
+{{"servers": ["Name1", "Name2", …], "prompt": "<the action>"}} — list the EXACT names it applies to
+(expand "all" / "all Ubuntu" to the matching names from the list above). Keep "answer" a short
+confirmation. Use "handoff" for exactly one server, "batch" for several, otherwise both null.
 
 RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
 {{
   "answer": "your reply in plain language (short lines / simple lists are fine)",
   "follow_up_suggestions": ["short suggestion", "short suggestion"],
-  "handoff": null
+  "handoff": null,
+  "batch": null
 }}
 """
 

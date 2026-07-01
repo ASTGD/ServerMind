@@ -4,7 +4,8 @@ import { useWebSocket } from "@/hooks/useWebSocket"
 import { listServers } from "@/api/servers"
 import { useAssistantStore } from "@/store/assistantStore"
 import ChatInput from "./ChatInput"
-import ChatMessage, { type ChatMessageData, type Handoff } from "./ChatMessage"
+import ChatMessage, { type ChatMessageData, type Handoff, type BatchSpec } from "./ChatMessage"
+import BatchRunModal from "./BatchRunModal"
 import CommandPlan from "./CommandPlan"
 import { useAuthStore } from "@/store/authStore"
 import { WifiOff, Square } from "lucide-react"
@@ -40,6 +41,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   const openServer = useAssistantStore((s) => s.openServer)
   const { data: servers = [] } = useQuery({ queryKey: ["servers"], queryFn: listServers })
   const [messages, setMessages] = useState<ChatMessageData[]>(initialMessages ?? [])
+  const [batchModal, setBatchModal] = useState<BatchSpec | null>(null)
   const [pending, setPending] = useState<PendingPlan | null>(null)
   const [, setOutputBuffer] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
@@ -133,6 +135,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           setIsLoading(false)
           setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "thinking")))
           const h = msg.handoff as { server_id: string; server_name: string; prompt: string } | null | undefined
+          const b = msg.batch as { prompt: string; targets: { server_id: string; server_name: string }[] } | null | undefined
           addMsg({
             id: nextId(),
             role: "assistant",
@@ -140,6 +143,9 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             content: (msg.content as string) ?? "",
             suggestions: (msg.suggestions as string[]) ?? [],
             handoff: h ? { serverId: h.server_id, serverName: h.server_name, prompt: h.prompt } : null,
+            batch: b
+              ? { prompt: b.prompt, targets: b.targets.map((t) => ({ serverId: t.server_id, serverName: t.server_name })) }
+              : null,
           })
           onPersistAnswer?.((msg.content as string) ?? "")
           break
@@ -206,6 +212,11 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     if (s) openServer(s, h.prompt)
   }
 
+  // Fleet → batch: run one action across several servers (opens the batch runner).
+  function handleBatch(b: BatchSpec) {
+    setBatchModal(b)
+  }
+
   // "Hand to AI" handoff — auto-send the seeded prompt once, after the socket is open.
   const lastSeedKey = useRef(0)
   useEffect(() => {
@@ -270,6 +281,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             message={msg}
             onSuggestion={handleSend}
             onHandoff={handleHandoff}
+            onBatch={handleBatch}
           />
         ))}
 
@@ -311,6 +323,8 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           loading={isLoading}
         />
       </div>
+
+      {batchModal && <BatchRunModal batch={batchModal} onClose={() => setBatchModal(null)} />}
     </div>
   )
 }

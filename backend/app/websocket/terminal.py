@@ -350,6 +350,34 @@ def _resolve_handoff(handoff: object, servers: list[Server]) -> dict | None:
     return {"server_id": str(match.id), "server_name": match.name, "prompt": prompt}
 
 
+def _resolve_batch(batch: object, servers: list[Server]) -> dict | None:
+    """Match the AI's suggested server names (a multi-server action) to real owned
+    servers → {prompt, targets:[{server_id, server_name}]}, deduped. None if nothing matches."""
+    if not isinstance(batch, dict):
+        return None
+    names = batch.get("servers")
+    prompt = str(batch.get("prompt", "")).strip()
+    if not prompt or not isinstance(names, list) or not names:
+        return None
+    by_name = {s.name.strip().lower(): s for s in servers}
+    targets: list[dict] = []
+    seen: set = set()
+    for n in names:
+        key = str(n).strip().lower()
+        s = by_name.get(key)
+        if s is None:
+            s = next(
+                (sv for sv in servers if key and (key in sv.name.strip().lower() or sv.name.strip().lower() in key)),
+                None,
+            )
+        if s is not None and s.id not in seen:
+            seen.add(s.id)
+            targets.append({"server_id": str(s.id), "server_name": s.name})
+    if not targets:
+        return None
+    return {"prompt": prompt, "targets": targets}
+
+
 async def _fleet_loop(ws: WebSocket, user: User) -> None:
     while True:
         raw = await ws.receive_text()
@@ -374,7 +402,128 @@ async def _fleet_loop(ws: WebSocket, user: User) -> None:
             "content": data.get("answer", ""),
             "suggestions": data.get("follow_up_suggestions", []),
             "handoff": _resolve_handoff(data.get("handoff"), servers),
+            "batch": _resolve_batch(data.get("batch"), servers),
         }))
+
+
+# ── Batch WebSocket (cross-server actions, Phase 3) ───────────────────────────
+
+_BATCH_MAX = 25
+
+
+async def _run_on_server(server: Server, prompt: str, lang: str) -> tuple[str, str]:
+    """Plan + safety + execute one prompt on one server (inline). Returns (status,
+    explanation). Reuses the per-server pipeline; hard-blocked commands are refused."""
+    os_family = "windows" if server.connection_type == "winrm" else "linux"
+    try:
+        plan = await ai_service.plan_commands(prompt, server, lang)
+    except Exception as exc:  # noqa: BLE001
+        return "failed", f"Couldn't plan this action: {exc}"
+    if plan.get("clarification_needed"):
+        return "skipped", str(plan["clarification_needed"])
+    commands = plan.get("commands", [])
+    if not commands:
+        return "skipped", plan.get("plan_summary") or "Nothing to run on this server."
+
+    safety = safety_service.validate_plan(commands, os_family)
+    if safety.status == "blocked":
+        await _save_log(server, prompt, lang, plan, "", "blocked")
+        return "blocked", safety.reason or "Blocked by the safety policy."
+
+    full_output: list[str] = []
+    status = "success"
+    for cmd_item in commands:
+        cmd = cmd_item.get("cmd", "")
+        try:
+            stream = await connection_manager.execute_stream(server, cmd)
+            async for line in stream:
+                full_output.append(line)
+        except CommandStalled as exc:
+            if exc.last_output:
+                full_output.append(exc.last_output)
+            full_output.append(STALL_NOTE)
+            status = "stalled"
+            break
+        except Exception as exc:  # noqa: BLE001
+            full_output.append(f"ERROR: {exc}")
+            status = "failed"
+
+    raw = "\n".join(full_output)
+    try:
+        explanation = await ai_service.explain_output(plan.get("plan_summary", ""), raw, lang)
+    except Exception:  # noqa: BLE001
+        explanation = plan.get("post_execution_message") or plan.get("plan_summary") or "Done."
+    await _save_log(server, prompt, lang, plan, raw, status)
+    return status, explanation
+
+
+@router.websocket("/ws/batch")
+async def batch_ws(
+    websocket: WebSocket,
+    token: str = Query(default=""),
+    ticket: str = Query(default=""),
+) -> None:
+    """Run one action across several servers — each through the per-server pipeline
+    (plan + safety + execute). Approval is the user's explicit 'run' on a reviewed set."""
+    user = await _auth_user(token, ticket)
+    if not user:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+    await websocket.accept()
+    try:
+        await _batch_run(websocket, user)
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Batch WS error")
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+        except Exception:
+            pass
+
+
+async def _batch_run(ws: WebSocket, user: User) -> None:
+    raw = await ws.receive_text()
+    msg = json.loads(raw)
+    if msg.get("type") != "run":
+        return
+    server_ids = [str(s) for s in (msg.get("server_ids") or [])][:_BATCH_MAX]
+    prompt = str(msg.get("prompt", "")).strip()
+    lang = msg.get("language", "en")
+    if not prompt or not server_ids:
+        await ws.send_text(json.dumps({"type": "error", "message": "Nothing to run."}))
+        return
+
+    counts: dict[str, int] = {}
+    for sid in server_ids:
+        async with AsyncSessionLocal() as db:
+            access = await team_service.get_access(db, user, sid)
+        if access is None or not access.can_execute:
+            counts["blocked"] = counts.get("blocked", 0) + 1
+            await ws.send_text(json.dumps({
+                "type": "server_done", "server_id": sid, "server_name": "(no access)",
+                "status": "blocked", "explanation": "You don't have execute access to this server.",
+            }))
+            continue
+        server = access.server
+        await ws.send_text(json.dumps({
+            "type": "server_start", "server_id": sid, "server_name": server.name,
+        }))
+        if not await check_command_rate(str(user.id), sid):
+            counts["failed"] = counts.get("failed", 0) + 1
+            await ws.send_text(json.dumps({
+                "type": "server_done", "server_id": sid, "server_name": server.name,
+                "status": "failed", "explanation": "Rate limit reached for this server — try again shortly.",
+            }))
+            continue
+        status, explanation = await _run_on_server(server, prompt, lang)
+        counts[status] = counts.get(status, 0) + 1
+        await ws.send_text(json.dumps({
+            "type": "server_done", "server_id": sid, "server_name": server.name,
+            "status": status, "explanation": explanation,
+        }))
+
+    await ws.send_text(json.dumps({"type": "batch_complete", "counts": counts}))
 
 
 async def _handle_message(
