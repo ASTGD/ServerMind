@@ -3,6 +3,7 @@ import ServerMetrics from "@/components/server/ServerMetrics"
 import InstalledWidget from "@/components/server/widgets/InstalledWidget"
 import SecurityWidget from "@/components/server/widgets/SecurityWidget"
 import BackupsWidget from "@/components/server/widgets/BackupsWidget"
+import SchedulerWidget from "@/components/server/widgets/SchedulerWidget"
 import RecentActivityWidget from "@/components/server/widgets/RecentActivityWidget"
 import type { Server } from "@/types"
 
@@ -65,6 +66,7 @@ export default function ServerOverview() {
         <ServerMetrics serverId={server.id} />
         <SecurityWidget serverId={server.id} />
         <BackupsWidget serverId={server.id} />
+        <SchedulerWidget serverId={server.id} />
       </div>
     </div>
   )
