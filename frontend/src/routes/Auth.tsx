@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
-import { Server } from "lucide-react"
+import Logo from "@/components/brand/Logo"
 import { login, register } from "@/api/auth"
 import { useAuthStore } from "@/store/authStore"
 import i18n from "@/i18n/index"
@@ -71,11 +71,8 @@ export default function Auth() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm space-y-6">
         {/* Logo */}
-        <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-            <Server size={18} className="text-primary-foreground" />
-          </div>
-          <span className="text-xl font-semibold text-foreground">{t("app.name")}</span>
+        <div className="flex justify-center">
+          <Logo size="lg" />
         </div>
 
         {/* Card */}

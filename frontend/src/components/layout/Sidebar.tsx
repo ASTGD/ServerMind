@@ -9,6 +9,7 @@ import {
   Users,
   Settings,
 } from "lucide-react"
+import Logo from "@/components/brand/Logo"
 
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, key: "dashboard" },
@@ -25,10 +26,8 @@ export default function Sidebar() {
 
   return (
     <aside className="flex w-56 flex-col border-r border-border bg-card px-3 py-4">
-      <div className="mb-6 px-3">
-        <span className="text-lg font-semibold text-foreground">
-          {t("app.name")}
-        </span>
+      <div className="mb-6 px-2">
+        <Logo />
       </div>
       <nav className="flex flex-col gap-1">
         {navItems.map(({ to, icon: Icon, key }) => (
