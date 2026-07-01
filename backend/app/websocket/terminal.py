@@ -328,6 +328,28 @@ async def fleet_chat_ws(
             pass
 
 
+def _resolve_handoff(handoff: object, servers: list[Server]) -> dict | None:
+    """Match the AI's suggested server name to a real server the user owns.
+
+    Returns {server_id, server_name, prompt} the frontend can act on, or None if the
+    name doesn't match a server (so we never hand off to something that isn't there)."""
+    if not isinstance(handoff, dict):
+        return None
+    name = str(handoff.get("server", "")).strip().lower()
+    prompt = str(handoff.get("prompt", "")).strip()
+    if not name or not prompt:
+        return None
+    match = next((s for s in servers if s.name.strip().lower() == name), None)
+    if match is None:
+        match = next(
+            (s for s in servers if name in s.name.strip().lower() or s.name.strip().lower() in name),
+            None,
+        )
+    if match is None:
+        return None
+    return {"server_id": str(match.id), "server_name": match.name, "prompt": prompt}
+
+
 async def _fleet_loop(ws: WebSocket, user: User) -> None:
     while True:
         raw = await ws.receive_text()
@@ -351,6 +373,7 @@ async def _fleet_loop(ws: WebSocket, user: User) -> None:
             "type": "answer",
             "content": data.get("answer", ""),
             "suggestions": data.get("follow_up_suggestions", []),
+            "handoff": _resolve_handoff(data.get("handoff"), servers),
         }))
 
 

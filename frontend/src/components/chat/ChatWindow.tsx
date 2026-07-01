@@ -1,7 +1,10 @@
 import { useEffect, useRef, useCallback, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { useWebSocket } from "@/hooks/useWebSocket"
+import { listServers } from "@/api/servers"
+import { useAssistantStore } from "@/store/assistantStore"
 import ChatInput from "./ChatInput"
-import ChatMessage, { type ChatMessageData } from "./ChatMessage"
+import ChatMessage, { type ChatMessageData, type Handoff } from "./ChatMessage"
 import CommandPlan from "./CommandPlan"
 import { useAuthStore } from "@/store/authStore"
 import { WifiOff, Square } from "lucide-react"
@@ -29,6 +32,8 @@ function nextId() { return String(++_msgId) }
 export default function ChatWindow({ target, seed }: Props) {
   const user = useAuthStore((s) => s.user)
   const language = user?.preferred_language ?? "en"
+  const openServer = useAssistantStore((s) => s.openServer)
+  const { data: servers = [] } = useQuery({ queryKey: ["servers"], queryFn: listServers })
   const [messages, setMessages] = useState<ChatMessageData[]>([])
   const [pending, setPending] = useState<PendingPlan | null>(null)
   const [, setOutputBuffer] = useState<string>("")
@@ -119,17 +124,20 @@ export default function ChatWindow({ target, seed }: Props) {
           })
           break
 
-        case "answer":
+        case "answer": {
           setIsLoading(false)
           setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "thinking")))
+          const h = msg.handoff as { server_id: string; server_name: string; prompt: string } | null | undefined
           addMsg({
             id: nextId(),
             role: "assistant",
             kind: "answer",
             content: (msg.content as string) ?? "",
             suggestions: (msg.suggestions as string[]) ?? [],
+            handoff: h ? { serverId: h.server_id, serverName: h.server_name, prompt: h.prompt } : null,
           })
           break
+        }
 
         case "blocked":
           setIsLoading(false)
@@ -183,6 +191,12 @@ export default function ChatWindow({ target, seed }: Props) {
     addMsg({ id: nextId(), role: "user", content })
     send({ type: "message", content, language })
     setPending(null)
+  }
+
+  // Fleet → server handoff: switch the assistant to that server, seeded with the action.
+  function handleHandoff(h: Handoff) {
+    const s = servers.find((x) => x.id === h.serverId)
+    if (s) openServer(s, h.prompt)
   }
 
   // "Hand to AI" handoff — auto-send the seeded prompt once, after the socket is open.
@@ -248,6 +262,7 @@ export default function ChatWindow({ target, seed }: Props) {
             key={msg.id}
             message={msg}
             onSuggestion={handleSend}
+            onHandoff={handleHandoff}
           />
         ))}
 

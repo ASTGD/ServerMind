@@ -1,5 +1,11 @@
 import { cn } from "@/lib/utils"
-import { Bot, User, AlertTriangle, CheckCircle2, XCircle } from "lucide-react"
+import { Bot, User, AlertTriangle, CheckCircle2, XCircle, Server as ServerIcon, ArrowRight } from "lucide-react"
+
+export interface Handoff {
+  serverId: string
+  serverName: string
+  prompt: string
+}
 
 export type ChatMessageData =
   | { id: string; role: "user"; content: string }
@@ -7,16 +13,17 @@ export type ChatMessageData =
   | { id: string; role: "assistant"; kind: "clarification"; message: string }
   | { id: string; role: "assistant"; kind: "output"; content: string; done?: boolean }
   | { id: string; role: "assistant"; kind: "complete"; explanation: string; status: string; suggestions: string[] }
-  | { id: string; role: "assistant"; kind: "answer"; content: string; suggestions: string[] }
+  | { id: string; role: "assistant"; kind: "answer"; content: string; suggestions: string[]; handoff?: Handoff | null }
   | { id: string; role: "assistant"; kind: "blocked"; reason: string }
   | { id: string; role: "assistant"; kind: "error"; message: string }
 
 interface Props {
   message: ChatMessageData
   onSuggestion?: (text: string) => void
+  onHandoff?: (handoff: Handoff) => void
 }
 
-export default function ChatMessage({ message, onSuggestion }: Props) {
+export default function ChatMessage({ message, onSuggestion, onHandoff }: Props) {
   const isUser = message.role === "user"
 
   return (
@@ -98,6 +105,16 @@ export default function ChatMessage({ message, onSuggestion }: Props) {
             <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2 text-sm text-foreground">
               {message.content}
             </div>
+            {message.handoff && (
+              <button
+                onClick={() => onHandoff?.(message.handoff!)}
+                className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+              >
+                <ServerIcon size={13} />
+                Run on {message.handoff.serverName}
+                <ArrowRight size={13} />
+              </button>
+            )}
             {message.suggestions.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {message.suggestions.map((s, i) => (

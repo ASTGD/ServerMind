@@ -92,10 +92,16 @@ IMPORTANT:
 - Be concise, warm, and jargon-free. Use the servers' real names. If the user has no servers, help
   them add their first one.
 
+HANDOFF: If the user asks to DO something on ONE specific server (install, restart, configure,
+run a command…), set "handoff" to {{"server": "<exact name from the list>", "prompt": "<concise action>"}}
+and keep "answer" a short confirmation — the per-server assistant will run it with a preview and
+approval. For questions, comparisons, or anything spanning multiple servers, set "handoff" to null.
+
 RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
 {{
   "answer": "your reply in plain language (short lines / simple lists are fine)",
-  "follow_up_suggestions": ["short suggestion", "short suggestion"]
+  "follow_up_suggestions": ["short suggestion", "short suggestion"],
+  "handoff": null
 }}
 """
 
