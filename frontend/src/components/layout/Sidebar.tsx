@@ -27,7 +27,7 @@ export default function Sidebar() {
   return (
     <aside className="flex w-56 flex-col border-r border-border bg-card px-3 py-4">
       <div className="mb-6 px-2">
-        <Logo />
+        <Logo size="lg" />
       </div>
       <nav className="flex flex-col gap-1">
         {navItems.map(({ to, icon: Icon, key }) => (
