@@ -655,6 +655,11 @@ export default function Settings() {
   const aiPlaceholder = AI_PROVIDERS.find((p) => p.value === aiProvider)?.placeholder ?? ""
   const isServermind = aiProvider === "servermind"
 
+  // Bring-your-own-AI-key is demoted for the hosted "ServerAlly AI" (Ally) model — cloud
+  // users get AI with their plan, no key to configure. Flip to true for the self-hosted
+  // edition, where the operator configures their own provider.
+  const SHOW_AI_PROVIDER_SETTINGS = false
+
   const aiSection = (
     <Section
       icon={Sparkles}
@@ -772,7 +777,7 @@ export default function Settings() {
         <div className="space-y-6">
           {profileSection}
           {accountSection}
-          {aiSection}
+          {SHOW_AI_PROVIDER_SETTINGS && aiSection}
         </div>
         <div className="space-y-6">
           {languageSection}
