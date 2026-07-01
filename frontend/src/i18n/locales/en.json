@@ -10,7 +10,8 @@
     "scripts": "My Scripts",
     "logs": "Logs",
     "team": "Team",
-    "settings": "Settings"
+    "settings": "Settings",
+    "assistant": "Assistant"
   },
   "auth": {
     "login": "Log In",

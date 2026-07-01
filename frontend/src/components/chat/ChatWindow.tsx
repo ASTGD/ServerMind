@@ -16,6 +16,11 @@ interface Props {
   target: AssistantTarget
   /** A one-shot prompt to auto-send once the socket opens (the "Hand to AI" handoff). */
   seed?: { text: string; key: number } | null
+  /** Preloaded history (from a saved thread) to seed the conversation on mount. */
+  initialMessages?: ChatMessageData[]
+  /** Persist a turn (saved-thread mode on the Assistant page). */
+  onPersistUser?: (content: string) => void
+  onPersistAnswer?: (content: string) => void
 }
 
 interface PendingPlan {
@@ -29,12 +34,12 @@ interface PendingPlan {
 let _msgId = 0
 function nextId() { return String(++_msgId) }
 
-export default function ChatWindow({ target, seed }: Props) {
+export default function ChatWindow({ target, seed, initialMessages, onPersistUser, onPersistAnswer }: Props) {
   const user = useAuthStore((s) => s.user)
   const language = user?.preferred_language ?? "en"
   const openServer = useAssistantStore((s) => s.openServer)
   const { data: servers = [] } = useQuery({ queryKey: ["servers"], queryFn: listServers })
-  const [messages, setMessages] = useState<ChatMessageData[]>([])
+  const [messages, setMessages] = useState<ChatMessageData[]>(initialMessages ?? [])
   const [pending, setPending] = useState<PendingPlan | null>(null)
   const [, setOutputBuffer] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
@@ -136,6 +141,7 @@ export default function ChatWindow({ target, seed }: Props) {
             suggestions: (msg.suggestions as string[]) ?? [],
             handoff: h ? { serverId: h.server_id, serverName: h.server_name, prompt: h.prompt } : null,
           })
+          onPersistAnswer?.((msg.content as string) ?? "")
           break
         }
 
@@ -191,6 +197,7 @@ export default function ChatWindow({ target, seed }: Props) {
     addMsg({ id: nextId(), role: "user", content })
     send({ type: "message", content, language })
     setPending(null)
+    onPersistUser?.(content)
   }
 
   // Fleet → server handoff: switch the assistant to that server, seeded with the action.

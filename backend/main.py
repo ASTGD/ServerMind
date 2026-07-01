@@ -8,6 +8,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import settings
 from app.database import AsyncSessionLocal
+from app.routers import assistant as assistant_router
 from app.routers import audit as audit_router
 from app.routers import auth as auth_router
 from app.routers import backups as backups_router
@@ -92,6 +93,7 @@ app.add_middleware(SlowAPIMiddleware)
 
 app.include_router(auth_router.router)
 app.include_router(audit_router.router)
+app.include_router(assistant_router.router)
 app.include_router(servers_router.router)
 app.include_router(commands_router.router)
 app.include_router(playbooks_router.router)

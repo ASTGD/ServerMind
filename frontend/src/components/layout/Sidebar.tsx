@@ -17,6 +17,7 @@ import UpgradeModal from "./UpgradeModal"
 
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, key: "dashboard" },
+  { to: "/assistant", icon: Sparkles, key: "assistant" },
   { to: "/servers", icon: Server, key: "servers" },
   { to: "/playbooks", icon: BookOpen, key: "playbooks" },
   { to: "/scripts", icon: FileCode, key: "scripts" },

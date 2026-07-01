@@ -8,6 +8,7 @@ from app.models.alert import Alert, ServerMetric
 from app.models.team import TeamMember, ServerAccess
 from app.models.security_scan import SecurityScan
 from app.models.backup import Backup, BackupRun
+from app.models.assistant_thread import AssistantThread
 
 __all__ = [
     "User",
@@ -24,4 +25,5 @@ __all__ = [
     "SecurityScan",
     "Backup",
     "BackupRun",
+    "AssistantThread",
 ]

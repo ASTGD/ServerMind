@@ -6,6 +6,7 @@ import Servers from "@/routes/Servers"
 import ServerDetail from "@/routes/ServerDetail"
 import ServerOverview from "@/routes/ServerOverview"
 import TerminalTab from "@/routes/TerminalTab"
+import Assistant from "@/routes/Assistant"
 import Playbooks from "@/routes/Playbooks"
 import PlaybookDetail from "@/routes/PlaybookDetail"
 import ScriptGenerator from "@/routes/ScriptGenerator"
@@ -39,6 +40,7 @@ export default function App() {
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="assistant" element={<Assistant />} />
           <Route path="servers" element={<Servers />} />
           <Route path="servers/:id" element={<ServerDetail />}>
             <Route index element={<ServerOverview />} />
