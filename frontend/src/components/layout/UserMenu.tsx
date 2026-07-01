@@ -19,7 +19,7 @@ function Avatar({ url, fallback, size }: { url: string | null; fallback: string;
   }
   return (
     <span
-      className="flex items-center justify-center rounded-full bg-gradient-to-br from-primary to-violet-500 font-semibold text-white"
+      className="flex items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 font-semibold text-white"
       style={{ height: size, width: size, fontSize: size * 0.4 }}
     >
       {fallback}
