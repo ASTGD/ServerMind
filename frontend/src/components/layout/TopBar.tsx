@@ -4,7 +4,7 @@ import UserMenu from "./UserMenu"
 
 export default function TopBar() {
   return (
-    <header className="dark relative flex h-14 items-center justify-between gap-4 border-b border-border bg-slate-900 px-6">
+    <header className="dark relative flex h-14 items-center justify-between gap-4 border-b border-white/5 bg-gradient-to-r from-indigo-950 to-violet-950 px-6">
       <Breadcrumbs />
       <div className="flex shrink-0 items-center gap-1.5">
         <NotificationBell />
