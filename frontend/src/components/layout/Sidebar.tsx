@@ -51,24 +51,18 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Pinned to the bottom — Pro upgrade card. */}
-      <div className="mt-auto pt-5">
-        <div className="overflow-hidden rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 p-4 text-white shadow-sm">
-          <div className="flex items-center gap-1.5">
-            <Sparkles size={15} className="shrink-0" />
-            <span className="text-sm font-semibold">Upgrade to Pro</span>
-          </div>
-          <p className="mt-1.5 text-xs leading-relaxed text-white/85">
-            Unlock AI automations, unlimited servers, and priority support.
-          </p>
-          <Link
-            to="/settings"
-            className="mt-3 flex items-center justify-center gap-1 rounded-lg bg-white/15 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/25"
-          >
-            Upgrade
-            <ArrowRight size={12} />
-          </Link>
-        </div>
+      {/* Pinned to the bottom — a compact upgrade row, attached as a footer. */}
+      <div className="mt-auto -mx-3 border-t border-border px-3 pt-3">
+        <Link
+          to="/settings"
+          className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+        >
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
+            <Sparkles size={13} />
+          </span>
+          <span className="flex-1">Upgrade to Pro</span>
+          <ArrowRight size={14} className="text-muted-foreground" />
+        </Link>
       </div>
     </aside>
   )
