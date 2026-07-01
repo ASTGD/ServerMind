@@ -103,6 +103,7 @@ export default function ServerDetail() {
   ]
 
   return (
+    <>
     <div className={`space-y-5 transition-[padding] duration-300 ${aiOpen ? "md:pr-[28rem]" : ""}`}>
       {/* Header */}
       <div className="flex items-center gap-3">
@@ -284,7 +285,11 @@ export default function ServerDetail() {
         </div>
       )}
 
-      <AICompanionDrawer server={server} open={aiOpen} onClose={() => setAiOpen(false)} seed={seed} />
     </div>
+
+    {/* Fixed overlay — kept OUTSIDE the space-y-5 flow so the utility's injected
+        top-margin doesn't push the drawer 20px below the topbar. */}
+    <AICompanionDrawer server={server} open={aiOpen} onClose={() => setAiOpen(false)} seed={seed} />
+    </>
   )
 }
