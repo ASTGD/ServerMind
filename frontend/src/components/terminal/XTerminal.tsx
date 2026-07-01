@@ -6,8 +6,11 @@ import { wsAuthQuery } from "@/api/auth"
 
 import "xterm/css/xterm.css"
 
+type ConnStatus = "connecting" | "connected" | "disconnected" | "error"
+
 interface Props {
   serverId: string
+  onStatusChange?: (status: ConnStatus) => void
 }
 
 export interface XTerminalHandle {
@@ -26,7 +29,7 @@ function wsBase(): string {
 }
 const WS_BASE = wsBase()
 
-const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ serverId }, ref) {
+const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ serverId, onStatusChange }, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
 
@@ -75,7 +78,7 @@ const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ server
         brightWhite: "#ffffff",
       },
       fontFamily: '"Cascadia Code", "JetBrains Mono", "Fira Code", monospace',
-      fontSize: 13,
+      fontSize: 14,
       lineHeight: 1.4,
       cursorBlink: true,
       scrollback: 5000,
@@ -93,6 +96,7 @@ const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ server
     // out of the URL (falls back to the token if unavailable).
     let ws: WebSocket | null = null
     let disposed = false
+    onStatusChange?.("connecting")
     void (async () => {
       const q = await wsAuthQuery()
       if (disposed) return
@@ -100,7 +104,7 @@ const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ server
       ws.binaryType = "arraybuffer"
 
       ws.onopen = () => {
-        terminal.write("\x1b[1;32m✓ Connected\x1b[0m\r\n")
+        onStatusChange?.("connected")
         ws?.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }))
       }
       ws.onmessage = (e) => {
@@ -111,10 +115,12 @@ const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ server
         }
       }
       ws.onclose = () => {
-        terminal.write("\r\n\x1b[1;33m⚠ Connection closed\x1b[0m\r\n")
+        onStatusChange?.("disconnected")
+        terminal.write("\r\n\x1b[38;5;240m─── session ended ───\x1b[0m\r\n")
       }
       ws.onerror = () => {
-        terminal.write("\r\n\x1b[1;31m✗ Connection error\x1b[0m\r\n")
+        onStatusChange?.("error")
+        terminal.write("\r\n\x1b[1;31m✗ connection error\x1b[0m\r\n")
       }
     })()
 
@@ -147,12 +153,7 @@ const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ server
     }
   }, [serverId])
 
-  return (
-    <div
-      ref={containerRef}
-      className="h-full w-full overflow-hidden rounded-lg bg-[#0d0d0d]"
-    />
-  )
+  return <div ref={containerRef} className="h-full w-full" />
 })
 
 export default XTerminal
