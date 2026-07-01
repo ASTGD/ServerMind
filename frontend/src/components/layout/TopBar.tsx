@@ -13,11 +13,11 @@ export default function TopBar() {
       <div className="flex shrink-0 items-center gap-1.5">
         <button
           onClick={toggle}
-          title="Ask AI (⌘K)"
+          title="Ask Ally (⌘K)"
           className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
         >
           <Sparkles size={14} />
-          Ask AI
+          Ask Ally
         </button>
         <div className="mx-1 h-6 w-px bg-border" />
         <NotificationBell />

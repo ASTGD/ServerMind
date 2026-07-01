@@ -62,11 +62,11 @@ export default function TerminalTab() {
         {/* Hand to AI */}
         <button
           onClick={handToAI}
-          title="Send recent terminal output to the AI companion"
+          title="Send recent terminal output to Ally"
           className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-medium text-zinc-300 transition-colors hover:bg-white/10 hover:text-white shrink-0"
         >
           <Sparkles size={12} />
-          Hand to AI
+          Hand to Ally
         </button>
       </div>
 

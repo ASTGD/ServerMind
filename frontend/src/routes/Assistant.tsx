@@ -126,7 +126,7 @@ export default function Assistant() {
             <p className="truncate text-sm font-semibold text-foreground">
               {activeThread?.title ?? "New chat"}
             </p>
-            <p className="text-xs text-muted-foreground">Fleet-wide assistant</p>
+            <p className="text-xs text-muted-foreground">Ally · fleet-wide</p>
           </div>
         </div>
 

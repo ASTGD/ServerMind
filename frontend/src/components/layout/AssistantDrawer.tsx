@@ -64,7 +64,7 @@ export default function AssistantDrawer() {
 
       <aside
         role="complementary"
-        aria-label="AI assistant"
+        aria-label="Ally"
         aria-hidden={!open}
         className={`fixed bottom-0 right-0 top-14 z-40 flex w-full flex-col border-l border-border bg-card shadow-2xl transition-transform duration-300 ease-out md:w-[28rem] ${
           open ? "translate-x-0" : "pointer-events-none translate-x-full"
@@ -75,7 +75,7 @@ export default function AssistantDrawer() {
             <Sparkles size={17} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-foreground">Assistant</p>
+            <p className="text-sm font-semibold text-foreground">Ally</p>
             {/* Context switcher — fleet or a specific server. */}
             <div className="relative" ref={pickerRef}>
               <button

@@ -106,11 +106,11 @@ export default function ServerDetail() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => openServer(server)}
-            title="Ask AI about this server"
+            title="Ask Ally about this server"
             className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             <MessageSquare size={14} />
-            AI Chat
+            Ask Ally
           </button>
           <ServerActionsMenu
             onTest={() => testMutation.mutate()}

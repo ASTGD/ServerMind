@@ -263,12 +263,12 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
             {target.kind === "server" ? (
               <div>
-                <p className="font-medium text-foreground">Ask AI to manage this server</p>
+                <p className="font-medium text-foreground">Ask Ally to manage this server</p>
                 <p className="mt-1 text-xs">Try: "Install nginx", "Check disk space", "List running processes"</p>
               </div>
             ) : (
               <div>
-                <p className="font-medium text-foreground">Ask about any of your servers</p>
+                <p className="font-medium text-foreground">Ask Ally about your servers</p>
                 <p className="mt-1 text-xs">Try: "Which servers need attention?", "Best playbook for a Node app"</p>
               </div>
             )}
