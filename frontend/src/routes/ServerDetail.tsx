@@ -144,10 +144,10 @@ export default function ServerDetail() {
             {t.label}
           </NavLink>
         ))}
-        {/* Terminal — opens a persistent session in the global dock (stays connected
-            when you switch tabs or pages). */}
+        {/* Terminal — opens a session in the global terminal workspace (stays connected
+            across all navigation). */}
         <button
-          onClick={() => openTerminal(server)}
+          onClick={() => { openTerminal(server); navigate("/terminal") }}
           className="mb-1.5 flex shrink-0 items-center gap-1.5 rounded-full border border-red-500/50 px-3 py-1 text-sm font-medium text-red-600 transition-colors hover:bg-red-500/10 dark:text-red-400"
         >
           <TerminalIcon size={14} />

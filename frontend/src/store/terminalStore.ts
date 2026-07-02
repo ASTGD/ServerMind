@@ -18,15 +18,11 @@ export interface TermSession {
 interface TerminalState {
   sessions: TermSession[]
   activeId: string | null
-  /** Dock visible? Sessions stay alive when the dock is collapsed. */
-  open: boolean
   openSession: (server: Server) => void
   closeSession: (id: string) => void
   setActive: (id: string) => void
   setStatus: (id: string, status: TermStatus) => void
   touch: (id: string) => void
-  toggleDock: () => void
-  closeDock: () => void
 }
 
 let _counter = 0
@@ -34,14 +30,13 @@ const nextId = () => `t${++_counter}`
 
 /**
  * The global terminal session manager. Sessions live at the app-shell level (the
- * dock is mounted in Layout), so they persist across all navigation — switching
- * tabs or pages never disconnects a shell. Sessions end only on explicit close,
- * logout (shell unmounts), or idle timeout.
+ * terminal workspace is mounted in Layout), so they persist across all navigation —
+ * moving between pages never disconnects a shell. Sessions end only on explicit close,
+ * logout (the workspace unmounts), or idle timeout.
  */
 export const useTerminalStore = create<TerminalState>((set, get) => ({
   sessions: [],
   activeId: null,
-  open: false,
 
   openSession: (server) => {
     const sessions = get().sessions
@@ -52,7 +47,6 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     set({
       sessions: [...sessions, { id, sid, server, label, status: "connecting", lastActivity: Date.now() }],
       activeId: id,
-      open: true,
     })
   },
 
@@ -63,11 +57,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     set({ sessions: remaining, activeId })
   },
 
-  setActive: (id) => set({ activeId: id, open: true }),
+  setActive: (id) => set({ activeId: id }),
   setStatus: (id, status) =>
     set({ sessions: get().sessions.map((s) => (s.id === id ? { ...s, status } : s)) }),
   touch: (id) =>
     set({ sessions: get().sessions.map((s) => (s.id === id ? { ...s, lastActivity: Date.now() } : s)) }),
-  toggleDock: () => set({ open: !get().open }),
-  closeDock: () => set({ open: false }),
 }))

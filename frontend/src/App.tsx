@@ -40,6 +40,9 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="assistant" element={<Assistant />} />
+          {/* The terminal workspace is rendered by Layout (persistent); this route just
+              exists so navigation + the sidebar active state work. */}
+          <Route path="terminal" element={<div />} />
           <Route path="servers" element={<Servers />} />
           <Route path="servers/:id" element={<ServerDetail />}>
             <Route index element={<ServerOverview />} />

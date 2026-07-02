@@ -11,6 +11,7 @@ import {
   Settings,
   Sparkles,
   ArrowRight,
+  Terminal as TerminalIcon,
 } from "lucide-react"
 import Logo from "@/components/brand/Logo"
 import UpgradeModal from "./UpgradeModal"
@@ -21,6 +22,7 @@ const navItems = [
   { to: "/servers", icon: Server, key: "servers" },
   { to: "/playbooks", icon: BookOpen, key: "playbooks" },
   { to: "/scripts", icon: FileCode, key: "scripts" },
+  { to: "/terminal", icon: TerminalIcon, key: "terminal" },
   { to: "/logs", icon: ScrollText, key: "logs" },
   { to: "/team", icon: Users, key: "team" },
   { to: "/settings", icon: Settings, key: "settings" },

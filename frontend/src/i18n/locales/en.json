@@ -11,7 +11,8 @@
     "logs": "Logs",
     "team": "Team",
     "settings": "Settings",
-    "assistant": "Ally"
+    "assistant": "Ally",
+    "terminal": "Terminal"
   },
   "auth": {
     "login": "Log In",

@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom"
 import { Sparkles, Terminal as TerminalIcon } from "lucide-react"
 import Breadcrumbs from "./Breadcrumbs"
 import NotificationBell from "./NotificationBell"
@@ -6,8 +7,8 @@ import { useAssistantStore } from "@/store/assistantStore"
 import { useTerminalStore } from "@/store/terminalStore"
 
 export default function TopBar() {
+  const navigate = useNavigate()
   const toggleAssistant = useAssistantStore((s) => s.toggle)
-  const toggleDock = useTerminalStore((s) => s.toggleDock)
   const termCount = useTerminalStore((s) => s.sessions.length)
 
   return (
@@ -15,7 +16,7 @@ export default function TopBar() {
       <Breadcrumbs />
       <div className="flex shrink-0 items-center gap-1.5">
         <button
-          onClick={toggleDock}
+          onClick={() => navigate("/terminal")}
           title="Terminal (⌘`)"
           className="relative flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
         >

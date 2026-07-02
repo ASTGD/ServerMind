@@ -1,21 +1,23 @@
-import { useEffect } from "react"
-import { Outlet } from "react-router-dom"
+import { useEffect, useRef } from "react"
+import { Outlet, useNavigate, useLocation } from "react-router-dom"
 import Sidebar from "./Sidebar"
 import TopBar from "./TopBar"
 import VerifyBanner from "./VerifyBanner"
 import AssistantDrawer from "./AssistantDrawer"
-import TerminalDock from "@/components/terminal/TerminalDock"
+import TerminalWorkspace from "@/components/terminal/TerminalWorkspace"
 import { useAssistantStore } from "@/store/assistantStore"
-import { useTerminalStore } from "@/store/terminalStore"
 
 /** Root application shell — sidebar + topbar + page outlet + the global AI assistant
- *  and terminal dock (both live here so they persist across all navigation). */
+ *  and terminal workspace (both live here so they persist across all navigation). */
 export default function Layout() {
   const assistantOpen = useAssistantStore((s) => s.open)
   const toggleAssistant = useAssistantStore((s) => s.toggle)
-  const toggleDock = useTerminalStore((s) => s.toggleDock)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const pathRef = useRef(location.pathname)
+  pathRef.current = location.pathname
 
-  // ⌘K summons Ally; ⌘` toggles the terminal dock — from anywhere.
+  // ⌘K summons Ally; ⌘` opens the terminal workspace (toggles back if already there).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -23,12 +25,13 @@ export default function Layout() {
         toggleAssistant()
       } else if ((e.metaKey || e.ctrlKey) && e.key === "`") {
         e.preventDefault()
-        toggleDock()
+        if (pathRef.current === "/terminal") navigate(-1)
+        else navigate("/terminal")
       }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [toggleAssistant, toggleDock])
+  }, [toggleAssistant, navigate])
 
   return (
     <div className="flex h-full bg-background">
@@ -45,7 +48,7 @@ export default function Layout() {
         </main>
       </div>
       <AssistantDrawer />
-      <TerminalDock />
+      <TerminalWorkspace />
     </div>
   )
 }
