@@ -5,7 +5,6 @@ import Dashboard from "@/routes/Dashboard"
 import Servers from "@/routes/Servers"
 import ServerDetail from "@/routes/ServerDetail"
 import ServerOverview from "@/routes/ServerOverview"
-import TerminalTab from "@/routes/TerminalTab"
 import Assistant from "@/routes/Assistant"
 import Playbooks from "@/routes/Playbooks"
 import PlaybookDetail from "@/routes/PlaybookDetail"
@@ -44,7 +43,6 @@ export default function App() {
           <Route path="servers" element={<Servers />} />
           <Route path="servers/:id" element={<ServerDetail />}>
             <Route index element={<ServerOverview />} />
-            <Route path="terminal" element={<TerminalTab />} />
             <Route path="files" element={<FileManager />} />
             <Route path="security" element={<Security />} />
             <Route path="backups" element={<Backups />} />

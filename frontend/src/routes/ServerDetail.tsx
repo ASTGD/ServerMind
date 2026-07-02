@@ -8,6 +8,7 @@ import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
 import EditServerModal from "@/components/server/EditServerModal"
 import ServerActionsMenu from "@/components/server/ServerActionsMenu"
 import { useAssistantStore } from "@/store/assistantStore"
+import { useTerminalStore } from "@/store/terminalStore"
 import type { Server } from "@/types"
 
 /** The server hub: a persistent shell (header + tab nav + alerts + actions) that wraps
@@ -21,6 +22,7 @@ export default function ServerDetail() {
   const [showCreds, setShowCreds] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
   const openServer = useAssistantStore((s) => s.openServer)
+  const openTerminal = useTerminalStore((s) => s.openSession)
 
   const { data: server, isLoading } = useQuery<Server>({
     queryKey: ["server", id],
@@ -142,20 +144,15 @@ export default function ServerDetail() {
             {t.label}
           </NavLink>
         ))}
-        {/* Terminal — a distinct red pill (direct shell access), inline after the tabs. */}
-        <NavLink
-          to={`/servers/${server.id}/terminal`}
-          className={({ isActive }) =>
-            `mb-1.5 flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium transition-colors ${
-              isActive
-                ? "bg-red-500 text-white"
-                : "border border-red-500/50 text-red-600 hover:bg-red-500/10 dark:text-red-400"
-            }`
-          }
+        {/* Terminal — opens a persistent session in the global dock (stays connected
+            when you switch tabs or pages). */}
+        <button
+          onClick={() => openTerminal(server)}
+          className="mb-1.5 flex shrink-0 items-center gap-1.5 rounded-full border border-red-500/50 px-3 py-1 text-sm font-medium text-red-600 transition-colors hover:bg-red-500/10 dark:text-red-400"
         >
           <TerminalIcon size={14} />
           Terminal
-        </NavLink>
+        </button>
       </div>
 
       {showEdit && <EditServerModal server={server} onClose={() => setShowEdit(false)} />}

@@ -11,11 +11,15 @@ type ConnStatus = "connecting" | "connected" | "disconnected" | "error"
 interface Props {
   serverId: string
   onStatusChange?: (status: ConnStatus) => void
+  /** Throttled activity signal (user input or output) — powers the idle timeout. */
+  onActivity?: () => void
 }
 
 export interface XTerminalHandle {
-  /** The last `maxLines` of terminal text (scrollback + viewport) — for "Hand to AI". */
+  /** The last `maxLines` of terminal text (scrollback + viewport) — for "Hand to Ally". */
   getRecentOutput: (maxLines?: number) => string
+  /** Re-fit to the container — call when the terminal becomes visible/resized. */
+  fit: () => void
 }
 
 function wsBase(): string {
@@ -29,9 +33,10 @@ function wsBase(): string {
 }
 const WS_BASE = wsBase()
 
-const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ serverId, onStatusChange }, ref) {
+const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ serverId, onStatusChange, onActivity }, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
+  const fitRef = useRef<FitAddon | null>(null)
 
   useImperativeHandle(
     ref,
@@ -46,6 +51,9 @@ const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ server
           lines.push(buf.getLine(i)?.translateToString(true) ?? "")
         }
         return lines.join("\n").replace(/^\s+|\s+$/g, "")
+      },
+      fit() {
+        try { fitRef.current?.fit() } catch { /* container not visible yet */ }
       },
     }),
     [],
@@ -85,12 +93,22 @@ const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ server
     })
 
     const fitAddon = new FitAddon()
+    fitRef.current = fitAddon
     const linksAddon = new WebLinksAddon()
     terminal.loadAddon(fitAddon)
     terminal.loadAddon(linksAddon)
     terminal.open(containerRef.current)
     fitAddon.fit()
     termRef.current = terminal
+
+    let lastReport = 0
+    const reportActivity = () => {
+      const now = Date.now()
+      if (now - lastReport > 10_000) {
+        lastReport = now
+        onActivity?.()
+      }
+    }
 
     // WebSocket connection — fetch a single-use ticket first so the JWT stays
     // out of the URL (falls back to the token if unavailable).
@@ -108,6 +126,7 @@ const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ server
         ws?.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }))
       }
       ws.onmessage = (e) => {
+        reportActivity()
         if (e.data instanceof ArrayBuffer) {
           terminal.write(new Uint8Array(e.data))
         } else {
@@ -126,6 +145,7 @@ const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ server
 
     // Keyboard input → SSH
     terminal.onData((data) => {
+      reportActivity()
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "input", data }))
       }

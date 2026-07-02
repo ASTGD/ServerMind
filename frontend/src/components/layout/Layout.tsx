@@ -4,24 +4,31 @@ import Sidebar from "./Sidebar"
 import TopBar from "./TopBar"
 import VerifyBanner from "./VerifyBanner"
 import AssistantDrawer from "./AssistantDrawer"
+import TerminalDock from "@/components/terminal/TerminalDock"
 import { useAssistantStore } from "@/store/assistantStore"
+import { useTerminalStore } from "@/store/terminalStore"
 
-/** Root application shell — sidebar + topbar + page outlet + the global AI assistant. */
+/** Root application shell — sidebar + topbar + page outlet + the global AI assistant
+ *  and terminal dock (both live here so they persist across all navigation). */
 export default function Layout() {
   const assistantOpen = useAssistantStore((s) => s.open)
-  const toggle = useAssistantStore((s) => s.toggle)
+  const toggleAssistant = useAssistantStore((s) => s.toggle)
+  const toggleDock = useTerminalStore((s) => s.toggleDock)
 
-  // ⌘K / Ctrl-K summons the assistant from anywhere.
+  // ⌘K summons Ally; ⌘` toggles the terminal dock — from anywhere.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault()
-        toggle()
+        toggleAssistant()
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "`") {
+        e.preventDefault()
+        toggleDock()
       }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [toggle])
+  }, [toggleAssistant, toggleDock])
 
   return (
     <div className="flex h-full bg-background">
@@ -38,6 +45,7 @@ export default function Layout() {
         </main>
       </div>
       <AssistantDrawer />
+      <TerminalDock />
     </div>
   )
 }
