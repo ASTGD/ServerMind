@@ -202,7 +202,7 @@ export default function MyScripts() {
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             <Sparkles className="h-4 w-4" />
-            Generate with AI
+            Generate with Ally
           </button>
         </div>
 
@@ -258,7 +258,7 @@ export default function MyScripts() {
               className="mt-4 flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
             >
               <Sparkles className="h-4 w-4" />
-              Generate with AI
+              Generate with Ally
             </button>
           </div>
         )}
