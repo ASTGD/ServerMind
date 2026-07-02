@@ -18,9 +18,24 @@ logger = logging.getLogger(__name__)
 
 # ── System prompts ────────────────────────────────────────────────────────────
 
-_CHAT_SYSTEM = """\
-You are ServerAlly AI, an expert server administrator.
-You help non-technical users manage their servers safely using natural language.
+# The shared Ally persona — one identity and voice across every prompt that speaks to
+# the user (chat, fleet, explanations, scripts). Plain text only: it is concatenated
+# into templates that go through str.format(), so it must contain no braces.
+_PERSONA = """\
+You are Ally — the friendly AI companion inside ServerAlly, and an expert server
+administrator. You help people who are NOT technical manage their servers safely.
+
+YOUR VOICE (always):
+- Warm, calm, and encouraging. Short sentences. Plain words.
+- No jargon; if a technical term is unavoidable, explain it in a few simple words.
+- Never blame the user. If something failed, say what happened and the next step.
+- Be honest when you are not sure. Never invent facts about their servers.
+"""
+
+_CHAT_SYSTEM = _PERSONA + """\
+
+You are connected to one specific server (below) and can run commands on it for the
+user, with their approval.
 
 SERVER CONTEXT:
 - Name: {server_name}
@@ -100,9 +115,45 @@ def _page_context_block(page_context: str | None) -> str:
     return _PAGE_CONTEXT_BLOCK.format(page_context=text)
 
 
-_FLEET_SYSTEM = """\
-You are ServerAlly AI, a friendly assistant for a NON-TECHNICAL user who manages a fleet of servers.
-You can see all of the user's servers (below). Help them across their whole fleet.
+# Conversation memory — the client sends the last few chat turns with each message so
+# follow-ups work ("install nginx" → "now add SSL to it"). Hard caps keep the prompt
+# bounded no matter what the client sends.
+_HISTORY_MAX_TURNS = 8
+_HISTORY_MAX_ITEM_CHARS = 1500
+
+_HISTORY_BLOCK = """\
+
+CONVERSATION SO FAR (oldest first — context only; answer the newest user message):
+{turns}
+"""
+
+
+def _history_block(history: list[dict] | None) -> str:
+    """Render recent chat turns into the system prompt, defensively capped.
+
+    ``history`` items look like {"role": "user"|"assistant", "content": str} (already
+    sanitized at the transport layer, but capped again here as defense in depth).
+    """
+    if not history:
+        return ""
+    lines: list[str] = []
+    for item in history[-_HISTORY_MAX_TURNS:]:
+        content = str(item.get("content", "")).strip()
+        if not content:
+            continue
+        if len(content) > _HISTORY_MAX_ITEM_CHARS:
+            content = content[:_HISTORY_MAX_ITEM_CHARS] + "…"
+        speaker = "User" if item.get("role") == "user" else "Ally"
+        lines.append(f"{speaker}: {content}")
+    if not lines:
+        return ""
+    return _HISTORY_BLOCK.format(turns="\n".join(lines))
+
+
+_FLEET_SYSTEM = _PERSONA + """\
+
+You are in the fleet overview: you can see all of the user's servers (below) and help
+them across their whole fleet.
 
 THE USER'S SERVERS:
 {server_list}
@@ -149,9 +200,10 @@ RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
 }}
 """
 
-_EXPLAIN_SYSTEM = """\
-You are ServerAlly AI. A user just ran server commands.
-Summarize what happened in 2-3 sentences in plain, friendly language.
+_EXPLAIN_SYSTEM = _PERSONA + """\
+
+A user just ran server commands. Summarize what happened in 2-3 sentences in plain,
+friendly language.
 Respond in {user_language}.
 Focus on: what was accomplished, any important output, and what to do next if relevant.
 Keep it short and jargon-free. Output plain text only, no JSON.
@@ -175,9 +227,9 @@ RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
 {{"cron_expression": "...", "human_description": "Plain English of the schedule"}}
 """
 
-_SCRIPT_SYSTEM = """\
-You are ServerAlly Script Generator.
-Create production-ready scripts for server administration.
+_SCRIPT_SYSTEM = _PERSONA + """\
+
+You are writing a production-ready server administration script for the user.
 
 Target OS: {os_family}
 Shell: {shell}
@@ -198,7 +250,7 @@ For PowerShell scripts:
 - Write-Host for progress messages
 
 For both script types:
-- Header comment: title, description, author: ServerAlly AI
+- Header comment: title, description, author: Ally (ServerAlly)
 - User-configurable variables section at the top with comments
 - Inline comments on non-obvious steps
 - Meaningful success/failure messages
@@ -238,6 +290,7 @@ async def plan_commands(
     server: Server,
     user_language: str = "en",
     page_context: str | None = None,
+    history: list[dict] | None = None,
 ) -> dict:
     """Ask Claude to produce a command plan for the user's request."""
     system = _CHAT_SYSTEM.format(
@@ -252,6 +305,7 @@ async def plan_commands(
     if server.connection_type == "hosting":
         system += _HOSTING_NOTE.format(panel_type=server.panel_type or "control panel")
     system += _page_context_block(page_context)
+    system += _history_block(history)
 
     raw = _extract_json(await llm_service.complete(system, user_input, max_tokens=2048))
     try:
@@ -266,6 +320,7 @@ async def fleet_chat(
     servers: list[Server],
     user_language: str = "en",
     page_context: str | None = None,
+    history: list[dict] | None = None,
 ) -> dict:
     """Fleet-wide advisory chat — answers across all the user's servers (read-only, no
     command execution). Returns {"answer": str, "follow_up_suggestions": list[str]}."""
@@ -282,6 +337,7 @@ async def fleet_chat(
 
     system = _FLEET_SYSTEM.format(server_list=server_list, user_language=user_language)
     system += _page_context_block(page_context)
+    system += _history_block(history)
     raw = _extract_json(await llm_service.complete(system, user_input, max_tokens=1024))
     try:
         data = json.loads(raw)

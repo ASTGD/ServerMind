@@ -298,6 +298,30 @@ def _page_context_from(msg: dict) -> str | None:
     return val or None
 
 
+def _history_from(msg: dict) -> list[dict] | None:
+    """Pull the optional recent-chat-turns list off a chat message (conversation memory).
+
+    Client-supplied and untrusted: only well-formed {"role","content"} string pairs
+    survive, capped to the last 8 turns; the AI layer caps lengths again and frames the
+    turns as context (never instructions to act on).
+    """
+    val = msg.get("history")
+    if not isinstance(val, list):
+        return None
+    turns: list[dict] = []
+    for item in val:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        content = item.get("content")
+        if role not in ("user", "assistant") or not isinstance(content, str):
+            continue
+        content = content.strip()
+        if content:
+            turns.append({"role": role, "content": content})
+    return turns[-8:] or None
+
+
 async def _maybe_generate_script(spec: object, user_language: str) -> dict | None:
     """If Ally emitted a script-generation request, produce the script and return it for the
     client. This only WRITES a script (text); it is never executed. Returns None if there's
@@ -332,6 +356,7 @@ async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
         user_input: str = msg.get("content", "").strip()
         user_language: str = msg.get("language", "en")
         page_context = _page_context_from(msg)
+        history = _history_from(msg)
         if not user_input:
             continue
 
@@ -342,7 +367,7 @@ async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
             }))
             continue
 
-        await _handle_message(ws, server, user_input, user_language, os_family, page_context)
+        await _handle_message(ws, server, user_input, user_language, os_family, page_context, history)
 
 
 # ── Fleet chat WebSocket (global assistant, advisory) ─────────────────────────
@@ -435,6 +460,7 @@ async def _fleet_loop(ws: WebSocket, user: User) -> None:
         text = msg.get("content", "").strip()
         lang = msg.get("language", "en")
         page_context = _page_context_from(msg)
+        history = _history_from(msg)
         if not text:
             continue
 
@@ -442,7 +468,7 @@ async def _fleet_loop(ws: WebSocket, user: User) -> None:
         async with AsyncSessionLocal() as db:
             servers = await team_service.accessible_servers(db, user)
         try:
-            data = await ai_service.fleet_chat(text, servers, lang, page_context=page_context)
+            data = await ai_service.fleet_chat(text, servers, lang, page_context=page_context, history=history)
         except Exception as exc:  # noqa: BLE001
             await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
             continue
@@ -587,13 +613,14 @@ async def _handle_message(
     user_language: str,
     os_family: str,
     page_context: str | None = None,
+    history: list[dict] | None = None,
 ) -> None:
     """Plan, validate, execute and explain one user message."""
     # ── 1. AI planning ────────────────────────────────────────────────────────
     await ws.send_text(json.dumps({"type": "thinking"}))
 
     try:
-        plan = await ai_service.plan_commands(user_input, server, user_language, page_context)
+        plan = await ai_service.plan_commands(user_input, server, user_language, page_context, history)
     except Exception as exc:
         await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
         return

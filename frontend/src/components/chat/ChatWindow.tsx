@@ -207,11 +207,33 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
+  // Conversation memory: the last few visible turns, sent with each message so Ally can
+  // follow the thread ("install nginx" → "now add SSL to it"). Text-only turns; the
+  // backend re-validates and caps everything.
+  function recentHistory(): { role: "user" | "assistant"; content: string }[] {
+    const turns: { role: "user" | "assistant"; content: string }[] = []
+    for (const m of messages) {
+      if (m.role === "user") turns.push({ role: "user", content: m.content })
+      else if (m.kind === "answer" && m.content) turns.push({ role: "assistant", content: m.content })
+      else if (m.kind === "complete" && m.explanation) turns.push({ role: "assistant", content: m.explanation })
+      else if (m.kind === "clarification" && m.message) turns.push({ role: "assistant", content: m.message })
+    }
+    return turns.slice(-8).map((t) => ({ ...t, content: t.content.slice(0, 1500) }))
+  }
+
   function handleSend(content: string) {
+    // Snapshot history BEFORE adding the new message — it holds the previous turns only.
+    const history = recentHistory()
     addMsg({ id: nextId(), role: "user", content })
     // Attach the page context (if any) as background — the backend frames it as
     // untrusted info and never as instructions.
-    send({ type: "message", content, language, ...(pageContext ? { page_context: pageContext } : {}) })
+    send({
+      type: "message",
+      content,
+      language,
+      ...(pageContext ? { page_context: pageContext } : {}),
+      ...(history.length ? { history } : {}),
+    })
     setPending(null)
     onPersistUser?.(content)
   }
