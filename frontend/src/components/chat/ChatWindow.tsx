@@ -10,7 +10,7 @@ import CommandPlan from "./CommandPlan"
 import { useAuthStore } from "@/store/authStore"
 import { WifiOff, Square, Sparkles, ArrowRight } from "lucide-react"
 import { cancelCommand } from "@/api/commands"
-import type { CommandItem } from "@/types"
+import type { CommandItem, GenerateScriptResult } from "@/types"
 import type { AssistantTarget } from "@/store/assistantStore"
 
 interface Props {
@@ -142,6 +142,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "thinking")))
           const h = msg.handoff as { server_id: string; server_name: string; prompt: string } | null | undefined
           const b = msg.batch as { prompt: string; targets: { server_id: string; server_name: string }[] } | null | undefined
+          const scr = (msg.script as GenerateScriptResult | null | undefined) ?? null
           addMsg({
             id: nextId(),
             role: "assistant",
@@ -152,6 +153,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             batch: b
               ? { prompt: b.prompt, targets: b.targets.map((t) => ({ serverId: t.server_id, serverName: t.server_name })) }
               : null,
+            script: scr,
           })
           onPersistAnswer?.((msg.content as string) ?? "")
           break

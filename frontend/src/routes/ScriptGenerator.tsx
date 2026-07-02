@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import Editor from "@monaco-editor/react"
 import {
@@ -42,11 +42,14 @@ function fmtRuntime(sec: number): string {
 
 export default function ScriptGenerator() {
   const navigate = useNavigate()
+  const location = useLocation()
   const queryClient = useQueryClient()
-  const [osFamily, setOsFamily] = useState<OsFamily>("linux")
+  // "Open in editor" from an Ally chat script card hands the generated script over here.
+  const prefill = (location.state as { prefill?: GenerateScriptResult } | null)?.prefill ?? null
+  const [osFamily, setOsFamily] = useState<OsFamily>(prefill?.script_type === "powershell" ? "windows" : "linux")
   const [request, setRequest] = useState("")
-  const [result, setResult] = useState<GenerateScriptResult | null>(null)
-  const [editedScript, setEditedScript] = useState<string>("")
+  const [result, setResult] = useState<GenerateScriptResult | null>(prefill)
+  const [editedScript, setEditedScript] = useState<string>(prefill?.script ?? "")
   const [savedId, setSavedId] = useState<string | null>(null)
 
   const generateMutation = useMutation({

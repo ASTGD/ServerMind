@@ -53,9 +53,9 @@ export function staticPageContext(pathname: string): PageContext {
       label: "My Scripts",
       context: on("My Scripts"),
       templates: [
-        "What can I automate with scripts?",
-        "Write a script to back up a folder",
-        "Explain what a bash script is",
+        "Create a script to back up a folder every night",
+        "Write a script to clean up old log files",
+        "Generate a script to monitor disk space",
       ],
     }
 

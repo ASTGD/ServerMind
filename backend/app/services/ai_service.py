@@ -132,12 +132,20 @@ boxes", "every server", or several named ones), set "batch" to
 (expand "all" / "all Ubuntu" to the matching names from the list above). Keep "answer" a short
 confirmation. Use "handoff" for exactly one server, "batch" for several, otherwise both null.
 
+SCRIPT: If the user asks you to CREATE / WRITE / GENERATE / MAKE a reusable script (rather than run
+something right now), set "script" to
+{{"request": "<clear, self-contained description of the script to generate>", "os_family": "linux" or "windows"}}
+and keep "answer" a short confirmation (e.g. "Sure — here's a script that does that."). Use "script"
+for writing a saved script; use "handoff"/"batch" only for RUNNING something now. When you set
+"script", leave "handoff" and "batch" null.
+
 RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
 {{
   "answer": "your reply in plain language (short lines / simple lists are fine)",
   "follow_up_suggestions": ["short suggestion", "short suggestion"],
   "handoff": null,
-  "batch": null
+  "batch": null,
+  "script": null
 }}
 """
 

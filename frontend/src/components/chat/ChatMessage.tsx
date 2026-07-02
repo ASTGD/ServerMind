@@ -1,5 +1,7 @@
 import { cn } from "@/lib/utils"
 import { Bot, User, AlertTriangle, CheckCircle2, XCircle, Server as ServerIcon, ArrowRight, Layers } from "lucide-react"
+import ScriptCard from "./ScriptCard"
+import type { GenerateScriptResult } from "@/types"
 
 export interface Handoff {
   serverId: string
@@ -18,7 +20,7 @@ export type ChatMessageData =
   | { id: string; role: "assistant"; kind: "clarification"; message: string }
   | { id: string; role: "assistant"; kind: "output"; content: string; done?: boolean }
   | { id: string; role: "assistant"; kind: "complete"; explanation: string; status: string; suggestions: string[] }
-  | { id: string; role: "assistant"; kind: "answer"; content: string; suggestions: string[]; handoff?: Handoff | null; batch?: BatchSpec | null }
+  | { id: string; role: "assistant"; kind: "answer"; content: string; suggestions: string[]; handoff?: Handoff | null; batch?: BatchSpec | null; script?: GenerateScriptResult | null }
   | { id: string; role: "assistant"; kind: "blocked"; reason: string }
   | { id: string; role: "assistant"; kind: "error"; message: string }
 
@@ -111,6 +113,7 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch 
             <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2 text-sm text-foreground">
               {message.content}
             </div>
+            {message.script && <ScriptCard script={message.script} />}
             {message.handoff && (
               <button
                 onClick={() => onHandoff?.(message.handoff!)}

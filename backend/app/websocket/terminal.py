@@ -298,6 +298,26 @@ def _page_context_from(msg: dict) -> str | None:
     return val or None
 
 
+async def _maybe_generate_script(spec: object, user_language: str) -> dict | None:
+    """If Ally emitted a script-generation request, produce the script and return it for the
+    client. This only WRITES a script (text); it is never executed. Returns None if there's
+    no valid request or generation fails.
+    """
+    if not isinstance(spec, dict):
+        return None
+    request = spec.get("request")
+    if not isinstance(request, str) or not request.strip():
+        return None
+    os_family = spec.get("os_family") or "linux"
+    if os_family not in ("linux", "windows", "both"):
+        os_family = "linux"
+    try:
+        return await ai_service.generate_script(request.strip(), os_family, user_language)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("fleet script generation failed: %s", exc)
+        return None
+
+
 async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
     """Main chat loop — processes user messages until disconnect."""
     os_family = "windows" if server.connection_type == "winrm" else "linux"
@@ -426,12 +446,17 @@ async def _fleet_loop(ws: WebSocket, user: User) -> None:
         except Exception as exc:  # noqa: BLE001
             await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
             continue
+        # If Ally decided the user wants a reusable script written, generate it now and
+        # attach it — the frontend shows it with "Save to My Scripts" / "Open in editor".
+        # This only WRITES a script (text); it is never executed here.
+        generated = await _maybe_generate_script(data.get("script"), lang)
         await ws.send_text(json.dumps({
             "type": "answer",
             "content": data.get("answer", ""),
             "suggestions": data.get("follow_up_suggestions", []),
             "handoff": _resolve_handoff(data.get("handoff"), servers),
             "batch": _resolve_batch(data.get("batch"), servers),
+            "script": generated,
         }))
 
 

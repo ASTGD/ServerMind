@@ -56,7 +56,9 @@ class UserScriptCreate(BaseModel):
     description: str | None = None
     script_type: str
     script_content: str
-    variables: dict | None = None
+    # Variable definitions are a list of {name, label, default, required} objects (as the
+    # generator returns); older callers may pass a dict. Stored as-is in the JSONB column.
+    variables: list | dict | None = None
     tags: list[str] | None = None
 
 
