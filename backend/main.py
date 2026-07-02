@@ -25,6 +25,7 @@ from app.routers import security as security_router
 from app.routers import servers as servers_router
 from app.routers import settings as settings_router
 from app.routers import team as team_router
+from app.routers import usage as usage_router
 from app.services import backup_service, playbook_service, scheduler_service
 from app.services.rate_limit_service import limiter
 from app.websocket import terminal as ws_handlers
@@ -108,6 +109,7 @@ app.include_router(team_router.router)
 app.include_router(settings_router.router)
 app.include_router(hosting_router.router)
 app.include_router(installed_router.router)
+app.include_router(usage_router.router)
 app.include_router(ws_handlers.router)
 
 

@@ -159,6 +159,17 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           break
         }
 
+        case "quota_exceeded":
+          setIsLoading(false)
+          setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "thinking")))
+          addMsg({
+            id: nextId(),
+            role: "assistant",
+            kind: "quota",
+            message: (msg.message as string) ?? "You've used all your Ally actions for this month.",
+          })
+          break
+
         case "blocked":
           setIsLoading(false)
           setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "thinking")))

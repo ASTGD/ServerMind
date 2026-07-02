@@ -20,6 +20,9 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(String(255))
     avatar_url: Mapped[str | None] = mapped_column(String(500))
     preferred_language: Mapped[str] = mapped_column(String(10), default="en")
+    # Subscription plan ('free' | 'pro'). Set manually until a billing provider is
+    # chosen (docs/AI-METERING.md §8 — the billing webhook is deliberately not built).
+    plan: Mapped[str] = mapped_column(String(10), default="free", server_default="free")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     totp_secret: Mapped[str | None] = mapped_column(String(255))

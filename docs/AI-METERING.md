@@ -1,10 +1,20 @@
 # AI Metering & Subscription Token Model
 
-> **Status: DESIGN LOCKED — no code yet.** This document is the contract for how
-> ServerAlly turns one Anthropic API key (wholesale, pay-per-token) into per-customer
-> monthly allowances (retail, flat subscription). Companion to
-> [PRICING-FREE-VS-PRO.md](PRICING-FREE-VS-PRO.md) (§9 allowances, §10 implementation
-> notes, §11 open questions) and the hosted gateway (`gateway/`).
+> **Status: Bricks 1 + 2 SHIPPED (2026-07-03). Brick 3 (billing webhook) HALTED** until
+> a payment provider is chosen — `users.plan` is set manually meanwhile, and the quota
+> wall only blocks when `ENFORCE_AI_QUOTA=true` (default off; cloud will turn it on).
+> This document is the contract for how ServerAlly turns one Anthropic API key
+> (wholesale, pay-per-token) into per-customer monthly allowances (retail, flat
+> subscription). Companion to [PRICING-FREE-VS-PRO.md](PRICING-FREE-VS-PRO.md)
+> (§9 allowances, §10 implementation notes, §11 open questions) and the hosted
+> gateway (`gateway/`).
+>
+> Shipped code map: `ai_usage` table (migration 019) · `metering_service.py`
+> (collector/gate/record/prices) · `entitlements.py` (plan map) · usage hooks in
+> `llm_service.py` · gates+ledger in chat/fleet/batch (`websocket/terminal.py`),
+> script generation (402 wall) and schedule parse (0-action) · `GET /api/usage/me` ·
+> gateway token capture + `usage_records` + real usage passthrough · Settings
+> "Ally usage" card + chat quota bubble.
 
 ---
 
@@ -182,15 +192,18 @@ from the ledger, then set the final caps.
 
 ## 9. Build order (three bricks, each shippable alone)
 
-1. **Brick 1 — Ledger + counter (no billing needed).** `ai_usage` table +
-   `metering_service` (gate/record/price-table) wired into `llm_service`; Free-plan
-   default allowance for everyone. Immediately starts collecting the real per-action
-   cost data §7 needs. Also: capture real `usage` in the gateway and pass it through.
-2. **Brick 2 — Entitlement map + the wall.** `can_use`/`within_limit` server-side,
-   friendly quota wall in chat (with the 3 exits), usage bar in Settings
-   ("214 of 1,000 actions").
-3. **Brick 3 — Billing webhook.** Provider chosen, Upgrade modal → real checkout,
-   webhook → entitlements, anchor-date resets.
+1. ✅ **Brick 1 — Ledger + counter (no billing needed).** SHIPPED 2026-07-03: `ai_usage`
+   table + `metering_service` (gate/record/price-table) wired into `llm_service`;
+   Free-plan default allowance for everyone. Collecting the real per-action cost data
+   §7 needs. Gateway captures real `usage` (per-request `usage_records`) and passes it
+   through.
+2. ✅ **Brick 2 — Entitlement map + the wall.** SHIPPED 2026-07-03: `entitlements.py`
+   server-side, quota wall in chat/fleet/batch (`quota_exceeded` bubble) and script
+   generation (HTTP 402), usage bar in Settings ("X of N actions"). The wall is armed
+   by `ENFORCE_AI_QUOTA` (default off — dev/self-hosted only collect data).
+3. ⏸ **Brick 3 — Billing webhook. HALTED** (PM decision 2026-07-03): payment provider
+   not chosen yet — no Stripe/Paddle/Lemon Squeezy code. When chosen: Upgrade modal →
+   real checkout, webhook → entitlements, anchor-date resets.
 
 ---
 

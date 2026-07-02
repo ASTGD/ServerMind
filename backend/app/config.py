@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     # Error monitoring (optional)
     SENTRY_DSN: str = ""
 
+    # AI quota wall (docs/AI-METERING.md). The ai_usage ledger ALWAYS records; this
+    # flag only controls whether the plan's action allowance actually blocks when
+    # exhausted. Off by default: dev and self-hosted instances just collect data;
+    # the cloud deployment turns it on.
+    ENFORCE_AI_QUOTA: bool = False
+
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://servermind:password@localhost:5432/servermind"
 

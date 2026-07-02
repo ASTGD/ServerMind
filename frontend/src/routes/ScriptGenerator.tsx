@@ -198,11 +198,12 @@ export default function ScriptGenerator() {
           )}
         </div>
 
-        {/* Error */}
+        {/* Error — surface the API's friendly detail (e.g. the quota wall) when present */}
         {generateMutation.isError && (
           <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
             <AlertTriangle className="h-4 w-4 shrink-0" />
-            {(generateMutation.error as Error).message}
+            {(generateMutation.error as { response?: { data?: { detail?: string } } })?.response
+              ?.data?.detail ?? (generateMutation.error as Error).message}
           </div>
         )}
       </div>

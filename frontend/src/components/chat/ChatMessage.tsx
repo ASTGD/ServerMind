@@ -22,6 +22,7 @@ export type ChatMessageData =
   | { id: string; role: "assistant"; kind: "complete"; explanation: string; status: string; suggestions: string[] }
   | { id: string; role: "assistant"; kind: "answer"; content: string; suggestions: string[]; handoff?: Handoff | null; batch?: BatchSpec | null; script?: GenerateScriptResult | null }
   | { id: string; role: "assistant"; kind: "blocked"; reason: string }
+  | { id: string; role: "assistant"; kind: "quota"; message: string }
   | { id: string; role: "assistant"; kind: "error"; message: string }
 
 interface Props {
@@ -171,6 +172,17 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch 
             <div>
               <p className="font-medium">Command blocked</p>
               <p className="text-xs opacity-80">{message.reason}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Out of Ally actions this month (the quota wall — docs/AI-METERING.md) */}
+        {message.role === "assistant" && message.kind === "quota" && (
+          <div className="flex items-start gap-2 rounded-2xl rounded-tl-sm border border-amber-500/25 bg-amber-500/10 px-3.5 py-2 text-sm text-amber-700 dark:text-amber-400">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium">Out of Ally actions</p>
+              <p className="text-xs opacity-90">{message.message}</p>
             </div>
           </div>
         )}

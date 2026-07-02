@@ -18,7 +18,8 @@ async def _client() -> AsyncClient:
 
 async def test_full_flow(monkeypatch):
     async def fake_upstream(messages):
-        return "HELLO_FROM_GATEWAY"
+        # (text, input_tokens, output_tokens) — the metering passthrough shape
+        return "HELLO_FROM_GATEWAY", 100, 20
 
     monkeypatch.setattr(gw, "_upstream", fake_upstream)
 
@@ -40,11 +41,21 @@ async def test_full_flow(monkeypatch):
         hdr = {"Authorization": f"Bearer {token}"}
         body = {"messages": [{"role": "system", "content": "s"}, {"role": "user", "content": "hi"}]}
 
-        # two requests within the limit — OpenAI-shaped + forwarded
+        # two requests within the limit — OpenAI-shaped + forwarded, real usage passed through
         for _ in range(2):
             r = await client.post("/v1/chat/completions", headers=hdr, json=body)
             assert r.status_code == 200
-            assert r.json()["choices"][0]["message"]["content"] == "HELLO_FROM_GATEWAY"
+            data = r.json()
+            assert data["choices"][0]["message"]["content"] == "HELLO_FROM_GATEWAY"
+            assert data["usage"] == {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120}
+
+        # the per-request token ledger recorded both calls (docs/AI-METERING.md Brick 1)
+        async with gw.Session() as db:
+            from sqlalchemy import select
+
+            records = (await db.execute(select(gw.UsageRecord))).scalars().all()
+            assert len(records) == 2
+            assert all(r.input_tokens == 100 and r.output_tokens == 20 for r in records)
 
         # third exceeds the monthly limit
         assert (await client.post("/v1/chat/completions", headers=hdr, json=body)).status_code == 429

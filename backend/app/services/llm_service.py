@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 
 from app.config import settings
+from app.services import metering_service
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,13 @@ async def _anthropic_complete(key: str, model: str, system: str, user: str, max_
         system=system,
         messages=[{"role": "user", "content": user}],
     )
+    # AI metering (docs/AI-METERING.md): exact token counts into the active collection.
+    usage = getattr(msg, "usage", None)
+    metering_service.note_usage(
+        model,
+        getattr(usage, "input_tokens", 0) or 0,
+        getattr(usage, "output_tokens", 0) or 0,
+    )
     return msg.content[0].text
 
 
@@ -129,6 +137,13 @@ async def _openai_complete(
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
+    )
+    # AI metering (docs/AI-METERING.md): exact token counts into the active collection.
+    usage = getattr(resp, "usage", None)
+    metering_service.note_usage(
+        model,
+        getattr(usage, "prompt_tokens", 0) or 0,
+        getattr(usage, "completion_tokens", 0) or 0,
     )
     return resp.choices[0].message.content or ""
 

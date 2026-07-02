@@ -20,7 +20,7 @@ from app.models.playbook import Playbook, PlaybookRun, UserScript
 from app.models.server import Server
 from app.models.user import User
 from app.services import ai_context_service, ai_service, connection_manager, safety_service
-from app.services import ssh_service, team_service, terminal_session_service
+from app.services import metering_service, ssh_service, team_service, terminal_session_service
 from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
 from app.services.playbook_service import substitute_variables
@@ -367,6 +367,24 @@ async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
             }))
             continue
 
+        # AI quota gate (docs/AI-METERING.md §4) — per-server chat draws from the
+        # server OWNER's pool (§8 team pooling). The wall only blocks when
+        # ENFORCE_AI_QUOTA is on; otherwise this is a no-op numbers check.
+        try:
+            async with AsyncSessionLocal() as db:
+                owner = await db.get(User, server.user_id)
+                g = await metering_service.gate(db, owner) if owner else None
+        except Exception as exc:  # noqa: BLE001 — gate failure must not kill chat
+            logger.warning("quota gate failed for server %s: %s", server.id, exc)
+            g = None
+        if g and not g.allowed:
+            await ws.send_text(json.dumps({
+                "type": "quota_exceeded",
+                "used": g.used, "limit": g.limit, "resets_at": g.resets_at,
+                "message": metering_service.quota_message(g),
+            }))
+            continue
+
         await _handle_message(ws, server, user_input, user_language, os_family, page_context, history)
 
 
@@ -464,6 +482,22 @@ async def _fleet_loop(ws: WebSocket, user: User) -> None:
         if not text:
             continue
 
+        # AI quota gate (docs/AI-METERING.md §4) — fleet chat draws from the acting
+        # user's own pool. Only blocks when ENFORCE_AI_QUOTA is on.
+        try:
+            async with AsyncSessionLocal() as db:
+                g = await metering_service.gate(db, user)
+        except Exception as exc:  # noqa: BLE001 — gate failure must not kill chat
+            logger.warning("quota gate failed (fleet): %s", exc)
+            g = None
+        if g and not g.allowed:
+            await ws.send_text(json.dumps({
+                "type": "quota_exceeded",
+                "used": g.used, "limit": g.limit, "resets_at": g.resets_at,
+                "message": metering_service.quota_message(g),
+            }))
+            continue
+
         await ws.send_text(json.dumps({"type": "thinking"}))
         async with AsyncSessionLocal() as db:
             servers = await team_service.accessible_servers(db, user)
@@ -474,17 +508,32 @@ async def _fleet_loop(ws: WebSocket, user: User) -> None:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("fleet health build failed: %s", exc)
                 health = None
+        # Meter the whole fleet turn (answer + any inline script generation) = 1 action.
+        tok = metering_service.start_collection()
         try:
             data = await ai_service.fleet_chat(
                 text, servers, lang, page_context=page_context, history=history, health=health,
             )
         except Exception as exc:  # noqa: BLE001
+            calls = metering_service.finish_collection(tok)
+            if calls:  # tokens may have been spent before our error — ledger at 0 actions
+                async with AsyncSessionLocal() as db:
+                    await metering_service.record(
+                        db, user_id=user.id, feature="fleet_chat", calls=calls,
+                        actions=0, status="provider_error",
+                    )
             await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
             continue
         # If Ally decided the user wants a reusable script written, generate it now and
         # attach it — the frontend shows it with "Save to My Scripts" / "Open in editor".
         # This only WRITES a script (text); it is never executed here.
         generated = await _maybe_generate_script(data.get("script"), lang)
+        calls = metering_service.finish_collection(tok)
+        if calls:
+            async with AsyncSessionLocal() as db:
+                await metering_service.record(
+                    db, user_id=user.id, feature="fleet_chat", calls=calls,
+                )
         await ws.send_text(json.dumps({
             "type": "answer",
             "content": data.get("answer", ""),
@@ -583,6 +632,26 @@ async def _batch_run(ws: WebSocket, user: User) -> None:
         await ws.send_text(json.dumps({"type": "error", "message": "Nothing to run."}))
         return
 
+    # AI quota gate (docs/AI-METERING.md §2) — a batch costs 1 action PER server, from
+    # the acting user's pool. Checked once up front; only blocks when enforcement is on.
+    try:
+        async with AsyncSessionLocal() as db:
+            g = await metering_service.gate(db, user)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("quota gate failed (batch): %s", exc)
+        g = None
+    if g and g.enforced and g.used + len(server_ids) > g.limit:
+        await ws.send_text(json.dumps({
+            "type": "quota_exceeded",
+            "used": g.used, "limit": g.limit, "resets_at": g.resets_at,
+            "message": (
+                f"This batch needs {len(server_ids)} actions but you have "
+                f"{max(0, g.limit - g.used)} left this month. "
+                f"Your allowance resets on {g.resets_at}."
+            ),
+        }))
+        return
+
     counts: dict[str, int] = {}
     for sid in server_ids:
         async with AsyncSessionLocal() as db:
@@ -605,7 +674,15 @@ async def _batch_run(ws: WebSocket, user: User) -> None:
                 "status": "failed", "explanation": "Rate limit reached for this server — try again shortly.",
             }))
             continue
+        # Meter this server's model calls — 1 action per target server (§2).
+        tok = metering_service.start_collection()
         status, explanation = await _run_on_server(server, prompt, lang)
+        calls = metering_service.finish_collection(tok)
+        if calls:
+            async with AsyncSessionLocal() as db:
+                await metering_service.record(
+                    db, user_id=user.id, feature="batch", calls=calls, server_id=server.id,
+                )
         counts[status] = counts.get(status, 0) + 1
         await ws.send_text(json.dumps({
             "type": "server_done", "server_id": sid, "server_name": server.name,
@@ -616,6 +693,33 @@ async def _batch_run(ws: WebSocket, user: User) -> None:
 
 
 async def _handle_message(
+    ws: WebSocket,
+    server: Server,
+    user_input: str,
+    user_language: str,
+    os_family: str,
+    page_context: str | None = None,
+    history: list[dict] | None = None,
+) -> None:
+    """Metered wrapper (docs/AI-METERING.md) — collects every model call made for this
+    one user message (plan → execute → explain = 1 action) and writes the ledger,
+    billed to the server owner's pool. Metering never blocks the message itself."""
+    tok = metering_service.start_collection()
+    try:
+        await _handle_message_inner(
+            ws, server, user_input, user_language, os_family, page_context, history
+        )
+    finally:
+        calls = metering_service.finish_collection(tok)
+        if calls:
+            async with AsyncSessionLocal() as db:
+                await metering_service.record(
+                    db, user_id=server.user_id, feature="chat",
+                    calls=calls, server_id=server.id,
+                )
+
+
+async def _handle_message_inner(
     ws: WebSocket,
     server: Server,
     user_input: str,

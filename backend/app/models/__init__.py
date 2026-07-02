@@ -9,6 +9,7 @@ from app.models.team import TeamMember, ServerAccess
 from app.models.security_scan import SecurityScan
 from app.models.backup import Backup, BackupRun
 from app.models.assistant_thread import AssistantThread
+from app.models.ai_usage import AiUsage
 
 __all__ = [
     "User",
@@ -26,4 +27,5 @@ __all__ = [
     "Backup",
     "BackupRun",
     "AssistantThread",
+    "AiUsage",
 ]

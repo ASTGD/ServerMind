@@ -8,6 +8,7 @@ import {
   setup2fa, verify2fa, disable2fa, regenerateRecoveryCodes, type TotpSetupResponse,
 } from "@/api/auth"
 import { getAiSettings, updateAiSettings, testAiSettings, type AiProvider, type AiSettings } from "@/api/settings"
+import { getMyUsage } from "@/api/usage"
 import { useAuthStore } from "@/store/authStore"
 import i18n from "@/i18n"
 import type { User } from "@/types"
@@ -126,6 +127,7 @@ export default function Settings() {
   const [aiTest, setAiTest] = useState<{ ok: boolean; text: string } | null>(null)
   const aiSeeded = useRef(false)
   const aiQuery = useQuery({ queryKey: ["ai-settings"], queryFn: getAiSettings })
+  const { data: usage } = useQuery({ queryKey: ["my-usage"], queryFn: getMyUsage })
   useEffect(() => {
     const d = aiQuery.data
     if (d && !aiSeeded.current) {
@@ -411,6 +413,45 @@ export default function Settings() {
           </dd>
         </div>
       </dl>
+    </Section>
+  )
+
+  const usageSection = (
+    <Section
+      icon={Sparkles}
+      title="Ally usage"
+      description="Your AI actions this month — one action is one request to Ally."
+    >
+      {usage ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-foreground">
+              <span className="font-semibold">{usage.used}</span> of {usage.limit} actions used
+            </span>
+            <span className="rounded-full border border-indigo-500/20 bg-indigo-500/10 px-2 py-0.5 text-xs font-medium capitalize text-indigo-600 dark:text-indigo-400">
+              {usage.plan} plan
+            </span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className={`h-full rounded-full transition-all ${
+                usage.used / usage.limit >= 0.9
+                  ? "bg-red-500"
+                  : usage.used / usage.limit >= 0.7
+                    ? "bg-amber-500"
+                    : "bg-gradient-to-r from-indigo-500 to-violet-500"
+              }`}
+              style={{ width: `${Math.min(100, (usage.used / Math.max(1, usage.limit)) * 100)}%` }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Your allowance resets on {usage.resets_at}.
+            {!usage.enforced && " (Usage is informational on this install — no limit is enforced.)"}
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">Loading usage…</p>
+      )}
     </Section>
   )
 
@@ -777,6 +818,7 @@ export default function Settings() {
         <div className="space-y-6">
           {profileSection}
           {accountSection}
+          {usageSection}
           {SHOW_AI_PROVIDER_SETTINGS && aiSection}
         </div>
         <div className="space-y-6">

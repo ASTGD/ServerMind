@@ -13,7 +13,7 @@ from app.dependencies.auth import get_current_user
 from app.models.playbook import UserScript
 from app.models.user import User
 from app.schemas.playbook import UserScriptCreate, UserScriptOut
-from app.services import ai_service
+from app.services import ai_service, metering_service
 
 router = APIRouter(prefix="/api/scripts", tags=["scripts"])
 
@@ -70,6 +70,16 @@ async def generate_script(
     current_user: User = Depends(get_current_user),
 ) -> GenerateScriptResult:
     """Use AI to generate a server administration script."""
+    # AI quota gate (docs/AI-METERING.md §2/§4) — script generation = 1 action from the
+    # acting user's pool. Only blocks when ENFORCE_AI_QUOTA is on.
+    g = await metering_service.gate(db, current_user)
+    if not g.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=metering_service.quota_message(g),
+        )
+
+    tok = metering_service.start_collection()
     try:
         result = await ai_service.generate_script(
             request=body.request,
@@ -77,10 +87,20 @@ async def generate_script(
             user_language=body.user_language,
         )
     except Exception as exc:
+        # Tokens may have been spent before our error — ledger them at 0 actions (§2).
+        calls = metering_service.finish_collection(tok)
+        await metering_service.record(
+            db, user_id=current_user.id, feature="script_gen", calls=calls,
+            actions=0, status="provider_error",
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"AI generation failed: {exc}",
         )
+    calls = metering_service.finish_collection(tok)
+    await metering_service.record(
+        db, user_id=current_user.id, feature="script_gen", calls=calls,
+    )
 
     saved_id: uuid.UUID | None = None
     if body.save:

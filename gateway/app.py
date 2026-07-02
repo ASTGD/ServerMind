@@ -59,6 +59,20 @@ class Subscription(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class UsageRecord(Base):
+    """Per-request token ledger (docs/AI-METERING.md Brick 1 — the gateway door).
+
+    Counts and labels only, never prompt/response content."""
+
+    __tablename__ = "usage_records"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    subscription_id: Mapped[str] = mapped_column(String(36), index=True)
+    model: Mapped[str] = mapped_column(String(60), default="")
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 engine = create_async_engine(DATABASE_URL)
 Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -154,9 +168,12 @@ def _within_limit(sub: Subscription) -> bool:
     return sub.used_this_period < sub.monthly_limit
 
 
-async def _upstream(messages: list[dict]) -> str:
+async def _upstream(messages: list[dict]) -> tuple[str, int, int]:
     """Forward the chat to the real provider with OUR key. ServerAlly only ever sends a
-    system + user message, so we collapse them per provider."""
+    system + user message, so we collapse them per provider.
+
+    Returns (text, input_tokens, output_tokens) — exact counts from the provider's
+    usage block, for the per-request ledger and the passthrough response."""
     if not UPSTREAM_KEY:
         raise HTTPException(status_code=503, detail="Gateway upstream key not configured")
     system = "\n\n".join(m.get("content", "") for m in messages if m.get("role") == "system")
@@ -169,12 +186,22 @@ async def _upstream(messages: list[dict]) -> str:
             model=UPSTREAM_MODEL, max_tokens=2048, system=system,
             messages=[{"role": "user", "content": user}],
         )
-        return msg.content[0].text
+        usage = getattr(msg, "usage", None)
+        return (
+            msg.content[0].text,
+            int(getattr(usage, "input_tokens", 0) or 0),
+            int(getattr(usage, "output_tokens", 0) or 0),
+        )
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=UPSTREAM_KEY, base_url=UPSTREAM_BASE_URL or None)
     resp = await client.chat.completions.create(model=UPSTREAM_MODEL, max_tokens=2048, messages=messages)
-    return resp.choices[0].message.content or ""
+    usage = getattr(resp, "usage", None)
+    return (
+        resp.choices[0].message.content or "",
+        int(getattr(usage, "prompt_tokens", 0) or 0),
+        int(getattr(usage, "completion_tokens", 0) or 0),
+    )
 
 
 @app.post("/v1/chat/completions")
@@ -189,9 +216,14 @@ async def chat_completions(
         raise HTTPException(status_code=429, detail="Monthly request limit reached")
 
     body = await request.json()
-    reply = await _upstream(body.get("messages") or [])
+    reply, in_tok, out_tok = await _upstream(body.get("messages") or [])
 
+    # Meter: request count against the plan limit + exact tokens into the ledger.
     sub.used_this_period += 1
+    db.add(UsageRecord(
+        subscription_id=sub.id, model=UPSTREAM_MODEL,
+        input_tokens=in_tok, output_tokens=out_tok,
+    ))
     await db.commit()
 
     return {
@@ -202,5 +234,10 @@ async def chat_completions(
         "choices": [
             {"index": 0, "message": {"role": "assistant", "content": reply}, "finish_reason": "stop"}
         ],
-        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        # Real usage passthrough — the calling instance's own meter sees true counts.
+        "usage": {
+            "prompt_tokens": in_tok,
+            "completion_tokens": out_tok,
+            "total_tokens": in_tok + out_tok,
+        },
     }

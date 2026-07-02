@@ -11,14 +11,14 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import AsyncSessionLocal, get_db
 from app.dependencies.access import resolve_server
 from app.models.scheduled_task import ScheduledTask
 from app.models.server import Server
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.schemas.scheduled_task import ScheduledTaskCreate, ScheduledTaskOut
-from app.services import ai_service, scheduler_service
+from app.services import ai_service, metering_service, scheduler_service
 
 router = APIRouter(prefix="/api", tags=["scheduler"])
 logger = logging.getLogger(__name__)
@@ -232,6 +232,9 @@ async def parse_schedule(
 
     Used by the frontend to preview the cron before saving.
     """
+    # Metered in the ledger at 0 actions (docs/AI-METERING.md §2 — tiny utility call,
+    # free to the user; the tokens still show in our cost accounting).
+    tok = metering_service.start_collection()
     try:
         result = await ai_service.parse_schedule(body.input)
         return ParseScheduleResponse(
@@ -240,3 +243,11 @@ async def parse_schedule(
         )
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    finally:
+        calls = metering_service.finish_collection(tok)
+        if calls:
+            async with AsyncSessionLocal() as db:
+                await metering_service.record(
+                    db, user_id=current_user.id, feature="schedule_parse",
+                    calls=calls, actions=0,
+                )
