@@ -158,3 +158,21 @@ def get(slug: str) -> Skill | None:
         if skill.slug == slug:
             return skill
     return None
+
+
+def get_for_os(slug: str, os_type: str | None) -> Skill | None:
+    """Look a skill up by slug, honoring the OS gate (for model-requested skills)."""
+    skill = get(slug)
+    return skill if (skill and _os_ok(skill, os_type)) else None
+
+
+def menu_for(os_type: str | None) -> str:
+    """A one-line-per-skill menu for the prompt (Skills Phase B) — the model itself
+    picks a skill when keyword matching missed (any language, any phrasing).
+    Only OS-compatible skills are listed. ~100 tokens for the whole library."""
+    lines = [
+        f"- {s.slug} — {s.title}" + (" [multi-step mission]" if s.mode == "mission" else "")
+        for s in load_skills()
+        if _os_ok(s, os_type)
+    ]
+    return "\n".join(lines)

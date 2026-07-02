@@ -57,6 +57,15 @@ RULES:
 8. Keep explanations friendly and jargon-free — user is non-technical
 9. Respond entirely in the user's language including technical explanations
 
+WHEN THE REQUEST IS UNFAMILIAR (no known procedure fits — the generalist protocol):
+1. Goal unclear? Ask ONE clarifying question (clarification_needed) — don't guess.
+2. Facts before changes: start with read-only commands that reveal the situation.
+3. State your working hypothesis in plain words in plan_summary.
+4. Prefer the smallest reversible change; back up any file before editing it.
+5. Always end with a step that VERIFIES the outcome.
+6. If it can't be done safely from here, say so honestly and explain what would be
+   needed — never improvise something risky just to give an answer.
+
 REMEMBER (long-term memory): If this conversation reveals something SHORT and DURABLE
 worth keeping for future chats, set "remember" to
 {{"kind": "fact" | "preference" | "lesson", "note": "<one short sentence>"}} — else null.
@@ -90,8 +99,23 @@ ALWAYS RESPOND WITH VALID JSON ONLY (no markdown, no explanation outside JSON):
   "post_execution_message": "...",
   "follow_up_suggestions": ["...", "..."],
   "remember": null,
-  "mission": null
+  "mission": null,
+  "use_skill": null
 }}
+
+("use_skill" is ONLY for when an EXPERT PROCEDURES menu block is present — see there.)
+"""
+
+_SKILL_MENU_BLOCK = """\
+
+EXPERT PROCEDURES AVAILABLE (menu — Skills Phase B):
+{menu}
+
+If one of these clearly fits what the user is asking — in ANY language or phrasing —
+do NOT answer yet: set "use_skill" to that slug, keep "commands" empty, and leave the
+other fields minimal. The full procedure will be loaded and you will be asked again.
+If none clearly fits, leave "use_skill" null and answer normally using the generalist
+protocol above.
 """
 
 _MISSION_HINT_BLOCK = """\
@@ -494,10 +518,13 @@ async def plan_commands(
     server_profile: str | None = None,
     memories: str | None = None,
     skill: skill_service.Skill | None = None,
+    skill_menu: str | None = None,
 ) -> dict:
     """Ask Claude to produce a command plan for the user's request. ``skill`` (Ally
     Skills Phase A) injects the matched expert procedure — our own authored content,
-    the one block Ally is meant to follow."""
+    the one block Ally is meant to follow. ``skill_menu`` (Phase B) lists the library
+    one-per-line so the model itself can request a skill via "use_skill" when keyword
+    matching missed (any language / phrasing)."""
     system = _CHAT_SYSTEM.format(
         server_name=server.name,
         os_type=server.os_type or "linux",
@@ -516,6 +543,9 @@ async def plan_commands(
     # injected per step by the mission engine, not here).
     if skill is not None and skill.mode == "mission":
         system += _MISSION_HINT_BLOCK.format(title=skill.title)
+    # Phase B: no keyword match → offer the menu so the model itself can pick.
+    if skill is None and skill_menu:
+        system += _SKILL_MENU_BLOCK.format(menu=skill_menu)
     system += _page_context_block(page_context)
     system += _history_block(history)
 

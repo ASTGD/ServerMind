@@ -957,11 +957,14 @@ async def _handle_message(
     skill = skill_service.match(user_input, server.os_type)
     if skill:
         logger.info("ally skill matched: %s (server=%s)", skill.slug, server.id)
+    # The inner handler may upgrade the skill via the Phase B menu hop — it reports the
+    # effective skill back through this holder so the ledger attributes correctly.
+    meta = {"skill": skill.slug if skill else None}
     tok = metering_service.start_collection()
     try:
         await _handle_message_inner(
             ws, server, user_input, user_language, os_family, page_context, history,
-            acting_user_id=acting_user_id, skill=skill,
+            acting_user_id=acting_user_id, skill=skill, meta=meta,
         )
     finally:
         calls = metering_service.finish_collection(tok)
@@ -970,7 +973,7 @@ async def _handle_message(
                 await metering_service.record(
                     db, user_id=server.user_id, feature="chat",
                     calls=calls, server_id=server.id,
-                    skill=skill.slug if skill else None,
+                    skill=meta.get("skill"),
                 )
 
 
@@ -984,6 +987,7 @@ async def _handle_message_inner(
     history: list[dict] | None = None,
     acting_user_id: str | None = None,
     skill: skill_service.Skill | None = None,
+    meta: dict | None = None,
 ) -> None:
     """Plan, validate, execute and explain one user message."""
     # ── 1. AI planning ────────────────────────────────────────────────────────
@@ -1008,10 +1012,32 @@ async def _handle_message_inner(
         plan = await ai_service.plan_commands(
             user_input, server, user_language, page_context, history,
             server_profile=server_profile, memories=memories, skill=skill,
+            # Phase B: keyword matching missed → offer the one-line skill menu so the
+            # model itself can pick (works in any language / phrasing).
+            skill_menu=skill_service.menu_for(server.os_type) if skill is None else None,
         )
     except Exception as exc:
         await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
         return
+
+    # Phase B hop — the model requested a skill from the menu. Load it and plan again
+    # (one hop max; the slug must exist and fit this OS, otherwise the reply stands).
+    requested = plan.get("use_skill")
+    if skill is None and isinstance(requested, str) and requested.strip():
+        picked = skill_service.get_for_os(requested.strip(), server.os_type)
+        if picked is not None:
+            logger.info("ally skill requested via menu: %s (server=%s)", picked.slug, server.id)
+            skill = picked
+            if meta is not None:
+                meta["skill"] = picked.slug
+            try:
+                plan = await ai_service.plan_commands(
+                    user_input, server, user_language, page_context, history,
+                    server_profile=server_profile, memories=memories, skill=picked,
+                )
+            except Exception as exc:  # noqa: BLE001
+                await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
+                return
 
     # Ally Brain Phase 5 — if Ally decided this turn is worth remembering, save the
     # note (server-scoped; preferences go user-scoped). Secret-filtered, best-effort.
