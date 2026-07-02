@@ -285,6 +285,19 @@ async def chat_ws(
             pass
 
 
+def _page_context_from(msg: dict) -> str | None:
+    """Pull the optional 'what page the user is looking at' hint off a chat message.
+
+    App-supplied and untrusted, so we only accept a plain string; the AI layer frames it
+    as background info (never instructions) and caps its length.
+    """
+    val = msg.get("page_context")
+    if not isinstance(val, str):
+        return None
+    val = val.strip()
+    return val or None
+
+
 async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
     """Main chat loop — processes user messages until disconnect."""
     os_family = "windows" if server.connection_type == "winrm" else "linux"
@@ -298,6 +311,7 @@ async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
 
         user_input: str = msg.get("content", "").strip()
         user_language: str = msg.get("language", "en")
+        page_context = _page_context_from(msg)
         if not user_input:
             continue
 
@@ -308,7 +322,7 @@ async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
             }))
             continue
 
-        await _handle_message(ws, server, user_input, user_language, os_family)
+        await _handle_message(ws, server, user_input, user_language, os_family, page_context)
 
 
 # ── Fleet chat WebSocket (global assistant, advisory) ─────────────────────────
@@ -400,6 +414,7 @@ async def _fleet_loop(ws: WebSocket, user: User) -> None:
             continue
         text = msg.get("content", "").strip()
         lang = msg.get("language", "en")
+        page_context = _page_context_from(msg)
         if not text:
             continue
 
@@ -407,7 +422,7 @@ async def _fleet_loop(ws: WebSocket, user: User) -> None:
         async with AsyncSessionLocal() as db:
             servers = await team_service.accessible_servers(db, user)
         try:
-            data = await ai_service.fleet_chat(text, servers, lang)
+            data = await ai_service.fleet_chat(text, servers, lang, page_context=page_context)
         except Exception as exc:  # noqa: BLE001
             await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
             continue
@@ -546,13 +561,14 @@ async def _handle_message(
     user_input: str,
     user_language: str,
     os_family: str,
+    page_context: str | None = None,
 ) -> None:
     """Plan, validate, execute and explain one user message."""
     # ── 1. AI planning ────────────────────────────────────────────────────────
     await ws.send_text(json.dumps({"type": "thinking"}))
 
     try:
-        plan = await ai_service.plan_commands(user_input, server, user_language)
+        plan = await ai_service.plan_commands(user_input, server, user_language, page_context)
     except Exception as exc:
         await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
         return

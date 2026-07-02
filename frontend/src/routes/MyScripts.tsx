@@ -18,6 +18,7 @@ import {
 import { listScripts, deleteScript } from "@/api/scripts"
 import { listServers } from "@/api/servers"
 import RunPlaybookModal from "@/components/playbooks/RunPlaybookModal"
+import { usePublishPageContext } from "@/hooks/usePageContext"
 import type { UserScript, PlaybookDetail } from "@/types"
 import { format } from "date-fns"
 
@@ -161,6 +162,29 @@ export default function MyScripts() {
     : null
 
   const lang = selected?.script_type === "powershell" ? "powershell" : "shell"
+
+  // Let Ally see the open script (its own code — the user's data), so questions like
+  // "what does this do?" or "make it safer" work with no copy-paste. Secrets aren't here:
+  // this is the script body the user wrote; saved secret variables live encrypted elsewhere.
+  usePublishPageContext(
+    selected
+      ? {
+          label: "My Scripts",
+          context:
+            "The user is viewing one of their saved scripts in ServerAlly.\n" +
+            `Title: ${selected.title}\n` +
+            `Type: ${selected.script_type ?? "script"}\n` +
+            (selected.description ? `Description: ${selected.description}\n` : "") +
+            `--- SCRIPT START ---\n${selected.script_content}\n--- SCRIPT END ---`,
+          templates: [
+            "What does this script do?",
+            "Review this script for problems",
+            "How can I make it safer?",
+            "Add comments and error handling",
+          ],
+        }
+      : null,
+  )
 
   return (
     <>

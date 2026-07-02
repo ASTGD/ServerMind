@@ -18,6 +18,7 @@ import { listServers } from "@/api/servers"
 import ScriptPreview from "@/components/playbooks/ScriptPreview"
 import RunPlaybookModal from "@/components/playbooks/RunPlaybookModal"
 import ReadinessModal from "@/components/playbooks/ReadinessModal"
+import { usePublishPageContext } from "@/hooks/usePageContext"
 
 const CATEGORY_LABELS: Record<string, string> = {
   setup: "Setup",
@@ -50,6 +51,27 @@ export default function PlaybookDetail() {
     queryKey: ["servers"],
     queryFn: listServers,
   })
+
+  // Let Ally see which playbook is open (public metadata only) so "what does this do?"
+  // and "can my servers run this?" work without the user re-typing the name.
+  usePublishPageContext(
+    playbook
+      ? {
+          label: "Playbook",
+          context:
+            "The user is viewing a playbook (a one-click server setup) in ServerAlly.\n" +
+            `Title: ${playbook.title}\n` +
+            (playbook.category ? `Category: ${playbook.category}\n` : "") +
+            (playbook.description ? `Description: ${playbook.description}` : ""),
+          templates: [
+            "What does this playbook do?",
+            "Is this safe to run on my server?",
+            "Which of my servers can run this?",
+            "What will it install?",
+          ],
+        }
+      : null,
+  )
 
   if (isLoading) {
     return (

@@ -4,6 +4,7 @@ import { X, Sparkles, ChevronDown, Layers, Server as ServerIcon, Check } from "l
 import { listServers } from "@/api/servers"
 import ChatWindow from "@/components/chat/ChatWindow"
 import { useAssistantStore } from "@/store/assistantStore"
+import { useResolvedPageContext } from "@/hooks/usePageContext"
 
 /**
  * The global AI assistant — one docked drawer, context-aware. Defaults to the whole
@@ -12,6 +13,7 @@ import { useAssistantStore } from "@/store/assistantStore"
  */
 export default function AssistantDrawer() {
   const { open, target, seed, setTarget, close } = useAssistantStore()
+  const pageCtx = useResolvedPageContext()
   const [mounted, setMounted] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -124,7 +126,16 @@ export default function AssistantDrawer() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-hidden">
-          {mounted && <ChatWindow key={chatKey} target={target} seed={seed} />}
+          {mounted && (
+            <ChatWindow
+              key={chatKey}
+              target={target}
+              seed={seed}
+              pageContext={pageCtx.context}
+              templates={pageCtx.templates}
+              pageLabel={pageCtx.label}
+            />
+          )}
         </div>
       </aside>
     </>

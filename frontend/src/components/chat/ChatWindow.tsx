@@ -8,7 +8,7 @@ import ChatMessage, { type ChatMessageData, type Handoff, type BatchSpec } from 
 import BatchRunModal from "./BatchRunModal"
 import CommandPlan from "./CommandPlan"
 import { useAuthStore } from "@/store/authStore"
-import { WifiOff, Square } from "lucide-react"
+import { WifiOff, Square, Sparkles, ArrowRight } from "lucide-react"
 import { cancelCommand } from "@/api/commands"
 import type { CommandItem } from "@/types"
 import type { AssistantTarget } from "@/store/assistantStore"
@@ -22,6 +22,12 @@ interface Props {
   /** Persist a turn (saved-thread mode on the Assistant page). */
   onPersistUser?: (content: string) => void
   onPersistAnswer?: (content: string) => void
+  /** "What the user is looking at" — sent to Ally as background context (never as commands). */
+  pageContext?: string | null
+  /** Clickable starter questions for the current page, shown in the empty state. */
+  templates?: string[]
+  /** Short label for the current page, e.g. "My Scripts" — shown in the "Ally can see" chip. */
+  pageLabel?: string
 }
 
 interface PendingPlan {
@@ -35,7 +41,7 @@ interface PendingPlan {
 let _msgId = 0
 function nextId() { return String(++_msgId) }
 
-export default function ChatWindow({ target, seed, initialMessages, onPersistUser, onPersistAnswer }: Props) {
+export default function ChatWindow({ target, seed, initialMessages, onPersistUser, onPersistAnswer, pageContext, templates, pageLabel }: Props) {
   const user = useAuthStore((s) => s.user)
   const language = user?.preferred_language ?? "en"
   const openServer = useAssistantStore((s) => s.openServer)
@@ -201,7 +207,9 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
 
   function handleSend(content: string) {
     addMsg({ id: nextId(), role: "user", content })
-    send({ type: "message", content, language })
+    // Attach the page context (if any) as background — the backend frames it as
+    // untrusted info and never as instructions.
+    send({ type: "message", content, language, ...(pageContext ? { page_context: pageContext } : {}) })
     setPending(null)
     onPersistUser?.(content)
   }
@@ -260,17 +268,42 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
       {/* Messages */}
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
         {messages.length === 0 && (
-          <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
-            {target.kind === "server" ? (
-              <div>
-                <p className="font-medium text-foreground">Ask Ally to manage this server</p>
-                <p className="mt-1 text-xs">Try: "Install nginx", "Check disk space", "List running processes"</p>
+          <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                {target.kind === "server" ? "Ask Ally to manage this server" : "Ask Ally"}
+              </p>
+              {pageLabel && pageContext && (
+                <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-xs text-accent-foreground">
+                  <Sparkles size={11} className="text-primary" />
+                  Ally can see: {pageLabel}
+                </span>
+              )}
+            </div>
+
+            {templates && templates.length > 0 ? (
+              <div className="flex w-full max-w-sm flex-col gap-2">
+                {templates.map((tpl) => (
+                  <button
+                    key={tpl}
+                    onClick={() => handleSend(tpl)}
+                    disabled={status !== "open"}
+                    className="group flex items-center justify-between gap-2 rounded-xl border border-border bg-card px-3.5 py-2.5 text-left text-sm text-foreground transition-colors hover:border-primary/40 hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span>{tpl}</span>
+                    <ArrowRight
+                      size={14}
+                      className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                    />
+                  </button>
+                ))}
               </div>
             ) : (
-              <div>
-                <p className="font-medium text-foreground">Ask Ally about your servers</p>
-                <p className="mt-1 text-xs">Try: "Which servers need attention?", "Best playbook for a Node app"</p>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                {target.kind === "server"
+                  ? 'Try: "Install nginx", "Check disk space", "List running processes"'
+                  : 'Try: "Which servers need attention?", "Best playbook for a Node app"'}
+              </p>
             )}
           </div>
         )}
