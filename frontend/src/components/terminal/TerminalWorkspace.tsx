@@ -94,7 +94,8 @@ export default function TerminalWorkspace() {
     <div className={`fixed bottom-0 left-0 right-0 top-14 z-20 flex flex-col bg-[#0d0d0d] md:left-60 ${visible ? "" : "hidden"}`}>
       {/* Tab bar */}
       <div className="flex shrink-0 items-center gap-1 border-b border-black bg-[#1a1a1a] px-3 py-2">
-        {sessions.map((s) => (
+        {/* Session tabs — only in focus mode (in split, the pane headers identify each). */}
+        {!split && sessions.map((s) => (
           <div
             key={s.id}
             onClick={() => setActive(s.id)}
@@ -145,20 +146,26 @@ export default function TerminalWorkspace() {
         <span className="flex-1" />
 
         {sessions.length >= 2 && (
-          <div className="mr-1 flex items-center rounded-md border border-zinc-700 p-0.5">
+          <div className="mr-1 flex items-center rounded-lg border border-zinc-700 p-0.5 text-xs font-medium">
             <button
               onClick={() => setMode("focus")}
-              title="Focus one terminal"
-              className={`rounded p-1 ${mode === "focus" ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white"}`}
+              title="Show one terminal at a time"
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition-colors ${
+                mode === "focus" ? "bg-indigo-500 text-white" : "text-zinc-400 hover:text-white"
+              }`}
             >
               <Square size={13} />
+              Single
             </button>
             <button
               onClick={() => setMode("split")}
-              title="Split view — all terminals at once"
-              className={`rounded p-1 ${mode === "split" ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white"}`}
+              title="Show all terminals side by side"
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition-colors ${
+                mode === "split" ? "bg-indigo-500 text-white" : "text-zinc-400 hover:text-white"
+              }`}
             >
               <LayoutGrid size={13} />
+              Split
             </button>
           </div>
         )}
@@ -191,9 +198,17 @@ export default function TerminalWorkspace() {
                 : `absolute inset-0 flex flex-col ${s.id === activeId ? "" : "hidden"}`
             }
           >
-            <div className={split ? "flex shrink-0 items-center gap-2 border-b border-zinc-800 bg-[#161616] px-3 py-1 text-xs text-zinc-400" : "hidden"}>
+            <div className={split ? "flex shrink-0 items-center gap-2 border-b border-zinc-800 bg-[#161616] px-3 py-1.5 text-xs text-zinc-300" : "hidden"}>
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: DOT[s.status] }} />
               {s.label}
+              <span className="flex-1" />
+              <button
+                onClick={(e) => { e.stopPropagation(); closeSession(s.id) }}
+                aria-label="Close session"
+                className="text-zinc-500 hover:text-zinc-100"
+              >
+                <X size={13} />
+              </button>
             </div>
             <div className="min-h-0 flex-1 p-1">
               <XTerminal
