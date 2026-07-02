@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
@@ -20,6 +20,12 @@ from app.models.assistant_thread import AssistantThread
 from app.models.user import User
 
 router = APIRouter(tags=["assistant"])
+
+# Bound thread growth: messages live inline in a JSONB column (read-modify-write on
+# every append), so cap both the message count and per-message size to keep threads —
+# and the shared DB — from being bloated by a single account.
+_MAX_MESSAGES_PER_THREAD = 500
+_MAX_CONTENT_CHARS = 20000
 
 
 class ThreadCreate(BaseModel):
@@ -32,7 +38,7 @@ class ThreadRename(BaseModel):
 
 class MessageAppend(BaseModel):
     role: str
-    content: str
+    content: str = Field(max_length=_MAX_CONTENT_CHARS)
 
 
 def _summary(t: AssistantThread) -> dict:
@@ -130,8 +136,10 @@ async def append_message(
     user: User = Depends(get_current_user),
 ) -> dict:
     t = await _get_owned(db, user, thread_id)
-    role = "user" if body.role == "user" else "assistant"
     msgs = list(t.messages or [])
+    if len(msgs) >= _MAX_MESSAGES_PER_THREAD:
+        raise HTTPException(status_code=409, detail="This conversation is full — start a new chat.")
+    role = "user" if body.role == "user" else "assistant"
     msgs.append({"role": role, "content": body.content})
     t.messages = msgs
     flag_modified(t, "messages")

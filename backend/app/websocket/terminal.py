@@ -107,8 +107,12 @@ async def _auth_and_get_server(
         return user, access.server
 
 
-async def _auth_user(token: str, ticket: str) -> User | None:
-    """Authenticate a WebSocket to a user (no server scope) — for the fleet assistant."""
+async def _auth_user(token: str, ticket: str, *, need_verified: bool = False) -> User | None:
+    """Authenticate a WebSocket to a user (no server scope) — for the fleet assistant.
+
+    ``need_verified`` mirrors the per-server execution gate (``_auth_and_get_server``):
+    when set and email verification is required, an unverified user is rejected.
+    """
     via_ticket = bool(ticket)
     token_tv = 0
     if via_ticket:
@@ -133,6 +137,8 @@ async def _auth_user(token: str, ticket: str) -> User | None:
         if user is None or not user.is_active:
             return None
         if not via_ticket and token_tv != user.token_version:
+            return None
+        if need_verified and settings.REQUIRE_EMAIL_VERIFICATION and not user.is_verified:
             return None
         return user
 
@@ -465,7 +471,7 @@ async def batch_ws(
 ) -> None:
     """Run one action across several servers — each through the per-server pipeline
     (plan + safety + execute). Approval is the user's explicit 'run' on a reviewed set."""
-    user = await _auth_user(token, ticket)
+    user = await _auth_user(token, ticket, need_verified=True)
     if not user:
         await websocket.close(code=4001, reason="Unauthorized")
         return
