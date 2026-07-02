@@ -5,7 +5,7 @@ import {
   Plus, X, Sparkles, Terminal as TerminalIcon, Server as ServerIcon, Square, LayoutGrid,
 } from "lucide-react"
 import { listServers } from "@/api/servers"
-import { useTerminalStore, type TermStatus } from "@/store/terminalStore"
+import { useTerminalStore, type TermStatus, type TermSession } from "@/store/terminalStore"
 import { useAssistantStore } from "@/store/assistantStore"
 import XTerminal, { type XTerminalHandle } from "./XTerminal"
 
@@ -74,15 +74,15 @@ export default function TerminalWorkspace() {
     return () => document.removeEventListener("mousedown", onClick)
   }, [pickerOpen])
 
-  function handToAlly() {
-    const s = sessions.find((x) => x.id === activeId)
-    if (!s) return
+  function handToAlly(s: TermSession) {
     const out = (refs.current.get(s.id)?.getRecentOutput(40) ?? "").trim()
     const text = out
       ? `I'm in the terminal on ${s.server.name} and hit a problem. Here's the recent output — take a look and fix it:\n\n\`\`\`\n${out}\n\`\`\``
       : `I'm working in the terminal on ${s.server.name} and could use a hand.`
     openAlly(s.server, text)
   }
+
+  const activeSession = sessions.find((x) => x.id === activeId) ?? null
 
   const cols = sessions.length <= 1 ? 1 : sessions.length <= 4 ? 2 : 3
   const rows = Math.ceil(sessions.length / cols)
@@ -170,14 +170,19 @@ export default function TerminalWorkspace() {
           </div>
         )}
 
-        <button
-          onClick={handToAlly}
-          title="Hand to Ally"
-          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-white/5 hover:text-white"
-        >
-          <Sparkles size={14} />
-          Hand to Ally
-        </button>
+        {/* In split mode each pane carries its own "Hand to Ally" (so it's clear which
+            server it sends); the single toolbar button only makes sense in focus mode,
+            where there's exactly one visible terminal. */}
+        {!split && activeSession && (
+          <button
+            onClick={() => handToAlly(activeSession)}
+            title={`Hand ${activeSession.server.name} to Ally`}
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-white/5 hover:text-white"
+          >
+            <Sparkles size={14} />
+            Hand to Ally
+          </button>
+        )}
       </div>
 
       {/* Bodies — every session's terminal stays mounted in the same position; CSS alone
@@ -199,13 +204,21 @@ export default function TerminalWorkspace() {
             }
           >
             <div className={split ? "flex shrink-0 items-center gap-2 border-b border-zinc-800 bg-[#161616] px-3 py-1.5 text-xs text-zinc-300" : "hidden"}>
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: DOT[s.status] }} />
-              {s.label}
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: DOT[s.status] }} />
+              <span className="min-w-0 truncate">{s.label}</span>
               <span className="flex-1" />
+              <button
+                onClick={(e) => { e.stopPropagation(); handToAlly(s) }}
+                title={`Hand ${s.server.name} to Ally`}
+                className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+              >
+                <Sparkles size={12} />
+                Hand to Ally
+              </button>
               <button
                 onClick={(e) => { e.stopPropagation(); closeSession(s.id) }}
                 aria-label="Close session"
-                className="text-zinc-500 hover:text-zinc-100"
+                className="shrink-0 text-zinc-500 hover:text-zinc-100"
               >
                 <X size={13} />
               </button>
