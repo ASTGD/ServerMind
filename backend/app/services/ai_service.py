@@ -188,6 +188,10 @@ THE USER'S SERVERS:
 
 LANGUAGE: Respond in {user_language}. The user may write in {user_language}.
 
+Server lines may include real health numbers and a security grade, each with its age —
+use them to answer with actual data (name the numbers). If a server has no numbers or
+they look old, say so honestly instead of guessing.
+
 WHAT YOU DO HERE (fleet overview):
 - Answer questions across servers (which need attention, are low on disk, need updates, etc.).
 - Recommend the right playbook or approach for a goal.
@@ -351,16 +355,20 @@ async def fleet_chat(
     user_language: str = "en",
     page_context: str | None = None,
     history: list[dict] | None = None,
+    health: dict[str, str] | None = None,
 ) -> dict:
     """Fleet-wide advisory chat — answers across all the user's servers (read-only, no
-    command execution). Returns {"answer": str, "follow_up_suggestions": list[str]}."""
+    command execution). ``health`` (Ally Brain Phase 4) maps server-id → one-line health
+    summary from ai_context_service. Returns {"answer": str, "follow_up_suggestions": list[str]}."""
     if servers:
         lines = []
         for s in servers:
             os_ = f"{s.os_type or 'unknown'}{(' ' + s.os_version) if s.os_version else ''}"
-            lines.append(
-                f"- {s.name} — {os_}, {s.connection_type}, status: {s.status or 'unknown'} ({s.host})"
-            )
+            line = f"- {s.name} — {os_}, {s.connection_type}, status: {s.status or 'unknown'} ({s.host})"
+            extra = (health or {}).get(str(s.id))
+            if extra:
+                line += f"\n  {extra}"
+            lines.append(line)
         server_list = "\n".join(lines)
     else:
         server_list = "(no servers connected yet)"

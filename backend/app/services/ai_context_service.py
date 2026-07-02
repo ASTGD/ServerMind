@@ -141,3 +141,72 @@ async def build_server_profile(db: AsyncSession, server: Server) -> str | None:
         lines.append("Recent AI activity (newest first): " + "; ".join(acts))
 
     return "\n".join(lines) if lines else None
+
+
+# Fleet health (Ally Brain Phase 4) — one short health string per server so the fleet
+# chat can answer "which server needs attention?" with real numbers. Bounded: only the
+# first _MAX_FLEET_HEALTH servers get a health line (the server list itself is complete).
+_MAX_FLEET_HEALTH = 30
+
+
+async def build_fleet_health(db: AsyncSession, servers: list[Server]) -> dict[str, str]:
+    """Map of server-id (str) → one-line health summary for the fleet prompt.
+
+    Two DISTINCT ON queries total (latest metric + latest completed security scan per
+    server) — never per-server queries, never SSH. Servers with no data are simply
+    absent from the map.
+    """
+    ids = [s.id for s in servers[:_MAX_FLEET_HEALTH]]
+    if not ids:
+        return {}
+
+    metrics = (
+        (
+            await db.execute(
+                select(ServerMetric)
+                .where(ServerMetric.server_id.in_(ids))
+                .distinct(ServerMetric.server_id)
+                .order_by(ServerMetric.server_id, ServerMetric.recorded_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    scans = (
+        (
+            await db.execute(
+                select(SecurityScan)
+                .where(SecurityScan.server_id.in_(ids), SecurityScan.status == "completed")
+                .distinct(SecurityScan.server_id)
+                .order_by(SecurityScan.server_id, SecurityScan.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_metric = {m.server_id: m for m in metrics}
+    by_scan = {s.server_id: s for s in scans}
+
+    health: dict[str, str] = {}
+    for sid in ids:
+        parts: list[str] = []
+        m = by_metric.get(sid)
+        if m:
+            nums: list[str] = []
+            if m.cpu_percent is not None:
+                nums.append(f"CPU {m.cpu_percent:.0f}%")
+            if m.ram_percent is not None:
+                nums.append(f"RAM {m.ram_percent:.0f}%")
+            if m.disk_percent is not None:
+                nums.append(f"disk {m.disk_percent:.0f}%")
+            if nums:
+                parts.append(f"health ({_age(m.recorded_at)}): " + ", ".join(nums))
+        scan = by_scan.get(sid)
+        if scan:
+            sec = f"security ({_age(scan.created_at)}): grade {scan.grade}"
+            if scan.critical_count or scan.high_count:
+                sec += f" ({scan.critical_count} critical, {scan.high_count} high)"
+            parts.append(sec)
+        if parts:
+            health[str(sid)] = "; ".join(parts)
+    return health

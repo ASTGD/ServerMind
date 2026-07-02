@@ -467,8 +467,17 @@ async def _fleet_loop(ws: WebSocket, user: User) -> None:
         await ws.send_text(json.dumps({"type": "thinking"}))
         async with AsyncSessionLocal() as db:
             servers = await team_service.accessible_servers(db, user)
+            # Ally Brain Phase 4 — real health numbers per server, so "which server
+            # needs attention?" is answered with data. Best-effort: never blocks chat.
+            try:
+                health = await ai_context_service.build_fleet_health(db, servers)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("fleet health build failed: %s", exc)
+                health = None
         try:
-            data = await ai_service.fleet_chat(text, servers, lang, page_context=page_context, history=history)
+            data = await ai_service.fleet_chat(
+                text, servers, lang, page_context=page_context, history=history, health=health,
+            )
         except Exception as exc:  # noqa: BLE001
             await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
             continue
