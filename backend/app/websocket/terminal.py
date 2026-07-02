@@ -19,7 +19,7 @@ from app.models.command_log import CommandLog
 from app.models.playbook import Playbook, PlaybookRun, UserScript
 from app.models.server import Server
 from app.models.user import User
-from app.services import ai_service, connection_manager, safety_service
+from app.services import ai_context_service, ai_service, connection_manager, safety_service
 from app.services import ssh_service, team_service, terminal_session_service
 from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
@@ -619,8 +619,21 @@ async def _handle_message(
     # ── 1. AI planning ────────────────────────────────────────────────────────
     await ws.send_text(json.dumps({"type": "thinking"}))
 
+    # Ally Brain Phase 3 — attach what ServerAlly already knows about this server
+    # (metrics, security grade, installs, recent activity). Best-effort: a profile
+    # failure must never block the chat itself.
     try:
-        plan = await ai_service.plan_commands(user_input, server, user_language, page_context, history)
+        async with AsyncSessionLocal() as db:
+            server_profile = await ai_context_service.build_server_profile(db, server)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("server profile build failed for %s: %s", server.id, exc)
+        server_profile = None
+
+    try:
+        plan = await ai_service.plan_commands(
+            user_input, server, user_language, page_context, history,
+            server_profile=server_profile,
+        )
     except Exception as exc:
         await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
         return
