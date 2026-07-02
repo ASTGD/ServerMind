@@ -92,8 +92,14 @@ export default function TerminalWorkspace() {
 
   return (
     <div className={`fixed bottom-0 left-0 right-0 top-14 z-20 flex flex-col bg-[#0d0d0d] md:left-60 ${visible ? "" : "hidden"}`}>
-      {/* Tab bar */}
+      {/* Tab bar — macOS terminal window chrome */}
       <div className="flex shrink-0 items-center gap-1 border-b border-black bg-[#1a1a1a] px-3 py-2">
+        {/* Decorative traffic lights (the Mac window frame). */}
+        <div className="mr-3 flex shrink-0 items-center gap-2 pl-0.5" aria-hidden="true">
+          <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+          <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
+          <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+        </div>
         {/* Session tabs — only in focus mode (in split, the pane headers identify each). */}
         {!split && sessions.map((s) => (
           <div
@@ -107,8 +113,9 @@ export default function TerminalWorkspace() {
             <span className="whitespace-nowrap">{s.label}</span>
             <button
               onClick={(e) => { e.stopPropagation(); closeSession(s.id) }}
-              aria-label="Close session"
-              className="text-zinc-600 opacity-0 transition-opacity hover:text-zinc-200 group-hover:opacity-100"
+              aria-label="Close terminal"
+              title="Close terminal"
+              className="rounded p-0.5 text-zinc-500 transition-colors hover:bg-white/10 hover:text-zinc-100"
             >
               <X size={14} />
             </button>
@@ -118,10 +125,12 @@ export default function TerminalWorkspace() {
         <div className="relative" ref={pickerRef}>
           <button
             onClick={() => setPickerOpen((o) => !o)}
-            aria-label="New session"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 hover:bg-white/5 hover:text-white"
+            aria-label="New terminal"
+            title="New terminal"
+            className="flex items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-white/5 hover:text-white"
           >
-            <Plus size={16} />
+            <Plus size={14} />
+            New
           </button>
           {pickerOpen && (
             <div className="absolute left-0 top-10 z-10 max-h-80 w-60 overflow-y-auto rounded-lg border border-zinc-700 bg-[#1a1a1a] py-1 shadow-xl">
