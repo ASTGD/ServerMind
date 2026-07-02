@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react"
 import { useLocation } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { Plus, X, Sparkles, Terminal as TerminalIcon, Server as ServerIcon } from "lucide-react"
+import {
+  Plus, X, Sparkles, Terminal as TerminalIcon, Server as ServerIcon, Square, LayoutGrid,
+} from "lucide-react"
 import { listServers } from "@/api/servers"
 import { useTerminalStore, type TermStatus } from "@/store/terminalStore"
 import { useAssistantStore } from "@/store/assistantStore"
@@ -16,11 +18,16 @@ const DOT: Record<TermStatus, string> = {
   error: "#ef4444",
 }
 
+type Mode = "focus" | "split"
+
 /**
  * The terminal workspace — a full-canvas, tabbed, multi-session terminal (the Termius
- * model). It's mounted once in the app shell so sessions stay connected across all
- * navigation; it fills the content area on the /terminal route and is hidden (but kept
- * mounted) everywhere else.
+ * model). Mounted once in the app shell so sessions stay connected across all navigation;
+ * fills the content area on /terminal, hidden-but-mounted elsewhere.
+ *
+ * Focus mode shows one session (tabs to switch). Split mode tiles every session into a
+ * grid — all live at once. Terminals never move in the tree (only CSS changes between
+ * modes), so switching layouts never remounts them or drops a session.
  */
 export default function TerminalWorkspace() {
   const { sessions, activeId, setActive, closeSession, openSession, setStatus, touch } = useTerminalStore()
@@ -28,18 +35,24 @@ export default function TerminalWorkspace() {
   const location = useLocation()
   const visible = location.pathname === "/terminal"
 
+  const [mode, setMode] = useState<Mode>("focus")
   const [pickerOpen, setPickerOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const refs = useRef<Map<string, XTerminalHandle>>(new Map())
 
+  const split = mode === "split" && sessions.length > 1
+
   const { data: servers = [] } = useQuery({ queryKey: ["servers"], queryFn: listServers, enabled: visible })
 
-  // Re-fit the active terminal when the workspace is shown or the active tab changes.
+  // Re-fit terminals when the workspace is shown, the mode changes, or tabs change.
   useEffect(() => {
-    if (!visible || !activeId) return
-    const t = setTimeout(() => refs.current.get(activeId)?.fit(), 40)
+    if (!visible) return
+    const t = setTimeout(() => {
+      if (split) sessions.forEach((s) => refs.current.get(s.id)?.fit())
+      else if (activeId) refs.current.get(activeId)?.fit()
+    }, 60)
     return () => clearTimeout(t)
-  }, [visible, activeId, sessions.length])
+  }, [visible, split, activeId, sessions.length])
 
   // Idle timeout — close shells with no activity for IDLE_MS.
   useEffect(() => {
@@ -70,6 +83,12 @@ export default function TerminalWorkspace() {
       : `I'm working in the terminal on ${s.server.name} and could use a hand.`
     openAlly(s.server, text)
   }
+
+  const cols = sessions.length <= 1 ? 1 : sessions.length <= 4 ? 2 : 3
+  const rows = Math.ceil(sessions.length / cols)
+  const gridStyle = split
+    ? { gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))`, gridTemplateRows: `repeat(${rows}, minmax(0,1fr))` }
+    : undefined
 
   return (
     <div className={`fixed bottom-0 left-0 right-0 top-14 z-20 flex flex-col bg-[#0d0d0d] md:left-60 ${visible ? "" : "hidden"}`}>
@@ -125,6 +144,25 @@ export default function TerminalWorkspace() {
 
         <span className="flex-1" />
 
+        {sessions.length >= 2 && (
+          <div className="mr-1 flex items-center rounded-md border border-zinc-700 p-0.5">
+            <button
+              onClick={() => setMode("focus")}
+              title="Focus one terminal"
+              className={`rounded p-1 ${mode === "focus" ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white"}`}
+            >
+              <Square size={13} />
+            </button>
+            <button
+              onClick={() => setMode("split")}
+              title="Split view — all terminals at once"
+              className={`rounded p-1 ${mode === "split" ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white"}`}
+            >
+              <LayoutGrid size={13} />
+            </button>
+          </div>
+        )}
+
         <button
           onClick={handToAlly}
           title="Hand to Ally"
@@ -135,17 +173,37 @@ export default function TerminalWorkspace() {
         </button>
       </div>
 
-      {/* Bodies — every session stays mounted; only the active one shows. */}
-      <div className="relative min-h-0 flex-1">
+      {/* Bodies — every session's terminal stays mounted in the same position; CSS alone
+          switches between the single-pane (focus) and grid (split) layouts. */}
+      <div
+        className={split ? "grid min-h-0 flex-1 gap-1.5 p-1.5" : "relative min-h-0 flex-1"}
+        style={gridStyle}
+      >
         {sessions.map((s) => (
-          <div key={s.id} className={`absolute inset-0 p-2 ${s.id === activeId ? "" : "hidden"}`}>
-            <XTerminal
-              ref={(h) => { if (h) refs.current.set(s.id, h); else refs.current.delete(s.id) }}
-              serverId={s.server.id}
-              sid={s.sid}
-              onStatusChange={(st) => setStatus(s.id, st)}
-              onActivity={() => touch(s.id)}
-            />
+          <div
+            key={s.id}
+            onClick={() => setActive(s.id)}
+            className={
+              split
+                ? `flex min-h-0 flex-col overflow-hidden rounded-md border ${
+                    s.id === activeId ? "border-indigo-500/60" : "border-zinc-800"
+                  }`
+                : `absolute inset-0 flex flex-col ${s.id === activeId ? "" : "hidden"}`
+            }
+          >
+            <div className={split ? "flex shrink-0 items-center gap-2 border-b border-zinc-800 bg-[#161616] px-3 py-1 text-xs text-zinc-400" : "hidden"}>
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: DOT[s.status] }} />
+              {s.label}
+            </div>
+            <div className="min-h-0 flex-1 p-1">
+              <XTerminal
+                ref={(h) => { if (h) refs.current.set(s.id, h); else refs.current.delete(s.id) }}
+                serverId={s.server.id}
+                sid={s.sid}
+                onStatusChange={(st) => setStatus(s.id, st)}
+                onActivity={() => touch(s.id)}
+              />
+            </div>
           </div>
         ))}
         {sessions.length === 0 && (
