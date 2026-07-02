@@ -34,9 +34,13 @@ async def _get_server(server_id: str, user: User, db: AsyncSession) -> Server:
 
 
 async def _get_alert(alert_id: str, user: User, db: AsyncSession) -> Alert:
+    try:
+        aid = uuid.UUID(alert_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=404, detail="Alert not found")
     row = await db.execute(
         select(Alert).where(
-            Alert.id == uuid.UUID(alert_id),
+            Alert.id == aid,
             Alert.user_id == user.id,
         )
     )

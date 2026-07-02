@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     EMAIL_VERIFICATION_TOKEN_HOURS: int = 24
     APP_BASE_URL: str = ""   # frontend origin for verify links, e.g. https://app.example.com
 
+    # Hosting-panel TLS verification. Off by default because panels commonly use
+    # self-signed certs; operators whose panels have valid certs can enable it.
+    HOSTING_TLS_VERIFY: bool = False
+
     # Execution backend — "celery" (durable worker: installs keep running if the
     # window closes and can be rejoined) or "inline" (in the web process). When set
     # to "celery" but no worker is responding, execution safely falls back to inline,

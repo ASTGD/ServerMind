@@ -38,9 +38,13 @@ async def _get_server(
 
 async def _get_task(task_id: str, user: User, db: AsyncSession) -> ScheduledTask:
     """Fetch a scheduled task that belongs to the authenticated user."""
+    try:
+        tid = uuid.UUID(task_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=404, detail="Scheduled task not found")
     result = await db.execute(
         select(ScheduledTask).where(
-            ScheduledTask.id == uuid.UUID(task_id),
+            ScheduledTask.id == tid,
             ScheduledTask.user_id == user.id,
         )
     )

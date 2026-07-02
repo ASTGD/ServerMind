@@ -25,6 +25,7 @@ import logging
 import requests
 from requests.auth import HTTPBasicAuth
 
+from app.config import settings
 from app.models.server import Server
 from app.services.crypto_service import decrypt
 
@@ -74,7 +75,7 @@ class CyberPanelAdapter(_Adapter):
         url = f"{self._base()}/api/{action}"
         payload = {"adminUser": self.username, "adminPass": self.secret, **(params or {})}
         try:
-            resp = requests.post(url, json=payload, verify=False, timeout=_TIMEOUT)
+            resp = requests.post(url, json=payload, verify=settings.HOSTING_TLS_VERIFY, timeout=_TIMEOUT)
         except requests.RequestException as exc:
             raise HostingError(f"Could not reach CyberPanel: {exc}")
         if resp.status_code >= 400:
@@ -146,7 +147,7 @@ class CpanelAdapter(_Adapter):
         url = f"{self._base()}/execute/{module}/{func}"
         headers = {"Authorization": f"cpanel {self.username}:{self.secret}"}
         try:
-            resp = requests.get(url, headers=headers, params=params or {}, verify=False, timeout=_TIMEOUT)
+            resp = requests.get(url, headers=headers, params=params or {}, verify=settings.HOSTING_TLS_VERIFY, timeout=_TIMEOUT)
         except requests.RequestException as exc:
             raise HostingError(f"Could not reach cPanel: {exc}")
         if resp.status_code == 401:
@@ -206,7 +207,7 @@ class PleskAdapter(_Adapter):
         url = f"{self._base()}/api/v2{path}"
         try:
             resp = requests.request(
-                method, url, json=json_body, verify=False, timeout=_TIMEOUT,
+                method, url, json=json_body, verify=settings.HOSTING_TLS_VERIFY, timeout=_TIMEOUT,
                 auth=HTTPBasicAuth(self.username, self.secret),
                 headers={"Accept": "application/json"},
             )
