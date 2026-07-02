@@ -10,6 +10,7 @@ from app.models.security_scan import SecurityScan
 from app.models.backup import Backup, BackupRun
 from app.models.assistant_thread import AssistantThread
 from app.models.ai_usage import AiUsage
+from app.models.ally_memory import AllyMemory
 
 __all__ = [
     "User",
@@ -28,4 +29,5 @@ __all__ = [
     "BackupRun",
     "AssistantThread",
     "AiUsage",
+    "AllyMemory",
 ]

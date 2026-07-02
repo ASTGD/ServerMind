@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type ReactNode } from "react"
-import { useMutation, useQuery } from "@tanstack/react-query"
-import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, History, Check, Loader2, Sparkles } from "lucide-react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, History, Check, Loader2, Sparkles, Brain, Trash2 } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { listAudit } from "@/api/audit"
 import {
@@ -9,6 +9,7 @@ import {
 } from "@/api/auth"
 import { getAiSettings, updateAiSettings, testAiSettings, type AiProvider, type AiSettings } from "@/api/settings"
 import { getMyUsage } from "@/api/usage"
+import { listMyMemories, deleteMemory } from "@/api/memories"
 import { useAuthStore } from "@/store/authStore"
 import i18n from "@/i18n"
 import type { User } from "@/types"
@@ -128,6 +129,12 @@ export default function Settings() {
   const aiSeeded = useRef(false)
   const aiQuery = useQuery({ queryKey: ["ai-settings"], queryFn: getAiSettings })
   const { data: usage } = useQuery({ queryKey: ["my-usage"], queryFn: getMyUsage })
+  const qc = useQueryClient()
+  const { data: memories = [] } = useQuery({ queryKey: ["my-memories"], queryFn: listMyMemories })
+  const forgetMutation = useMutation({
+    mutationFn: deleteMemory,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-memories"] }),
+  })
   useEffect(() => {
     const d = aiQuery.data
     if (d && !aiSeeded.current) {
@@ -451,6 +458,42 @@ export default function Settings() {
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">Loading usage…</p>
+      )}
+    </Section>
+  )
+
+  const memorySection = (
+    <Section
+      icon={Brain}
+      title="What Ally remembers"
+      description="Notes Ally saved about you from your conversations. Delete any note to make Ally forget it."
+    >
+      {memories.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Nothing yet — Ally saves short notes (like your preferences) as you work together.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {memories.map((m) => (
+            <li
+              key={m.id}
+              className="flex items-start gap-2 rounded-lg border border-border bg-background px-3 py-2"
+            >
+              <span className="mt-0.5 shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                {m.kind}
+              </span>
+              <span className="min-w-0 flex-1 text-sm text-foreground">{m.content}</span>
+              <button
+                onClick={() => forgetMutation.mutate(m.id)}
+                title="Forget this"
+                aria-label="Forget this note"
+                className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500"
+              >
+                <Trash2 size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </Section>
   )
@@ -819,6 +862,7 @@ export default function Settings() {
           {profileSection}
           {accountSection}
           {usageSection}
+          {memorySection}
           {SHOW_AI_PROVIDER_SETTINGS && aiSection}
         </div>
         <div className="space-y-6">

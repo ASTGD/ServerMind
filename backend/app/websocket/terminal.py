@@ -20,7 +20,8 @@ from app.models.playbook import Playbook, PlaybookRun, UserScript
 from app.models.server import Server
 from app.models.user import User
 from app.services import ai_context_service, ai_service, connection_manager, safety_service
-from app.services import metering_service, ssh_service, team_service, terminal_session_service
+from app.services import memory_service, metering_service, ssh_service, team_service
+from app.services import terminal_session_service
 from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
 from app.services.playbook_service import substitute_variables
@@ -385,7 +386,10 @@ async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
             }))
             continue
 
-        await _handle_message(ws, server, user_input, user_language, os_family, page_context, history)
+        await _handle_message(
+            ws, server, user_input, user_language, os_family, page_context, history,
+            acting_user_id=user_id,
+        )
 
 
 # ── Fleet chat WebSocket (global assistant, advisory) ─────────────────────────
@@ -502,17 +506,21 @@ async def _fleet_loop(ws: WebSocket, user: User) -> None:
         async with AsyncSessionLocal() as db:
             servers = await team_service.accessible_servers(db, user)
             # Ally Brain Phase 4 — real health numbers per server, so "which server
-            # needs attention?" is answered with data. Best-effort: never blocks chat.
+            # needs attention?" is answered with data. Phase 5 — what Ally remembers
+            # about this user. Best-effort: never blocks chat.
+            health = None
+            memories = None
             try:
                 health = await ai_context_service.build_fleet_health(db, servers)
+                memories = await memory_service.block_for_user(db, user.id)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("fleet health build failed: %s", exc)
-                health = None
+                logger.warning("fleet context build failed: %s", exc)
         # Meter the whole fleet turn (answer + any inline script generation) = 1 action.
         tok = metering_service.start_collection()
         try:
             data = await ai_service.fleet_chat(
-                text, servers, lang, page_context=page_context, history=history, health=health,
+                text, servers, lang, page_context=page_context, history=history,
+                health=health, memories=memories,
             )
         except Exception as exc:  # noqa: BLE001
             calls = metering_service.finish_collection(tok)
@@ -524,6 +532,12 @@ async def _fleet_loop(ws: WebSocket, user: User) -> None:
                     )
             await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
             continue
+        # Ally Brain Phase 5 — save a user-scoped note when Ally marked one.
+        if data.get("remember"):
+            async with AsyncSessionLocal() as db:
+                await memory_service.save_from_ai(
+                    db, user_id=user.id, remember=data.get("remember"), server_id=None,
+                )
         # If Ally decided the user wants a reusable script written, generate it now and
         # attach it — the frontend shows it with "Save to My Scripts" / "Open in editor".
         # This only WRITES a script (text); it is never executed here.
@@ -700,6 +714,7 @@ async def _handle_message(
     os_family: str,
     page_context: str | None = None,
     history: list[dict] | None = None,
+    acting_user_id: str | None = None,
 ) -> None:
     """Metered wrapper (docs/AI-METERING.md) — collects every model call made for this
     one user message (plan → execute → explain = 1 action) and writes the ledger,
@@ -707,7 +722,8 @@ async def _handle_message(
     tok = metering_service.start_collection()
     try:
         await _handle_message_inner(
-            ws, server, user_input, user_language, os_family, page_context, history
+            ws, server, user_input, user_language, os_family, page_context, history,
+            acting_user_id=acting_user_id,
         )
     finally:
         calls = metering_service.finish_collection(tok)
@@ -727,29 +743,46 @@ async def _handle_message_inner(
     os_family: str,
     page_context: str | None = None,
     history: list[dict] | None = None,
+    acting_user_id: str | None = None,
 ) -> None:
     """Plan, validate, execute and explain one user message."""
     # ── 1. AI planning ────────────────────────────────────────────────────────
     await ws.send_text(json.dumps({"type": "thinking"}))
 
     # Ally Brain Phase 3 — attach what ServerAlly already knows about this server
-    # (metrics, security grade, installs, recent activity). Best-effort: a profile
-    # failure must never block the chat itself.
+    # (metrics, security grade, installs, recent activity), and Phase 5 — what Ally
+    # remembers (server notes + the acting user's preferences). Best-effort: a
+    # context failure must never block the chat itself.
+    server_profile = None
+    memories = None
     try:
         async with AsyncSessionLocal() as db:
             server_profile = await ai_context_service.build_server_profile(db, server)
+            memories = await memory_service.block_for_server(
+                db, server.id, acting_user_id or server.user_id
+            )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("server profile build failed for %s: %s", server.id, exc)
-        server_profile = None
+        logger.warning("chat context build failed for %s: %s", server.id, exc)
 
     try:
         plan = await ai_service.plan_commands(
             user_input, server, user_language, page_context, history,
-            server_profile=server_profile,
+            server_profile=server_profile, memories=memories,
         )
     except Exception as exc:
         await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
         return
+
+    # Ally Brain Phase 5 — if Ally decided this turn is worth remembering, save the
+    # note (server-scoped; preferences go user-scoped). Secret-filtered, best-effort.
+    if plan.get("remember"):
+        async with AsyncSessionLocal() as db:
+            await memory_service.save_from_ai(
+                db,
+                user_id=acting_user_id or server.user_id,
+                remember=plan.get("remember"),
+                server_id=server.id,
+            )
 
     # If AI needs clarification, return early
     if plan.get("clarification_needed"):

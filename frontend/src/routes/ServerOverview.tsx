@@ -5,6 +5,7 @@ import SecurityWidget from "@/components/server/widgets/SecurityWidget"
 import BackupsWidget from "@/components/server/widgets/BackupsWidget"
 import SchedulerWidget from "@/components/server/widgets/SchedulerWidget"
 import RecentActivityWidget from "@/components/server/widgets/RecentActivityWidget"
+import MemoryWidget from "@/components/server/widgets/MemoryWidget"
 import type { Server } from "@/types"
 
 /** The default tab of the server hub — a read-only dashboard of widgets. The server is
@@ -67,6 +68,7 @@ export default function ServerOverview() {
         <SecurityWidget serverId={server.id} />
         <BackupsWidget serverId={server.id} />
         <SchedulerWidget serverId={server.id} />
+        <MemoryWidget serverId={server.id} />
       </div>
     </div>
   )
