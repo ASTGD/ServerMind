@@ -99,10 +99,10 @@ export default function ScriptGenerator() {
       <div>
         <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
           <Sparkles className="h-6 w-6 text-primary" />
-          AI Script Generator
+          Ally Script Generator
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Describe what you need in plain English — AI writes the script
+          Describe what you need in plain English — Ally writes the script
         </p>
       </div>
 

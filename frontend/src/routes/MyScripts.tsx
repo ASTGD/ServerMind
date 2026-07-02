@@ -194,7 +194,7 @@ export default function MyScripts() {
           <div>
             <h1 className="text-2xl font-semibold text-foreground">My Scripts</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Your saved and AI-generated scripts
+              Your saved and Ally-generated scripts
             </p>
           </div>
           <button
