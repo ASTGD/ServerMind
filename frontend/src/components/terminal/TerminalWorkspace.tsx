@@ -187,7 +187,7 @@ export default function TerminalWorkspace() {
           <button
             onClick={() => handToAlly(activeSession)}
             title={`Hand ${activeSession.server.name} to Ally`}
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-white/5 hover:text-white"
+            className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-indigo-500 to-violet-500 px-2.5 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
           >
             <Sparkles size={14} />
             Hand to Ally
@@ -220,7 +220,7 @@ export default function TerminalWorkspace() {
               <button
                 onClick={(e) => { e.stopPropagation(); handToAlly(s) }}
                 title={`Hand ${s.server.name} to Ally`}
-                className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+                className="flex shrink-0 items-center gap-1 rounded bg-gradient-to-r from-indigo-500 to-violet-500 px-2 py-1 text-white transition-opacity hover:opacity-90"
               >
                 <Sparkles size={12} />
                 Hand to Ally
