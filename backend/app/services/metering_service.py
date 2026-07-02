@@ -161,6 +161,7 @@ async def record(
     actions: int = 1,
     fuel: str = "included",
     status: str = "ok",
+    skill: str | None = None,
 ) -> None:
     """Persist one ledger row per model call; the FIRST row carries ``actions`` and the
     rest carry 0 (one user request = one action, however many calls it needed).
@@ -180,6 +181,7 @@ async def record(
                     user_id=user_id,
                     server_id=server_id,
                     feature=feature,
+                    skill=skill,
                     model=model,
                     fuel=fuel,
                     input_tokens=in_tok,

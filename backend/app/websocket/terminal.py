@@ -20,8 +20,8 @@ from app.models.playbook import Playbook, PlaybookRun, UserScript
 from app.models.server import Server
 from app.models.user import User
 from app.services import ai_context_service, ai_service, connection_manager, safety_service
-from app.services import memory_service, metering_service, ssh_service, team_service
-from app.services import terminal_session_service
+from app.services import memory_service, metering_service, skill_service, ssh_service
+from app.services import team_service, terminal_session_service
 from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
 from app.services.playbook_service import substitute_variables
@@ -718,12 +718,18 @@ async def _handle_message(
 ) -> None:
     """Metered wrapper (docs/AI-METERING.md) — collects every model call made for this
     one user message (plan → execute → explain = 1 action) and writes the ledger,
-    billed to the server owner's pool. Metering never blocks the message itself."""
+    billed to the server owner's pool. Metering never blocks the message itself.
+
+    Also matches an Ally Skill (Phase A): a deterministic trigger match picks the
+    expert procedure for this kind of task; the slug is tagged on the ledger rows."""
+    skill = skill_service.match(user_input, server.os_type)
+    if skill:
+        logger.info("ally skill matched: %s (server=%s)", skill.slug, server.id)
     tok = metering_service.start_collection()
     try:
         await _handle_message_inner(
             ws, server, user_input, user_language, os_family, page_context, history,
-            acting_user_id=acting_user_id,
+            acting_user_id=acting_user_id, skill=skill,
         )
     finally:
         calls = metering_service.finish_collection(tok)
@@ -732,6 +738,7 @@ async def _handle_message(
                 await metering_service.record(
                     db, user_id=server.user_id, feature="chat",
                     calls=calls, server_id=server.id,
+                    skill=skill.slug if skill else None,
                 )
 
 
@@ -744,6 +751,7 @@ async def _handle_message_inner(
     page_context: str | None = None,
     history: list[dict] | None = None,
     acting_user_id: str | None = None,
+    skill: skill_service.Skill | None = None,
 ) -> None:
     """Plan, validate, execute and explain one user message."""
     # ── 1. AI planning ────────────────────────────────────────────────────────
@@ -767,7 +775,7 @@ async def _handle_message_inner(
     try:
         plan = await ai_service.plan_commands(
             user_input, server, user_language, page_context, history,
-            server_profile=server_profile, memories=memories,
+            server_profile=server_profile, memories=memories, skill=skill,
         )
     except Exception as exc:
         await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))

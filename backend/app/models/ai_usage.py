@@ -29,6 +29,9 @@ class AiUsage(Base):
     )
     # 'chat' | 'fleet_chat' | 'script_gen' | 'explain' | 'schedule_parse' | 'batch'
     feature: Mapped[str] = mapped_column(String(30), nullable=False)
+    # Ally Skill used for this request (Phase A), if one matched — shows which skills
+    # earn their tokens.
+    skill: Mapped[str | None] = mapped_column(String(40))
     model: Mapped[str] = mapped_column(String(60), default="")
     # 'included' (our key / plan quota) | 'byok' (user's own key — unmetered)
     fuel: Mapped[str] = mapped_column(String(10), default="included")

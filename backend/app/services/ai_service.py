@@ -11,7 +11,7 @@ import logging
 import re
 
 from app.models.server import Server
-from app.services import llm_service
+from app.services import llm_service, skill_service
 
 logger = logging.getLogger(__name__)
 
@@ -371,8 +371,11 @@ async def plan_commands(
     history: list[dict] | None = None,
     server_profile: str | None = None,
     memories: str | None = None,
+    skill: skill_service.Skill | None = None,
 ) -> dict:
-    """Ask Claude to produce a command plan for the user's request."""
+    """Ask Claude to produce a command plan for the user's request. ``skill`` (Ally
+    Skills Phase A) injects the matched expert procedure — our own authored content,
+    the one block Ally is meant to follow."""
     system = _CHAT_SYSTEM.format(
         server_name=server.name,
         os_type=server.os_type or "linux",
@@ -386,6 +389,7 @@ async def plan_commands(
         system += _HOSTING_NOTE.format(panel_type=server.panel_type or "control panel")
     system += _server_profile_block(server_profile)
     system += _memories_block(memories)
+    system += skill_service.skill_block(skill)
     system += _page_context_block(page_context)
     system += _history_block(history)
 
