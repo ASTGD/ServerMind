@@ -92,8 +92,9 @@ export default function TerminalWorkspace() {
 
   return (
     <div className={`fixed bottom-0 left-0 right-0 top-14 z-20 flex flex-col bg-[#0d0d0d] md:left-60 ${visible ? "" : "hidden"}`}>
-      {/* Tab bar — macOS terminal window chrome */}
-      <div className="flex shrink-0 items-center gap-1 border-b border-black bg-[#1a1a1a] px-3 py-2">
+      {/* Tab bar — macOS terminal window chrome (deep-indigo titlebar, distinct from the
+          near-black terminal body so it clearly reads as a window bar). */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-black bg-gradient-to-b from-[#1e1b4b] to-[#15132a] px-3 py-2">
         {/* Decorative traffic lights (the Mac window frame). */}
         <div className="mr-3 flex shrink-0 items-center gap-2 pl-0.5" aria-hidden="true">
           <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
