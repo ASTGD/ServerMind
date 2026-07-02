@@ -20,7 +20,7 @@ from app.models.playbook import Playbook, PlaybookRun, UserScript
 from app.models.server import Server
 from app.models.user import User
 from app.services import ai_service, connection_manager, safety_service
-from app.services import ssh_service, team_service
+from app.services import ssh_service, team_service, terminal_session_service
 from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
 from app.services.playbook_service import substitute_variables
@@ -164,13 +164,18 @@ async def terminal_ws(
     server_id: str,
     token: str = Query(default=""),
     ticket: str = Query(default=""),
+    sid: str = Query(default=""),
 ) -> None:
-    """Bidirectional interactive terminal over WebSocket."""
+    """Bidirectional interactive terminal over WebSocket.
+
+    Backed by a persistent session (terminal_session_service): the shell survives a
+    WebSocket drop, so a client reconnecting with the same ``sid`` re-attaches to the
+    same shell and gets its buffered scrollback replayed."""
     auth = await _auth_and_get_server(token, ticket, server_id, need_execute=True)
     if not auth:
         await websocket.close(code=4001, reason="Unauthorized")
         return
-    _user, server = auth
+    user, server = auth
 
     # Interactive PTY shells are SSH-only. WinRM/hosting have no PTY — those
     # users should use the AI Chat tab (which streams command execution).
@@ -186,66 +191,69 @@ async def terminal_ws(
 
     await websocket.accept()
 
-    try:
-        channel = await ssh_service.open_shell(
+    # One persistent shell per (user, server, sid). Reconnecting with the same sid
+    # re-attaches instead of opening a fresh login.
+    key = f"{user.id}:{server.id}:{sid or 'default'}"
+
+    async def _opener() -> paramiko.Channel:
+        return await ssh_service.open_shell(
             str(server.id), server.host, server.port,
             server.username, server.auth_type, server.encrypted_cred,
         )
+
+    try:
+        session, _is_new = await terminal_session_service.get_or_create(key, _opener)
     except Exception as exc:
         await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
         await websocket.close()
         return
 
-    loop = asyncio.get_event_loop()
-
-    async def _ssh_to_ws() -> None:
-        """Read SSH output and forward to WebSocket."""
-        while True:
-            data = await loop.run_in_executor(_pty_executor, lambda: _read_channel(channel))
-            if data is None:
-                break
-            if data:
-                await websocket.send_bytes(data)
-
-    async def _ws_to_ssh() -> None:
-        """Read WebSocket messages and forward to SSH channel."""
-        while True:
-            raw = await websocket.receive_text()
-            msg = json.loads(raw)
-            if msg.get("type") == "input":
-                payload = msg.get("data", "")
-                await loop.run_in_executor(
-                    _pty_executor,
-                    lambda p=payload: channel.sendall(p.encode("utf-8", errors="replace")),
-                )
-            elif msg.get("type") == "resize":
-                cols = int(msg.get("cols", 80))
-                rows = int(msg.get("rows", 24))
-                await loop.run_in_executor(
-                    _pty_executor,
-                    lambda c=cols, r=rows: channel.resize_pty(width=c, height=r),
-                )
-
-    tasks = [
-        asyncio.ensure_future(_ssh_to_ws()),
-        asyncio.ensure_future(_ws_to_ssh()),
-    ]
+    snap, q = terminal_session_service.attach(session)
+    # Reset the client screen, then replay the authoritative scrollback — reconstructs
+    # the view on reconnect; a harmless no-op on a fresh terminal.
     try:
-        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        for t in pending:
-            t.cancel()
+        await websocket.send_text(json.dumps({"type": "reset"}))
+        if snap:
+            await websocket.send_bytes(snap)
+    except Exception:
+        terminal_session_service.detach(session, q)
+        return
+
+    closed_by_client = False
+
+    async def _pump_out() -> None:
+        while True:
+            await websocket.send_bytes(await q.get())
+
+    async def _pump_in() -> None:
+        nonlocal closed_by_client
+        while True:
+            msg = json.loads(await websocket.receive_text())
+            mtype = msg.get("type")
+            if mtype == "input":
+                await terminal_session_service.write(session, msg.get("data", ""))
+            elif mtype == "resize":
+                await terminal_session_service.resize(
+                    session, int(msg.get("cols", 80)), int(msg.get("rows", 24))
+                )
+            elif mtype == "close":
+                closed_by_client = True
+                return
+
+    tasks = [asyncio.ensure_future(_pump_out()), asyncio.ensure_future(_pump_in())]
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     except WebSocketDisconnect:
-        for t in tasks:
-            t.cancel()
+        pass
     except Exception as exc:
         logger.warning("Terminal WS error for server %s: %s", server_id, exc)
+    finally:
         for t in tasks:
             t.cancel()
-    finally:
-        try:
-            channel.close()
-        except Exception:
-            pass
+        if closed_by_client:
+            terminal_session_service.close(session)      # tab closed → end the shell now
+        else:
+            terminal_session_service.detach(session, q)  # network drop → keep alive to reconnect
 
 
 # ── Chat WebSocket ────────────────────────────────────────────────────────────

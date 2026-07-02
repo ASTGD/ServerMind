@@ -7,6 +7,8 @@ export type TermStatus = "connecting" | "connected" | "disconnected" | "error"
  *  <XTerminal>; this record is the manager's view of it (label, status, activity). */
 export interface TermSession {
   id: string
+  /** Stable server-side session id — lets a reconnect re-attach to the same shell. */
+  sid: string
   server: Server
   label: string
   status: TermStatus
@@ -46,8 +48,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     const dupes = sessions.filter((s) => s.server.id === server.id).length
     const label = dupes > 0 ? `${server.name} · ${dupes + 1}` : server.name
     const id = nextId()
+    const sid = crypto.randomUUID()
     set({
-      sessions: [...sessions, { id, server, label, status: "connecting", lastActivity: Date.now() }],
+      sessions: [...sessions, { id, sid, server, label, status: "connecting", lastActivity: Date.now() }],
       activeId: id,
       open: true,
     })

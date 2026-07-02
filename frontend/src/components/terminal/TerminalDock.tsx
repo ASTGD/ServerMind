@@ -183,6 +183,7 @@ export default function TerminalDock() {
             <XTerminal
               ref={(h) => { if (h) refs.current.set(s.id, h); else refs.current.delete(s.id) }}
               serverId={s.server.id}
+              sid={s.sid}
               onStatusChange={(st) => setStatus(s.id, st)}
               onActivity={() => touch(s.id)}
             />

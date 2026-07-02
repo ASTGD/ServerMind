@@ -10,6 +10,8 @@ type ConnStatus = "connecting" | "connected" | "disconnected" | "error"
 
 interface Props {
   serverId: string
+  /** Stable session id — reconnects re-attach to the same server-side shell. */
+  sid: string
   onStatusChange?: (status: ConnStatus) => void
   /** Throttled activity signal (user input or output) — powers the idle timeout. */
   onActivity?: () => void
@@ -33,7 +35,7 @@ function wsBase(): string {
 }
 const WS_BASE = wsBase()
 
-const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ serverId, onStatusChange, onActivity }, ref) {
+const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ serverId, sid, onStatusChange, onActivity }, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -110,38 +112,58 @@ const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ server
       }
     }
 
-    // WebSocket connection — fetch a single-use ticket first so the JWT stays
-    // out of the URL (falls back to the token if unavailable).
+    // WebSocket — reconnects on an unexpected drop and re-attaches to the same
+    // server-side shell (same sid), which replays its buffer (a "reset" control frame
+    // clears the screen first, then the scrollback is streamed back).
     let ws: WebSocket | null = null
     let disposed = false
-    onStatusChange?.("connecting")
-    void (async () => {
-      const q = await wsAuthQuery()
-      if (disposed) return
-      ws = new WebSocket(`${WS_BASE}/ws/terminal/${serverId}?${q}`)
-      ws.binaryType = "arraybuffer"
+    let attempts = 0
+    let reconnectTimer: number | undefined
+    const MAX_RECONNECT = 5
 
-      ws.onopen = () => {
-        onStatusChange?.("connected")
-        ws?.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }))
-      }
-      ws.onmessage = (e) => {
-        reportActivity()
-        if (e.data instanceof ArrayBuffer) {
-          terminal.write(new Uint8Array(e.data))
-        } else {
-          terminal.write(e.data as string)
+    function connect() {
+      if (disposed) return
+      onStatusChange?.("connecting")
+      void (async () => {
+        const q = await wsAuthQuery()
+        if (disposed) return
+        const sock = new WebSocket(`${WS_BASE}/ws/terminal/${serverId}?${q}&sid=${encodeURIComponent(sid)}`)
+        sock.binaryType = "arraybuffer"
+        ws = sock
+
+        sock.onopen = () => {
+          attempts = 0
+          onStatusChange?.("connected")
+          sock.send(JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }))
         }
-      }
-      ws.onclose = () => {
-        onStatusChange?.("disconnected")
-        terminal.write("\r\n\x1b[38;5;240m─── session ended ───\x1b[0m\r\n")
-      }
-      ws.onerror = () => {
-        onStatusChange?.("error")
-        terminal.write("\r\n\x1b[1;31m✗ connection error\x1b[0m\r\n")
-      }
-    })()
+        sock.onmessage = (e) => {
+          reportActivity()
+          if (typeof e.data === "string") {
+            try {
+              const m = JSON.parse(e.data)
+              if (m.type === "reset") { terminal.reset(); return }
+              if (m.type === "error") { terminal.write(`\r\n\x1b[1;31m${m.message}\x1b[0m\r\n`); return }
+            } catch { /* plain text — write as-is */ }
+            terminal.write(e.data)
+            return
+          }
+          terminal.write(new Uint8Array(e.data as ArrayBuffer))
+        }
+        sock.onclose = () => {
+          if (disposed || ws !== sock) return
+          if (attempts < MAX_RECONNECT) {
+            attempts += 1
+            onStatusChange?.("connecting")
+            reconnectTimer = window.setTimeout(connect, Math.min(1000 * 2 ** (attempts - 1), 8000))
+          } else {
+            onStatusChange?.("disconnected")
+            terminal.write("\r\n\x1b[1;33m⚠ disconnected — reopen the tab to reconnect\x1b[0m\r\n")
+          }
+        }
+        sock.onerror = () => { /* onclose drives reconnect */ }
+      })()
+    }
+    connect()
 
     // Keyboard input → SSH
     terminal.onData((data) => {
@@ -166,12 +188,15 @@ const XTerminal = forwardRef<XTerminalHandle, Props>(function XTerminal({ server
 
     return () => {
       disposed = true
+      if (reconnectTimer) window.clearTimeout(reconnectTimer)
       observer.disconnect()
+      // Tell the backend to end the shell now (tab closed / logout) — not a network drop.
+      try { ws?.send(JSON.stringify({ type: "close" })) } catch { /* ignore */ }
       ws?.close()
       terminal.dispose()
       termRef.current = null
     }
-  }, [serverId])
+  }, [serverId, sid])
 
   return <div ref={containerRef} className="h-full w-full" />
 })
