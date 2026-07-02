@@ -5,6 +5,8 @@ import { listServers } from "@/api/servers"
 import { useAssistantStore } from "@/store/assistantStore"
 import ChatInput from "./ChatInput"
 import ChatMessage, { type ChatMessageData, type Handoff, type BatchSpec } from "./ChatMessage"
+import type { MissionOffer } from "./MissionCard"
+import type { MissionState, MissionStep } from "./MissionProgress"
 import BatchRunModal from "./BatchRunModal"
 import CommandPlan from "./CommandPlan"
 import { useAuthStore } from "@/store/authStore"
@@ -54,9 +56,26 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   // Set when a durable (worker) run starts — enables the Stop button.
   const [runningLogId, setRunningLogId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  // The active mission's message id — mission_* events update that message in place.
+  const missionMsgIdRef = useRef<string | null>(null)
 
   const addMsg = useCallback((msg: ChatMessageData) => {
     setMessages((prev) => [...prev, msg])
+  }, [])
+
+  // Update the live mission message (steps append, statuses flip) without remounting.
+  // The target id is captured NOW, not inside the queued updater — handlers null the
+  // ref right after queueing a terminal update, and React runs the updater later.
+  const updateMission = useCallback((fn: (m: MissionState) => MissionState) => {
+    const targetId = missionMsgIdRef.current
+    if (!targetId) return
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === targetId && m.role === "assistant" && m.kind === "mission"
+          ? { ...m, mission: fn(m.mission) }
+          : m,
+      ),
+    )
   }, [])
 
   const { send, status } = useWebSocket(target.kind === "server" ? `/ws/chat/${target.server.id}` : "/ws/chat", {
@@ -159,6 +178,130 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           break
         }
 
+        // ── Ally Missions (docs/ALLY-MISSIONS.md) ────────────────────────────
+        case "mission_offer":
+          setIsLoading(false)
+          setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "thinking")))
+          addMsg({
+            id: nextId(),
+            role: "assistant",
+            kind: "mission_offer",
+            offer: {
+              goal: (msg.goal as string) ?? "",
+              skill: (msg.skill as string | null) ?? null,
+              message: (msg.message as string) ?? "",
+            },
+          })
+          break
+
+        case "mission_started": {
+          setIsLoading(true)
+          const id = nextId()
+          missionMsgIdRef.current = id
+          addMsg({
+            id,
+            role: "assistant",
+            kind: "mission",
+            mission: { goal: (msg.goal as string) ?? "", status: "running", steps: [] },
+          })
+          break
+        }
+
+        case "mission_step": {
+          const step: MissionStep = {
+            index: msg.index as number,
+            cmd: (msg.cmd as string) ?? "",
+            description: (msg.description as string) ?? "",
+            riskLevel: (msg.risk_level as string) ?? "low",
+            needsApproval: Boolean(msg.needs_approval),
+            running: true,
+          }
+          updateMission((m) => ({ ...m, steps: [...m.steps.filter((s) => s.index !== step.index), step] }))
+          // Risky step — reuse the normal approval UI (approve/cancel go over the socket).
+          if (step.needsApproval) {
+            setPending({
+              planSummary: step.description || step.cmd,
+              commands: [{
+                cmd: step.cmd,
+                description: step.description,
+                risk_level: (step.riskLevel ?? "low") as CommandItem["risk_level"],
+                requires_confirmation: true,
+              }],
+              requiresApproval: true,
+              riskLevel: step.riskLevel ?? "low",
+              estimatedSeconds: 30,
+            })
+          }
+          break
+        }
+
+        case "mission_step_done":
+          setPending(null)
+          updateMission((m) => ({
+            ...m,
+            steps: m.steps.map((s) =>
+              s.index === (msg.index as number)
+                ? {
+                    ...s,
+                    running: false,
+                    cmd: (msg.cmd as string) ?? s.cmd,
+                    description: (msg.description as string) ?? s.description,
+                    exitCode: (msg.exit_code as number) ?? 0,
+                    outputTail: (msg.output_tail as string) ?? "",
+                    note: (msg.note as string) ?? "",
+                  }
+                : s,
+            ),
+          }))
+          break
+
+        case "mission_complete":
+          setIsLoading(false)
+          setPending(null)
+          updateMission((m) => ({
+            ...m,
+            status: "complete",
+            summary: (msg.summary as string) ?? "Mission complete.",
+            steps: m.steps.map((s) => ({ ...s, running: false })),
+          }))
+          missionMsgIdRef.current = null
+          break
+
+        case "mission_blocked":
+          setIsLoading(false)
+          setPending(null)
+          updateMission((m) => ({
+            ...m,
+            status: "blocked",
+            summary: (msg.reason as string) ?? "I can't continue from here.",
+            steps: m.steps.map((s) => ({ ...s, running: false })),
+          }))
+          missionMsgIdRef.current = null
+          break
+
+        case "mission_failed":
+          setIsLoading(false)
+          setPending(null)
+          updateMission((m) => ({
+            ...m,
+            status: "failed",
+            summary: (msg.reason as string) ?? "The mission failed.",
+            steps: m.steps.map((s) => ({ ...s, running: false })),
+          }))
+          missionMsgIdRef.current = null
+          break
+
+        case "mission_stopped":
+          setIsLoading(false)
+          setPending(null)
+          updateMission((m) => ({
+            ...m,
+            status: "stopped",
+            steps: m.steps.map((s) => ({ ...s, running: false })),
+          }))
+          missionMsgIdRef.current = null
+          break
+
         case "quota_exceeded":
           setIsLoading(false)
           setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "thinking")))
@@ -210,7 +353,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           })
           break
       }
-    }, [addMsg]),
+    }, [addMsg, updateMission]),
   })
 
   // Scroll to bottom on new messages
@@ -258,6 +401,22 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   // Fleet → batch: run one action across several servers (opens the batch runner).
   function handleBatch(b: BatchSpec) {
     setBatchModal(b)
+  }
+
+  // Start a mission (the one mission-level approval) — the backend loop takes over.
+  function handleStartMission(offer: MissionOffer) {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.role === "assistant" && m.kind === "mission_offer" && m.offer === offer
+          ? { ...m, offer: { ...m.offer, started: true } }
+          : m,
+      ),
+    )
+    send({ type: "mission_start", goal: offer.goal, skill: offer.skill, language })
+  }
+
+  function handleStopMission() {
+    send({ type: "mission_stop" })
   }
 
   // "Hand to AI" handoff — auto-send the seeded prompt once, after the socket is open.
@@ -350,6 +509,8 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             onSuggestion={handleSend}
             onHandoff={handleHandoff}
             onBatch={handleBatch}
+            onStartMission={handleStartMission}
+            onStopMission={handleStopMission}
           />
         ))}
 

@@ -66,6 +66,13 @@ worth keeping for future chats, set "remember" to
 NEVER remember passwords, keys, tokens, or any credential. Most turns need no memory —
 be very selective.
 
+MISSION: If the request is a MULTI-STEP JOB whose later steps depend on what earlier
+steps discover (deploying an app from a repo, migrating a site, a large setup), do NOT
+plan commands — set "mission" to {{"goal": "<one clear line describing the whole job>"}}
+with an EMPTY "commands" array, and use "plan_summary" to tell the user (in their
+language) what the mission will do and that Ally will work it step by step with their
+approval on anything risky. For single-answer tasks, leave "mission" null.
+
 ALWAYS RESPOND WITH VALID JSON ONLY (no markdown, no explanation outside JSON):
 {{
   "intent_understood": "...",
@@ -82,8 +89,16 @@ ALWAYS RESPOND WITH VALID JSON ONLY (no markdown, no explanation outside JSON):
   "estimated_duration_seconds": 30,
   "post_execution_message": "...",
   "follow_up_suggestions": ["...", "..."],
-  "remember": null
+  "remember": null,
+  "mission": null
 }}
+"""
+
+_MISSION_HINT_BLOCK = """\
+
+A MISSION RUNBOOK EXISTS FOR THIS KIND OF JOB: "{title}". If the user is asking for the
+whole job to be done (not just a question about it), OFFER A MISSION: set "mission" to
+{{"goal": "<one clear line>"}} and keep "commands" empty.
 """
 
 _HOSTING_NOTE = """\
@@ -278,6 +293,113 @@ RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
 }}
 """
 
+_MISSION_SYSTEM = _PERSONA + """\
+
+You are working a MISSION on one server: a multi-step job the user already approved.
+You work it ONE STEP AT A TIME: look at what happened so far, then decide the single
+next command — or declare the mission done or blocked.
+
+SERVER CONTEXT:
+- Name: {server_name}
+- OS: {os_type} {os_version}
+- Shell: {shell}
+
+THE MISSION GOAL:
+{goal}
+
+{runbook}
+
+STEPS SO FAR (your own actions and their real outputs — adapt to what they reveal):
+{transcript}
+
+Steps remaining in the budget: {remaining}.
+
+RULES:
+1. ONE command per step — small, observable steps. Prefer read-only discovery first.
+2. ADAPT: if an output shows your assumption was wrong, change the approach.
+3. Anything destructive or risky → set requires_confirmation true (the user is asked).
+4. Never print or echo secrets (passwords, tokens, keys) in commands or messages.
+5. If you need information only the user has (a domain, a choice), or you cannot
+   proceed (missing DNS, no access), set status "blocked" and say exactly what is
+   needed — in plain, friendly language ({user_language}).
+6. When the goal is verifiably achieved (you SAW the verification output), set status
+   "done" with a short summary of what was done and where.
+7. Budget is small — no detours, no nice-to-haves.
+
+RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
+{{
+  "status": "continue" | "done" | "blocked",
+  "step": {{
+    "cmd": "the single next command (only when status=continue)",
+    "description": "plain-language what & why ({user_language})",
+    "risk_level": "low | medium | high",
+    "requires_confirmation": false
+  }},
+  "summary": "for done/blocked: what happened / what's needed ({user_language})",
+  "remember": null
+}}
+"""
+
+_TRANSCRIPT_STEP_MAX = 900
+_TRANSCRIPT_MAX = 9000
+
+
+def _mission_transcript(steps: list[dict]) -> str:
+    """Render executed steps (desc, cmd, exit, output tail) for the step planner —
+    per-step and total caps keep the prompt bounded on long missions."""
+    if not steps:
+        return "(no steps yet — this is the first step)"
+    lines: list[str] = []
+    for i, s in enumerate(steps, 1):
+        out = (s.get("output_tail") or "").strip()
+        if len(out) > _TRANSCRIPT_STEP_MAX:
+            out = "…" + out[-_TRANSCRIPT_STEP_MAX:]
+        lines.append(
+            f"Step {i}: {s.get('description', '')}\n"
+            f"  $ {s.get('cmd', '')}\n"
+            f"  exit={s.get('exit_code', '?')} {s.get('note', '')}\n"
+            + (f"  output: {out}" if out else "  output: (none)")
+        )
+    text = "\n".join(lines)
+    if len(text) > _TRANSCRIPT_MAX:
+        text = "…(earlier steps trimmed)\n" + text[-_TRANSCRIPT_MAX:]
+    return text
+
+
+async def plan_mission_step(
+    goal: str,
+    server: Server,
+    steps: list[dict],
+    remaining: int,
+    skill: skill_service.Skill | None = None,
+    user_language: str = "en",
+) -> dict:
+    """One iteration of the mission loop: given the goal, the runbook, and everything
+    that has happened, decide the next step (or done/blocked)."""
+    runbook = ""
+    if skill is not None:
+        runbook = f"THE RUNBOOK (follow its stages and pitfalls):\n{skill.body}"
+    system = _MISSION_SYSTEM.format(
+        server_name=server.name,
+        os_type=server.os_type or "linux",
+        os_version=server.os_version or "",
+        shell=server.shell,
+        goal=goal,
+        runbook=runbook,
+        transcript=_mission_transcript(steps),
+        remaining=remaining,
+        user_language=user_language,
+    )
+    raw = _extract_json(
+        await llm_service.complete(system, "Decide the next mission step.", max_tokens=1024)
+    )
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.warning("mission step JSON parse error: %s\nRaw: %r", exc, raw[:300])
+        raise ValueError(f"AI returned invalid JSON: {exc}") from exc
+
+
 _EXPLAIN_SYSTEM = _PERSONA + """\
 
 A user just ran server commands. Summarize what happened in 2-3 sentences in plain,
@@ -390,6 +512,10 @@ async def plan_commands(
     system += _server_profile_block(server_profile)
     system += _memories_block(memories)
     system += skill_service.skill_block(skill)
+    # A mission-mode skill match nudges chat to OFFER a mission (the runbook itself is
+    # injected per step by the mission engine, not here).
+    if skill is not None and skill.mode == "mission":
+        system += _MISSION_HINT_BLOCK.format(title=skill.title)
     system += _page_context_block(page_context)
     system += _history_block(history)
 

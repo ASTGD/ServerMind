@@ -351,6 +351,17 @@ async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
         raw = await ws.receive_text()
         msg = json.loads(raw)
 
+        # Ally Missions — the user clicked Start on a mission offer.
+        if msg.get("type") == "mission_start":
+            await _run_mission(
+                ws, server,
+                goal=str(msg.get("goal", "")),
+                skill_slug=msg.get("skill"),
+                user_language=msg.get("language", "en"),
+                acting_user_id=user_id,
+            )
+            continue
+
         if msg.get("type") != "message":
             continue
 
@@ -706,6 +717,227 @@ async def _batch_run(ws: WebSocket, user: User) -> None:
     await ws.send_text(json.dumps({"type": "batch_complete", "counts": counts}))
 
 
+# ── Ally Missions (docs/ALLY-MISSIONS.md) ─────────────────────────────────────
+
+_MISSION_BUDGET = 20
+_MISSION_TAIL_CHARS = 1200
+
+
+async def _mission_stop_requested(ws: WebSocket) -> bool:
+    """Non-blocking drain of queued client frames between steps — True if the user
+    asked to stop. Other frame types received mid-mission are ignored (v1)."""
+    while True:
+        try:
+            raw = await asyncio.wait_for(ws.receive_text(), timeout=0.05)
+        except asyncio.TimeoutError:
+            return False
+        try:
+            m = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if m.get("type") in ("mission_stop", "cancel"):
+            return True
+
+
+async def _mission_execute(server: Server, cmd: str) -> tuple[int, str, str]:
+    """Run one mission step; returns (exit_code, output_tail, note). Output is
+    captured (not streamed) — step tails go to the UI and the transcript."""
+    lines: list[str] = []
+    exit_code, note = 0, ""
+    try:
+        stream = await connection_manager.execute_stream(server, cmd)
+        async for line in stream:
+            lines.append(line)
+    except CommandStalled as exc:
+        if exc.last_output:
+            lines.append(exc.last_output)
+        lines.append(STALL_NOTE)
+        exit_code, note = 1, "stalled"
+    except CommandError as exc:
+        exit_code = int(exc.args[0]) if exc.args else 1
+        note = "non-zero exit"
+    except Exception as exc:  # noqa: BLE001
+        lines.append(f"ERROR: {exc}")
+        exit_code, note = 1, "error"
+    tail = "\n".join(lines)[-_MISSION_TAIL_CHARS:]
+    return exit_code, tail, note
+
+
+async def _run_mission(
+    ws: WebSocket,
+    server: Server,
+    goal: str,
+    skill_slug: str | None,
+    user_language: str,
+    acting_user_id: str | None,
+) -> None:
+    """The mission loop: plan ONE step → validate → (approve if risky) → execute →
+    observe → repeat, until done/blocked/stopped/budget. See docs/ALLY-MISSIONS.md."""
+    goal = (goal or "").strip()[:500]
+    if not goal:
+        await ws.send_text(json.dumps({"type": "error", "message": "Mission needs a goal."}))
+        return
+    # Missions run shell steps — panel-API connections can't do that.
+    if server.connection_type == "hosting":
+        await ws.send_text(json.dumps({
+            "type": "error",
+            "message": (
+                "Missions need a shell (SSH) connection. This server is connected "
+                "through its control panel API — add it over SSH to run missions."
+            ),
+        }))
+        return
+
+    # Quota gate — a mission costs 1 action from the server owner's pool (§4 of the
+    # missions doc); its true token cost is ledgered per call.
+    try:
+        async with AsyncSessionLocal() as db:
+            owner = await db.get(User, server.user_id)
+            g = await metering_service.gate(db, owner) if owner else None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("quota gate failed (mission): %s", exc)
+        g = None
+    if g and not g.allowed:
+        await ws.send_text(json.dumps({
+            "type": "quota_exceeded",
+            "used": g.used, "limit": g.limit, "resets_at": g.resets_at,
+            "message": metering_service.quota_message(g),
+        }))
+        return
+
+    skill = skill_service.get(skill_slug) if skill_slug else None
+    os_family = "windows" if server.connection_type == "winrm" else "linux"
+    steps: list[dict] = []
+    logger.info("mission started: %r (server=%s, skill=%s)", goal, server.id, skill_slug)
+    await ws.send_text(json.dumps({
+        "type": "mission_started",
+        "goal": goal,
+        "skill": skill.slug if skill else None,
+        "budget": _MISSION_BUDGET,
+    }))
+
+    tok = metering_service.start_collection()
+    try:
+        while True:
+            if len(steps) >= _MISSION_BUDGET:
+                await ws.send_text(json.dumps({
+                    "type": "mission_failed",
+                    "reason": (
+                        f"I reached the {_MISSION_BUDGET}-step limit for one mission. "
+                        "The steps so far are above — tell me to continue as a new "
+                        "mission, or take over from here."
+                    ),
+                    "steps_used": len(steps),
+                }))
+                return
+            if await _mission_stop_requested(ws):
+                await ws.send_text(json.dumps({"type": "mission_stopped", "steps_used": len(steps)}))
+                return
+
+            # 1) Plan the next step from everything observed so far.
+            try:
+                decision = await ai_service.plan_mission_step(
+                    goal, server, steps, _MISSION_BUDGET - len(steps), skill, user_language,
+                )
+            except Exception as exc:  # noqa: BLE001
+                await ws.send_text(json.dumps({
+                    "type": "mission_failed",
+                    "reason": f"AI error: {exc}",
+                    "steps_used": len(steps),
+                }))
+                return
+
+            status_ = decision.get("status")
+            if status_ == "done":
+                # A finished mission may leave one server-scoped memory (deploy facts).
+                if decision.get("remember"):
+                    async with AsyncSessionLocal() as db:
+                        await memory_service.save_from_ai(
+                            db, user_id=acting_user_id or server.user_id,
+                            remember=decision.get("remember"), server_id=server.id,
+                        )
+                await ws.send_text(json.dumps({
+                    "type": "mission_complete",
+                    "summary": decision.get("summary", "Mission complete."),
+                    "steps_used": len(steps),
+                }))
+                return
+            if status_ == "blocked":
+                await ws.send_text(json.dumps({
+                    "type": "mission_blocked",
+                    "reason": decision.get("summary", "I can't continue from here."),
+                    "steps_used": len(steps),
+                }))
+                return
+
+            step = decision.get("step") or {}
+            cmd = str(step.get("cmd", "")).strip()
+            if not cmd:
+                await ws.send_text(json.dumps({
+                    "type": "mission_failed",
+                    "reason": "The AI returned an empty step.",
+                    "steps_used": len(steps),
+                }))
+                return
+            description = str(step.get("description", ""))[:300]
+            risk = str(step.get("risk_level", "low"))
+            index = len(steps) + 1
+
+            # 2) Safety — same blocklist as everything else, per step.
+            safety = safety_service.validate_command(cmd, os_family)
+            if safety.status == "blocked":
+                steps.append({
+                    "description": description, "cmd": cmd, "exit_code": 1,
+                    "output_tail": "", "note": f"BLOCKED by safety policy: {safety.reason}",
+                })
+                await ws.send_text(json.dumps({
+                    "type": "mission_step_done",
+                    "index": index, "cmd": cmd, "description": description,
+                    "exit_code": 1, "output_tail": "",
+                    "note": f"Blocked by safety policy — {safety.reason}. Adapting…",
+                }))
+                continue  # the block is in the transcript; Ally adapts next iteration
+
+            # 3) Risky steps pause for the user, even mid-mission.
+            needs_approval = safety.status == "confirm" or bool(step.get("requires_confirmation")) or risk == "high"
+            await ws.send_text(json.dumps({
+                "type": "mission_step",
+                "index": index, "budget": _MISSION_BUDGET,
+                "cmd": cmd, "description": description, "risk_level": risk,
+                "needs_approval": needs_approval,
+            }))
+            if needs_approval:
+                raw = await ws.receive_text()
+                try:
+                    decision_msg = json.loads(raw)
+                except (TypeError, ValueError):
+                    decision_msg = {}
+                if decision_msg.get("type") != "approve":
+                    await ws.send_text(json.dumps({"type": "mission_stopped", "steps_used": len(steps)}))
+                    return
+
+            # 4) Execute + observe.
+            exit_code, tail, note = await _mission_execute(server, cmd)
+            steps.append({
+                "description": description, "cmd": cmd,
+                "exit_code": exit_code, "output_tail": tail, "note": note,
+            })
+            await ws.send_text(json.dumps({
+                "type": "mission_step_done",
+                "index": index, "cmd": cmd, "description": description,
+                "exit_code": exit_code, "output_tail": tail, "note": note,
+            }))
+    finally:
+        calls = metering_service.finish_collection(tok)
+        if calls:
+            async with AsyncSessionLocal() as db:
+                await metering_service.record(
+                    db, user_id=server.user_id, feature="mission",
+                    calls=calls, server_id=server.id,
+                    skill=skill.slug if skill else None,
+                )
+
+
 async def _handle_message(
     ws: WebSocket,
     server: Server,
@@ -797,6 +1029,18 @@ async def _handle_message_inner(
         await ws.send_text(json.dumps({
             "type": "clarification",
             "message": plan["clarification_needed"],
+        }))
+        return
+
+    # Ally Missions — the plan is a mission OFFER (multi-step job, no commands yet).
+    # The user starts it with one click; the mission loop then works step by step.
+    mission = plan.get("mission")
+    if isinstance(mission, dict) and str(mission.get("goal", "")).strip():
+        await ws.send_text(json.dumps({
+            "type": "mission_offer",
+            "goal": str(mission.get("goal"))[:500],
+            "skill": skill.slug if (skill and skill.mode == "mission") else None,
+            "message": plan.get("plan_summary", ""),
         }))
         return
 

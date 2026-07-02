@@ -1,6 +1,8 @@
 import { cn } from "@/lib/utils"
 import { Bot, User, AlertTriangle, CheckCircle2, XCircle, Server as ServerIcon, ArrowRight, Layers } from "lucide-react"
 import ScriptCard from "./ScriptCard"
+import MissionCard, { type MissionOffer } from "./MissionCard"
+import MissionProgress, { type MissionState } from "./MissionProgress"
 import type { GenerateScriptResult } from "@/types"
 
 export interface Handoff {
@@ -23,6 +25,8 @@ export type ChatMessageData =
   | { id: string; role: "assistant"; kind: "answer"; content: string; suggestions: string[]; handoff?: Handoff | null; batch?: BatchSpec | null; script?: GenerateScriptResult | null }
   | { id: string; role: "assistant"; kind: "blocked"; reason: string }
   | { id: string; role: "assistant"; kind: "quota"; message: string }
+  | { id: string; role: "assistant"; kind: "mission_offer"; offer: MissionOffer }
+  | { id: string; role: "assistant"; kind: "mission"; mission: MissionState }
   | { id: string; role: "assistant"; kind: "error"; message: string }
 
 interface Props {
@@ -30,9 +34,11 @@ interface Props {
   onSuggestion?: (text: string) => void
   onHandoff?: (handoff: Handoff) => void
   onBatch?: (batch: BatchSpec) => void
+  onStartMission?: (offer: MissionOffer) => void
+  onStopMission?: () => void
 }
 
-export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch }: Props) {
+export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch, onStartMission, onStopMission }: Props) {
   const isUser = message.role === "user"
 
   return (
@@ -174,6 +180,14 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch 
               <p className="text-xs opacity-80">{message.reason}</p>
             </div>
           </div>
+        )}
+
+        {/* Ally Missions — offer + live progress (docs/ALLY-MISSIONS.md) */}
+        {message.role === "assistant" && message.kind === "mission_offer" && (
+          <MissionCard offer={message.offer} onStart={(o) => onStartMission?.(o)} />
+        )}
+        {message.role === "assistant" && message.kind === "mission" && (
+          <MissionProgress mission={message.mission} onStop={() => onStopMission?.()} />
         )}
 
         {/* Out of Ally actions this month (the quota wall — docs/AI-METERING.md) */}

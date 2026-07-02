@@ -48,6 +48,10 @@ class Skill:
     os_family: str  # 'linux' | 'windows' | 'any'
     body: str
     priority: int = 0
+    # 'knowledge' = injected into normal chat planning as an expert procedure.
+    # 'mission'   = a runbook for the mission engine (chat only OFFERS a mission;
+    #               the body is injected into each mission step-planning call).
+    mode: str = "knowledge"
     path: str = field(default="", repr=False)
 
 
@@ -94,6 +98,7 @@ def load_skills() -> list[Skill]:
                         os_family=(meta.get("os") or "any").lower(),
                         body=body[:_BODY_MAX],
                         priority=int(meta.get("priority", "0") or 0),
+                        mode=(meta.get("mode") or "knowledge").lower(),
                         path=str(path),
                     )
                 )
@@ -140,7 +145,16 @@ def match(user_input: str, os_type: str | None = None) -> Skill | None:
 
 
 def skill_block(skill: Skill | None) -> str:
-    """Render the prompt block for a matched skill ('' when none)."""
-    if skill is None:
+    """Render the prompt block for a matched knowledge skill ('' when none or when the
+    skill is a mission runbook — those inject via the mission engine instead)."""
+    if skill is None or skill.mode == "mission":
         return ""
     return _SKILL_BLOCK.format(title=skill.title, body=skill.body)
+
+
+def get(slug: str) -> Skill | None:
+    """Look a skill up by slug (for mission starts)."""
+    for skill in load_skills():
+        if skill.slug == slug:
+            return skill
+    return None

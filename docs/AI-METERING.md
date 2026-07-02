@@ -50,6 +50,7 @@ internal cost view.
 | Fleet chat message | **1** |
 | Script generation (Ally chat or the Script Generator page) | **1** |
 | Batch action across N servers | **N** (one plan per target server — honest: it really costs N model calls; the batch modal shows the count before running) |
+| Ally Mission (multi-step job, docs/ALLY-MISSIONS.md) | **1** at start — its up-to-20 model calls are ledgered with `feature="mission"` + the skill tag; revisit pricing from real ledger data if missions prove heavy |
 | Natural-language → cron parse (scheduler) | **0** — tiny utility call, metered in the ledger but free to the user |
 | Request blocked by the safety layer *after* planning | **1** — the model already ran; honesty over generosity |
 | Our failure (provider error, gateway down, AI misconfigured) | **0** — never charge for our own errors; retries after a provider error are not double-counted |
