@@ -129,6 +129,12 @@ export async function verifyEmail(token: string): Promise<void> {
   await apiClient.post("/api/auth/verify-email", { token })
 }
 
+/** Claim a billing-provisioned account: set the first password via the one-time link. */
+export async function claimAccount(token: string, password: string): Promise<TokenResponse> {
+  const { data } = await apiClient.post<TokenResponse>("/api/auth/claim", { token, password })
+  return data
+}
+
 /** Re-send the verification email to the current user. */
 export async function resendVerification(): Promise<void> {
   await apiClient.post("/api/auth/resend-verification")

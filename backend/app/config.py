@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     # data; the cloud deployment turns it on.
     ENFORCE_PLAN_LIMITS: bool = False
 
+    # Billing-system entitlement API (docs/WHMCS-INTEGRATION.md). The WHMCS
+    # provisioning module authenticates with this shared secret to set users' plans
+    # on paid/suspended/cancelled events. Empty (default) = the API is disabled.
+    ENTITLEMENT_API_KEY: str = ""
+
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://servermind:password@localhost:5432/servermind"
 

@@ -69,11 +69,26 @@ export default function UpgradeModal({ onClose }: { onClose: () => void }) {
             ))}
           </ul>
 
-          {/* CTA */}
+          {/* CTA — checkout lives in the billing system (WHMCS order page) when
+              configured; without a URL the button explains how to upgrade. */}
           <div className="mt-6 flex items-center gap-3">
-            <button className="flex-1 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
-              Upgrade to Pro
-            </button>
+            {import.meta.env.VITE_UPGRADE_URL ? (
+              <a
+                href={import.meta.env.VITE_UPGRADE_URL as string}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 rounded-lg bg-primary py-2.5 text-center text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Upgrade to Pro
+              </a>
+            ) : (
+              <button
+                title="Upgrades are handled by your provider — contact support to upgrade"
+                className="flex-1 cursor-default rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground opacity-90"
+              >
+                Upgrade to Pro
+              </button>
+            )}
             <button
               onClick={onClose}
               className="rounded-lg px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"

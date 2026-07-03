@@ -68,6 +68,17 @@ def create_verify_token(user_id: str) -> str:
     )
 
 
+def create_claim_token(user_id: str, token_version: int = 0) -> str:
+    """Token for a billing-provisioned account (WHMCS) to set its first password
+    (type='claim'). Carries the token_version so it becomes invalid the moment the
+    account is claimed (claiming bumps the version) — a leaked claim link can't be
+    replayed later to reset the password."""
+    return _create_token(
+        {"sub": user_id, "type": "claim", "tv": token_version},
+        timedelta(days=7),
+    )
+
+
 def decode_token(token: str) -> dict | None:
     """Decode and validate a JWT. Returns payload or None on failure."""
     try:

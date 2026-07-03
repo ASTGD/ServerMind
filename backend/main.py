@@ -24,6 +24,7 @@ from app.routers import scripts as scripts_router
 from app.routers import security as security_router
 from app.routers import servers as servers_router
 from app.routers import settings as settings_router
+from app.routers import entitlements as entitlements_router
 from app.routers import memories as memories_router
 from app.routers import team as team_router
 from app.routers import usage as usage_router
@@ -112,6 +113,7 @@ app.include_router(hosting_router.router)
 app.include_router(installed_router.router)
 app.include_router(usage_router.router)
 app.include_router(memories_router.router)
+app.include_router(entitlements_router.router)
 app.include_router(ws_handlers.router)
 
 

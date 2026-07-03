@@ -22,6 +22,7 @@ import AcceptInvite from "@/routes/AcceptInvite"
 import Settings from "@/routes/Settings"
 import Auth from "@/routes/Auth"
 import VerifyEmail from "@/routes/VerifyEmail"
+import Claim from "@/routes/Claim"
 
 export default function App() {
   return (
@@ -29,6 +30,8 @@ export default function App() {
       <Routes>
         <Route path="/auth" element={<Auth />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
+        {/* Billing-provisioned accounts (WHMCS) set their first password here. */}
+        <Route path="/claim" element={<Claim />} />
         <Route
           path="/"
           element={

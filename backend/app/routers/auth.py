@@ -460,6 +460,53 @@ async def verify_email(body: VerifyEmailRequest, db: AsyncSession = Depends(get_
     return {"verified": True}
 
 
+class ClaimRequest(BaseModel):
+    token: str
+    password: str = Field(min_length=8, max_length=128)
+
+
+@router.post("/claim", response_model=TokenResponse)
+async def claim_account(
+    request: Request, body: ClaimRequest, db: AsyncSession = Depends(get_db)
+) -> TokenResponse:
+    """Claim a billing-provisioned account (docs/WHMCS-INTEGRATION.md): a one-time
+    signed link lets the customer set their first password and signs them in. The
+    token carries the account's token_version and claiming bumps it, so a claim link
+    dies on first use."""
+    payload = decode_token(body.token)
+    if not payload or payload.get("type") != "claim":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired claim link",
+        )
+    try:
+        uid = uuid.UUID(payload.get("sub", ""))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid claim link")
+    user = (await db.execute(select(User).where(User.id == uid))).scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    if payload.get("tv", 0) != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This claim link was already used — sign in instead, or reset your password.",
+        )
+
+    user.password_hash = hash_password(body.password)
+    user.is_verified = True
+    user.token_version += 1  # kills the claim token (and any stray older tokens)
+    await db.commit()
+    await db.refresh(user)
+
+    await audit_service.audit(db, user, "auth.claim", request=request)
+    logger.info("Account claimed: %s", user.email)
+    return TokenResponse(
+        access_token=create_access_token(str(user.id), user.token_version),
+        refresh_token=create_refresh_token(str(user.id), user.token_version),
+        user=UserOut.model_validate(user),
+    )
+
+
 @router.post("/resend-verification", status_code=status.HTTP_204_NO_CONTENT)
 async def resend_verification(
     request: Request,
