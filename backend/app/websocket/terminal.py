@@ -884,7 +884,11 @@ async def _mission_execute(server: Server, cmd: str) -> tuple[int, str, str]:
         lines.append(STALL_NOTE)
         exit_code, note = 1, "stalled"
     except CommandError as exc:
-        exit_code = int(exc.args[0]) if exc.args else 1
+        # CommandError carries the real exit status on .exit_code — args[0] is the
+        # human message ("command exited with status 1"), NOT an int. A non-zero exit
+        # is normal for a verification step (grep/dpkg finding nothing), so this must
+        # never crash the mission.
+        exit_code = exc.exit_code if isinstance(getattr(exc, "exit_code", None), int) else 1
         note = "non-zero exit"
     except Exception as exc:  # noqa: BLE001
         lines.append(f"ERROR: {exc}")
@@ -1153,6 +1157,18 @@ async def _run_mission(
                 "exit_code": exit_code, "output_tail": tail, "note": note,
                 "server_id": str(target.id), "server_name": target.name,
             }))
+    except WebSocketDisconnect:
+        raise  # client is gone — let the outer handler clean up
+    except Exception as exc:  # noqa: BLE001 — a mission must never crash the shared socket
+        logger.exception("mission crashed (goal=%r)", goal)
+        try:
+            await ws.send_text(json.dumps({
+                "type": "mission_failed",
+                "reason": f"The mission hit an unexpected error and stopped: {exc}",
+                "steps_used": len(steps),
+            }))
+        except Exception:  # noqa: BLE001 — socket may already be closing
+            pass
     finally:
         calls = metering_service.finish_collection(tok)
         if calls:
