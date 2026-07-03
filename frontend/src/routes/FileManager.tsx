@@ -1,5 +1,5 @@
-import { useEffect, useRef, useCallback, useState } from "react"
-import { useParams } from "react-router-dom"
+import { useEffect, useRef, useCallback, useState, useMemo } from "react"
+import { useParams, useOutletContext } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import Editor from "@monaco-editor/react"
 import {
@@ -27,6 +27,8 @@ import {
   EyeOff,
   ArrowLeft,
   HardDrive,
+  Sparkles,
+  ShieldCheck,
 } from "lucide-react"
 import {
   listDirectory,
@@ -39,6 +41,8 @@ import {
   type FileEntry,
 } from "@/api/files"
 import { apiClient } from "@/api/client"
+import { usePublishPageContext } from "@/hooks/usePageContext"
+import { redactSecrets } from "@/lib/redactSecrets"
 import { format } from "date-fns"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -148,6 +152,7 @@ function InlineDialog({ title, placeholder, initial = "", isPending, onConfirm, 
 
 export default function FileManager() {
   const { id: serverId } = useParams<{ id: string }>()
+  const { openAI } = useOutletContext<{ openAI: (seed?: string) => void }>()
   const qc = useQueryClient()
 
   // Navigation state
@@ -313,6 +318,37 @@ export default function FileManager() {
     if (file) uploadMut.mutate(file)
     e.target.value = ""
   }
+
+  // Context C2 — "Ask Ally about this file": publish the OPEN text file as page context
+  // so Ally can explain/review it. Secrets are redacted in the BROWSER first — a
+  // wp-config password never reaches the AI prompt. (Same page-context pipeline the
+  // My Scripts page uses.)
+  const fileForAlly = useMemo(() => {
+    const isText = !!selectedFile && selectedFile.type === "file" && !fileContent?.is_binary
+    if (!isText || !fileContent) return null
+    const { text, count } = redactSecrets(editContent.slice(0, 200_000))
+    const body = text.length > 8000 ? text.slice(0, 8000) + "\n…(truncated)" : text
+    return {
+      count,
+      ctx: {
+        label: `File: ${selectedFile!.name}`,
+        context:
+          "The user is looking at a file on their server in the File Manager.\n" +
+          `Path: ${selectedFile!.path}\n` +
+          "Any passwords, keys and tokens were hidden before you saw this — never ask the user to reveal them.\n" +
+          "--- FILE START ---\n" +
+          body +
+          "\n--- FILE END ---",
+        templates: [
+          "What does this file do?",
+          "Is anything here unsafe or wrong?",
+          "Explain this file in simple words",
+        ],
+      },
+    }
+  }, [selectedFile, fileContent, editContent])
+
+  usePublishPageContext(fileForAlly?.ctx ?? null)
 
   // ── Render ─────────────────────────────────────────────────────────────
 
@@ -566,6 +602,27 @@ export default function FileManager() {
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  {fileForAlly && (
+                    <>
+                      {fileForAlly.count > 0 && (
+                        <span
+                          className="hidden items-center gap-1 text-[10px] text-muted-foreground sm:flex"
+                          title="Passwords and keys are hidden before Ally sees this file"
+                        >
+                          <ShieldCheck className="h-3 w-3 text-emerald-500" />
+                          {fileForAlly.count} hidden
+                        </span>
+                      )}
+                      <button
+                        onClick={() => openAI()}
+                        title="Ask Ally about this file — passwords and keys are hidden first"
+                        className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Ask Ally
+                      </button>
+                    </>
+                  )}
                   {!fileContent?.is_binary && (
                     <button
                       onClick={() => writeMut.mutate()}
