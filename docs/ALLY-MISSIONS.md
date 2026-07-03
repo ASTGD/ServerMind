@@ -37,8 +37,18 @@ user message ("host github.com/x/y on mysite.com")
 
 ## 3. Rules (the contract)
 
-- **One server, one mission at a time, one command per step.** Small steps keep the
+- **One mission at a time, one action per step.** Small steps keep the
   observe→decide granularity right and every step individually reviewable.
+- **Cross-server (Stage 2, 2026-07-03):** every step carries a `server_id` resolved
+  against the user's **executable roster** (every server they hold `can_execute` on,
+  hosting-panel connections excluded, capped at 15 in the prompt). An id the model
+  invents falls back to the home server or fails the step — it can never touch a
+  server outside the roster. Safety validates each command against the TARGET's OS.
+- **Transfer steps (Stage 2):** `action: "transfer"` copies ONE file between two
+  roster SSH servers **through the backend** (SFTP both ways) — the servers never
+  hold credentials for each other. Guards: absolute paths, 512 MB cap, never
+  overwrites an existing destination, refuses directories (tar first). The step shows
+  as `transfer A:/path → B:/path` with an `A → B` badge.
 - **Step budget: 20.** Hitting it ends the mission honestly ("ran out of steps") with
   the transcript so far. No silent continuation.
 - **Safety is per step, not per mission.** Every command passes `safety_service`;
@@ -72,7 +82,27 @@ is injected into every step-planning call of the mission itself. First runbook:
 **github-deploy** (detect stack → create site (panel-aware) → clone → build → wire →
 SSL → verify → leave a redeploy path).
 
-## 6. Phase 2 (not built)
+## 6. One socket, mission offers from anywhere (Stage 2)
+
+`/ws/chat` is now THE Ally socket: each `message`/`mission_start` frame may carry a
+`server_id`, with execute-access resolved **per message** (Rule 7 enforced; email
+verification honored). Fleet-scoped messages (no id) take the advisory path, which
+can now offer missions too (`"mission": {goal, server}` in the fleet contract — the
+home server matched by name like handoffs, or null for a pure fleet mission).
+A pending plan's approval binds server-side to ITS server — switching the drawer
+target can never redirect an approval — and a running mission keeps streaming to the
+same conversation. A new user message arriving where approve/cancel was expected
+cancels the pending plan and is handed back to the loop, never swallowed. The
+per-server endpoint `/ws/chat/{id}` remains as a pinned-target alias (ServerDetail
+chat tab / older clients). Billing: home-server owner's pool, or the acting user's
+own pool for fleet missions.
+
+Live-verified (2026-07-03): "Take a backup of the WordPress database on TestServer4
+and move the backup file to TestServer3" as ONE fleet instruction → 7 steps: locate
+WordPress (TS4) → read config w/o exposing the password → mysqldump via a temp cnf →
+compress → **transfer TS4→TS3 (23,766 bytes)** → verify on TS3 → done.
+
+## 7. Phase 3 (not built)
 
 Durable missions (survive disconnects, Celery), resume after a blocked step, a
 mission history page, webhook-triggered redeploys, mission templates from the

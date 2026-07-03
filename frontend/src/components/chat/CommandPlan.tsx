@@ -1,4 +1,4 @@
-import { Shield, ShieldAlert, ShieldCheck, Clock, ChevronRight } from "lucide-react"
+import { Shield, ShieldAlert, ShieldCheck, Clock, ChevronRight, Server as ServerIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useTranslation } from "react-i18next"
 import type { CommandItem } from "@/types"
@@ -9,6 +9,10 @@ interface Props {
   requiresApproval: boolean
   riskLevel: string
   estimatedSeconds: number
+  /** Which server this plan will run on — shown so an approval can never be
+   *  mistaken for another server (the unified socket keeps plans alive across
+   *  target switches; the backend binds the approval to this server anyway). */
+  serverName?: string | null
   onApprove: () => void
   onCancel: () => void
 }
@@ -36,6 +40,7 @@ export default function CommandPlan({
   requiresApproval,
   riskLevel,
   estimatedSeconds,
+  serverName,
   onApprove,
   onCancel,
 }: Props) {
@@ -46,7 +51,15 @@ export default function CommandPlan({
     <div className={cn("rounded-xl border p-4 space-y-3", riskColor[risk])}>
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium text-foreground">{planSummary}</p>
+        <div className="min-w-0">
+          {serverName && (
+            <span className="mb-1 inline-flex items-center gap-1 rounded bg-background/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+              <ServerIcon size={9} />
+              {serverName}
+            </span>
+          )}
+          <p className="text-sm font-medium text-foreground">{planSummary}</p>
+        </div>
         <div className="flex items-center gap-3 shrink-0 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <Clock size={12} />

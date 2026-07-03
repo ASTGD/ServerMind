@@ -327,6 +327,15 @@ and keep "answer" a short confirmation (e.g. "Sure — here's a script that does
 for writing a saved script; use "handoff"/"batch" only for RUNNING something now. When you set
 "script", leave "handoff" and "batch" null.
 
+MISSION: If the user asks for a multi-step JOB that must be worked step by step — deploy
+something, back up on one server and restore/move to another, migrate a site, diagnose-and-fix —
+set "mission" to
+{{"goal": "<ONE clear sentence naming the exact server names involved>", "server": "<name of the server where the job starts, or null>"}}
+and keep "answer" a short offer of what the mission will do. A mission MAY span several servers
+(ServerAlly runs each step on the right one and can copy files between them) — name every server
+in the goal. Use "mission" INSTEAD of handoff/batch for multi-step jobs; keep "handoff" for simple
+one-off actions on one server.
+
 REMEMBER (long-term memory): If this conversation reveals something SHORT and DURABLE
 about the USER worth keeping (a preference, a standing fact about their goals), set
 "remember" to {{"kind": "preference" | "fact", "note": "<one short sentence>"}} — else
@@ -340,20 +349,19 @@ RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
   "handoff": null,
   "batch": null,
   "script": null,
+  "mission": null,
   "remember": null
 }}
 """
 
 _MISSION_SYSTEM = _PERSONA + """\
 
-You are working a MISSION on one server: a multi-step job the user already approved.
+You are working a MISSION for the user: a multi-step job they already approved.
 You work it ONE STEP AT A TIME: look at what happened so far, then decide the single
-next command — or declare the mission done or blocked.
+next step — or declare the mission done or blocked.
 
-SERVER CONTEXT:
-- Name: {server_name}
-- OS: {os_type} {os_version}
-- Shell: {shell}
+YOUR SERVERS — you may run each step on ANY of these (use the exact server_id):
+{roster}
 
 THE MISSION GOAL:
 {goal}
@@ -364,24 +372,34 @@ THE MISSION GOAL:
 this prompt. Adapt to what they reveal.)
 
 RULES:
-1. ONE command per step — small, observable steps. Prefer read-only discovery first.
-2. ADAPT: if an output shows your assumption was wrong, change the approach.
-3. Anything destructive or risky → set requires_confirmation true (the user is asked).
-4. Never print or echo secrets (passwords, tokens, keys) in commands or messages.
-5. If you need information only the user has (a domain, a choice), or you cannot
+1. ONE action per step — small, observable steps. Prefer read-only discovery first.
+2. Every step MUST carry the "server_id" of the server it runs on, copied exactly
+   from the list above. Use the right shell for that server's OS.
+3. ADAPT: if an output shows your assumption was wrong, change the approach.
+4. Anything destructive or risky → set requires_confirmation true (the user is asked).
+5. Never print or echo secrets (passwords, tokens, keys) in commands or messages.
+6. To COPY A FILE between two servers, use action "transfer" — ServerAlly moves the
+   file itself (the servers never need access to each other; no keys to set up).
+   Transfer ONE file at a time (tar/gzip a folder first). The destination path must
+   be NEW — transfers never overwrite an existing file.
+7. If you need information only the user has (a domain, a choice), or you cannot
    proceed (missing DNS, no access), set status "blocked" and say exactly what is
    needed — in plain, friendly language ({user_language}).
-6. When the goal is verifiably achieved (you SAW the verification output), set status
+8. When the goal is verifiably achieved (you SAW the verification output), set status
    "done" with a short summary of what was done and where.
-7. Budget is small — no detours, no nice-to-haves.
-8. Keep "description" and "summary" SHORT — one or two sentences. Never let the JSON
-   run long.
+9. Budget is small — no detours, no nice-to-haves.
+10. Keep "description" and "summary" SHORT — one or two sentences. Never let the JSON
+    run long.
 
 RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
 {{
   "status": "continue" | "done" | "blocked",
   "step": {{
-    "cmd": "the single next command (only when status=continue)",
+    "server_id": "<id copied from the server list>",
+    "action": "run" | "transfer",
+    "cmd": "the single next command (action=run only)",
+    "from_server_id": "<source id>", "from_path": "/abs/file",
+    "to_server_id": "<destination id>", "to_path": "/abs/new-file",
     "description": "plain-language what & why ({user_language})",
     "risk_level": "low | medium | high",
     "requires_confirmation": false
@@ -389,6 +407,7 @@ RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
   "summary": "for done/blocked: what happened / what's needed ({user_language})",
   "remember": null
 }}
+(For action=run leave the transfer fields out; for action=transfer leave "cmd" out.)
 """
 
 # Volatile tail for mission steps (cache layout C3): the transcript only APPENDS, so
@@ -407,8 +426,8 @@ _TRANSCRIPT_MAX = 9000
 
 
 def _mission_transcript(steps: list[dict]) -> str:
-    """Render executed steps (desc, cmd, exit, output tail) for the step planner —
-    per-step and total caps keep the prompt bounded on long missions."""
+    """Render executed steps (server, desc, cmd, exit, output tail) for the step
+    planner — per-step and total caps keep the prompt bounded on long missions."""
     if not steps:
         return "(no steps yet — this is the first step)"
     lines: list[str] = []
@@ -416,8 +435,9 @@ def _mission_transcript(steps: list[dict]) -> str:
         out = (s.get("output_tail") or "").strip()
         if len(out) > _TRANSCRIPT_STEP_MAX:
             out = "…" + out[-_TRANSCRIPT_STEP_MAX:]
+        where = f" [on {s['server']}]" if s.get("server") else ""
         lines.append(
-            f"Step {i}: {s.get('description', '')}\n"
+            f"Step {i}{where}: {s.get('description', '')}\n"
             f"  $ {s.get('cmd', '')}\n"
             f"  exit={s.get('exit_code', '?')} {s.get('note', '')}\n"
             + (f"  output: {out}" if out else "  output: (none)")
@@ -428,24 +448,34 @@ def _mission_transcript(steps: list[dict]) -> str:
     return text
 
 
+def _mission_roster(servers: list[Server], home_id: str | None) -> str:
+    """The server list the step planner may target — exact ids, OS, shell. The home
+    server (where the mission started) is marked as the primary."""
+    lines: list[str] = []
+    for s in servers:
+        os_ = f"{s.os_type or 'linux'}{(' ' + s.os_version) if s.os_version else ''}"
+        mark = "  ← primary (the mission started here)" if home_id and str(s.id) == home_id else ""
+        lines.append(f"- server_id={s.id} | {s.name} — {os_}, shell {s.shell}{mark}")
+    return "\n".join(lines) if lines else "(no servers)"
+
+
 async def plan_mission_step(
     goal: str,
-    server: Server,
+    servers: list[Server],
     steps: list[dict],
     remaining: int,
     skill: skill_service.Skill | None = None,
     user_language: str = "en",
+    home_id: str | None = None,
 ) -> dict:
-    """One iteration of the mission loop: given the goal, the runbook, and everything
-    that has happened, decide the next step (or done/blocked)."""
+    """One iteration of the mission loop: given the goal, the runbook, the servers the
+    user can act on, and everything that has happened, decide the next step (or
+    done/blocked). Steps carry a server_id — a mission may span several servers."""
     runbook = ""
     if skill is not None:
         runbook = f"THE RUNBOOK (follow its stages and pitfalls):\n{skill.body}"
     system = _MISSION_SYSTEM.format(
-        server_name=server.name,
-        os_type=server.os_type or "linux",
-        os_version=server.os_version or "",
-        shell=server.shell,
+        roster=_mission_roster(servers, home_id),
         goal=goal,
         runbook=runbook,
         user_language=user_language,

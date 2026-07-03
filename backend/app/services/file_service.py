@@ -26,6 +26,13 @@ _executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="sftp")
 # Maximum bytes to load into the in-browser editor (2 MB)
 MAX_READ_BYTES = 2 * 1024 * 1024
 
+# Maximum size for a server→server mission transfer, streamed through the backend
+# (never held fully in memory). Big enough for real site/db backups, small enough
+# to keep one transfer from monopolising the SFTP pool.
+MAX_TRANSFER_BYTES = 512 * 1024 * 1024
+
+_TRANSFER_CHUNK = 256 * 1024
+
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -252,3 +259,52 @@ async def download_file(server: Server, path: str) -> bytes:
     p = _normalise(path)
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(_executor, _download, server, p)
+
+
+# ── Server→server transfer (Ally Missions Stage 2) ────────────────────────────
+
+def _transfer(src: Server, src_path: str, dst: Server, dst_path: str) -> int:
+    """Stream ONE file src→dst through the backend in chunks. The servers never talk
+    to each other (no shared keys). Refuses directories, oversized files, and an
+    existing destination (transfers never overwrite). Returns bytes copied."""
+    s_sftp = _get_sftp(src)
+    try:
+        st = s_sftp.stat(src_path)
+        if stat_module.S_ISDIR(st.st_mode or 0):
+            raise ValueError("The source is a folder — pack it into one file first (tar/zip).")
+        size = st.st_size or 0
+        if size > MAX_TRANSFER_BYTES:
+            raise ValueError(
+                f"The file is {size / 1_000_000:.0f} MB — transfers are capped at "
+                f"{MAX_TRANSFER_BYTES / 1_000_000:.0f} MB."
+            )
+        d_sftp = _get_sftp(dst)
+        try:
+            try:
+                d_sftp.stat(dst_path)
+                raise ValueError("The destination file already exists — use a new filename.")
+            except IOError:
+                pass  # not there — good
+            with s_sftp.open(src_path, "rb") as sf, d_sftp.open(dst_path, "wb") as df:
+                sf.prefetch()
+                copied = 0
+                while True:
+                    chunk = sf.read(_TRANSFER_CHUNK)
+                    if not chunk:
+                        break
+                    df.write(chunk)
+                    copied += len(chunk)
+            return copied
+        finally:
+            d_sftp.close()
+    finally:
+        s_sftp.close()
+
+
+async def transfer_between(src: Server, src_path: str, dst: Server, dst_path: str) -> int:
+    """Copy one file from ``src`` to ``dst`` via the backend (SFTP both ways).
+    Returns the number of bytes copied; raises ValueError with a plain message on
+    guard failures (directory / too big / destination exists)."""
+    sp, dp = _normalise(src_path), _normalise(dst_path)
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_executor, _transfer, src, sp, dst, dp)

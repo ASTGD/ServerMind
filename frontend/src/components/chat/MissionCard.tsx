@@ -1,9 +1,12 @@
-import { Rocket, Play, ShieldCheck, ListChecks } from "lucide-react"
+import { Rocket, Play, ShieldCheck, ListChecks, Server as ServerIcon } from "lucide-react"
 
 export interface MissionOffer {
   goal: string
   skill: string | null
   message: string
+  /** The server the mission starts on — null for a fleet mission that may span servers. */
+  serverId?: string | null
+  serverName?: string | null
   started?: boolean
 }
 
@@ -21,6 +24,10 @@ export default function MissionCard({
       <div className="flex items-center gap-2 border-b border-indigo-500/15 px-3 py-2">
         <Rocket size={15} className="shrink-0 text-primary" />
         <span className="text-sm font-medium text-foreground">Mission</span>
+        <span className="flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+          <ServerIcon size={9} />
+          {offer.serverName ?? "across your servers"}
+        </span>
         {offer.skill && (
           <span className="rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
             runbook: {offer.skill}

@@ -14,6 +14,8 @@ export interface MissionStep {
   exitCode?: number
   outputTail?: string
   note?: string
+  /** Which server this step ran on (cross-server missions, Stage 2). */
+  serverName?: string
 }
 
 export interface MissionState {
@@ -42,6 +44,11 @@ function StepRow({ step }: { step: MissionStep }) {
       >
         <span className="mt-0.5">{icon}</span>
         <span className="min-w-0 flex-1">
+          {step.serverName && (
+            <span className="mr-1.5 rounded bg-indigo-500/10 px-1 py-px text-[10px] font-medium text-indigo-600 dark:text-indigo-400">
+              {step.serverName}
+            </span>
+          )}
           <span className="text-foreground">{step.description || step.cmd}</span>
           {step.note && <span className="ml-1 text-amber-600 dark:text-amber-400">({step.note})</span>}
         </span>

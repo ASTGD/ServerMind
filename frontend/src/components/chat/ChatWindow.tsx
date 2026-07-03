@@ -42,6 +42,7 @@ interface PendingPlan {
   requiresApproval: boolean
   riskLevel: string
   estimatedSeconds: number
+  serverName?: string | null
 }
 
 let _msgId = 0
@@ -88,7 +89,10 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     )
   }, [setMessages])
 
-  const { send, status } = useWebSocket(target.kind === "server" ? `/ws/chat/${target.server.id}` : "/ws/chat", {
+  // ONE Ally socket (Stage 2): every ChatWindow connects to /ws/chat and names its
+  // target per message (server_id). Switching target never reconnects — a pending
+  // plan or a running mission stays alive, bound server-side to its own server.
+  const { send, status } = useWebSocket("/ws/chat", {
     onMessage: useCallback((raw: unknown) => {
       const msg = raw as Record<string, unknown>
       switch (msg.type) {
@@ -107,6 +111,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             requiresApproval: msg.requires_approval as boolean,
             riskLevel: msg.risk_level as string ?? "low",
             estimatedSeconds: msg.estimated_duration_seconds as number ?? 30,
+            serverName: (msg.server_name as string | undefined) ?? null,
           }
           setPending(plan)
           if (!plan.requiresApproval) {
@@ -201,6 +206,8 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
               goal: (msg.goal as string) ?? "",
               skill: (msg.skill as string | null) ?? null,
               message: (msg.message as string) ?? "",
+              serverId: (msg.server_id as string | null | undefined) ?? null,
+              serverName: (msg.server_name as string | null | undefined) ?? null,
             },
           })
           break
@@ -226,6 +233,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             riskLevel: (msg.risk_level as string) ?? "low",
             needsApproval: Boolean(msg.needs_approval),
             running: true,
+            serverName: (msg.server_name as string | undefined) ?? undefined,
           }
           updateMission((m) => ({ ...m, steps: [...m.steps.filter((s) => s.index !== step.index), step] }))
           // Risky step — reuse the normal approval UI (approve/cancel go over the socket).
@@ -241,6 +249,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
               requiresApproval: true,
               riskLevel: step.riskLevel ?? "low",
               estimatedSeconds: 30,
+              serverName: step.serverName ?? null,
             })
           }
           break
@@ -248,22 +257,25 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
 
         case "mission_step_done":
           setPending(null)
-          updateMission((m) => ({
-            ...m,
-            steps: m.steps.map((s) =>
-              s.index === (msg.index as number)
-                ? {
-                    ...s,
-                    running: false,
-                    cmd: (msg.cmd as string) ?? s.cmd,
-                    description: (msg.description as string) ?? s.description,
-                    exitCode: (msg.exit_code as number) ?? 0,
-                    outputTail: (msg.output_tail as string) ?? "",
-                    note: (msg.note as string) ?? "",
-                  }
-                : s,
-            ),
-          }))
+          updateMission((m) => {
+            const idx = msg.index as number
+            const apply = (s: MissionStep): MissionStep => ({
+              ...s,
+              running: false,
+              cmd: (msg.cmd as string) ?? s.cmd,
+              description: (msg.description as string) ?? s.description,
+              exitCode: (msg.exit_code as number) ?? 0,
+              outputTail: (msg.output_tail as string) ?? "",
+              note: (msg.note as string) ?? "",
+              serverName: (msg.server_name as string | undefined) ?? s.serverName,
+            })
+            // Rejected steps (safety / transfer guards) emit step_done with no prior
+            // step event — append a row so the timeline shows what was refused.
+            if (!m.steps.some((s) => s.index === idx)) {
+              return { ...m, steps: [...m.steps, apply({ index: idx, cmd: "", description: "", running: false })] }
+            }
+            return { ...m, steps: m.steps.map((s) => (s.index === idx ? apply(s) : s)) }
+          })
           break
 
         case "mission_complete":
@@ -368,35 +380,24 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     }, [addMsg, updateMission, setMessages, onPersistAnswer]),
   })
 
-  // Persistent mode: when the target switches mid-conversation, drop transient state
-  // (a pending plan / running flags belong to the OLD server's socket) and add a
-  // "Now talking to X" divider so the one continuous thread stays readable.
+  // Persistent mode: mark each target switch with a "Now talking to X" divider.
+  // Since Stage 2 there is ONE socket — nothing is torn down on a switch: a pending
+  // plan or a running mission stays alive, bound server-side to its own server
+  // (the plan card and mission steps carry that server's name).
   const targetKey = target.kind === "server" ? `server:${target.server.id}` : "fleet"
   const targetLabel = target.kind === "server" ? target.server.name : "all servers"
   const prevTargetKey = useRef(targetKey)
   useEffect(() => {
     if (!persistent || prevTargetKey.current === targetKey) return
     prevTargetKey.current = targetKey
-    setPending(null)
-    setRunningLogId(null)
-    setIsLoading(false)
-    setOutputBuffer("")
-    missionMsgIdRef.current = null
     setMessages((prev) => {
       if (prev.length === 0) return prev
-      // A mission that was live on the old socket can't continue — mark it stopped.
-      const next = prev.map((m) =>
-        m.role === "assistant" && m.kind === "mission" && m.mission.status === "running"
-          ? { ...m, mission: { ...m.mission, status: "stopped" as const, steps: m.mission.steps.map((s) => ({ ...s, running: false })) } }
-          : m,
-      )
-      const last = next[next.length - 1]
+      const last = prev[prev.length - 1]
       if (last.role === "system" && last.kind === "divider") {
-        return [...next.slice(0, -1), { ...last, label: `Now talking to ${targetLabel}` }]
+        return [...prev.slice(0, -1), { ...last, label: `Now talking to ${targetLabel}` }]
       }
-      return [...next, { id: nextId(), role: "system", kind: "divider", label: `Now talking to ${targetLabel}` }]
+      return [...prev, { id: nextId(), role: "system", kind: "divider", label: `Now talking to ${targetLabel}` }]
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [persistent, targetKey, targetLabel, setMessages])
 
   // Scroll to bottom on new messages
@@ -422,12 +423,14 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     // Snapshot history BEFORE adding the new message — it holds the previous turns only.
     const history = recentHistory()
     addMsg({ id: nextId(), role: "user", content })
-    // Attach the page context (if any) as background — the backend frames it as
-    // untrusted info and never as instructions.
+    // One socket, per-message target: name the server this message is for (none =
+    // fleet scope). Attach the page context (if any) as background — the backend
+    // frames it as untrusted info and never as instructions.
     send({
       type: "message",
       content,
       language,
+      ...(target.kind === "server" ? { server_id: target.server.id } : {}),
       ...(pageContext ? { page_context: pageContext } : {}),
       ...(history.length ? { history } : {}),
     })
@@ -447,6 +450,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   }
 
   // Start a mission (the one mission-level approval) — the backend loop takes over.
+  // The home server rides along: the offer's own target first, else the current one.
   function handleStartMission(offer: MissionOffer) {
     setMessages((prev) =>
       prev.map((m) =>
@@ -455,7 +459,14 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           : m,
       ),
     )
-    send({ type: "mission_start", goal: offer.goal, skill: offer.skill, language })
+    const homeId = offer.serverId ?? (target.kind === "server" ? target.server.id : null)
+    send({
+      type: "mission_start",
+      goal: offer.goal,
+      skill: offer.skill,
+      language,
+      ...(homeId ? { server_id: homeId } : {}),
+    })
   }
 
   function handleStopMission() {
@@ -565,6 +576,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             requiresApproval={pending.requiresApproval}
             riskLevel={pending.riskLevel}
             estimatedSeconds={pending.estimatedSeconds}
+            serverName={pending.serverName}
             onApprove={handleApprove}
             onCancel={handleCancel}
           />
@@ -587,11 +599,12 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
         </div>
       )}
 
-      {/* Input */}
+      {/* Input — held while Ally is thinking or a mission is running (the mission
+          loop owns the socket then; Stop and Approve stay available). */}
       <div className="border-t border-border p-3">
         <ChatInput
           onSend={handleSend}
-          disabled={status !== "open"}
+          disabled={status !== "open" || isLoading}
           loading={isLoading}
         />
       </div>

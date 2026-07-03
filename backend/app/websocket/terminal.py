@@ -20,7 +20,7 @@ from app.models.playbook import Playbook, PlaybookRun, UserScript
 from app.models.server import Server
 from app.models.user import User
 from app.services import ai_context_service, ai_service, connection_manager, safety_service
-from app.services import live_look_service, memory_service, metering_service, skill_service
+from app.services import file_service, live_look_service, memory_service, metering_service, skill_service
 from app.services import ssh_service, team_service, terminal_session_service
 from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
@@ -266,7 +266,8 @@ async def chat_ws(
     token: str = Query(default=""),
     ticket: str = Query(default=""),
 ) -> None:
-    """AI chat with streaming command execution."""
+    """AI chat locked to one server (the ServerDetail chat tab / older clients).
+    Same loop as the unified socket, with a fixed target."""
     auth = await _auth_and_get_server(token, ticket, server_id, need_execute=True)
     if not auth:
         await websocket.close(code=4001, reason="Unauthorized")
@@ -275,7 +276,7 @@ async def chat_ws(
     await websocket.accept()
 
     try:
-        await _chat_loop(websocket, server, str(user.id))
+        await _unified_loop(websocket, user, fixed_server=server)
     except WebSocketDisconnect:
         pass
     except Exception as exc:
@@ -344,26 +345,60 @@ async def _maybe_generate_script(spec: object, user_language: str) -> dict | Non
     return None
 
 
-async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
-    """Main chat loop — processes user messages until disconnect."""
-    os_family = "windows" if server.connection_type == "winrm" else "linux"
+async def _resolve_execute_target(user: User, server_id: object) -> Server | str | None:
+    """Resolve a per-message server target on the unified socket.
 
+    Returns the Server when the user may EXECUTE on it, a plain-English error string
+    when they may not (Rule 7: viewers never execute; email verification honored),
+    or None when no target was given (fleet scope)."""
+    if not server_id or not isinstance(server_id, str):
+        return None
+    if settings.REQUIRE_EMAIL_VERIFICATION and not user.is_verified:
+        return "Please verify your email before running commands on a server."
+    async with AsyncSessionLocal() as db:
+        access = await team_service.get_access(db, user, server_id)
+    if access is None:
+        return "You don't have access to that server."
+    if not access.can_execute:
+        return "You don't have permission to run commands on that server."
+    return access.server
+
+
+async def _unified_loop(ws: WebSocket, user: User, fixed_server: Server | None = None) -> None:
+    """ONE Ally socket ("one Ally, one thread" Stage 2) — fleet questions and
+    server-scoped work on the same connection. Each ``message``/``mission_start``
+    may carry a ``server_id``; access is resolved PER MESSAGE, so a pending plan or
+    a running mission stays bound server-side to the server it was made for, no
+    matter what the client switches to. ``fixed_server`` pins the target (the
+    per-server endpoint) and per-message ids are ignored there."""
+    pending_frame: dict | None = None
     while True:
-        raw = await ws.receive_text()
-        msg = json.loads(raw)
+        if pending_frame is not None:
+            msg, pending_frame = pending_frame, None
+        else:
+            msg = json.loads(await ws.receive_text())
+        mtype = msg.get("type")
 
-        # Ally Missions — the user clicked Start on a mission offer.
-        if msg.get("type") == "mission_start":
-            await _run_mission(
-                ws, server,
+        # Ally Missions — the user clicked Start on a mission offer. The home server
+        # is optional: a fleet-offered mission may span several servers.
+        if mtype == "mission_start":
+            home: Server | None = fixed_server
+            if home is None:
+                resolved = await _resolve_execute_target(user, msg.get("server_id"))
+                if isinstance(resolved, str):
+                    await ws.send_text(json.dumps({"type": "error", "message": resolved}))
+                    continue
+                home = resolved
+            pending_frame = await _run_mission(
+                ws, user,
+                home_server=home,
                 goal=str(msg.get("goal", "")),
                 skill_slug=msg.get("skill"),
                 user_language=msg.get("language", "en"),
-                acting_user_id=user_id,
             )
             continue
 
-        if msg.get("type") != "message":
+        if mtype != "message":
             continue
 
         user_input: str = msg.get("content", "").strip()
@@ -373,7 +408,20 @@ async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
         if not user_input:
             continue
 
-        if not await check_command_rate(user_id, str(server.id)):
+        server = fixed_server
+        if server is None:
+            resolved = await _resolve_execute_target(user, msg.get("server_id"))
+            if isinstance(resolved, str):
+                await ws.send_text(json.dumps({"type": "error", "message": resolved}))
+                continue
+            server = resolved
+
+        # No target → the fleet path (advisory; may offer handoffs, batches, missions).
+        if server is None:
+            await _fleet_answer(ws, user, user_input, user_language, page_context, history)
+            continue
+
+        if not await check_command_rate(str(user.id), str(server.id)):
             await ws.send_text(json.dumps({
                 "type": "error",
                 "message": "Rate limit reached — wait a minute before sending more commands.",
@@ -398,9 +446,10 @@ async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
             }))
             continue
 
-        await _handle_message(
+        os_family = "windows" if server.connection_type == "winrm" else "linux"
+        pending_frame = await _handle_message(
             ws, server, user_input, user_language, os_family, page_context, history,
-            acting_user_id=user_id,
+            acting_user_id=str(user.id),
         )
 
 
@@ -412,23 +461,23 @@ async def fleet_chat_ws(
     token: str = Query(default=""),
     ticket: str = Query(default=""),
 ) -> None:
-    """Fleet-wide AI assistant — advisory chat across all of the user's servers.
+    """THE Ally socket — one connection for the whole conversation.
 
-    Not scoped to one server and does NOT execute commands: it answers questions,
-    recommends playbooks, and guides the user. Actual execution stays in the
-    per-server assistant (``/ws/chat/{server_id}``) where safety + approval live.
-    """
+    Messages without a ``server_id`` take the fleet path (advisory: answers,
+    handoffs, batches, mission offers). Messages WITH a ``server_id`` run the full
+    per-server pipeline (plan → safety → approval → execute), with access resolved
+    per message — so one continuous chat can act on different servers in turn."""
     user = await _auth_user(token, ticket)
     if not user:
         await websocket.close(code=4001, reason="Unauthorized")
         return
     await websocket.accept()
     try:
-        await _fleet_loop(websocket, user)
+        await _unified_loop(websocket, user)
     except WebSocketDisconnect:
         pass
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Fleet chat WS error")
+        logger.exception("Unified chat WS error")
         try:
             await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
         except Exception:
@@ -485,89 +534,119 @@ def _resolve_batch(batch: object, servers: list[Server]) -> dict | None:
     return {"prompt": prompt, "targets": targets}
 
 
-async def _fleet_loop(ws: WebSocket, user: User) -> None:
-    while True:
-        raw = await ws.receive_text()
-        msg = json.loads(raw)
-        if msg.get("type") != "message":
-            continue
-        text = msg.get("content", "").strip()
-        lang = msg.get("language", "en")
-        page_context = _page_context_from(msg)
-        history = _history_from(msg)
-        if not text:
-            continue
+def _resolve_mission_offer(mission: object, servers: list[Server]) -> dict | None:
+    """Validate a fleet mission offer from the AI: a goal plus an optional home server
+    (matched by name, like handoffs). Returns {goal, server_id|None, server_name|None}."""
+    if not isinstance(mission, dict):
+        return None
+    goal = str(mission.get("goal", "")).strip()
+    if not goal:
+        return None
+    resolved = _resolve_handoff(
+        {"server": mission.get("server"), "prompt": goal}, servers
+    ) if mission.get("server") else None
+    return {
+        "goal": goal[:500],
+        "server_id": resolved["server_id"] if resolved else None,
+        "server_name": resolved["server_name"] if resolved else None,
+    }
 
-        # AI quota gate (docs/AI-METERING.md §4) — fleet chat draws from the acting
-        # user's own pool. Only blocks when ENFORCE_PLAN_LIMITS is on.
-        try:
-            async with AsyncSessionLocal() as db:
-                g = await metering_service.gate(db, user)
-        except Exception as exc:  # noqa: BLE001 — gate failure must not kill chat
-            logger.warning("quota gate failed (fleet): %s", exc)
-            g = None
-        if g and not g.allowed:
-            await ws.send_text(json.dumps({
-                "type": "quota_exceeded",
-                "used": g.used, "limit": g.limit, "resets_at": g.resets_at,
-                "message": metering_service.quota_message(g),
-            }))
-            continue
 
-        await ws.send_text(json.dumps({"type": "thinking"}))
+async def _fleet_answer(
+    ws: WebSocket,
+    user: User,
+    text: str,
+    lang: str,
+    page_context: str | None,
+    history: list[dict] | None,
+) -> None:
+    """One fleet-scoped turn (no server target): advisory answer that may carry a
+    handoff, a batch, a generated script, or a mission OFFER."""
+    # AI quota gate (docs/AI-METERING.md §4) — fleet chat draws from the acting
+    # user's own pool. Only blocks when ENFORCE_PLAN_LIMITS is on.
+    try:
         async with AsyncSessionLocal() as db:
-            servers = await team_service.accessible_servers(db, user)
-            # Ally Brain Phase 4 — real health numbers per server, so "which server
-            # needs attention?" is answered with data. Phase 5 — what Ally remembers
-            # about this user. Best-effort: never blocks chat.
-            health = None
-            memories = None
-            try:
-                health = await ai_context_service.build_fleet_health(db, servers)
-                memories = await memory_service.block_for_user(db, user.id)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("fleet context build failed: %s", exc)
-        # Meter the whole fleet turn (answer + any inline script generation) = 1 action.
-        tok = metering_service.start_collection()
+            g = await metering_service.gate(db, user)
+    except Exception as exc:  # noqa: BLE001 — gate failure must not kill chat
+        logger.warning("quota gate failed (fleet): %s", exc)
+        g = None
+    if g and not g.allowed:
+        await ws.send_text(json.dumps({
+            "type": "quota_exceeded",
+            "used": g.used, "limit": g.limit, "resets_at": g.resets_at,
+            "message": metering_service.quota_message(g),
+        }))
+        return
+
+    await ws.send_text(json.dumps({"type": "thinking"}))
+    async with AsyncSessionLocal() as db:
+        servers = await team_service.accessible_servers(db, user)
+        # Ally Brain Phase 4 — real health numbers per server, so "which server
+        # needs attention?" is answered with data. Phase 5 — what Ally remembers
+        # about this user. Best-effort: never blocks chat.
+        health = None
+        memories = None
         try:
-            data = await ai_service.fleet_chat(
-                text, servers, lang, page_context=page_context, history=history,
-                health=health, memories=memories,
-            )
+            health = await ai_context_service.build_fleet_health(db, servers)
+            memories = await memory_service.block_for_user(db, user.id)
         except Exception as exc:  # noqa: BLE001
-            calls = metering_service.finish_collection(tok)
-            if calls:  # tokens may have been spent before our error — ledger at 0 actions
-                async with AsyncSessionLocal() as db:
-                    await metering_service.record(
-                        db, user_id=user.id, feature="fleet_chat", calls=calls,
-                        actions=0, status="provider_error",
-                    )
-            await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
-            continue
-        # Ally Brain Phase 5 — save a user-scoped note when Ally marked one.
-        if data.get("remember"):
-            async with AsyncSessionLocal() as db:
-                await memory_service.save_from_ai(
-                    db, user_id=user.id, remember=data.get("remember"), server_id=None,
-                )
-        # If Ally decided the user wants a reusable script written, generate it now and
-        # attach it — the frontend shows it with "Save to My Scripts" / "Open in editor".
-        # This only WRITES a script (text); it is never executed here.
-        generated = await _maybe_generate_script(data.get("script"), lang)
+            logger.warning("fleet context build failed: %s", exc)
+    # Meter the whole fleet turn (answer + any inline script generation) = 1 action.
+    tok = metering_service.start_collection()
+    try:
+        data = await ai_service.fleet_chat(
+            text, servers, lang, page_context=page_context, history=history,
+            health=health, memories=memories,
+        )
+    except Exception as exc:  # noqa: BLE001
         calls = metering_service.finish_collection(tok)
-        if calls:
+        if calls:  # tokens may have been spent before our error — ledger at 0 actions
             async with AsyncSessionLocal() as db:
                 await metering_service.record(
                     db, user_id=user.id, feature="fleet_chat", calls=calls,
+                    actions=0, status="provider_error",
                 )
+        await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
+        return
+    # Ally Brain Phase 5 — save a user-scoped note when Ally marked one.
+    if data.get("remember"):
+        async with AsyncSessionLocal() as db:
+            await memory_service.save_from_ai(
+                db, user_id=user.id, remember=data.get("remember"), server_id=None,
+            )
+    # If Ally decided the user wants a reusable script written, generate it now and
+    # attach it — the frontend shows it with "Save to My Scripts" / "Open in editor".
+    # This only WRITES a script (text); it is never executed here.
+    generated = await _maybe_generate_script(data.get("script"), lang)
+    calls = metering_service.finish_collection(tok)
+    if calls:
+        async with AsyncSessionLocal() as db:
+            await metering_service.record(
+                db, user_id=user.id, feature="fleet_chat", calls=calls,
+            )
+
+    # A multi-step job → offer a mission (Stage 2: may span several servers; the
+    # user starts it with one click and the mission loop takes over).
+    mission = _resolve_mission_offer(data.get("mission"), servers)
+    if mission:
         await ws.send_text(json.dumps({
-            "type": "answer",
-            "content": data.get("answer", ""),
-            "suggestions": data.get("follow_up_suggestions", []),
-            "handoff": _resolve_handoff(data.get("handoff"), servers),
-            "batch": _resolve_batch(data.get("batch"), servers),
-            "script": generated,
+            "type": "mission_offer",
+            "goal": mission["goal"],
+            "skill": None,
+            "server_id": mission["server_id"],
+            "server_name": mission["server_name"],
+            "message": data.get("answer", ""),
         }))
+        return
+
+    await ws.send_text(json.dumps({
+        "type": "answer",
+        "content": data.get("answer", ""),
+        "suggestions": data.get("follow_up_suggestions", []),
+        "handoff": _resolve_handoff(data.get("handoff"), servers),
+        "batch": _resolve_batch(data.get("batch"), servers),
+        "script": generated,
+    }))
 
 
 # ── Batch WebSocket (cross-server actions, Phase 3) ───────────────────────────
@@ -722,11 +801,13 @@ async def _batch_run(ws: WebSocket, user: User) -> None:
 
 _MISSION_BUDGET = 20
 _MISSION_TAIL_CHARS = 1200
+_MISSION_ROSTER_MAX = 15
 
 
 async def _mission_stop_requested(ws: WebSocket) -> bool:
     """Non-blocking drain of queued client frames between steps — True if the user
-    asked to stop. Other frame types received mid-mission are ignored (v1)."""
+    asked to stop. Other frame types received mid-mission are ignored (the input is
+    disabled client-side while a mission runs)."""
     while True:
         try:
             raw = await asyncio.wait_for(ws.receive_text(), timeout=0.05)
@@ -738,6 +819,54 @@ async def _mission_stop_requested(ws: WebSocket) -> bool:
             continue
         if m.get("type") in ("mission_stop", "cancel"):
             return True
+
+
+async def _mission_roster(user: User, home_server: Server | None) -> list[Server]:
+    """The servers this mission may act on: every server the user can EXECUTE on
+    (Rule 7 — viewer overrides apply) with a shell connection (no hosting panels).
+    The home server leads; the list is capped to keep the prompt bounded."""
+    roster: list[Server] = []
+    async with AsyncSessionLocal() as db:
+        candidates = await team_service.accessible_servers(db, user)
+        for s in candidates:
+            if s.connection_type == "hosting":
+                continue
+            access = await team_service.get_access(db, user, str(s.id))
+            if access is not None and access.can_execute:
+                roster.append(access.server)
+    if home_server is not None:
+        roster = [home_server] + [s for s in roster if str(s.id) != str(home_server.id)]
+    return roster[:_MISSION_ROSTER_MAX]
+
+
+def _step_target(step: dict, roster_by_id: dict[str, Server], home: Server | None) -> Server | None:
+    """Resolve a mission step's target server. Unknown/missing ids fall back to the
+    home server (single-server missions keep working even if the model omits the id);
+    with no home and no valid id the step has no target."""
+    sid = str(step.get("server_id") or "").strip()
+    if sid and sid in roster_by_id:
+        return roster_by_id[sid]
+    return home
+
+
+def _validate_transfer(
+    step: dict, roster_by_id: dict[str, Server]
+) -> tuple[Server, str, Server, str] | str:
+    """Check a transfer step's endpoints against the roster. Returns (src, src_path,
+    dst, dst_path) or a plain-English error string. Transfers are SFTP → SSH only."""
+    src = roster_by_id.get(str(step.get("from_server_id") or "").strip())
+    dst = roster_by_id.get(str(step.get("to_server_id") or "").strip())
+    src_path = str(step.get("from_path") or "").strip()
+    dst_path = str(step.get("to_path") or "").strip()
+    if src is None or dst is None:
+        return "transfer endpoints must be servers from the mission's server list"
+    if not src_path.startswith("/") or not dst_path.startswith("/"):
+        return "transfer paths must be absolute (/…)"
+    if src.connection_type != "ssh" or dst.connection_type != "ssh":
+        return "transfers work between SSH servers only"
+    if str(src.id) == str(dst.id):
+        return "source and destination are the same server — use a shell command instead"
+    return src, src_path, dst, dst_path
 
 
 async def _mission_execute(server: Server, cmd: str) -> tuple[int, str, str]:
@@ -766,20 +895,24 @@ async def _mission_execute(server: Server, cmd: str) -> tuple[int, str, str]:
 
 async def _run_mission(
     ws: WebSocket,
-    server: Server,
+    user: User,
+    *,
+    home_server: Server | None,
     goal: str,
     skill_slug: str | None,
     user_language: str,
-    acting_user_id: str | None,
-) -> None:
+) -> dict | None:
     """The mission loop: plan ONE step → validate → (approve if risky) → execute →
-    observe → repeat, until done/blocked/stopped/budget. See docs/ALLY-MISSIONS.md."""
+    observe → repeat, until done/blocked/stopped/budget. Stage 2: steps carry their
+    own target server (validated against the user's executable roster), and a
+    "transfer" step copies a file between two servers through the backend.
+    Returns a leftover client frame to reprocess, or None. See docs/ALLY-MISSIONS.md."""
     goal = (goal or "").strip()[:500]
     if not goal:
         await ws.send_text(json.dumps({"type": "error", "message": "Mission needs a goal."}))
-        return
+        return None
     # Missions run shell steps — panel-API connections can't do that.
-    if server.connection_type == "hosting":
+    if home_server is not None and home_server.connection_type == "hosting":
         await ws.send_text(json.dumps({
             "type": "error",
             "message": (
@@ -787,14 +920,25 @@ async def _run_mission(
                 "through its control panel API — add it over SSH to run missions."
             ),
         }))
-        return
+        return None
 
-    # Quota gate — a mission costs 1 action from the server owner's pool (§4 of the
-    # missions doc); its true token cost is ledgered per call.
+    roster = await _mission_roster(user, home_server)
+    if not roster:
+        await ws.send_text(json.dumps({
+            "type": "error",
+            "message": "Missions need at least one SSH or Windows server you can run commands on.",
+        }))
+        return None
+    roster_by_id = {str(s.id): s for s in roster}
+    home_id = str(home_server.id) if home_server is not None else None
+
+    # Quota gate — a mission costs 1 action (§4 of the missions doc); billed to the
+    # home server owner's pool, or the acting user's own pool for fleet missions.
+    billing_user_id = home_server.user_id if home_server is not None else user.id
     try:
         async with AsyncSessionLocal() as db:
-            owner = await db.get(User, server.user_id)
-            g = await metering_service.gate(db, owner) if owner else None
+            payer = await db.get(User, billing_user_id)
+            g = await metering_service.gate(db, payer) if payer else None
     except Exception as exc:  # noqa: BLE001
         logger.warning("quota gate failed (mission): %s", exc)
         g = None
@@ -804,12 +948,14 @@ async def _run_mission(
             "used": g.used, "limit": g.limit, "resets_at": g.resets_at,
             "message": metering_service.quota_message(g),
         }))
-        return
+        return None
 
     skill = skill_service.get(skill_slug) if skill_slug else None
-    os_family = "windows" if server.connection_type == "winrm" else "linux"
     steps: list[dict] = []
-    logger.info("mission started: %r (server=%s, skill=%s)", goal, server.id, skill_slug)
+    logger.info(
+        "mission started: %r (home=%s, roster=%d, skill=%s)",
+        goal, home_id, len(roster), skill_slug,
+    )
     await ws.send_text(json.dumps({
         "type": "mission_started",
         "goal": goal,
@@ -830,10 +976,10 @@ async def _run_mission(
                     ),
                     "steps_used": len(steps),
                 }))
-                return
+                return None
             if await _mission_stop_requested(ws):
                 await ws.send_text(json.dumps({"type": "mission_stopped", "steps_used": len(steps)}))
-                return
+                return None
 
             # 1) Plan the next step from everything observed so far. One retry — a
             # single malformed reply must not kill a long mission.
@@ -842,7 +988,8 @@ async def _run_mission(
             for attempt in (1, 2):
                 try:
                     decision = await ai_service.plan_mission_step(
-                        goal, server, steps, _MISSION_BUDGET - len(steps), skill, user_language,
+                        goal, roster, steps, _MISSION_BUDGET - len(steps), skill,
+                        user_language, home_id=home_id,
                     )
                     break
                 except Exception as exc:  # noqa: BLE001
@@ -854,32 +1001,84 @@ async def _run_mission(
                     "reason": f"AI error: {plan_error}",
                     "steps_used": len(steps),
                 }))
-                return
+                return None
 
             status_ = decision.get("status")
             if status_ == "done":
-                # A finished mission may leave one server-scoped memory (deploy facts).
+                # A finished mission may leave one memory note (deploy facts) —
+                # server-scoped on the home server, user-scoped for fleet missions.
                 if decision.get("remember"):
                     async with AsyncSessionLocal() as db:
                         await memory_service.save_from_ai(
-                            db, user_id=acting_user_id or server.user_id,
-                            remember=decision.get("remember"), server_id=server.id,
+                            db, user_id=user.id,
+                            remember=decision.get("remember"),
+                            server_id=home_server.id if home_server is not None else None,
                         )
                 await ws.send_text(json.dumps({
                     "type": "mission_complete",
                     "summary": decision.get("summary", "Mission complete."),
                     "steps_used": len(steps),
                 }))
-                return
+                return None
             if status_ == "blocked":
                 await ws.send_text(json.dumps({
                     "type": "mission_blocked",
                     "reason": decision.get("summary", "I can't continue from here."),
                     "steps_used": len(steps),
                 }))
-                return
+                return None
 
             step = decision.get("step") or {}
+            action = str(step.get("action") or "run").strip().lower()
+            description = str(step.get("description", ""))[:300]
+            risk = str(step.get("risk_level", "low"))
+            index = len(steps) + 1
+
+            # ── Transfer step: copy ONE file between two roster servers via the
+            # backend (no inter-server credentials; never overwrites; size-capped).
+            if action == "transfer":
+                checked = _validate_transfer(step, roster_by_id)
+                if isinstance(checked, str):
+                    steps.append({
+                        "description": description, "cmd": "(transfer)", "exit_code": 1,
+                        "output_tail": "", "note": f"transfer rejected: {checked}",
+                    })
+                    await ws.send_text(json.dumps({
+                        "type": "mission_step_done",
+                        "index": index, "cmd": "(transfer)", "description": description,
+                        "exit_code": 1, "output_tail": "",
+                        "note": f"Transfer rejected — {checked}. Adapting…",
+                    }))
+                    continue
+                src, src_path, dst, dst_path = checked
+                display = f"transfer {src.name}:{src_path} → {dst.name}:{dst_path}"
+                await ws.send_text(json.dumps({
+                    "type": "mission_step",
+                    "index": index, "budget": _MISSION_BUDGET,
+                    "cmd": display, "description": description, "risk_level": risk,
+                    "needs_approval": False,
+                    "server_id": str(dst.id), "server_name": f"{src.name} → {dst.name}",
+                }))
+                try:
+                    copied = await file_service.transfer_between(src, src_path, dst, dst_path)
+                    exit_code, tail, note = 0, f"copied {copied:,} bytes", ""
+                except ValueError as exc:  # guard failures carry a plain message
+                    exit_code, tail, note = 1, str(exc), "transfer refused"
+                except Exception as exc:  # noqa: BLE001
+                    exit_code, tail, note = 1, f"ERROR: {exc}", "transfer failed"
+                steps.append({
+                    "server": f"{src.name}→{dst.name}", "description": description,
+                    "cmd": display, "exit_code": exit_code, "output_tail": tail, "note": note,
+                })
+                await ws.send_text(json.dumps({
+                    "type": "mission_step_done",
+                    "index": index, "cmd": display, "description": description,
+                    "exit_code": exit_code, "output_tail": tail, "note": note,
+                    "server_id": str(dst.id), "server_name": f"{src.name} → {dst.name}",
+                }))
+                continue
+
+            # ── Run step: a single command on ONE roster server.
             cmd = str(step.get("cmd", "")).strip()
             if not cmd:
                 await ws.send_text(json.dumps({
@@ -887,23 +1086,36 @@ async def _run_mission(
                     "reason": "The AI returned an empty step.",
                     "steps_used": len(steps),
                 }))
-                return
-            description = str(step.get("description", ""))[:300]
-            risk = str(step.get("risk_level", "low"))
-            index = len(steps) + 1
-
-            # 2) Safety — same blocklist as everything else, per step.
-            safety = safety_service.validate_command(cmd, os_family)
-            if safety.status == "blocked":
+                return None
+            target = _step_target(step, roster_by_id, home_server)
+            if target is None:
                 steps.append({
                     "description": description, "cmd": cmd, "exit_code": 1,
-                    "output_tail": "", "note": f"BLOCKED by safety policy: {safety.reason}",
+                    "output_tail": "", "note": "no valid server_id on this step",
+                })
+                await ws.send_text(json.dumps({
+                    "type": "mission_step_done",
+                    "index": index, "cmd": cmd, "description": description,
+                    "exit_code": 1, "output_tail": "",
+                    "note": "Step had no valid target server. Adapting…",
+                }))
+                continue
+            target_family = "windows" if target.connection_type == "winrm" else "linux"
+
+            # 2) Safety — same blocklist as everything else, per step, per TARGET OS.
+            safety = safety_service.validate_command(cmd, target_family)
+            if safety.status == "blocked":
+                steps.append({
+                    "server": target.name, "description": description, "cmd": cmd,
+                    "exit_code": 1, "output_tail": "",
+                    "note": f"BLOCKED by safety policy: {safety.reason}",
                 })
                 await ws.send_text(json.dumps({
                     "type": "mission_step_done",
                     "index": index, "cmd": cmd, "description": description,
                     "exit_code": 1, "output_tail": "",
                     "note": f"Blocked by safety policy — {safety.reason}. Adapting…",
+                    "server_id": str(target.id), "server_name": target.name,
                 }))
                 continue  # the block is in the transcript; Ally adapts next iteration
 
@@ -914,6 +1126,7 @@ async def _run_mission(
                 "index": index, "budget": _MISSION_BUDGET,
                 "cmd": cmd, "description": description, "risk_level": risk,
                 "needs_approval": needs_approval,
+                "server_id": str(target.id), "server_name": target.name,
             }))
             if needs_approval:
                 raw = await ws.receive_text()
@@ -923,26 +1136,31 @@ async def _run_mission(
                     decision_msg = {}
                 if decision_msg.get("type") != "approve":
                     await ws.send_text(json.dumps({"type": "mission_stopped", "steps_used": len(steps)}))
-                    return
+                    # A new message mid-approval stops the mission and gets answered.
+                    if decision_msg.get("type") in ("message", "mission_start"):
+                        return decision_msg
+                    return None
 
             # 4) Execute + observe.
-            exit_code, tail, note = await _mission_execute(server, cmd)
+            exit_code, tail, note = await _mission_execute(target, cmd)
             steps.append({
-                "description": description, "cmd": cmd,
+                "server": target.name, "description": description, "cmd": cmd,
                 "exit_code": exit_code, "output_tail": tail, "note": note,
             })
             await ws.send_text(json.dumps({
                 "type": "mission_step_done",
                 "index": index, "cmd": cmd, "description": description,
                 "exit_code": exit_code, "output_tail": tail, "note": note,
+                "server_id": str(target.id), "server_name": target.name,
             }))
     finally:
         calls = metering_service.finish_collection(tok)
         if calls:
             async with AsyncSessionLocal() as db:
                 await metering_service.record(
-                    db, user_id=server.user_id, feature="mission",
-                    calls=calls, server_id=server.id,
+                    db, user_id=billing_user_id, feature="mission",
+                    calls=calls,
+                    server_id=home_server.id if home_server is not None else None,
                     skill=skill.slug if skill else None,
                 )
 
@@ -956,10 +1174,11 @@ async def _handle_message(
     page_context: str | None = None,
     history: list[dict] | None = None,
     acting_user_id: str | None = None,
-) -> None:
+) -> dict | None:
     """Metered wrapper (docs/AI-METERING.md) — collects every model call made for this
     one user message (plan → execute → explain = 1 action) and writes the ledger,
     billed to the server owner's pool. Metering never blocks the message itself.
+    Returns a leftover client frame for the loop to reprocess, or None.
 
     Also matches an Ally Skill (Phase A): a deterministic trigger match picks the
     expert procedure for this kind of task; the slug is tagged on the ledger rows."""
@@ -971,7 +1190,7 @@ async def _handle_message(
     meta = {"skill": skill.slug if skill else None}
     tok = metering_service.start_collection()
     try:
-        await _handle_message_inner(
+        return await _handle_message_inner(
             ws, server, user_input, user_language, os_family, page_context, history,
             acting_user_id=acting_user_id, skill=skill, meta=meta,
         )
@@ -997,8 +1216,9 @@ async def _handle_message_inner(
     acting_user_id: str | None = None,
     skill: skill_service.Skill | None = None,
     meta: dict | None = None,
-) -> None:
-    """Plan, validate, execute and explain one user message."""
+) -> dict | None:
+    """Plan, validate, execute and explain one user message. Returns a leftover
+    client frame (a new message that arrived instead of approve/cancel) or None."""
     # ── 1. AI planning ────────────────────────────────────────────────────────
     await ws.send_text(json.dumps({"type": "thinking"}))
 
@@ -1087,9 +1307,11 @@ async def _handle_message_inner(
             # (knowledge) skills guide rescue missions just as deploy runbooks guide
             # deploys (the engine injects skill.body regardless of mode).
             "skill": skill.slug if skill else None,
+            "server_id": str(server.id),
+            "server_name": server.name,
             "message": plan.get("plan_summary", ""),
         }))
-        return
+        return None
 
     commands: list[dict] = plan.get("commands", [])
 
@@ -1119,21 +1341,26 @@ async def _handle_message_inner(
         "requires_approval": requires_approval,
         "risk_level": risk_level,
         "estimated_duration_seconds": plan.get("estimated_duration_seconds", 30),
+        "server_id": str(server.id),
+        "server_name": server.name,
     }))
 
     # ── 4. Wait for approval if required ─────────────────────────────────────
+    # The approval binds server-side to THIS plan on THIS server. A new message
+    # arriving instead of approve/cancel cancels the plan and is handed back to
+    # the loop so the user's words are never swallowed (unified socket).
     if requires_approval:
-        approval_event = asyncio.Event()
-        approved = {"value": False}
-
         raw = await ws.receive_text()
-        decision = json.loads(raw)
-        if decision.get("type") == "approve":
-            approved["value"] = True
-        else:
+        try:
+            decision = json.loads(raw)
+        except (TypeError, ValueError):
+            decision = {}
+        if decision.get("type") != "approve":
             log = await _save_log(server, user_input, user_language, plan, "", "cancelled")
             await ws.send_text(json.dumps({"type": "cancelled", "log_id": str(log.id)}))
-            return
+            if decision.get("type") in ("message", "mission_start"):
+                return decision
+            return None
 
     # ── 5. Execute ────────────────────────────────────────────────────────────
     # Durable worker path (when a Celery worker is up): create the log up front (so
