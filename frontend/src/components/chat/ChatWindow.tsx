@@ -444,6 +444,12 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     if (s) openServer(s, h.prompt)
   }
 
+  // A server-name chip in a bubble was clicked — point Ally at that server.
+  function handleServerClick(id: string) {
+    const s = servers.find((x) => x.id === id)
+    if (s) openServer(s)
+  }
+
   // Fleet → batch: run one action across several servers (opens the batch runner).
   function handleBatch(b: BatchSpec) {
     setBatchModal(b)
@@ -565,6 +571,8 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             onBatch={handleBatch}
             onStartMission={handleStartMission}
             onStopMission={handleStopMission}
+            servers={servers}
+            onServerClick={handleServerClick}
           />
         ))}
 
@@ -606,6 +614,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           onSend={handleSend}
           disabled={status !== "open" || isLoading}
           loading={isLoading}
+          servers={servers}
         />
       </div>
 

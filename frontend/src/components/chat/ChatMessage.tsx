@@ -3,6 +3,7 @@ import { Bot, User, AlertTriangle, CheckCircle2, XCircle, Server as ServerIcon, 
 import ScriptCard from "./ScriptCard"
 import MissionCard, { type MissionOffer } from "./MissionCard"
 import MissionProgress, { type MissionState } from "./MissionProgress"
+import { HighlightServerNames, type MentionServer } from "./serverMentions"
 import type { GenerateScriptResult } from "@/types"
 
 export interface Handoff {
@@ -39,10 +40,21 @@ interface Props {
   onBatch?: (batch: BatchSpec) => void
   onStartMission?: (offer: MissionOffer) => void
   onStopMission?: () => void
+  /** Known servers — their names render as clickable chips in text bubbles. */
+  servers?: MentionServer[]
+  onServerClick?: (id: string) => void
 }
 
-export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch, onStartMission, onStopMission }: Props) {
+export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch, onStartMission, onStopMission, servers, onServerClick }: Props) {
   const isUser = message.role === "user"
+  const names = servers ?? []
+  /** Plain text with server names chipped — never applied to command/output blocks. */
+  const withNames = (text: string, chipClassName?: string) =>
+    names.length ? (
+      <HighlightServerNames text={text} servers={names} onServerClick={onServerClick} chipClassName={chipClassName} />
+    ) : (
+      text
+    )
 
   // Target-switch divider — a centered label, no avatar, no bubble.
   if (message.role === "system" && message.kind === "divider") {
@@ -69,7 +81,7 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch,
       <div className={cn("max-w-[80%] space-y-1", isUser && "items-end")}>
         {message.role === "user" && (
           <div className="rounded-2xl rounded-tr-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
-            {message.content}
+            {withNames(message.content, "rounded bg-white/20 px-1 py-px font-medium underline decoration-white/60")}
           </div>
         )}
 
@@ -86,7 +98,7 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch,
 
         {message.role === "assistant" && message.kind === "clarification" && (
           <div className="rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2 text-sm text-foreground">
-            {message.message}
+            {withNames(message.message)}
           </div>
         )}
 
@@ -111,7 +123,7 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch,
                 : message.status === "failed"
                   ? <XCircle size={14} className="mt-0.5 shrink-0" />
                   : <AlertTriangle size={14} className="mt-0.5 shrink-0" />}
-              <span>{message.explanation}</span>
+              <span>{withNames(message.explanation)}</span>
             </div>
             {message.suggestions.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
@@ -132,7 +144,7 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch,
         {message.role === "assistant" && message.kind === "answer" && (
           <div className="space-y-2">
             <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2 text-sm text-foreground">
-              {message.content}
+              {withNames(message.content)}
             </div>
             {message.script && <ScriptCard script={message.script} />}
             {message.handoff && (
