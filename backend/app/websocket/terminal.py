@@ -20,8 +20,8 @@ from app.models.playbook import Playbook, PlaybookRun, UserScript
 from app.models.server import Server
 from app.models.user import User
 from app.services import ai_context_service, ai_service, connection_manager, safety_service
-from app.services import memory_service, metering_service, skill_service, ssh_service
-from app.services import team_service, terminal_session_service
+from app.services import live_look_service, memory_service, metering_service, skill_service
+from app.services import ssh_service, team_service, terminal_session_service
 from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
 from app.services.playbook_service import substitute_variables
@@ -1008,6 +1008,13 @@ async def _handle_message_inner(
     except Exception as exc:  # noqa: BLE001
         logger.warning("chat context build failed for %s: %s", server.id, exc)
 
+    # Ally Context C1 — Live Look: for a problem report (or a matched diagnostic skill),
+    # take a fast read-only snapshot NOW so Ally answers from real, current facts.
+    # Best-effort (~1-2s during "thinking"); a failure just means no snapshot.
+    live_snapshot = None
+    if live_look_service.should_look(user_input, skill is not None):
+        live_snapshot = await live_look_service.snapshot(server)
+
     try:
         plan = await ai_service.plan_commands(
             user_input, server, user_language, page_context, history,
@@ -1015,6 +1022,7 @@ async def _handle_message_inner(
             # Phase B: keyword matching missed → offer the one-line skill menu so the
             # model itself can pick (works in any language / phrasing).
             skill_menu=skill_service.menu_for(server.os_type) if skill is None else None,
+            live_snapshot=live_snapshot,
         )
     except Exception as exc:
         await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
@@ -1034,6 +1042,7 @@ async def _handle_message_inner(
                 plan = await ai_service.plan_commands(
                     user_input, server, user_language, page_context, history,
                     server_profile=server_profile, memories=memories, skill=picked,
+                    live_snapshot=live_snapshot,
                 )
             except Exception as exc:  # noqa: BLE001
                 await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
