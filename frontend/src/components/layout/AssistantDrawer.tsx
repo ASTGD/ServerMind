@@ -1,22 +1,52 @@
-import { useEffect, useState, useRef } from "react"
-import { useQuery } from "@tanstack/react-query"
-import { X, Sparkles, ChevronDown, Layers, Server as ServerIcon, Check } from "lucide-react"
+import { useEffect, useState, useRef, useCallback } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { X, Sparkles, ChevronDown, Layers, Server as ServerIcon, Check, SquarePen } from "lucide-react"
 import { listServers } from "@/api/servers"
+import { createThread, appendMessage } from "@/api/assistant"
 import ChatWindow from "@/components/chat/ChatWindow"
 import { useAssistantStore } from "@/store/assistantStore"
 import { useResolvedPageContext } from "@/hooks/usePageContext"
 
 /**
- * The global AI assistant — one docked drawer, context-aware. Defaults to the whole
- * fleet (advisory); a context switcher scopes it to any server (where it can execute
- * with approval). Lives in the app shell, so it's reachable from every page.
+ * The global AI assistant — one docked drawer, ONE continuous conversation.
+ * Defaults to the whole fleet (advisory); a context switcher scopes it to any server
+ * (where it can execute with approval). Messages live in the assistant store, so
+ * switching target or navigating never loses the thread — a divider marks each
+ * switch. Every turn is auto-saved to a thread you can reopen on the Ally page.
  */
 export default function AssistantDrawer() {
-  const { open, target, seed, setTarget, close } = useAssistantStore()
+  const { open, target, seed, setTarget, close, clearConversation } = useAssistantStore()
+  const hasMessages = useAssistantStore((s) => s.messages.length > 0)
   const pageCtx = useResolvedPageContext()
+  const qc = useQueryClient()
   const [mounted, setMounted] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
+
+  // Auto-save the continuous conversation to an assistant thread (best-effort — a save
+  // failure never blocks chat). threadId lives in the store, read fresh via getState()
+  // so concurrent turns can't race a stale closure into two threads.
+  const persistUser = useCallback(async (content: string) => {
+    try {
+      let tid = useAssistantStore.getState().threadId
+      if (!tid) {
+        const t = await createThread()
+        tid = t.id
+        useAssistantStore.getState().setThreadId(tid)
+      }
+      await appendMessage(tid, "user", content)
+      qc.invalidateQueries({ queryKey: ["assistant-threads"] })
+    } catch { /* keep chatting */ }
+  }, [qc])
+
+  const persistAnswer = useCallback(async (content: string) => {
+    try {
+      const tid = useAssistantStore.getState().threadId
+      if (!tid || !content) return
+      await appendMessage(tid, "assistant", content)
+      qc.invalidateQueries({ queryKey: ["assistant-threads"] })
+    } catch { /* keep chatting */ }
+  }, [qc])
 
   // Mount the chat (and its socket) lazily on first open, then keep it alive.
   useEffect(() => {
@@ -51,7 +81,6 @@ export default function AssistantDrawer() {
   }, [open, close])
 
   const label = target.kind === "server" ? target.server.name : "All servers"
-  const chatKey = target.kind === "server" ? `server:${target.server.id}` : "fleet"
 
   return (
     <>
@@ -116,6 +145,16 @@ export default function AssistantDrawer() {
               )}
             </div>
           </div>
+          {hasMessages && (
+            <button
+              onClick={clearConversation}
+              aria-label="New conversation"
+              title="New conversation (this one stays saved on the Ally page)"
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <SquarePen size={16} />
+            </button>
+          )}
           <button
             onClick={close}
             aria-label="Close assistant"
@@ -128,12 +167,14 @@ export default function AssistantDrawer() {
         <div className="min-h-0 flex-1 overflow-hidden">
           {mounted && (
             <ChatWindow
-              key={chatKey}
               target={target}
               seed={seed}
               pageContext={pageCtx.context}
               templates={pageCtx.templates}
               pageLabel={pageCtx.label}
+              persistent
+              onPersistUser={persistUser}
+              onPersistAnswer={persistAnswer}
             />
           )}
         </div>

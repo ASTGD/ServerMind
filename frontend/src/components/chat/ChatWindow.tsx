@@ -30,6 +30,10 @@ interface Props {
   templates?: string[]
   /** Short label for the current page, e.g. "My Scripts" — shown in the "Ally can see" chip. */
   pageLabel?: string
+  /** ONE continuous conversation (the drawer): messages live in the global assistant
+   *  store instead of component state, so switching target or navigating never loses
+   *  the thread. A "Now talking to X" divider marks each target switch. */
+  persistent?: boolean
 }
 
 interface PendingPlan {
@@ -43,12 +47,18 @@ interface PendingPlan {
 let _msgId = 0
 function nextId() { return String(++_msgId) }
 
-export default function ChatWindow({ target, seed, initialMessages, onPersistUser, onPersistAnswer, pageContext, templates, pageLabel }: Props) {
+export default function ChatWindow({ target, seed, initialMessages, onPersistUser, onPersistAnswer, pageContext, templates, pageLabel, persistent }: Props) {
   const user = useAuthStore((s) => s.user)
   const language = user?.preferred_language ?? "en"
   const openServer = useAssistantStore((s) => s.openServer)
   const { data: servers = [] } = useQuery({ queryKey: ["servers"], queryFn: listServers })
-  const [messages, setMessages] = useState<ChatMessageData[]>(initialMessages ?? [])
+  // Persistent mode (the drawer): messages live in the global store and survive target
+  // switches + navigation. Otherwise (Assistant page): plain local state per thread.
+  const storeMessages = useAssistantStore((s) => s.messages)
+  const setStoreMessages = useAssistantStore((s) => s.setMessages)
+  const [localMessages, setLocalMessages] = useState<ChatMessageData[]>(initialMessages ?? [])
+  const messages = persistent ? storeMessages : localMessages
+  const setMessages = persistent ? setStoreMessages : setLocalMessages
   const [batchModal, setBatchModal] = useState<BatchSpec | null>(null)
   const [pending, setPending] = useState<PendingPlan | null>(null)
   const [, setOutputBuffer] = useState<string>("")
@@ -61,7 +71,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
 
   const addMsg = useCallback((msg: ChatMessageData) => {
     setMessages((prev) => [...prev, msg])
-  }, [])
+  }, [setMessages])
 
   // Update the live mission message (steps append, statuses flip) without remounting.
   // The target id is captured NOW, not inside the queued updater — handlers null the
@@ -76,7 +86,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           : m,
       ),
     )
-  }, [])
+  }, [setMessages])
 
   const { send, status } = useWebSocket(target.kind === "server" ? `/ws/chat/${target.server.id}` : "/ws/chat", {
     onMessage: useCallback((raw: unknown) => {
@@ -154,6 +164,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             status: msg.status as string ?? "success",
             suggestions: (msg.follow_up_suggestions as string[]) ?? [],
           })
+          if (msg.explanation) onPersistAnswer?.(msg.explanation as string)
           break
 
         case "answer": {
@@ -334,6 +345,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             kind: "clarification",
             message: msg.message as string,
           })
+          if (msg.message) onPersistAnswer?.(msg.message as string)
           break
 
         case "cancelled":
@@ -353,8 +365,39 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           })
           break
       }
-    }, [addMsg, updateMission]),
+    }, [addMsg, updateMission, setMessages, onPersistAnswer]),
   })
+
+  // Persistent mode: when the target switches mid-conversation, drop transient state
+  // (a pending plan / running flags belong to the OLD server's socket) and add a
+  // "Now talking to X" divider so the one continuous thread stays readable.
+  const targetKey = target.kind === "server" ? `server:${target.server.id}` : "fleet"
+  const targetLabel = target.kind === "server" ? target.server.name : "all servers"
+  const prevTargetKey = useRef(targetKey)
+  useEffect(() => {
+    if (!persistent || prevTargetKey.current === targetKey) return
+    prevTargetKey.current = targetKey
+    setPending(null)
+    setRunningLogId(null)
+    setIsLoading(false)
+    setOutputBuffer("")
+    missionMsgIdRef.current = null
+    setMessages((prev) => {
+      if (prev.length === 0) return prev
+      // A mission that was live on the old socket can't continue — mark it stopped.
+      const next = prev.map((m) =>
+        m.role === "assistant" && m.kind === "mission" && m.mission.status === "running"
+          ? { ...m, mission: { ...m.mission, status: "stopped" as const, steps: m.mission.steps.map((s) => ({ ...s, running: false })) } }
+          : m,
+      )
+      const last = next[next.length - 1]
+      if (last.role === "system" && last.kind === "divider") {
+        return [...next.slice(0, -1), { ...last, label: `Now talking to ${targetLabel}` }]
+      }
+      return [...next, { id: nextId(), role: "system", kind: "divider", label: `Now talking to ${targetLabel}` }]
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persistent, targetKey, targetLabel, setMessages])
 
   // Scroll to bottom on new messages
   useEffect(() => {

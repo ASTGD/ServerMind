@@ -28,6 +28,9 @@ export type ChatMessageData =
   | { id: string; role: "assistant"; kind: "mission_offer"; offer: MissionOffer }
   | { id: string; role: "assistant"; kind: "mission"; mission: MissionState }
   | { id: string; role: "assistant"; kind: "error"; message: string }
+  // Context marker — shown when the ONE continuous Ally conversation switches target
+  // ("Now talking to TestServer3"). Never sent to the AI, never persisted.
+  | { id: string; role: "system"; kind: "divider"; label: string }
 
 interface Props {
   message: ChatMessageData
@@ -40,6 +43,17 @@ interface Props {
 
 export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch, onStartMission, onStopMission }: Props) {
   const isUser = message.role === "user"
+
+  // Target-switch divider — a centered label, no avatar, no bubble.
+  if (message.role === "system" && message.kind === "divider") {
+    return (
+      <div className="flex items-center gap-3 py-1" role="separator">
+        <div className="h-px flex-1 bg-border" />
+        <span className="shrink-0 text-[11px] font-medium text-muted-foreground">{message.label}</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+    )
+  }
 
   return (
     <div className={cn("flex gap-3", isUser && "flex-row-reverse")}>

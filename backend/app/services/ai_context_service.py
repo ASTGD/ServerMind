@@ -184,8 +184,24 @@ async def build_fleet_health(db: AsyncSession, servers: list[Server]) -> dict[st
         .scalars()
         .all()
     )
+    # Installed software (titles only) — so fleet chat KNOWS what's already on each box
+    # ("install WordPress on X" → "X already has WordPress"). One query for the fleet.
+    runs = (
+        await db.execute(
+            select(PlaybookRun.server_id, Playbook.title, Playbook.slug)
+            .join(Playbook, Playbook.id == PlaybookRun.playbook_id)
+            .where(PlaybookRun.server_id.in_(ids), PlaybookRun.status == "success")
+            .order_by(PlaybookRun.completed_at.desc().nullslast())
+        )
+    ).all()
     by_metric = {m.server_id: m for m in metrics}
     by_scan = {s.server_id: s for s in scans}
+    by_installed: dict = {}
+    for sid, title, slug in runs:
+        seen = by_installed.setdefault(sid, {"slugs": set(), "titles": []})
+        if slug not in seen["slugs"] and len(seen["titles"]) < 4:
+            seen["slugs"].add(slug)
+            seen["titles"].append(title)
 
     health: dict[str, str] = {}
     for sid in ids:
@@ -207,6 +223,9 @@ async def build_fleet_health(db: AsyncSession, servers: list[Server]) -> dict[st
             if scan.critical_count or scan.high_count:
                 sec += f" ({scan.critical_count} critical, {scan.high_count} high)"
             parts.append(sec)
+        installed = by_installed.get(sid)
+        if installed and installed["titles"]:
+            parts.append("installed: " + " · ".join(installed["titles"]))
         if parts:
             health[str(sid)] = "; ".join(parts)
     return health

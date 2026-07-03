@@ -291,9 +291,11 @@ the END of this prompt.
 
 LANGUAGE: Respond in {user_language}. The user may write in {user_language}.
 
-Server lines may include real health numbers and a security grade, each with its age —
-use them to answer with actual data (name the numbers). If a server has no numbers or
-they look old, say so honestly instead of guessing.
+Server lines may include real health numbers, a security grade, and what ServerAlly
+has INSTALLED there — each with its age. Use them to answer with actual data (name the
+numbers). If the user asks to install something a server already has, point that out
+and ask what they want (a second site? a different server?). If a server has no
+numbers or they look old, say so honestly instead of guessing.
 
 WHAT YOU DO HERE (fleet overview):
 - Answer questions across servers (which need attention, are low on disk, need updates, etc.).
@@ -538,12 +540,39 @@ RESPOND WITH VALID JSON ONLY (no markdown fences, no text outside JSON):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _extract_json(raw: str) -> str:
-    """Strip markdown code fences if present."""
+    """Locate the JSON object in a model reply.
+
+    Handles every shape seen in the wild: pure JSON, a fenced block, prose followed
+    by a fenced ```json block (models sometimes narrate before obeying "JSON only"),
+    and prose with a bare {...} embedded."""
     raw = raw.strip()
     if raw.startswith("```"):
         raw = re.sub(r"^```[a-z]*\n?", "", raw)
         raw = re.sub(r"\n?```$", "", raw)
-    return raw.strip()
+        return raw.strip()
+    if raw.startswith("{"):
+        return raw
+    # Prose + fenced block(s) → take the last JSON-looking fence.
+    fences = re.findall(r"```(?:json)?\s*\n(.*?)```", raw, re.S)
+    for block in reversed(fences):
+        block = block.strip()
+        if block.startswith("{"):
+            return block
+    # Prose + bare JSON → widest brace span.
+    i, j = raw.find("{"), raw.rfind("}")
+    if i != -1 and j > i:
+        return raw[i : j + 1]
+    return raw
+
+
+def _strip_json_noise(raw: str) -> str:
+    """Prose-only version of a reply: remove fenced blocks and any trailing bare JSON —
+    used by advisory fallbacks so raw JSON is NEVER shown to the user."""
+    prose = re.sub(r"```(?:json)?\s*\n.*?```", "", raw, flags=re.S)
+    i = prose.find("{")
+    if i != -1 and prose.rfind("}") > i:
+        prose = prose[:i]
+    return prose.strip()
 
 
 def _parse_json(raw: str) -> dict:
@@ -652,8 +681,13 @@ async def fleet_chat(
     try:
         data = _parse_json(raw)
     except json.JSONDecodeError:
-        # Advisory answers are free-form — fall back to the raw text rather than erroring.
-        return {"answer": raw, "follow_up_suggestions": []}
+        # Advisory answers are free-form — fall back to the PROSE only. Never leak
+        # raw JSON into the chat (found live: prose + fenced JSON dumped verbatim).
+        prose = _strip_json_noise(raw)
+        return {
+            "answer": prose or "Sorry — I had trouble forming that answer. Please try again.",
+            "follow_up_suggestions": [],
+        }
     return data
 
 
