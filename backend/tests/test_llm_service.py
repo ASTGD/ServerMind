@@ -54,7 +54,10 @@ async def test_complete_routes_to_anthropic(monkeypatch):
 
     class FakeMessages:
         async def create(self, **kw):
-            return type("Msg", (), {"content": [type("C", (), {"text": "FROM_ANTHROPIC"})()]})()
+            # real content blocks carry a type; thinking blocks (Sonnet 5+) are skipped
+            thinking = type("T", (), {"type": "thinking"})()
+            block = type("C", (), {"type": "text", "text": "FROM_ANTHROPIC"})()
+            return type("Msg", (), {"content": [thinking, block]})()
 
     class FakeAnthropic:
         def __init__(self, **kw):

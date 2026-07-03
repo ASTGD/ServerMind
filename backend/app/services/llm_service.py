@@ -20,9 +20,9 @@ from app.services import metering_service
 
 logger = logging.getLogger(__name__)
 
-# Sensible default model per provider when AI_MODEL isn't set.
+# Sensible default model per provider when no model is configured.
 _DEFAULT_MODELS = {
-    "anthropic": "claude-sonnet-4-20250514",
+    "anthropic": "claude-sonnet-5",
     "openai": "gpt-4o",
     "gemini": "gemini-1.5-pro",
     "servermind": "servermind",  # the hosted gateway picks the real upstream model
@@ -81,7 +81,11 @@ def _resolve() -> tuple[str, str, str, str | None]:
         return provider, key, model, base_url
     provider = (settings.AI_PROVIDER or "anthropic").lower()
     key = settings.AI_API_KEY or (settings.ANTHROPIC_API_KEY if provider == "anthropic" else "")
-    model = settings.AI_MODEL or _DEFAULT_MODELS.get(provider) or settings.ANTHROPIC_MODEL
+    # Explicit config wins over the built-in default: AI_MODEL first, then the legacy
+    # ANTHROPIC_MODEL (only for the anthropic provider — never leak it to openai/gemini),
+    # then the per-provider default.
+    legacy_model = settings.ANTHROPIC_MODEL if provider == "anthropic" else ""
+    model = settings.AI_MODEL or legacy_model or _DEFAULT_MODELS.get(provider)
     base_url = settings.AI_BASE_URL or _base_for(provider)
     return provider, key, model, base_url
 
@@ -130,6 +134,10 @@ async def _anthropic_complete(
         max_tokens=max_tokens,
         system=system_blocks,
         messages=[{"role": "user", "content": user}],
+        # All our calls are structured-JSON tasks: extended thinking (default-on for
+        # Sonnet 5+) would eat the max_tokens budget (truncating long JSON) and bill
+        # hidden output tokens. Explicitly off.
+        thinking={"type": "disabled"},
     )
     # AI metering (docs/AI-METERING.md): exact token counts into the active collection,
     # including prompt-cache reads/writes (input_tokens excludes cached tokens).
@@ -141,7 +149,18 @@ async def _anthropic_complete(
         cache_read=getattr(usage, "cache_read_input_tokens", 0) or 0,
         cache_write=getattr(usage, "cache_creation_input_tokens", 0) or 0,
     )
-    return msg.content[0].text
+    return _anthropic_text(msg)
+
+
+def _anthropic_text(msg) -> str:
+    """Join the TEXT blocks of a response. Newer models (Sonnet 5+) may emit thinking
+    blocks first — content[0] is no longer guaranteed to be text."""
+    parts = [
+        block.text
+        for block in (msg.content or [])
+        if getattr(block, "type", "") == "text" and getattr(block, "text", None)
+    ]
+    return "\n".join(parts)
 
 
 async def _openai_complete(

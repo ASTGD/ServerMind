@@ -336,11 +336,12 @@ async def _maybe_generate_script(spec: object, user_language: str) -> dict | Non
     os_family = spec.get("os_family") or "linux"
     if os_family not in ("linux", "windows", "both"):
         os_family = "linux"
-    try:
-        return await ai_service.generate_script(request.strip(), os_family, user_language)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("fleet script generation failed: %s", exc)
-        return None
+    for attempt in (1, 2):  # one retry — a single malformed reply shouldn't lose the script
+        try:
+            return await ai_service.generate_script(request.strip(), os_family, user_language)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("fleet script generation failed (attempt %d): %s", attempt, exc)
+    return None
 
 
 async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
@@ -834,15 +835,23 @@ async def _run_mission(
                 await ws.send_text(json.dumps({"type": "mission_stopped", "steps_used": len(steps)}))
                 return
 
-            # 1) Plan the next step from everything observed so far.
-            try:
-                decision = await ai_service.plan_mission_step(
-                    goal, server, steps, _MISSION_BUDGET - len(steps), skill, user_language,
-                )
-            except Exception as exc:  # noqa: BLE001
+            # 1) Plan the next step from everything observed so far. One retry — a
+            # single malformed reply must not kill a long mission.
+            decision = None
+            plan_error: Exception | None = None
+            for attempt in (1, 2):
+                try:
+                    decision = await ai_service.plan_mission_step(
+                        goal, server, steps, _MISSION_BUDGET - len(steps), skill, user_language,
+                    )
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    plan_error = exc
+                    logger.warning("mission step planning failed (attempt %d): %s", attempt, exc)
+            if decision is None:
                 await ws.send_text(json.dumps({
                     "type": "mission_failed",
-                    "reason": f"AI error: {exc}",
+                    "reason": f"AI error: {plan_error}",
                     "steps_used": len(steps),
                 }))
                 return
@@ -1074,7 +1083,10 @@ async def _handle_message_inner(
         await ws.send_text(json.dumps({
             "type": "mission_offer",
             "goal": str(mission.get("goal"))[:500],
-            "skill": skill.slug if (skill and skill.mode == "mission") else None,
+            # Any matched skill rides along as the mission's runbook — diagnostic
+            # (knowledge) skills guide rescue missions just as deploy runbooks guide
+            # deploys (the engine injects skill.body regardless of mode).
+            "skill": skill.slug if skill else None,
             "message": plan.get("plan_summary", ""),
         }))
         return

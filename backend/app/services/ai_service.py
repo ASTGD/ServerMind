@@ -372,6 +372,8 @@ RULES:
 6. When the goal is verifiably achieved (you SAW the verification output), set status
    "done" with a short summary of what was done and where.
 7. Budget is small — no detours, no nice-to-haves.
+8. Keep "description" and "summary" SHORT — one or two sentences. Never let the JSON
+   run long.
 
 RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
 {{
@@ -451,11 +453,11 @@ async def plan_mission_step(
     )
     raw = _extract_json(
         await llm_service.complete(
-            system, "Decide the next mission step.", max_tokens=1024, system_volatile=volatile
+            system, "Decide the next mission step.", max_tokens=3072, system_volatile=volatile
         )
     )
     try:
-        return json.loads(raw)
+        return _parse_json(raw)
     except json.JSONDecodeError as exc:
         logger.warning("mission step JSON parse error: %s\nRaw: %r", exc, raw[:300])
         raise ValueError(f"AI returned invalid JSON: {exc}") from exc
@@ -544,6 +546,16 @@ def _extract_json(raw: str) -> str:
     return raw.strip()
 
 
+def _parse_json(raw: str) -> dict:
+    """json.loads with a tolerant fallback: newer models (Sonnet 5) sometimes emit
+    literal newlines/control characters inside JSON strings (e.g. multi-line script
+    bodies); strict=False accepts those instead of failing the whole reply."""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return json.loads(raw, strict=False)
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 async def plan_commands(
@@ -594,10 +606,10 @@ async def plan_commands(
     volatile += _history_block(history)
 
     raw = _extract_json(
-        await llm_service.complete(system, user_input, max_tokens=2048, system_volatile=volatile)
+        await llm_service.complete(system, user_input, max_tokens=4096, system_volatile=volatile)
     )
     try:
-        return json.loads(raw)
+        return _parse_json(raw)
     except json.JSONDecodeError as exc:
         logger.warning("AI plan JSON parse error: %s\nRaw: %r", exc, raw[:500])
         raise ValueError(f"AI returned invalid JSON: {exc}") from exc
@@ -635,10 +647,10 @@ async def fleet_chat(
     volatile += _page_context_block(page_context)
     volatile += _history_block(history)
     raw = _extract_json(
-        await llm_service.complete(system, user_input, max_tokens=1024, system_volatile=volatile)
+        await llm_service.complete(system, user_input, max_tokens=2048, system_volatile=volatile)
     )
     try:
-        data = json.loads(raw)
+        data = _parse_json(raw)
     except json.JSONDecodeError:
         # Advisory answers are free-form — fall back to the raw text rather than erroring.
         return {"answer": raw, "follow_up_suggestions": []}
@@ -654,14 +666,14 @@ async def explain_output(
     system = _EXPLAIN_SYSTEM.format(user_language=user_language)
     prompt = f"Plan: {plan_summary}\n\nOutput:\n{output[:3000]}"
 
-    return (await llm_service.complete(system, prompt, max_tokens=512)).strip()
+    return (await llm_service.complete(system, prompt, max_tokens=1024)).strip()
 
 
 async def parse_schedule(human_input: str) -> dict:
     """Convert natural language schedule description to a cron expression via Claude."""
-    raw = _extract_json(await llm_service.complete(_SCHEDULE_SYSTEM, human_input, max_tokens=128))
+    raw = _extract_json(await llm_service.complete(_SCHEDULE_SYSTEM, human_input, max_tokens=512))
     try:
-        return json.loads(raw)
+        return _parse_json(raw)
     except json.JSONDecodeError as exc:
         logger.warning("AI schedule JSON parse error: %s\nRaw: %r", exc, raw[:200])
         raise ValueError(f"AI returned invalid JSON: {exc}") from exc
@@ -680,9 +692,9 @@ async def generate_script(
         user_language=user_language,
     )
 
-    raw = _extract_json(await llm_service.complete(system, request, max_tokens=4096))
+    raw = _extract_json(await llm_service.complete(system, request, max_tokens=8192))
     try:
-        return json.loads(raw)
+        return _parse_json(raw)
     except json.JSONDecodeError as exc:
         logger.warning("AI script JSON parse error: %s\nRaw: %r", exc, raw[:500])
         raise ValueError(f"AI returned invalid JSON: {exc}") from exc

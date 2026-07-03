@@ -185,10 +185,17 @@ async def _upstream(messages: list[dict]) -> tuple[str, int, int]:
         msg = await client.messages.create(
             model=UPSTREAM_MODEL, max_tokens=2048, system=system,
             messages=[{"role": "user", "content": user}],
+            # Structured JSON tasks — thinking would eat the budget (see llm_service).
+            thinking={"type": "disabled"},
         )
         usage = getattr(msg, "usage", None)
+        # Newer models (Sonnet 5+) may emit thinking blocks first — take the TEXT blocks.
+        text = "\n".join(
+            b.text for b in (msg.content or [])
+            if getattr(b, "type", "") == "text" and getattr(b, "text", None)
+        )
         return (
-            msg.content[0].text,
+            text,
             int(getattr(usage, "input_tokens", 0) or 0),
             int(getattr(usage, "output_tokens", 0) or 0),
         )

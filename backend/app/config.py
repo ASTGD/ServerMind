@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # Claude API
     ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
+    ANTHROPIC_MODEL: str = "claude-sonnet-5"
 
     # AI provider (Update 20 — multi-provider, bring-your-own-key). AI_PROVIDER picks
     # the brain: 'anthropic' | 'openai' | 'gemini' | 'openai_compatible'.
