@@ -151,9 +151,14 @@ both doors. The gateway additionally maps *subscription token → allowance* ins
    (provider-side). If all our code fails, Anthropic stops the bleeding.
 4. **Model routing** — cheap model (Haiku-class) for `explain` and `schedule_parse`,
    strong model only for planning/scripts. 3–5× cost cut, no UX change.
-5. **Prompt caching** — the Ally Brain blocks (persona, server profile, history) repeat
-   verbatim between calls; provider-side caching discounts them heavily. Free money at
-   scale.
+5. **Prompt caching** — ✅ IMPLEMENTED (Ally Context C3, 2026-07-03). Prompts are laid
+   out stable-prefix-first (persona/rules/identity/skill) with per-message blocks in a
+   volatile tail; `llm_service` marks the stable block `cache_control: ephemeral` on
+   Anthropic (~90% off on repeat) and the ordering makes OpenAI's automatic prefix
+   caching work too. The ledger records `cache_read_tokens`/`cache_write_tokens`
+   (migration 022) and `cost_usd` prices them (reads 0.1×, writes 1.25×; OpenAI reads
+   0.5×). Mission steps benefit most — the transcript only appends, so the prefix
+   stays identical step after step.
 6. **Anomaly alert** — a daily job flags users >5× their trailing average (bug or abuse).
 
 ---

@@ -86,64 +86,98 @@ def _resolve() -> tuple[str, str, str, str | None]:
     return provider, key, model, base_url
 
 
-async def complete(system: str, user: str, *, max_tokens: int = 2048) -> str:
+async def complete(
+    system: str, user: str, *, max_tokens: int = 2048, system_volatile: str = ""
+) -> str:
     """Single-turn completion: a system prompt + one user message → text response.
-    Routes to the configured provider."""
+    Routes to the configured provider.
+
+    Prompt caching (Ally Context C3): ``system`` is the STABLE prefix (identical across
+    consecutive calls in a conversation — persona, rules, server identity, skill) and
+    ``system_volatile`` is the per-message tail (live profile, memories, page context,
+    history). On Anthropic the stable part carries a cache_control marker (~90% cheaper
+    on repeat); on OpenAI-protocol providers the stable-first ordering makes their
+    automatic prefix caching work.
+    """
     provider, key, model, base_url = _resolve()
     if not key:
         raise RuntimeError(
             "No AI API key configured — set AI_API_KEY (or ANTHROPIC_API_KEY) and AI_PROVIDER."
         )
     if provider == "anthropic":
-        return await _anthropic_complete(key, model, system, user, max_tokens)
+        return await _anthropic_complete(key, model, system, system_volatile, user, max_tokens)
     # openai / gemini / openai_compatible / others → the OpenAI-protocol client.
-    return await _openai_complete(key, model, base_url, system, user, max_tokens)
+    return await _openai_complete(key, model, base_url, system, system_volatile, user, max_tokens)
 
 
-async def _anthropic_complete(key: str, model: str, system: str, user: str, max_tokens: int) -> str:
+async def _anthropic_complete(
+    key: str, model: str, system: str, system_volatile: str, user: str, max_tokens: int
+) -> str:
     global _anthropic_client
     from anthropic import AsyncAnthropic
 
     if _anthropic_client is None:
         _anthropic_client = AsyncAnthropic(api_key=key)
+    # The stable block is marked cacheable; below the provider's minimum prefix size
+    # the marker is simply ignored (no error). The volatile tail is never cached.
+    system_blocks: list[dict] = [
+        {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+    ]
+    if system_volatile:
+        system_blocks.append({"type": "text", "text": system_volatile})
     msg = await _anthropic_client.messages.create(
         model=model,
         max_tokens=max_tokens,
-        system=system,
+        system=system_blocks,
         messages=[{"role": "user", "content": user}],
     )
-    # AI metering (docs/AI-METERING.md): exact token counts into the active collection.
+    # AI metering (docs/AI-METERING.md): exact token counts into the active collection,
+    # including prompt-cache reads/writes (input_tokens excludes cached tokens).
     usage = getattr(msg, "usage", None)
     metering_service.note_usage(
         model,
         getattr(usage, "input_tokens", 0) or 0,
         getattr(usage, "output_tokens", 0) or 0,
+        cache_read=getattr(usage, "cache_read_input_tokens", 0) or 0,
+        cache_write=getattr(usage, "cache_creation_input_tokens", 0) or 0,
     )
     return msg.content[0].text
 
 
 async def _openai_complete(
-    key: str, model: str, base_url: str | None, system: str, user: str, max_tokens: int
+    key: str,
+    model: str,
+    base_url: str | None,
+    system: str,
+    system_volatile: str,
+    user: str,
+    max_tokens: int,
 ) -> str:
     global _openai_client
     from openai import AsyncOpenAI
 
     if _openai_client is None:
         _openai_client = AsyncOpenAI(api_key=key, base_url=base_url or None)
+    full_system = system + ("\n" + system_volatile if system_volatile else "")
     resp = await _openai_client.chat.completions.create(
         model=model,
         max_tokens=max_tokens,
         messages=[
-            {"role": "system", "content": system},
+            {"role": "system", "content": full_system},
             {"role": "user", "content": user},
         ],
     )
     # AI metering (docs/AI-METERING.md): exact token counts into the active collection.
+    # OpenAI reports cached prompt tokens inside prompt_tokens — split them out.
     usage = getattr(resp, "usage", None)
+    prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached = getattr(details, "cached_tokens", 0) or 0
     metering_service.note_usage(
         model,
-        getattr(usage, "prompt_tokens", 0) or 0,
+        max(0, prompt_tokens - cached),
         getattr(usage, "completion_tokens", 0) or 0,
+        cache_read=cached,
     )
     return resp.choices[0].message.content or ""
 

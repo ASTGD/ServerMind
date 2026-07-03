@@ -37,6 +37,11 @@ class AiUsage(Base):
     fuel: Mapped[str] = mapped_column(String(10), default="included")
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    # Prompt-cache telemetry (Ally Context C3): tokens served from the provider's
+    # prompt cache (~10% price) and tokens written to it (~125% price). Shows the
+    # real savings from the cache-friendly prompt layout.
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Numeric(10, 6), default=0)
     # Plan-quota units consumed: the first call of a user request carries 1 (or the
     # batch per-server 1); follow-up calls in the same request (explain, inline script

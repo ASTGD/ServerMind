@@ -47,10 +47,24 @@ _PRICES_PER_MTOK: list[tuple[str, float, float]] = [
 ]
 
 
-def _cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
+def _cost_usd(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read: int = 0,
+    cache_write: int = 0,
+) -> float:
+    """Cost estimate incl. prompt caching: cache reads ≈ 10% of the input price and
+    writes ≈ 125% (Anthropic); OpenAI-style caches read at ~50%, write free."""
     for prefix, in_price, out_price in _PRICES_PER_MTOK:
         if model.startswith(prefix):
-            return (input_tokens * in_price + output_tokens * out_price) / 1_000_000
+            read_mult, write_mult = (0.5, 0.0) if prefix.startswith("gpt") else (0.1, 1.25)
+            return (
+                input_tokens * in_price
+                + cache_read * in_price * read_mult
+                + cache_write * in_price * write_mult
+                + output_tokens * out_price
+            ) / 1_000_000
     return 0.0
 
 
@@ -72,15 +86,23 @@ def finish_collection(token) -> list[dict]:
     return calls
 
 
-def note_usage(model: str, input_tokens: int, output_tokens: int) -> None:
+def note_usage(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read: int = 0,
+    cache_write: int = 0,
+) -> None:
     """Called by llm_service after each provider call. No-op unless a collection is
-    active in this context."""
+    active in this context. ``cache_read``/``cache_write`` are prompt-cache tokens."""
     calls = _collector.get()
     if calls is not None:
         calls.append({
             "model": model or "",
             "input_tokens": int(input_tokens or 0),
             "output_tokens": int(output_tokens or 0),
+            "cache_read": int(cache_read or 0),
+            "cache_write": int(cache_write or 0),
         })
 
 
@@ -176,6 +198,8 @@ async def record(
             model = call.get("model", "")
             in_tok = int(call.get("input_tokens", 0))
             out_tok = int(call.get("output_tokens", 0))
+            c_read = int(call.get("cache_read", 0))
+            c_write = int(call.get("cache_write", 0))
             db.add(
                 AiUsage(
                     user_id=user_id,
@@ -186,7 +210,9 @@ async def record(
                     fuel=fuel,
                     input_tokens=in_tok,
                     output_tokens=out_tok,
-                    cost_usd=_cost_usd(model, in_tok, out_tok),
+                    cache_read_tokens=c_read,
+                    cache_write_tokens=c_write,
+                    cost_usd=_cost_usd(model, in_tok, out_tok, c_read, c_write),
                     actions=actions if i == 0 else 0,
                     status=status,
                 )

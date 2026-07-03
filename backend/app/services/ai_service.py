@@ -258,11 +258,9 @@ def _history_block(history: list[dict] | None) -> str:
 
 _FLEET_SYSTEM = _PERSONA + """\
 
-You are in the fleet overview: you can see all of the user's servers (below) and help
-them across their whole fleet.
-
-THE USER'S SERVERS:
-{server_list}
+You are in the fleet overview: you can see all of the user's servers and help them
+across their whole fleet. The live server list (with health numbers) is provided at
+the END of this prompt.
 
 LANGUAGE: Respond in {user_language}. The user may write in {user_language}.
 
@@ -333,10 +331,8 @@ THE MISSION GOAL:
 
 {runbook}
 
-STEPS SO FAR (your own actions and their real outputs — adapt to what they reveal):
-{transcript}
-
-Steps remaining in the budget: {remaining}.
+(The STEPS SO FAR — your own actions and their real outputs — arrive at the END of
+this prompt. Adapt to what they reveal.)
 
 RULES:
 1. ONE command per step — small, observable steps. Prefer read-only discovery first.
@@ -362,6 +358,17 @@ RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
   "summary": "for done/blocked: what happened / what's needed ({user_language})",
   "remember": null
 }}
+"""
+
+# Volatile tail for mission steps (cache layout C3): the transcript only APPENDS, so
+# the stable prefix above stays byte-identical step after step — near-perfect cache
+# hits across a whole mission.
+_MISSION_VOLATILE = """\
+
+STEPS SO FAR (oldest first):
+{transcript}
+
+Steps remaining in the budget: {remaining}.
 """
 
 _TRANSCRIPT_STEP_MAX = 900
@@ -410,12 +417,15 @@ async def plan_mission_step(
         shell=server.shell,
         goal=goal,
         runbook=runbook,
-        transcript=_mission_transcript(steps),
-        remaining=remaining,
         user_language=user_language,
     )
+    volatile = _MISSION_VOLATILE.format(
+        transcript=_mission_transcript(steps), remaining=remaining
+    )
     raw = _extract_json(
-        await llm_service.complete(system, "Decide the next mission step.", max_tokens=1024)
+        await llm_service.complete(
+            system, "Decide the next mission step.", max_tokens=1024, system_volatile=volatile
+        )
     )
     try:
         return json.loads(raw)
@@ -525,6 +535,9 @@ async def plan_commands(
     the one block Ally is meant to follow. ``skill_menu`` (Phase B) lists the library
     one-per-line so the model itself can request a skill via "use_skill" when keyword
     matching missed (any language / phrasing)."""
+    # Prompt-cache layout (Ally Context C3): STABLE prefix first — identical across
+    # consecutive turns of a conversation (persona, rules, server identity, skill/menu)
+    # — then everything per-message in the VOLATILE tail. See llm_service.complete.
     system = _CHAT_SYSTEM.format(
         server_name=server.name,
         os_type=server.os_type or "linux",
@@ -536,8 +549,6 @@ async def plan_commands(
     )
     if server.connection_type == "hosting":
         system += _HOSTING_NOTE.format(panel_type=server.panel_type or "control panel")
-    system += _server_profile_block(server_profile)
-    system += _memories_block(memories)
     system += skill_service.skill_block(skill)
     # A mission-mode skill match nudges chat to OFFER a mission (the runbook itself is
     # injected per step by the mission engine, not here).
@@ -546,10 +557,16 @@ async def plan_commands(
     # Phase B: no keyword match → offer the menu so the model itself can pick.
     if skill is None and skill_menu:
         system += _SKILL_MENU_BLOCK.format(menu=skill_menu)
-    system += _page_context_block(page_context)
-    system += _history_block(history)
 
-    raw = _extract_json(await llm_service.complete(system, user_input, max_tokens=2048))
+    volatile = ""
+    volatile += _server_profile_block(server_profile)
+    volatile += _memories_block(memories)
+    volatile += _page_context_block(page_context)
+    volatile += _history_block(history)
+
+    raw = _extract_json(
+        await llm_service.complete(system, user_input, max_tokens=2048, system_volatile=volatile)
+    )
     try:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -582,11 +599,15 @@ async def fleet_chat(
     else:
         server_list = "(no servers connected yet)"
 
-    system = _FLEET_SYSTEM.format(server_list=server_list, user_language=user_language)
-    system += _memories_block(memories)
-    system += _page_context_block(page_context)
-    system += _history_block(history)
-    raw = _extract_json(await llm_service.complete(system, user_input, max_tokens=1024))
+    # Cache layout (C3): stable frame first; the live list + per-message blocks last.
+    system = _FLEET_SYSTEM.format(user_language=user_language)
+    volatile = f"\nTHE USER'S SERVERS (live):\n{server_list}\n"
+    volatile += _memories_block(memories)
+    volatile += _page_context_block(page_context)
+    volatile += _history_block(history)
+    raw = _extract_json(
+        await llm_service.complete(system, user_input, max_tokens=1024, system_volatile=volatile)
+    )
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
