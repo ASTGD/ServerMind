@@ -2,7 +2,7 @@
 
 > **Status: Bricks 1 + 2 SHIPPED (2026-07-03). Brick 3 (billing webhook) HALTED** until
 > a payment provider is chosen — `users.plan` is set manually meanwhile, and the quota
-> wall only blocks when `ENFORCE_AI_QUOTA=true` (default off; cloud will turn it on).
+> wall only blocks when `ENFORCE_PLAN_LIMITS=true` (default off; cloud will turn it on).
 > This document is the contract for how ServerAlly turns one Anthropic API key
 > (wholesale, pay-per-token) into per-customer monthly allowances (retail, flat
 > subscription). Companion to [PRICING-FREE-VS-PRO.md](PRICING-FREE-VS-PRO.md)
@@ -93,11 +93,12 @@ rebuildable source of truth: `SUM(actions) WHERE user_id AND period`). Checked *
 every metered call; incremented **after** a successful one. If Redis is cold, rebuild
 from the ledger.
 
-### 3.3 Entitlements — one static map (PRICING §10)
+### 3.3 Entitlements — one static map (PRICING v2 — "open features, two meters")
 
-Per plan: `max_servers`, `actions_per_month`, feature flags (fleet, batch, scheduler,
-team…). Exposed as `can_use(feature)` + `within_limit(kind)` and enforced
-**server-side** — the UI reads the same map for greying-out, but the API is the wall.
+Per plan, exactly TWO numbers: `actions_per_month` and `max_servers`. **No feature
+flags by design** — every feature ships on every plan; only the meters differ.
+Enforced **server-side** at two choke points (`gate` for actions, `servers_gate` at
+server creation), both armed by `ENFORCE_PLAN_LIMITS`.
 
 ---
 
@@ -206,7 +207,7 @@ from the ledger, then set the final caps.
 2. ✅ **Brick 2 — Entitlement map + the wall.** SHIPPED 2026-07-03: `entitlements.py`
    server-side, quota wall in chat/fleet/batch (`quota_exceeded` bubble) and script
    generation (HTTP 402), usage bar in Settings ("X of N actions"). The wall is armed
-   by `ENFORCE_AI_QUOTA` (default off — dev/self-hosted only collect data).
+   by `ENFORCE_PLAN_LIMITS` (default off — dev/self-hosted only collect data; the same switch arms the server cap — PRICING v2).
 3. ⏸ **Brick 3 — Billing webhook. HALTED** (PM decision 2026-07-03): payment provider
    not chosen yet — no Stripe/Paddle/Lemon Squeezy code. When chosen: Upgrade modal →
    real checkout, webhook → entitlements, anchor-date resets.

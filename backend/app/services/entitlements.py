@@ -1,12 +1,22 @@
-"""Entitlements — the single plan → limits map (docs/AI-METERING.md §3.3, PRICING §10).
+"""Entitlements — the plan map (PRICING-FREE-VS-PRO.md v2: "open features, two meters").
 
-One static declaration of what each plan allows. Both the API (the wall) and the UI
-(greying-out, usage bar) read THIS map — gating is enforced server-side, never only
-hidden client-side. Numbers are the PRICING §9 placeholders; tune them from real
-ai_usage ledger data before launch.
+The pricing model is deliberately simple: EVERY feature is available on EVERY plan —
+missions, memory, skills, scheduler, backups, security, team, fleet. Plans differ only
+in two numbers, each aligned with a real cost/value:
+
+- ``actions_per_month`` — Ally requests (our AI bill; ~$0.03–0.05/action measured).
+- ``max_servers``       — servers the user can add (our per-server infra: metrics
+                          polling, scans, probes — and the market's value metric).
+
+No feature flags, by design: gating features would cripple the free experience
+(the full Ally magic IS the conversion moment), punish safety features (backups),
+and add enforcement surface everywhere. The two meters are enforced at exactly two
+choke points (AI calls via metering_service.gate; server creation via servers_gate)
+and only block when ``ENFORCE_PLAN_LIMITS`` is on.
 
 The billing webhook (Brick 3) is deliberately NOT built — ``users.plan`` is set
-manually until a payment provider is chosen.
+manually until a payment provider is chosen. Numbers below are launch placeholders;
+tune from real ai_usage ledger data.
 """
 from __future__ import annotations
 
@@ -19,7 +29,9 @@ PLANS: dict[str, dict] = {
     },
     "pro": {
         "actions_per_month": 1000,
-        "max_servers": None,  # unlimited
+        # Deliberately NOT unlimited — leaves honest room for an Agency tier later
+        # (never take features away; only ever add tiers above).
+        "max_servers": 15,
     },
 }
 

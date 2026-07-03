@@ -382,7 +382,7 @@ async def _chat_loop(ws: WebSocket, server: Server, user_id: str) -> None:
 
         # AI quota gate (docs/AI-METERING.md §4) — per-server chat draws from the
         # server OWNER's pool (§8 team pooling). The wall only blocks when
-        # ENFORCE_AI_QUOTA is on; otherwise this is a no-op numbers check.
+        # ENFORCE_PLAN_LIMITS is on; otherwise this is a no-op numbers check.
         try:
             async with AsyncSessionLocal() as db:
                 owner = await db.get(User, server.user_id)
@@ -499,7 +499,7 @@ async def _fleet_loop(ws: WebSocket, user: User) -> None:
             continue
 
         # AI quota gate (docs/AI-METERING.md §4) — fleet chat draws from the acting
-        # user's own pool. Only blocks when ENFORCE_AI_QUOTA is on.
+        # user's own pool. Only blocks when ENFORCE_PLAN_LIMITS is on.
         try:
             async with AsyncSessionLocal() as db:
                 g = await metering_service.gate(db, user)

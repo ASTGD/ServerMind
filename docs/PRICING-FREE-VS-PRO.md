@@ -1,180 +1,143 @@
-# ServerAlly — Pricing: Free vs Pro (+ AI packaging)
+# ServerAlly — Pricing v2: "Open features, two meters"
 
-> **Status:** decisions locked (2026-07-02). **No billing/entitlement code written yet** —
-> this doc is the spec to build against. Allowance numbers are starting points to tune once
-> real AI token cost is known.
+> **v2 (2026-07-03) — DECIDED & ENFORCEMENT BUILT.** This revises v1's feature-gating
+> matrix. The new model: **every feature is available on every plan; plans differ in
+> exactly two numbers — servers and Ally actions.** The two gates are implemented and
+> sit dormant behind `ENFORCE_PLAN_LIMITS` (default off; cloud flips it on). Billing
+> (checkout + webhooks) remains deliberately unbuilt until a payment provider is
+> chosen — `users.plan` is set manually meanwhile.
 
 ---
 
 ## 1. Summary
 
-Two SaaS plans: **Free** and **Pro**.
+- **Free:** 2 servers · 30 Ally actions/month · every feature included.
+- **Pro (~$15–19/mo):** 15 servers · 1,000 Ally actions/month · every feature included
+  · own-AI-key escape valve (unmetered) · priority support.
+- **Later — Agency tier:** more servers, white-label, team-of-teams. Added ABOVE,
+  never by removing something below.
+- The pitch is one sentence: *"ServerAlly is free for 2 servers. Pay when you need
+  more servers or more Ally."*
 
-- **Free** = *feel the magic on one box.* Enough to experience the AI (Ally) doing something
-  real on 1–2 servers, so a new user hits the "whoa, it fixed my server" moment. Genuinely
-  useful for a hobbyist; hits natural walls the moment you get serious.
-- **Pro** = *run everything, automated, at scale.* Unlimited servers, the full Ally
-  (fleet · batch · memory · proactive), automation (scheduler · backups · alerts), team, and a
-  generous AI allowance.
-
-A separate **Agency / self-hosted** edition exists (licensed, bring-your-own-key) — out of
-scope here; see [SELF-HOSTED-LICENSING.md](SELF-HOSTED-LICENSING.md).
+A separate **self-hosted** edition exists (licensed) — see
+[SELF-HOSTED-LICENSING.md](SELF-HOSTED-LICENSING.md); §10 notes how it maps onto this model.
 
 ---
 
 ## 2. The AI is named "Ally"
 
-The assistant persona is **Ally** — the ServerAlly brand as a companion ("someone on your
-side"). User-facing copy: "Ask Ally", "Ally is thinking…", "Ally ran it on 3 servers", "Hand
-to Ally". (Shipped in the UI already; commit `08cde87`.)
+Unchanged from v1: the assistant persona is **Ally** everywhere ("Ask Ally", "Hand to
+Ally", "Ally remembers", missions). The brand is the companion.
 
 ---
 
 ## 3. AI packaging — one subscription, two fuel options
 
-The key decision that resolves the "do users pay twice for AI?" question: **No.** We were
-conflating two different purchases:
+Unchanged from v1: **software and AI-fuel are ONE purchase, never a second bill.**
 
-1. **The software / features** — this is what Pro is.
-2. **The AI fuel (tokens)** — who pays for inference.
-
-**Model: AI is included in the plan (hosted "ServerAlly AI", powered by Ally), up to a
-monthly quota. Bring-your-own-key is an *optional escape valve*, never a second bill.**
-
-- **Included ServerAlly AI (default):** works out of the box, no key. Fair-use quota
-  (measured in "actions" — see §9). This is what nearly all users use, especially the
-  non-technical target audience.
-- **Your own API key (optional):** unlimited — the user pays their own provider. Escapes the
-  quota. Same plan price either way. The key is a *toggle*, not a purchase.
-- **Overage:** when the included quota runs out → buy more credits (pay-as-you-go) **or** add
-  your own key. Neither is a separate base subscription.
-
-**Consequences already applied:**
-- The bring-your-own-key UI is **demoted / hidden from Settings** for cloud users (gated
-  behind `SHOW_AI_PROVIDER_SETTINGS = false` in `frontend/src/routes/Settings.tsx`, commit
-  `88365dc`). The self-hosted edition flips it back on (that operator must configure a
-  provider).
-- Do **not** sell "ServerAlly AI" as a standalone SKU next to Pro — that's the double-bill
-  trap. It's the bundled default fuel inside the plan.
-- Keep **one Pro price** regardless of fuel choice (BYO users are not discounted — the value
-  is the software, not the tokens).
+- **Included ServerAlly AI (default):** works out of the box; the plan's action
+  allowance is the meter (ledger + walls shipped — see [AI-METERING.md](AI-METERING.md)).
+- **Bring-your-own-key (escape valve):** plug your own Claude/OpenAI/Gemini key →
+  actions unmetered (your fuel). A toggle, not a purchase. Hidden on cloud Free
+  (`SHOW_AI_PROVIDER_SETTINGS`); always available self-hosted.
+- **Overage:** top-up action packs (one-time, no surprise bills) — arrives with billing.
 
 ---
 
-## 4. The 4 gates (mental model)
+## 4. The two meters (the whole model)
 
-Only four lines separate Free from Pro:
+Each meter maps to a REAL cost for us and a REAL value signal from the customer:
 
-| Gate | Free | Pro |
+| Meter | Aligned with | Enforced at |
 |---|---|---|
-| **Scale** | 1–2 servers | Unlimited servers & hosts |
-| **Automation** | Manual, on-demand only | Scheduled backups, alerts, recurring tasks |
-| **Full Ally** | A taste — per-server chat, ~30 actions/mo | Fleet, batch, memory, proactive + generous tokens |
-| **Collaboration** | Solo | Team members + per-server roles |
+| **Ally actions / month** | Our AI bill (measured ≤ $0.05/action — §9) | The AI choke points (`metering_service.gate`) — chat, fleet, batch, missions, script gen |
+| **Servers** | Our per-server infra (metrics polling every 5 min, scans, probes) + the market's standard value metric | One check at server creation (`metering_service.servers_gate`) — HTTP 402, friendly message |
+
+Both always *measure*; they only *block* when `ENFORCE_PLAN_LIMITS=true`.
+The server cap only stops **adding more** — existing servers are never touched.
 
 ---
 
-## 5. Feature matrix
+## 5. What's included: everything, everywhere
 
-| Feature | Free | Pro |
-|---|---|---|
-| Servers connected | 1–2 | Unlimited |
-| Connection types (Linux / Windows / hosting) | ✅ any, within limit | ✅ |
-| Terminal (SSH) | ✅ | ✅ |
-| File manager | ✅ | ✅ |
-| Live metrics (CPU/RAM/disk now) | ✅ | ✅ |
-| Installed / server insight | ✅ | ✅ |
-| **Ally — per-server chat** | ✅ taste (~30 actions/mo) | ✅ generous quota |
-| Ally — fleet mode (ask across all) | — | ✅ |
-| Ally — cross-server batch | — | ✅ |
-| Ally — saved thread history (Assistant page) | — (drawer only, ephemeral) | ✅ |
-| Ally — AI script generator | — | ✅ |
-| Ally — proactive monitoring / auto-heal / health score | — | ✅ (flagship, future) |
-| Playbooks (one-click library) | ✅ standard | ✅ all + control-panel installers |
-| Save / fork custom scripts (My Scripts) | — | ✅ |
-| Scheduler (recurring tasks) | — | ✅ |
-| Metrics history charts | — | ✅ |
-| Alerts (email/webhook/Slack) | — | ✅ |
-| Security audit | ✅ on-demand (limited) | ✅ unlimited + scheduled + history |
-| Backups (auto + restore) | — | ✅ |
-| Team members + roles | — (solo) | ✅ |
-| Activity / command history | ✅ recent | ✅ full retention |
-| Multi-language, notifications | ✅ | ✅ |
+Missions, long-term memory, skills, Live Look, fleet chat, batch actions, scheduler,
+backups, security scans, alerts, file manager, terminal workspace, team, hosting-panel
+mode — **all of it, on Free and Pro alike.** The Settings "Ally usage" card shows both
+meters plus the promise: "All features included on every plan."
 
 ---
 
-## 6. Reasoning on the decisions that matter
+## 6. Why no feature gates (the reasoning that replaced v1)
 
-- **Ally on Free is deliberate — and limited.** The whole pitch is "AI runs your server." If
-  Free can't *feel* that, nobody converts. Free gets real per-server Ally (it can install,
-  fix, actually *do* things), capped at a small monthly action count. That cap is the best
-  salesperson — users hit it right after the "wow".
-- **Automation is the cleanest Pro line.** Scheduler, backups, alerts = "set it and forget
-  it" — the definition of a paid capability. Backups especially: people pay to not lose sleep.
-- **The powerful Ally is the Pro engine.** Fleet, batch, saved memory, proactive only make
-  sense with more than 2 servers — so they align with the scale gate and let Ally drive
-  upgrades, not just hook.
-- **Don't gate by platform.** Free can connect Windows/hosting within the 1–2 limit. Gate by
-  *count and capability*, not OS — gating by OS just annoys a buyer we want.
-- **Security audit is a Free hook.** On-demand scan → "Grade D, here's what's wrong" is a
-  great activation moment. Scheduled/continuous scanning is the Pro version.
-- **Don't over-cripple Free.** Thin Free never activates. The 1–2 server limit + AI action cap
-  already do the heavy lifting; keep terminal, files, and basic playbooks in Free.
+1. **The AI already gates the product for our audience.** The target user is
+   non-technical — every feature is *operated through Ally*. Out of actions ≈ out of
+   product. Locking doors is redundant when the AI is the key to every door.
+2. **Never gate safety.** Paywalled backups/security = a user loses data one day and
+   the brand dies. Safety features are open, forever, on principle.
+3. **Don't fragment the magic.** The conversion moment is a full-quality Ally
+   experience (a mission fixing a broken site) inside the free allowance. The quota
+   limits how MUCH — never how GOOD. One quota, full quality.
+4. **The server cap is cost-honest, not greedy.** Metrics/scans/backup schedules run
+   per server — unlimited free servers is real infra exposure; and "price per server"
+   is the metric this market (RunCloud, Ploi, cPanel) already trained buyers on.
+5. **Feature-gating costs weeks** of enforcement surface + support pain ("you locked
+   my backups?!"); the two-meter model needed two choke points and ~2 days.
+6. **Accepted trade-off:** a technical user can run 2 servers free forever, manually,
+   never paying. Fine — they weren't the buyer, they cost pennies, and they evangelize.
 
 ---
 
-## 7. Upgrade triggers (the walls that convert)
+## 7. Upgrade triggers (the two walls that convert)
 
-1. "I need a 3rd server." → scale wall
-2. "I'm out of Ally actions this month." → AI wall (hit right after they fall in love)
-3. "I want Ally to watch all my servers / do it automatically." → fleet + automation
-4. "I need my teammate in here." → collaboration
-5. "I want my backups to just happen." → peace-of-mind wall
+1. *"You've used all 30 Ally actions this month"* — hit mid-love, right after Ally
+   fixed something real. (Amber chat bubble + HTTP 402 on script gen; shipped.)
+2. *"Your plan includes 2 servers and you already have 2"* — hit exactly when their
+   business grows. (HTTP 402 at Add Server; the modal surfaces the message; shipped.)
+
+Both walls offer the same exits: **Upgrade · own key (actions only) · wait for reset.**
 
 ---
 
 ## 8. Pricing shape
 
-| Tier | Servers | AI fuel | For |
-|---|---|---|---|
-| **Free** | 1–2 | Included, small quota (no key) | Try it, feel the "aha" |
-| **Pro** | Unlimited | Included generous quota + advanced Ally; add own key → unlimited | Founders, SMBs — mass market |
-| **Agency / self-hosted** | Unlimited | Bring your own key (they host); optional hosted add-on | Agencies, MSPs, privacy/cost-sensitive |
+- **Free** — $0 forever.
+- **Pro** — target **$15–19/mo** (annual ≈ 2 months free). One plan, no matrix to read.
+- **Agency** — later, built from real demand (servers, white-label, priority).
+- **Top-up packs** for actions — with billing.
 
 ---
 
-## 9. AI allowance (tune later)
+## 9. AI allowance — REAL numbers (First Flight, 2026-07-03)
 
-- Unit = **"actions"** (user-friendly), not tokens. One action = one Ally request → plan →
-  execute.
-- **Free:** ~25–40 actions / month.
-- **Pro:** ~500–1,000 / month or soft fair-use, plus overage credits and the BYO-key escape.
-- Numbers are placeholders — set them against real per-action token cost before launch.
+Measured live on Sonnet 5 with prompt caching + thinking disabled:
 
----
-
-## 10. Implementation notes (for when billing is built)
-
-- **Entitlement map first, billing second.** Define a single config that declares, per
-  feature, whether it's Free or Pro, plus the numeric limits (server count, AI actions/month).
-  Expose `canUse(feature)` and `withinLimit(kind)` checks that **both the UI and the API**
-  read, so gating is enforced server-side, not just hidden client-side.
-- **AI fuel decision at each call:** if the user has their own key → run on it, unmetered;
-  else → draw from the included quota; if exhausted → prompt to add a key or buy credits.
-  The hosted gateway already meters usage — wire that meter to the plan quota.
-- **Billing provider:** Lemon Squeezy / Stripe / Paddle (TBD). Wire the Upgrade modal
-  (`frontend/src/components/layout/UpgradeModal.tsx`) to real checkout.
-- **Right now (pre-billing):** the instance's AI is configured via `.env`
-  (`ANTHROPIC_API_KEY` / `AI_PROVIDER`); no per-user limits are enforced yet.
-- **Cloud vs self-hosted:** `SHOW_AI_PROVIDER_SETTINGS` hides BYO-key UI for cloud; self-hosted
-  turns it on.
+- Typical action: **$0.03–0.05** (missions cache ~80% of their input tokens).
+- Free worst case: 30 × $0.05 = **≤ $1.50/user/month**; realistic ~$0.30.
+- Pro worst case: 1,000 × $0.05 = $50, but typical usage is 5–10% of cap →
+  **$1.50–5/mo COGS** against $15–19 → 70–90% gross margin.
+- Keep tuning from the `ai_usage` ledger (exact tokens + cache + cost per call).
 
 ---
 
-## 11. Open questions to settle before launch
+## 10. Implementation status
 
-- Exact Free action cap + Pro allowance (needs token-cost data).
-- Pro price point(s) — monthly/annual.
-- Overage: pay-as-you-go credits vs hard stop vs BYO-key prompt.
-- Free saved-history: truly none, or a small retained amount?
-- Trial: does Pro get a time-limited trial, or is Free the trial?
+- ✅ Actions meter: ledger, gate, walls, Settings card (AI-METERING.md Bricks 1+2).
+- ✅ Server meter: `servers_gate` + 402 at create + both meters in `GET /api/usage/me`
+  and the Settings card.
+- ✅ One switch arms both: `ENFORCE_PLAN_LIMITS` (default false — dev/self-hosted
+  just measure; cloud enforces).
+- ✅ Plan map: `entitlements.py` — two numbers per plan, **no feature flags by design**.
+- ⏸ Billing (checkout, webhooks, plan sync, top-ups): waits on the provider decision
+  (Stripe vs Paddle vs Lemon Squeezy).
+- **Self-hosted licensing:** a license key only needs to encode `plan + max_servers`
+  (+ a gateway subscription token or BYO key for actions) — the two-meter model keeps
+  the license format trivial.
+
+---
+
+## 11. Open questions before launch
+
+- Pro price point ($15 vs $19; annual discount).
+- Exact Pro action allowance (1,000 placeholder — validate against ledger data).
+- Overage UX: top-up pack sizes/prices.
+- Billing provider (merchant-of-record question).

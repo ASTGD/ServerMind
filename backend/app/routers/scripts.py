@@ -71,7 +71,7 @@ async def generate_script(
 ) -> GenerateScriptResult:
     """Use AI to generate a server administration script."""
     # AI quota gate (docs/AI-METERING.md §2/§4) — script generation = 1 action from the
-    # acting user's pool. Only blocks when ENFORCE_AI_QUOTA is on.
+    # acting user's pool. Only blocks when ENFORCE_PLAN_LIMITS is on.
     g = await metering_service.gate(db, current_user)
     if not g.allowed:
         raise HTTPException(

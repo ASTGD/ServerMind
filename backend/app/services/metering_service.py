@@ -8,7 +8,7 @@ How it plugs in:
   and then persists everything with :func:`record` — one ledger row per model call, the
   first row carrying the action count.
 - Before calling the model it checks :func:`gate`; the wall only blocks when
-  ``ENFORCE_AI_QUOTA`` is on (default off — self-hosted/dev instances just collect data).
+  ``ENFORCE_PLAN_LIMITS`` is on (default off — self-hosted/dev instances just collect data).
 
 Failure policy (§4): metering is best-effort — a metering bug must never punish the
 customer. ``record`` swallows and logs its own errors; callers never wrap it in flow
@@ -148,10 +148,10 @@ class GateResult:
 
 async def gate(db: AsyncSession, user: User) -> GateResult:
     """Check the user's action allowance. Always returns the numbers; only blocks
-    (allowed=False) when ENFORCE_AI_QUOTA is on."""
+    (allowed=False) when ENFORCE_PLAN_LIMITS is on."""
     limit = limits_for(user)["actions_per_month"]
     used = await actions_used(db, user.id)
-    enforced = bool(settings.ENFORCE_AI_QUOTA)
+    enforced = bool(settings.ENFORCE_PLAN_LIMITS)
     allowed = (used < limit) if enforced else True
     return GateResult(
         allowed=allowed,
@@ -168,6 +168,41 @@ def quota_message(g: GateResult) -> str:
         f"You've used all {g.limit} Ally actions for this month. "
         f"Your allowance resets on {g.resets_at}. "
         "Upgrade to Pro for a bigger allowance, or add your own AI key."
+    )
+
+
+# ── The second meter: servers (PRICING v2 — "open features, two meters") ──────
+
+@dataclass
+class ServersGateResult:
+    allowed: bool
+    used: int
+    limit: int
+    enforced: bool
+
+
+async def servers_gate(db: AsyncSession, user: User) -> ServersGateResult:
+    """Check the user's server allowance (servers they OWN — team-shared servers count
+    against their owner). Always returns the numbers; only blocks adding MORE servers
+    when ENFORCE_PLAN_LIMITS is on. Existing servers are never touched."""
+    from app.models.server import Server  # local import — avoid module cycle
+
+    limit = limits_for(user)["max_servers"]
+    used = (
+        await db.execute(
+            select(func.count()).select_from(Server).where(Server.user_id == user.id)
+        )
+    ).scalar_one()
+    enforced = bool(settings.ENFORCE_PLAN_LIMITS)
+    allowed = (used < limit) if enforced else True
+    return ServersGateResult(allowed=allowed, used=used, limit=limit, enforced=enforced)
+
+
+def servers_message(g: ServersGateResult) -> str:
+    """The friendly server-cap wall text."""
+    return (
+        f"Your plan includes {g.limit} servers and you already have {g.used}. "
+        "Upgrade to Pro to add more servers."
     )
 
 

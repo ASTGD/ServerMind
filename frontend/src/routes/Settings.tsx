@@ -455,6 +455,14 @@ export default function Settings() {
             Your allowance resets on {usage.resets_at}.
             {!usage.enforced && " (Usage is informational on this install — no limit is enforced.)"}
           </p>
+          {/* Meter #2: servers. Every feature is included on every plan — only the
+              two meters (actions + servers) differ. */}
+          <div className="flex items-center justify-between border-t border-border pt-3 text-sm">
+            <span className="text-foreground">
+              <span className="font-semibold">{usage.servers_used}</span> of {usage.servers_limit} servers used
+            </span>
+            <span className="text-xs text-muted-foreground">All features included on every plan</span>
+          </div>
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">Loading usage…</p>

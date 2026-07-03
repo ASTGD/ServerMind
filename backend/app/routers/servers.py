@@ -14,7 +14,8 @@ from app.dependencies.auth import get_current_user, require_verified
 from app.models.server import Server
 from app.models.user import User
 from app.schemas.server import ServerCreate, ServerOut, ServerUpdate
-from app.services import audit_service, connection_manager, metrics_service, team_service
+from app.services import audit_service, connection_manager, metering_service, metrics_service
+from app.services import team_service
 from app.services.crypto_service import encrypt
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,15 @@ async def create_server(
     current_user: User = Depends(require_verified),
 ) -> Server:
     """Add a new server. Credential is encrypted before storage."""
+    # Plan meter #2 (PRICING v2 — "open features, two meters"): the server cap. The
+    # one and only feature-level gate; blocks only when ENFORCE_PLAN_LIMITS is on.
+    sg = await metering_service.servers_gate(db, current_user)
+    if not sg.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=metering_service.servers_message(sg),
+        )
+
     encrypted = encrypt(body.credential)
     server = Server(
         user_id=current_user.id,

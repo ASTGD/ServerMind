@@ -20,11 +20,13 @@ class Settings(BaseSettings):
     # Error monitoring (optional)
     SENTRY_DSN: str = ""
 
-    # AI quota wall (docs/AI-METERING.md). The ai_usage ledger ALWAYS records; this
-    # flag only controls whether the plan's action allowance actually blocks when
-    # exhausted. Off by default: dev and self-hosted instances just collect data;
-    # the cloud deployment turns it on.
-    ENFORCE_AI_QUOTA: bool = False
+    # Plan-limits wall (docs/AI-METERING.md + PRICING-FREE-VS-PRO.md). The pricing
+    # model is "open features, two meters": every feature is available on every plan;
+    # only the Ally-action allowance and the server cap differ. The ai_usage ledger
+    # ALWAYS records; this flag only controls whether the two meters actually block
+    # when exhausted. Off by default: dev and self-hosted instances just collect
+    # data; the cloud deployment turns it on.
+    ENFORCE_PLAN_LIMITS: bool = False
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://servermind:password@localhost:5432/servermind"

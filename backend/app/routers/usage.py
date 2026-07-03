@@ -19,6 +19,9 @@ class MyUsage(BaseModel):
     limit: int
     resets_at: str
     enforced: bool
+    # Meter #2 (PRICING v2): the server cap.
+    servers_used: int
+    servers_limit: int
 
 
 @router.get("/me", response_model=MyUsage)
@@ -26,12 +29,15 @@ async def my_usage(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> MyUsage:
-    """This month's Ally-action usage for the signed-in user ("214 of 1,000")."""
+    """Both plan meters for the signed-in user: Ally actions this month + servers."""
     g = await metering_service.gate(db, current_user)
+    sg = await metering_service.servers_gate(db, current_user)
     return MyUsage(
         plan=(current_user.plan or "free"),
         used=g.used,
         limit=g.limit,
         resets_at=g.resets_at,
         enforced=g.enforced,
+        servers_used=sg.used,
+        servers_limit=sg.limit,
     )
