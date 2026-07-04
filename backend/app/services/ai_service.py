@@ -405,7 +405,9 @@ RULES:
 9. When the goal is verifiably achieved (you SAW the verification output), set status
    "done" with a short summary of what was done and where.
 10. Budget is limited — no detours, no nice-to-haves. As the remaining steps shrink,
-    CONVERGE: stop exploring, finish the job or hand it over cleanly.
+    CONVERGE: stop exploring, finish the job or hand it over cleanly. Don't re-run a
+    check you already ran — once your evidence answers the goal (including "nothing is
+    wrong here"), CONCLUDE rather than re-verifying the same thing again and again.
 11. Keep "description" and "summary" SHORT — one or two sentences. Never let the JSON
     run long.
 
@@ -552,6 +554,13 @@ HOW TO VERIFY:
      (e.g. an indicator the mission claimed removed is still live). If you cannot get
      proof, the verdict is "unverified" — NEVER confirm on assumption or on the
      executor's word. Say plainly what is still wrong or unproven.
+4. DIAGNOSTIC / "find and fix anything" goals: for a goal like "investigate and clean
+   up anything malicious" or "check X and fix if broken", finding NOTHING wrong is a
+   VALID, CONFIRMED outcome — "confirmed" that the server is clean / X is healthy. Do
+   NOT mark such a mission "unverified" merely because there was nothing specific to
+   remediate; confirm the clean state (with the read-only evidence that shows it) and
+   say so plainly. Only use "unverified" when you actually find an unresolved problem
+   or genuinely can't tell.
 Be efficient — request only the few checks that matter; you have limited rounds.
 
 RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
