@@ -26,7 +26,11 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 _SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
-_BODY_MAX = 5000  # hard cap on injected skill text
+# Hard cap on injected skill text. Generous because the biggest skills are mission
+# runbooks (e.g. security-incident-response) that carry a lot of essential procedure,
+# and they ride in the CACHED prompt prefix — full cost only on the first step, ~10%
+# after — so the token impact of a longer runbook is small. Still bounds a runaway file.
+_BODY_MAX = 8000
 
 # Mission step budgets. Ad-hoc missions use the default; a mission-mode skill may
 # declare its own `budget:` (a deep investigation or multi-stage install needs more

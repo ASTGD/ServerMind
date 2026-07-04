@@ -94,6 +94,21 @@ def test_incident_response_is_reversible_and_evidence_first():
     assert "injection" in body
 
 
+def test_incident_response_recognizes_own_session():
+    """Regression guard for the false positive found live (2026-07-05): the mission
+    flagged ServerAlly's OWN SSH session + failed brute-force noise as an 'active
+    intrusion'. The skill must teach self-recognition so it doesn't alarm on itself."""
+    body = _skill_body("security-incident-response")
+    # Establish its own management connection before judging any session.
+    assert "$ssh_connection" in body or "ssh_connection" in body
+    assert "your own management" in body
+    # Its own session/IP is not an intruder.
+    assert "not an intruder" in body
+    # Failed brute-force attempts are noise, not a compromise — only a SUCCESSFUL,
+    # unattributable login counts.
+    assert "failed brute-force" in body or "failed password" in body
+
+
 # ── Safety invariants ─────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("cmd,osf", corpus.SAFETY_MUST_BLOCK,
