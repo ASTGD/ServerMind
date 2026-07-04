@@ -182,13 +182,38 @@ every step, so it survives, is reviewable, and is resumable.
   its saved transcript, kept full context ("the earlier flagged cron item… what got
   saved in the quarantine folder"), and ran to a clean, verified completion.
 
-Known limitation: a client that merely *navigates away* from a **read-only** mission
-(no approval pause to block on) isn't detected promptly — the mission simply finishes
-in the background and shows in history as complete (an acceptable outcome). Robust
-liveness (a client heartbeat, or a dedicated receive task) is the follow-up.
+(Phase 4 below makes the "navigate away" case a *feature*: the mission keeps running.)
 
-## 10. Phase 4 (not built)
+## 10. Detached background execution (Phase 4 — built)
 
-True background execution (the loop runs in Celery with no client attached),
-webhook-triggered redeploys, community mission templates, and missions-in-parallel
-across servers via the batch pattern.
+A mission no longer lives on the socket at all. It runs as a background
+``asyncio.Task`` (a **MissionRunner**, `app/websocket/mission_runner.py`) in the
+process; a client connects to it through a *bridge*. Dropping the client no longer
+ends the mission — it keeps running, and you re-attach later to watch it.
+
+- **Runner** — `_run_mission` is handed a runner in place of a socket (it calls the
+  same `send_text`/`wait_decision`/`stop_requested`). The runner fans events out to
+  every attached client's queue (non-blocking — a slow/absent client just catches up
+  from the DB), holds the approval future, and a stop flag. Process-wide registry
+  keyed by mission id.
+- **Bridge** — `_bridge_mission(ws, runner)` pumps the runner's events to the socket
+  and routes the client's approve/stop back; on a client drop it ends (the task keeps
+  running), and any other message is returned as a leftover so chat + a background
+  mission coexist.
+- **Attach** — a running mission shows a **View** button on the Missions page;
+  `mission_attach` replays the DB transcript, re-shows a pending approval prompt (so a
+  client attaching mid-approval can act), then bridges live events. `mission_resume`
+  still handles a mission orphaned by a *restart* (Phase 3 `recover_orphaned`).
+- Verified LIVE: an incident-response mission ran 3 → 9 → 13 → 16 steps entirely in
+  the background across a full page reload + navigation, then **View** re-attached to
+  the live stream and showed it still deciding the next step. Cost ≈ $0.02 (caching).
+
+Bounds/limits: an approval a nobody returns to times out (30 min → blocked). Still
+in-process (single-process; horizontal scaling would move the fan-out to Redis
+pub/sub). A backend restart is covered by `recover_orphaned` (→ resumable).
+
+## 11. Phase 5 (not built)
+
+Redis-pub/sub fan-out (so a background mission survives a specific web worker and
+scales horizontally), webhook-triggered redeploys, community mission templates, and
+missions-in-parallel across servers via the batch pattern.

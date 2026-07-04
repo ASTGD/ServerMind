@@ -15,6 +15,8 @@ interface AssistantState {
   seed: { text: string; key: number } | null
   /** A one-shot request to resume an interrupted mission once connected (Phase 3). */
   resume: { missionId: string; key: number } | null
+  /** A one-shot request to attach to a mission running in the background (Phase 4). */
+  attach: { missionId: string; key: number } | null
   /** Entity-specific context published by the current route (e.g. an open script), or null.
    *  Ally reads this + the static route context so it knows what the user is looking at. */
   pageContext: PageContext | null
@@ -28,6 +30,9 @@ interface AssistantState {
   /** Open Ally on a server (or fleet) and resume the given interrupted mission. */
   resumeMission: (target: AssistantTarget, missionId: string) => void
   clearResume: () => void
+  /** Open Ally and attach to a mission still running in the background (Phase 4). */
+  attachMission: (target: AssistantTarget, missionId: string) => void
+  clearAttach: () => void
   setTarget: (target: AssistantTarget) => void
   setPageContext: (ctx: PageContext | null) => void
   setMessages: (updater: MessagesUpdater) => void
@@ -47,6 +52,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   target: { kind: "fleet" },
   seed: null,
   resume: null,
+  attach: null,
   pageContext: null,
   messages: [],
   threadId: null,
@@ -60,6 +66,9 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   resumeMission: (target, missionId) =>
     set({ open: true, target, seed: null, resume: { missionId, key: Date.now() } }),
   clearResume: () => set({ resume: null }),
+  attachMission: (target, missionId) =>
+    set({ open: true, target, seed: null, attach: { missionId, key: Date.now() } }),
+  clearAttach: () => set({ attach: null }),
   setTarget: (target) => set({ target, seed: null }),
   setPageContext: (ctx) => set({ pageContext: ctx }),
   setMessages: (updater) =>

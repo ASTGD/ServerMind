@@ -3,11 +3,11 @@ import { useQuery } from "@tanstack/react-query"
 import { formatDistanceToNow } from "date-fns"
 import {
   Rocket, CheckCircle2, XCircle, ShieldCheck, ShieldAlert, Hand, Square, Loader2,
-  PlayCircle, ChevronDown, ChevronRight,
+  PlayCircle, ChevronDown, ChevronRight, Eye,
 } from "lucide-react"
 import { listMissions, getMission, type MissionSummary, type MissionStatus } from "@/api/missions"
 import { listServers } from "@/api/servers"
-import { useAssistantStore } from "@/store/assistantStore"
+import { useAssistantStore, type AssistantTarget } from "@/store/assistantStore"
 
 const STATUS: Record<MissionStatus, { label: string; cls: string }> = {
   running: { label: "Running", cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
@@ -79,19 +79,28 @@ function StepList({ missionId }: { missionId: string }) {
 }
 
 export default function Missions() {
-  const { data: missions = [], isLoading } = useQuery({ queryKey: ["missions"], queryFn: () => listMissions() })
+  // Poll so a background (running) mission's status updates live on this page.
+  const { data: missions = [], isLoading } = useQuery({
+    queryKey: ["missions"], queryFn: () => listMissions(), refetchInterval: 5000,
+  })
   const { data: servers = [] } = useQuery({ queryKey: ["servers"], queryFn: listServers })
   const resumeMission = useAssistantStore((s) => s.resumeMission)
+  const attachMission = useAssistantStore((s) => s.attachMission)
   const [expanded, setExpanded] = useState<string | null>(null)
   const serverById = useMemo(() => new Map(servers.map((s) => [s.id, s])), [servers])
 
+  function targetFor(m: MissionSummary): AssistantTarget | null {
+    if (!m.server_id) return { kind: "fleet" }
+    const s = serverById.get(m.server_id)
+    return s ? { kind: "server", server: s } : null
+  }
   function resume(m: MissionSummary) {
-    if (m.server_id) {
-      const s = serverById.get(m.server_id)
-      if (s) resumeMission({ kind: "server", server: s }, m.id)
-    } else {
-      resumeMission({ kind: "fleet" }, m.id)
-    }
+    const t = targetFor(m)
+    if (t) resumeMission(t, m.id)
+  }
+  function view(m: MissionSummary) {
+    const t = targetFor(m)
+    if (t) attachMission(t, m.id)
   }
 
   return (
@@ -138,6 +147,16 @@ export default function Missions() {
                     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ${chip.cls}`}>
                       <chip.Icon size={11} /> {chip.label}
                     </span>
+                    {(m.status === "running" || m.status === "awaiting_approval") && (
+                      <button
+                        onClick={() => view(m)}
+                        disabled={m.server_id ? !serverById.has(m.server_id) : false}
+                        title="Watch this background mission live"
+                        className="flex items-center gap-1 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 px-2.5 py-1 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                      >
+                        <Eye size={12} /> View
+                      </button>
+                    )}
                     {m.resumable && (
                       <button
                         onClick={() => resume(m)}

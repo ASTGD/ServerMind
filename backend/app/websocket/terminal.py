@@ -22,6 +22,7 @@ from app.models.user import User
 from app.services import ai_context_service, ai_service, connection_manager, safety_service
 from app.services import file_service, live_look_service, memory_service, metering_service, skill_service
 from app.services import mission_service
+from app.websocket import mission_runner
 from app.services import ssh_service, team_service, terminal_session_service
 from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
@@ -390,16 +391,17 @@ async def _unified_loop(ws: WebSocket, user: User, fixed_server: Server | None =
                     await ws.send_text(json.dumps({"type": "error", "message": resolved}))
                     continue
                 home = resolved
-            pending_frame = await _run_mission(
-                ws, user,
-                home_server=home,
-                goal=str(msg.get("goal", "")),
-                skill_slug=msg.get("skill"),
-                user_language=msg.get("language", "en"),
-            )
+            # Phase 4: run DETACHED — a background task, bridged to this client. If the
+            # client leaves, the task keeps running.
+            runner = mission_runner.create()
+            runner.task = asyncio.create_task(_run_mission_detached(
+                runner, user, home_server=home, goal=str(msg.get("goal", "")),
+                skill_slug=msg.get("skill"), user_language=msg.get("language", "en"),
+            ))
+            pending_frame = await _bridge_mission(ws, runner)
             continue
 
-        # Resume an interrupted mission from its saved transcript (Phase 3).
+        # Resume an interrupted mission from its saved transcript (Phase 3), detached.
         if mtype == "mission_resume":
             mid = msg.get("mission_id")
             async with AsyncSessionLocal() as db:
@@ -418,14 +420,45 @@ async def _unified_loop(ws: WebSocket, user: User, fixed_server: Server | None =
                     await ws.send_text(json.dumps({"type": "error", "message": resolved}))
                     continue
                 home = resolved
-            pending_frame = await _run_mission(
-                ws, user,
-                home_server=home,
-                goal=m.goal,
-                skill_slug=m.skill_slug,
+            runner = mission_runner.create()
+            runner.task = asyncio.create_task(_run_mission_detached(
+                runner, user, home_server=home, goal=m.goal, skill_slug=m.skill_slug,
                 user_language=msg.get("language", "en"),
                 resume={"mission_id": m.id, "steps": mission_service.steps_of(m)},
-            )
+            ))
+            pending_frame = await _bridge_mission(ws, runner)
+            continue
+
+        # Attach to a mission running in the background (Phase 4) — reconnect + watch.
+        if mtype == "mission_attach":
+            mid = str(msg.get("mission_id") or "")
+            async with AsyncSessionLocal() as db:
+                m = await mission_service.get_for_user(db, user, mid) if mid else None
+            if m is None:
+                await ws.send_text(json.dumps({"type": "error", "message": "Mission not found."}))
+                continue
+            runner = mission_runner.get(mid)
+            if runner is not None and not runner.done:
+                # Still running here: replay current state, re-show any pending approval
+                # prompt (so a client attaching mid-approval can act), then bridge live.
+                await _replay_mission_to(ws, m)
+                if runner.awaiting_decision and runner.pending_approval:
+                    await ws.send_text(json.dumps(runner.pending_approval))
+                pending_frame = await _bridge_mission(ws, runner)
+            elif m.status == "interrupted":
+                await ws.send_text(json.dumps({
+                    "type": "error", "message": "This mission was interrupted — use Resume."}))
+            else:
+                # Already finished — show its final state.
+                await _replay_mission_to(ws, m)
+                await ws.send_text(json.dumps({
+                    "type": "mission_complete" if m.status == "complete"
+                    else "mission_blocked" if m.status == "blocked"
+                    else "mission_failed" if m.status == "failed" else "mission_stopped",
+                    "summary": m.summary or "Mission finished.",
+                    "verified": m.verified, "steps_used": m.steps_used,
+                    "reason": m.summary or "", "caveat": m.summary or "",
+                }))
             continue
 
         if mtype != "message":
@@ -1051,7 +1084,7 @@ async def _verify_mission_complete(
 
 
 async def _run_mission(
-    ws: WebSocket,
+    ws: "mission_runner.MissionRunner",
     user: User,
     *,
     home_server: Server | None,
@@ -1059,17 +1092,18 @@ async def _run_mission(
     skill_slug: str | None,
     user_language: str,
     resume: dict | None = None,
-) -> dict | None:
+) -> None:
     """The mission loop: plan ONE step → validate → (approve if risky) → execute →
     observe → repeat, until done/blocked/stopped/budget. Stage 2: steps carry their
     own target server (validated against the user's executable roster), and a
     "transfer" step copies a file between two servers through the backend.
 
-    Phase 3: the mission is checkpointed to the DB after every step, so a dropped
-    socket leaves it ``interrupted`` (resumable) rather than lost. ``resume`` (an
-    ``interrupted`` mission's id + saved transcript) reloads that transcript and
-    continues from it. Returns a leftover client frame to reprocess, or None.
-    See docs/ALLY-MISSIONS.md."""
+    Phase 3: checkpointed to the DB after every step (durable + resumable).
+    Phase 4: ``ws`` is a **MissionRunner**, not a socket — the loop runs DETACHED as a
+    background task, fanning events out to whatever clients are attached (or none). It
+    calls ``ws.send_text`` (fan-out), ``ws.wait_decision`` (approval), and
+    ``ws.stop_requested``; a dropped client no longer ends the mission. See
+    docs/ALLY-MISSIONS.md."""
     goal = (goal or "").strip()[:500]
     if not goal:
         await ws.send_text(json.dumps({"type": "error", "message": "Mission needs a goal."}))
@@ -1124,19 +1158,29 @@ async def _run_mission(
         "mission started: %r (home=%s, roster=%d, skill=%s)",
         goal, home_id, len(roster), skill_slug,
     )
+    # Phase 3 persistence: reuse the row + transcript on resume, else create a fresh
+    # mission row. Phase 4: register the runner by id so clients can attach to it.
+    if resume is not None:
+        mission_id = resume.get("mission_id")
+        steps = list(resume.get("steps") or [])
+    else:
+        mission_id = await mission_service.start(
+            user_id=user.id, server=home_server, skill_slug=skill_slug, goal=goal, budget=budget,
+        )
+    if mission_id:
+        mission_runner.register(ws, str(mission_id))
+
     await ws.send_text(json.dumps({
         "type": "mission_started",
+        "mission_id": str(mission_id) if mission_id else None,
         "goal": goal,
         "skill": skill.slug if skill else None,
         "budget": budget,
         "resumed": resume is not None,
     }))
 
-    # Phase 3 persistence: reuse the row + transcript on resume (replaying it so the
-    # UI rebuilds the timeline), else create a fresh mission row.
+    # On resume, replay the saved transcript into the UI so the timeline rebuilds.
     if resume is not None:
-        mission_id = resume.get("mission_id")
-        steps = list(resume.get("steps") or [])
         for i, s in enumerate(steps, 1):
             await ws.send_text(json.dumps({
                 "type": "mission_step_done",
@@ -1159,10 +1203,6 @@ async def _run_mission(
             "description": "Mission resumed — re-checking before continuing",
             "exit_code": 0, "output_tail": "", "note": "resumed", "verifying": True,
         }))
-    else:
-        mission_id = await mission_service.start(
-            user_id=user.id, server=home_server, skill_slug=skill_slug, goal=goal, budget=budget,
-        )
 
     tok = metering_service.start_collection()
     try:
@@ -1185,7 +1225,7 @@ async def _run_mission(
                     "type": "mission_failed", "reason": reason, "steps_used": len(steps),
                 }))
                 return None
-            if await _mission_stop_requested(ws):
+            if ws.stop_requested:
                 await mission_service.finalize(mission_id, status="stopped", steps=steps)
                 await ws.send_text(json.dumps({"type": "mission_stopped", "steps_used": len(steps)}))
                 return None
@@ -1378,7 +1418,7 @@ async def _run_mission(
                     chunk = min(3, seconds - slept)
                     await asyncio.sleep(chunk)
                     slept += chunk
-                    if await _mission_stop_requested(ws):
+                    if ws.stop_requested:
                         stopped = True
                         break
                 total_wait += slept
@@ -1441,28 +1481,39 @@ async def _run_mission(
 
             # 3) Risky steps pause for the user, even mid-mission.
             needs_approval = safety.status == "confirm" or bool(step.get("requires_confirmation")) or risk == "high"
-            await ws.send_text(json.dumps({
+            step_event = {
                 "type": "mission_step",
                 "index": index, "budget": budget,
                 "cmd": cmd, "description": description, "risk_level": risk,
                 "needs_approval": needs_approval,
                 "server_id": str(target.id), "server_name": target.name,
-            }))
+            }
+            await ws.send_text(json.dumps(step_event))
             if needs_approval:
-                # Persist the pause so an approval that never comes (socket drop) leaves
-                # the mission resumable, not lost.
+                # Persist the pause so it's visible/resumable while we wait (Phase 3);
+                # Phase 4: wait on the RUNNER for a decision — a detached mission just
+                # pauses here (paused-awaiting-approval, persisted) until a client
+                # attaches and approves, or the wait times out. Remember the prompt so a
+                # client that ATTACHES mid-approval can be re-shown it.
                 await mission_service.checkpoint(mission_id, status="awaiting_approval", steps=steps)
-                raw = await ws.receive_text()
+                ws.pending_approval = step_event
                 try:
-                    decision_msg = json.loads(raw)
-                except (TypeError, ValueError):
-                    decision_msg = {}
-                if decision_msg.get("type") != "approve":
+                    decision_msg = await ws.wait_decision()
+                finally:
+                    ws.pending_approval = None
+                if decision_msg is None:  # nobody returned to approve within the window
+                    await mission_service.finalize(
+                        mission_id, status="blocked", steps=steps,
+                        summary="I paused for your approval but didn't hear back — nothing was changed.")
+                    await ws.send_text(json.dumps({
+                        "type": "mission_blocked",
+                        "reason": "I paused for your approval but didn't hear back, so I stopped here. Nothing was changed.",
+                        "steps_used": len(steps),
+                    }))
+                    return None
+                if decision_msg.get("type") != "approve":  # stop / reject
                     await mission_service.finalize(mission_id, status="stopped", steps=steps)
                     await ws.send_text(json.dumps({"type": "mission_stopped", "steps_used": len(steps)}))
-                    # A new message mid-approval stops the mission and gets answered.
-                    if decision_msg.get("type") in ("message", "mission_start"):
-                        return decision_msg
                     return None
 
             # 4) Execute + observe.
@@ -1477,23 +1528,21 @@ async def _run_mission(
                 "exit_code": exit_code, "output_tail": tail, "note": note,
                 "server_id": str(target.id), "server_name": target.name,
             }))
-    except WebSocketDisconnect:
-        # Client vanished mid-mission — leave it resumable (Phase 3), don't lose it.
+    except asyncio.CancelledError:
+        # Backend shutting down — leave the mission resumable (recover_orphaned also
+        # covers this on the next startup). Don't swallow the cancellation.
         await mission_service.mark_interrupted(mission_id)
-        raise  # let the outer handler clean up
-    except Exception as exc:  # noqa: BLE001 — a mission must never crash the shared socket
+        raise
+    except Exception as exc:  # noqa: BLE001 — a mission (detached task) must never crash silently
         logger.exception("mission crashed (goal=%r)", goal)
         await mission_service.finalize(
             mission_id, status="failed", steps=steps,
             summary=f"The mission hit an unexpected error and stopped: {exc}")
-        try:
-            await ws.send_text(json.dumps({
-                "type": "mission_failed",
-                "reason": f"The mission hit an unexpected error and stopped: {exc}",
-                "steps_used": len(steps),
-            }))
-        except Exception:  # noqa: BLE001 — socket may already be closing
-            pass
+        await ws.send_text(json.dumps({
+            "type": "mission_failed",
+            "reason": f"The mission hit an unexpected error and stopped: {exc}",
+            "steps_used": len(steps),
+        }))
     finally:
         calls = metering_service.finish_collection(tok)
         if calls:
@@ -1504,6 +1553,87 @@ async def _run_mission(
                     server_id=home_server.id if home_server is not None else None,
                     skill=skill.slug if skill else None,
                 )
+
+
+# ── Phase 4: detached execution + client bridge ───────────────────────────────
+
+async def _run_mission_detached(runner: mission_runner.MissionRunner, user: User, **kwargs) -> None:
+    """Run a mission to completion as a background task, decoupled from any client.
+    Whatever happens, mark the runner finished so attached bridges unblock."""
+    try:
+        await _run_mission(runner, user, **kwargs)
+    except asyncio.CancelledError:
+        raise
+    except Exception:  # noqa: BLE001 — a detached task must never die unnoticed
+        logger.exception("detached mission task crashed")
+    finally:
+        runner.finish()
+
+
+async def _replay_mission_to(ws: WebSocket, m) -> None:
+    """Send a reconnecting client the mission's current state (a fresh mission_started
+    + every step so far, from the DB) so it catches up before live events resume."""
+    await ws.send_text(json.dumps({
+        "type": "mission_started", "mission_id": str(m.id), "goal": m.goal,
+        "skill": m.skill_slug, "budget": m.budget, "resumed": False, "attached": True,
+    }))
+    for i, s in enumerate(mission_service.steps_of(m), 1):
+        await ws.send_text(json.dumps({
+            "type": "mission_step_done",
+            "index": i, "cmd": s.get("cmd", ""), "description": s.get("description", ""),
+            "exit_code": s.get("exit_code", 0), "output_tail": s.get("output_tail", ""),
+            "note": s.get("note", ""), "server_name": s.get("server"),
+            "verifying": bool(s.get("verify")),
+        }))
+
+
+async def _bridge_mission(ws: WebSocket, runner: mission_runner.MissionRunner) -> dict | None:
+    """Bridge an attached client to a running mission: forward the runner's events to
+    the socket, and forward the client's approve/stop back to the runner — until the
+    mission ends, the client sends something else (returned as a leftover frame to
+    reprocess), or the socket drops (WebSocketDisconnect, re-raised). The mission KEEPS
+    RUNNING regardless — dropping the client no longer ends it."""
+    q = runner.subscribe()
+
+    async def _pump() -> None:
+        while True:
+            event = await q.get()
+            if event is mission_runner.ENDED:
+                return
+            await ws.send_text(json.dumps(event))
+
+    async def _read() -> dict | None:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            t = msg.get("type")
+            if t in ("approve", "reject"):
+                runner.provide_decision(msg)
+            elif t in ("mission_stop", "cancel"):
+                runner.request_stop()
+            else:
+                return msg  # leftover — the main loop handles it; the mission runs on
+
+    pump = asyncio.create_task(_pump())
+    reader = asyncio.create_task(_read())
+    leftover: dict | None = None
+    try:
+        done, _pending = await asyncio.wait({pump, reader}, return_when=asyncio.FIRST_COMPLETED)
+        if reader in done:
+            exc = reader.exception()
+            if exc is not None:
+                raise exc  # WebSocketDisconnect (or other) — client is gone
+            leftover = reader.result()
+        # else: pump finished (mission ended) — reader is cancelled below
+        return leftover
+    finally:
+        runner.unsubscribe(q)
+        for t in (pump, reader):
+            if not t.done():
+                t.cancel()
 
 
 async def _handle_message(

@@ -511,6 +511,20 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resume, status])
 
+  // Attach to a mission running in the background (Phase 4) — reconnect + watch it
+  // live; the backend replays the transcript so far, then streams new steps.
+  const attach = useAssistantStore((s) => s.attach)
+  const clearAttach = useAssistantStore((s) => s.clearAttach)
+  const lastAttachKey = useRef(0)
+  useEffect(() => {
+    if (attach && attach.key !== lastAttachKey.current && status === "open") {
+      lastAttachKey.current = attach.key
+      send({ type: "mission_attach", mission_id: attach.missionId, language })
+      clearAttach()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attach, status])
+
   function handleApprove() {
     send({ type: "approve" })
     setPending(null)
