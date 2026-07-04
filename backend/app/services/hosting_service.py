@@ -69,7 +69,28 @@ class _Adapter:
 
 
 class CyberPanelAdapter(_Adapter):
-    """CyberPanel cloud-style JSON API. Each request posts adminUser/adminPass."""
+    """CyberPanel remote/cloud JSON API. Each request posts adminUser/adminPass.
+
+    IMPORTANT (validated live 2026-07-04 against CyberPanel on Ubuntu 24.04):
+    CyberPanel's adminUser/adminPass HTTP API (``/api/*``) is a CLOUD/REMOTE
+    MANAGEMENT surface only — it exposes ``verifyConn``, ``loginAPI``, user
+    creation/deletion, packages, ``remoteTransfer``, ``cyberPanelVersion``,
+    firewall rules and the ai-scanner. It does NOT expose website listing/
+    creation, database creation, or SSL issuance — those live in the
+    ``websiteFunctions`` app as session+CSRF web endpoints, not this API.
+
+    So website/DB/SSL operations are NOT available over this API by design. The
+    reliable automation path for them is the ``cyberpanel`` CLI over SSH (see
+    docs/HOSTING-CYBERPANEL.md, H1). We keep the API adapter for what it CAN do
+    (verify the connection) and fail the rest with an honest message rather than
+    hitting non-existent endpoints (which return HTTP 404)."""
+
+    # Managed via the cyberpanel CLI over SSH (H1), not this HTTP API.
+    _CLI_ONLY = (
+        "CyberPanel manages this over SSH (the cyberpanel CLI), not its web API. "
+        "Connect this server over SSH and use Ally to run it — panel-API website "
+        "management isn't exposed by CyberPanel."
+    )
 
     def _post(self, action: str, params: dict | None = None) -> dict:
         url = f"{self._base()}/api/{action}"
@@ -78,6 +99,8 @@ class CyberPanelAdapter(_Adapter):
             resp = requests.post(url, json=payload, verify=settings.HOSTING_TLS_VERIFY, timeout=_TIMEOUT)
         except requests.RequestException as exc:
             raise HostingError(f"Could not reach CyberPanel: {exc}")
+        if resp.status_code == 404:
+            raise HostingError(f"CyberPanel has no API endpoint '{action}' (HTTP 404).")
         if resp.status_code >= 400:
             raise HostingError(f"CyberPanel returned HTTP {resp.status_code}")
         try:
@@ -87,57 +110,28 @@ class CyberPanelAdapter(_Adapter):
         return data
 
     def test_connection(self) -> dict:
-        data = self._post("verifyLogin")
-        ok = bool(data.get("verifyLogin") in (1, "1", True) or data.get("status") in (1, "1", True))
+        # verifyConn is the real endpoint (NOT verifyLogin) — returns {"verifyConn": 1}.
+        data = self._post("verifyConn")
+        ok = bool(data.get("verifyConn") in (1, "1", True))
         if not ok:
-            raise HostingError(data.get("error_message") or "CyberPanel login failed.")
+            raise HostingError(data.get("error_message") or "CyberPanel login failed (check admin user / password).")
         return {"ok": True}
 
     def list_websites(self) -> list[dict]:
-        data = self._post("fetchWebsites", {"page": 1})
-        raw = data.get("data") or data.get("websites") or []
-        if isinstance(raw, str):
-            import json
-            try:
-                raw = json.loads(raw)
-            except ValueError:
-                raw = []
-        sites = []
-        for w in raw:
-            sites.append({
-                "domain": w.get("domain") or w.get("domainName") or w.get("name", ""),
-                "state": w.get("state") or w.get("status"),
-                "php": w.get("php") or w.get("phpSelection"),
-                "admin": w.get("adminEmail") or w.get("admin"),
-            })
-        return sites
+        # No adminUser/adminPass API endpoint exists for this in CyberPanel.
+        raise HostingError(self._CLI_ONLY)
 
     def create_website(self, body: dict) -> dict:
-        self._post("createWebsite", {
-            "domainName": body["domain"],
-            "adminEmail": body.get("email", f"admin@{body['domain']}"),
-            "packageName": body.get("package", "Default"),
-            "websiteOwner": body.get("owner", self.username),
-            "phpSelection": body.get("php", "PHP 8.1"),
-        })
-        return {"status": "created", "domain": body["domain"]}
+        raise HostingError(self._CLI_ONLY)
 
     def delete_website(self, domain: str) -> dict:
-        self._post("submitWebsiteDeletion", {"websiteName": domain})
-        return {"status": "deleted", "domain": domain}
+        raise HostingError(self._CLI_ONLY)
 
     def issue_ssl(self, domain: str) -> dict:
-        self._post("issueSSL", {"virtualHost": domain})
-        return {"status": "issued", "domain": domain}
+        raise HostingError(self._CLI_ONLY)
 
     def create_database(self, body: dict) -> dict:
-        self._post("createDatabase", {
-            "databaseWebsite": body["domain"],
-            "dbName": body["db_name"],
-            "dbUsername": body["db_user"],
-            "dbPassword": body["db_password"],
-        })
-        return {"status": "created", "db_name": body["db_name"]}
+        raise HostingError(self._CLI_ONLY)
 
 
 class CpanelAdapter(_Adapter):
