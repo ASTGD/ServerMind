@@ -162,6 +162,18 @@ async def on_startup() -> None:
     )
     logger.info("Metrics collection job registered (every 5 min)")
 
+    # Proactive threat monitoring — read-only IOC scan of every SSH server, alerting
+    # the owner when a server newly looks compromised. Heavier than metrics, so
+    # every 12h rather than every 5 min.
+    from app.workers import threat_worker
+    scheduler_service.get_scheduler().add_job(
+        threat_worker.scan_all_servers,
+        trigger=IntervalTrigger(hours=12),
+        id="threat_scan",
+        replace_existing=True,
+    )
+    logger.info("Threat monitoring job registered (every 12 h)")
+
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:

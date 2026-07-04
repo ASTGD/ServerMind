@@ -25,10 +25,96 @@ import {
 import {
   listSecurityScans,
   runSecurityScan,
+  listThreatScans,
+  runThreatScan,
   type SecurityScan,
   type Finding,
   type Severity,
+  type ThreatScan,
+  type Verdict,
 } from "@/api/security"
+
+// ── Threat panel (indicators of compromise) ─────────────────────────────────
+
+const VERDICT: Record<Verdict, { label: string; sub: string; cls: string; Icon: typeof Shield }> = {
+  clean: { label: "No threats found", sub: "No signs of compromise in the last scan.", cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400", Icon: ShieldCheck },
+  suspicious: { label: "Worth a look", sub: "Some findings worth reviewing.", cls: "border-yellow-500/30 bg-yellow-500/10 text-yellow-700 dark:text-yellow-400", Icon: ShieldAlert },
+  at_risk: { label: "At risk", sub: "High-severity indicators found — review soon.", cls: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-400", Icon: ShieldAlert },
+  compromised: { label: "Likely compromised", sub: "Strong signs of active compromise — act now.", cls: "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-400", Icon: AlertOctagon },
+  unknown: { label: "Not scanned", sub: "Run a threat scan to check this server.", cls: "border-border bg-muted/40 text-muted-foreground", Icon: HelpCircle },
+}
+
+function ThreatPanel({ serverId }: { serverId: string }) {
+  const qc = useQueryClient()
+  const { data: scans = [] } = useQuery({
+    queryKey: ["threat-scans", serverId],
+    queryFn: () => listThreatScans(serverId),
+    enabled: !!serverId,
+  })
+  const runMut = useMutation({
+    mutationFn: () => runThreatScan(serverId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["threat-scans", serverId] }),
+  })
+  const latest: ThreatScan | undefined = scans[0]
+  const v = VERDICT[latest?.verdict ?? "unknown"]
+  // Real IOC findings only (hide the passing/info clutter in this at-a-glance panel).
+  const issues = (latest?.findings ?? []).filter((f) => !["pass", "info"].includes(f.severity))
+  const scanning = runMut.isPending
+
+  return (
+    <div className={`rounded-2xl border p-5 ${v.cls}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <v.Icon className="h-8 w-8 shrink-0" />
+          <div>
+            <h2 className="text-lg font-semibold">Threat scan · {v.label}</h2>
+            <p className="text-sm opacity-90">{v.sub}</p>
+            {latest && (
+              <p className="mt-0.5 text-xs opacity-70">
+                Scanned {formatDistanceToNow(new Date(latest.created_at), { addSuffix: true })}
+                {latest.status === "failed" && latest.error ? ` · ${latest.error}` : ""}
+              </p>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={() => runMut.mutate()}
+          disabled={scanning}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-current/30 bg-background/60 px-3 py-1.5 text-sm font-medium hover:bg-background disabled:opacity-60"
+        >
+          {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+          {scanning ? "Scanning…" : "Scan for threats"}
+        </button>
+      </div>
+
+      {issues.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {issues.map((f) => (
+            <div key={f.id} className="rounded-xl border border-current/20 bg-background/60 p-3 text-foreground">
+              <div className="flex items-center gap-2">
+                <SeverityBadge severity={f.severity} />
+                <span className="text-sm font-medium">{f.title}</span>
+              </div>
+              {f.detail && <p className="mt-1.5 text-sm text-muted-foreground">{f.detail}</p>}
+              {f.evidence && (
+                <div className="mt-2 flex items-start justify-between gap-2 rounded-lg bg-muted/50 px-2.5 py-1.5">
+                  <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground">{f.evidence}</pre>
+                  <CopyButton text={f.evidence} />
+                </div>
+              )}
+              {f.recommendation && (
+                <p className="mt-2 text-xs text-muted-foreground"><span className="font-medium text-foreground">What to do:</span> {f.recommendation}</p>
+              )}
+            </div>
+          ))}
+          <p className="pt-1 text-xs opacity-80">
+            ServerAlly never changes anything during a scan. Ask Ally to help you respond — it will preserve evidence and confirm each step with you.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Severity / grade visual config ──────────────────────────────────────────
 
@@ -225,6 +311,9 @@ export default function Security() {
 
   return (
     <div className="space-y-6">
+      {/* Active-threat scan (indicators of compromise) — distinct from the posture audit below. */}
+      {serverId && <ThreatPanel serverId={serverId} />}
+
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>

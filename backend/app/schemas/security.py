@@ -49,3 +49,32 @@ class SecurityScanOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ── Threat scan (indicators of compromise) ────────────────────────────────────
+
+class ThreatFinding(BaseModel):
+    """One threat-scan finding (an indicator of compromise, or a passing check)."""
+
+    id: str
+    title: str
+    severity: str          # critical | high | medium | low | info | pass
+    detail: str | None = None
+    recommendation: str | None = None
+    evidence: str | None = None
+
+
+class ThreatScanOut(BaseModel):
+    """Full threat scan result returned to the client."""
+
+    id: uuid.UUID
+    server_id: uuid.UUID
+    verdict: str           # clean | suspicious | at_risk | compromised | unknown
+    status: str
+    error: str | None = None
+    duration_ms: int | None = None
+    counts: ScanCounts
+    findings: list[ThreatFinding]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

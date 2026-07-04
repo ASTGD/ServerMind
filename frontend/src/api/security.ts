@@ -60,3 +60,42 @@ export async function runSecurityScan(serverId: string): Promise<SecurityScan> {
   )
   return res.data
 }
+
+// ── Threat scan (indicators of compromise) ──────────────────────────────────
+
+export type Verdict = "clean" | "suspicious" | "at_risk" | "compromised" | "unknown"
+
+export interface ThreatFinding {
+  id: string
+  title: string
+  severity: Severity
+  detail: string | null
+  recommendation: string | null
+  evidence: string | null
+}
+
+export interface ThreatScan {
+  id: string
+  server_id: string
+  verdict: Verdict
+  status: string
+  error: string | null
+  duration_ms: number | null
+  counts: ScanCounts
+  findings: ThreatFinding[]
+  created_at: string
+}
+
+/** Threat scan history (newest first). */
+export async function listThreatScans(serverId: string, limit = 10): Promise<ThreatScan[]> {
+  const res = await apiClient.get<ThreatScan[]>(`/api/servers/${serverId}/security/threats`, {
+    params: { limit },
+  })
+  return res.data
+}
+
+/** Run a fresh read-only threat scan; persists and returns it. */
+export async function runThreatScan(serverId: string): Promise<ThreatScan> {
+  const res = await apiClient.post<ThreatScan>(`/api/servers/${serverId}/security/threat-scan`)
+  return res.data
+}
