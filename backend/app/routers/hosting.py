@@ -33,7 +33,9 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 async def _hosting_server(server_id: str, user: User, db: AsyncSession, *, need_execute: bool = False) -> Server:
     server = await resolve_server(server_id, user, db, need_execute=need_execute)
-    if server.connection_type != "hosting":
+    # Hosting endpoints serve a panel connection, OR an SSH server that has a control
+    # panel installed (panel_type set) — the latter drives the panel's CLI over SSH (H1).
+    if server.connection_type != "hosting" and not (server.connection_type == "ssh" and server.panel_type):
         raise HTTPException(status_code=400, detail="This server is not a hosting account.")
     return server
 

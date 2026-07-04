@@ -97,6 +97,9 @@ async def create_server(
                 server.os_type = info.get("os_type")
                 server.os_version = info.get("os_version")
                 server.arch = info.get("arch")
+                # A control panel on an SSH box unlocks the Hosting tab (CLI-over-SSH).
+                if server.connection_type == "ssh":
+                    server.panel_type = info.get("panel")
             except Exception:  # noqa: BLE001 — OS detect is a bonus; status is already set
                 pass
         elif result.host_key_changed:
@@ -294,6 +297,9 @@ async def detect_server_os(
     server.os_type = info.get("os_type")
     server.os_version = info.get("os_version")
     server.arch = info.get("arch")
+    # A control panel on an SSH box unlocks the Hosting tab (CLI-over-SSH, H1).
+    if server.connection_type == "ssh":
+        server.panel_type = info.get("panel")
     server.last_seen = datetime.now(timezone.utc)
     await db.commit()
 

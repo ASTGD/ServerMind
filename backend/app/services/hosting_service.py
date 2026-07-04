@@ -252,6 +252,13 @@ def _adapter(server: Server) -> _Adapter:
     return cls(server.host, port, server.username, secret)
 
 
+def _cli_server(server: Server) -> bool:
+    """True when hosting ops should run via the ``cyberpanel`` CLI over SSH — i.e.
+    a CyberPanel server reached over SSH (H1). CyberPanel's HTTP API can't do
+    website/DB/SSL, so an SSH-backed CyberPanel server drives the CLI instead."""
+    return (server.panel_type or "").lower() == "cyberpanel" and server.connection_type == "ssh"
+
+
 async def _run(fn, *args):
     """Run a blocking adapter call off the event loop."""
     return await asyncio.to_thread(fn, *args)
@@ -269,26 +276,44 @@ async def test_connection(server: Server) -> dict:
 
 
 async def list_websites(server: Server) -> list[dict]:
+    if _cli_server(server):
+        from app.services import cyberpanel_cli
+        return await cyberpanel_cli.list_websites(server)
     return await _run(_adapter(server).list_websites)
 
 
 async def create_website(server: Server, body: dict) -> dict:
+    if _cli_server(server):
+        from app.services import cyberpanel_cli
+        return await cyberpanel_cli.create_website(server, body)
     return await _run(_adapter(server).create_website, body)
 
 
 async def delete_website(server: Server, domain: str) -> dict:
+    if _cli_server(server):
+        from app.services import cyberpanel_cli
+        return await cyberpanel_cli.delete_website(server, domain)
     return await _run(_adapter(server).delete_website, domain)
 
 
 async def issue_ssl(server: Server, domain: str) -> dict:
+    if _cli_server(server):
+        from app.services import cyberpanel_cli
+        return await cyberpanel_cli.issue_ssl(server, domain)
     return await _run(_adapter(server).issue_ssl, domain)
 
 
 async def list_databases(server: Server) -> list[dict]:
+    if _cli_server(server):
+        from app.services import cyberpanel_cli
+        return await cyberpanel_cli.list_databases(server)
     return await _run(_adapter(server).list_databases)
 
 
 async def create_database(server: Server, body: dict) -> dict:
+    if _cli_server(server):
+        from app.services import cyberpanel_cli
+        return await cyberpanel_cli.create_database(server, body)
     return await _run(_adapter(server).create_database, body)
 
 

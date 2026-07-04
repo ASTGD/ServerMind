@@ -63,17 +63,41 @@ uses the SSH channel ServerAlly **already has** (and that missions already drive
   honest `HostingError` pointing to the SSH/CLI path. The Hosting tab shows that
   message instead of a cryptic HTTP 404.
 
-## H1 (next) — CyberPanel operations via CLI-over-SSH
+## H1 — SHIPPED (2026-07-04): CyberPanel operations via CLI-over-SSH
 
-The right design, confirmed by this test:
+Built and **verified live** on the TestServer4 CyberPanel:
 
-1. A CyberPanel "server" should carry **SSH access** (not just the panel password).
-   Reframe hosting-mode: panel API for identity/verify, **CLI-over-SSH for actions**.
-2. Add a **hosting actions engine**: `create_website`, `issue_ssl`, `create_database`,
-   `install_wordpress`, `list_websites` — each a `cyberpanel …` CLI invocation, run
-   through the existing SSH executor with the same safety validation.
-3. Ally plans these as normal steps/missions (verify the site over HTTP after — no
-   shell needed to confirm). "Host a full website" then becomes one mission:
-   create site → DB → WordPress → SSL → verify URL.
-4. cPanel/Plesk: revisit their adapters the same way (cPanel has `whmapi1`/`uapi`
-   CLIs + WP Toolkit; validate live before trusting write ops).
+- **`cyberpanel_cli` service** runs `cyberpanel <function>` over the SSH channel the
+  server already has (`connection_manager.execute`). Function names + flags were read
+  from the live CLI, not guessed: `createWebsite --package … --owner … --domainName …
+  --email … --php …`, `listWebsitesJson` (→ JSON), `deleteWebsite`, `issueSSL`,
+  `createDatabase`, `listDatabasesJson`. Args are `shlex`-quoted.
+- **A CyberPanel server is an SSH server with `panel_type='cyberpanel'`.** OS-detect
+  now sets `panel_type` when it finds `/usr/bin/cyberpanel` (or `/usr/local/CyberCP`),
+  so the **Hosting tab appears on the SSH box** and its actions run the CLI. No new
+  credential storage — reuses the SSH creds. `hosting_service` routes CyberPanel ops
+  to `cyberpanel_cli` when `connection_type=='ssh'` (verify-only API path otherwise).
+- **Verify-after-create (important):** CyberPanel's `createWebsite` can print
+  `{"success": 1}` to stdout while actually FAILING (it logs `Websites matching query
+  does not exist` and skips creation — happens when creates run in rapid succession or
+  on a domain with residual state). So `create_website` **confirms the domain is
+  really in `listWebsitesJson`** before reporting success; otherwise it raises an
+  honest error ("reported success but … was not actually created — try again"). The
+  strict `_parse_status` also raises on `{"success": 0}` (even with `errorMessage:
+  "None"`) instead of treating it as success.
+
+Live proof: created `appdemo.serverally.org` + `diag2.serverally.org` through the app
+(CLI-over-SSH), both appear Active in the Hosting tab. Rapid back-to-back browser
+creates hit CyberPanel's internal race and were surfaced honestly by the verify guard.
+
+### H1 follow-ups
+- Databases/Email/SSL actions in the Hosting UI (service methods exist; wire buttons).
+- Optional single retry-after-delay on the create race (weigh vs. orphan risk).
+- Let Ally drive these as structured hosting actions / a "host a WordPress site"
+  mission (create site → DB → `installWordPress` → issueSSL → verify URL).
+
+## H2 (next) — cPanel / Plesk, same pattern
+
+Apply the H1 pattern (panel API for identity/verify, **CLI-over-SSH for actions**,
+verify-after-write) to the other panels: cPanel has `whmapi1`/`uapi` CLIs + WP
+Toolkit; Plesk has the `plesk bin` CLIs. Validate each live before trusting write ops.

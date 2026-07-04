@@ -84,7 +84,9 @@ export default function ServerDetail() {
     { to: `/servers/${server.id}/security`, label: "Security", end: false },
     { to: `/servers/${server.id}/backups`, label: "Backups", end: false },
     { to: `/servers/${server.id}/scheduler`, label: "Scheduler", end: false },
-    ...(server.connection_type === "hosting"
+    // Hosting tab for a panel connection, or an SSH server with a control panel
+    // installed (drives the panel CLI over SSH — H1).
+    ...(server.connection_type === "hosting" || server.panel_type
       ? [{ to: `/servers/${server.id}/hosting`, label: "Hosting", end: false }]
       : []),
   ]

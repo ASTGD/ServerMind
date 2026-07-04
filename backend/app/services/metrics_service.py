@@ -35,7 +35,11 @@ _DETECT_SCRIPT = r"""ARCH=$(uname -m 2>/dev/null || echo unknown)
 ID=linux; VERSION_ID=; PRETTY_NAME=Linux
 [ -r /etc/os-release ] && . /etc/os-release
 PN=$(printf '%s' "${PRETTY_NAME:-Linux}" | tr -d '"')
-printf '{"os_type":"%s","os_version":"%s","arch":"%s","pretty_name":"%s"}\n' "${ID:-linux}" "${VERSION_ID:-}" "$ARCH" "$PN"
+PANEL=
+[ -x /usr/bin/cyberpanel ] || [ -d /usr/local/CyberCP ] && PANEL=cyberpanel
+[ -d /usr/local/cpanel ] && PANEL=cpanel
+[ -d /usr/local/psa ] || [ -x /usr/sbin/plesk ] && PANEL=plesk
+printf '{"os_type":"%s","os_version":"%s","arch":"%s","pretty_name":"%s","panel":"%s"}\n' "${ID:-linux}" "${VERSION_ID:-}" "$ARCH" "$PN" "$PANEL"
 """
 
 # ── Windows (PowerShell) variants — emit the same JSON keys as the Linux scripts ──
@@ -131,4 +135,7 @@ async def detect_os(server: Server) -> dict:
         "os_version": data.get("os_version", ""),
         "arch": data.get("arch", "unknown"),
         "pretty_name": data.get("pretty_name", "Linux"),
+        # Control panel installed on the box (cyberpanel/cpanel/plesk) — lets an SSH
+        # server expose Hosting via the panel's CLI (H1). Empty string = none.
+        "panel": data.get("panel", "") or None,
     }
