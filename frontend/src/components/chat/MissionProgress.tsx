@@ -1,7 +1,7 @@
 import { useState } from "react"
 import {
   Rocket, CheckCircle2, XCircle, Loader2, Square, ChevronDown, ChevronRight,
-  AlertTriangle, Flag, Hand,
+  AlertTriangle, Flag, Hand, ShieldCheck, ShieldAlert,
 } from "lucide-react"
 
 export interface MissionStep {
@@ -16,6 +16,8 @@ export interface MissionStep {
   note?: string
   /** Which server this step ran on (cross-server missions, Stage 2). */
   serverName?: string
+  /** A read-only check the verification gate ran to prove the goal (not an executor step). */
+  verifying?: boolean
 }
 
 export interface MissionState {
@@ -24,6 +26,11 @@ export interface MissionState {
   steps: MissionStep[]
   summary?: string
   stepsUsed?: number
+  /** Verification gate outcome on a completed mission: true = goal proven, false =
+   *  finished but the goal could NOT be confirmed (honest, not a success). */
+  verified?: boolean
+  /** What the verifier confirmed (verified) or what's still unproven (caveat). */
+  verification?: string
 }
 
 function StepRow({ step }: { step: MissionStep }) {
@@ -44,6 +51,11 @@ function StepRow({ step }: { step: MissionStep }) {
       >
         <span className="mt-0.5">{icon}</span>
         <span className="min-w-0 flex-1">
+          {step.verifying && (
+            <span className="mr-1.5 inline-flex items-center gap-0.5 rounded bg-violet-500/10 px-1 py-px text-[10px] font-medium text-violet-600 dark:text-violet-400">
+              <ShieldCheck size={9} /> verify
+            </span>
+          )}
           {step.serverName && (
             <span className="mr-1.5 rounded bg-indigo-500/10 px-1 py-px text-[10px] font-medium text-indigo-600 dark:text-indigo-400">
               {step.serverName}
@@ -117,30 +129,48 @@ export default function MissionProgress({
         )}
       </div>
 
-      {mission.status !== "running" && (
-        <div
-          className={`flex items-start gap-2 border-t px-3 py-2 text-xs ${
-            mission.status === "complete"
-              ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+      {mission.status !== "running" && (() => {
+        // A completed mission that the verification gate could NOT confirm is finished
+        // but is NOT a success — show it honestly (amber), never a false green.
+        const unconfirmed = mission.status === "complete" && mission.verified === false
+        const verified = mission.status === "complete" && mission.verified === true
+        const tone =
+          verified || (mission.status === "complete" && mission.verified === undefined)
+            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+            : unconfirmed || mission.status === "blocked"
+              ? "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+              : "border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400"
+        const Icon = verified
+          ? ShieldCheck
+          : unconfirmed
+            ? ShieldAlert
+            : mission.status === "complete"
+              ? Flag
               : mission.status === "blocked"
-                ? "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                : "border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400"
-          }`}
-        >
-          {mission.status === "complete" ? (
-            <Flag size={13} className="mt-0.5 shrink-0" />
-          ) : mission.status === "blocked" ? (
-            <Hand size={13} className="mt-0.5 shrink-0" />
-          ) : (
-            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-          )}
-          <span>
-            {mission.status === "stopped"
-              ? "Mission stopped."
-              : mission.summary || `Mission ${mission.status}.`}
-          </span>
-        </div>
-      )}
+                ? Hand
+                : AlertTriangle
+        return (
+          <div className={`flex items-start gap-2 border-t px-3 py-2 text-xs ${tone}`}>
+            <Icon size={13} className="mt-0.5 shrink-0" />
+            <span className="min-w-0">
+              {mission.status === "stopped"
+                ? "Mission stopped."
+                : mission.summary || `Mission ${mission.status}.`}
+              {verified && mission.verification && (
+                <span className="mt-1 flex items-start gap-1 font-medium">
+                  <ShieldCheck size={12} className="mt-px shrink-0" /> Verified: {mission.verification}
+                </span>
+              )}
+              {unconfirmed && (
+                <span className="mt-1 flex items-start gap-1 font-medium">
+                  <ShieldAlert size={12} className="mt-px shrink-0" />
+                  Couldn't fully confirm: {mission.verification || "please double-check this yourself."}
+                </span>
+              )}
+            </span>
+          </div>
+        )
+      })()}
     </div>
   )
 }

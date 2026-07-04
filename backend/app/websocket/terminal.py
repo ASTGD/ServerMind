@@ -897,6 +897,108 @@ async def _mission_execute(server: Server, cmd: str) -> tuple[int, str, str]:
     return exit_code, tail, note
 
 
+# Verification gate: how many gather↔verdict rounds the verifier gets, how many
+# read-only checks per round, and how many times the executor may be sent back to
+# close a gap the verifier found before we finish honestly. All bounded so the gate
+# can never loop or run up cost.
+_VERIFY_ROUNDS = 2
+_VERIFY_MAX_CHECKS = 4
+_VERIFY_MAX_ATTEMPTS = 2
+
+
+async def _verify_mission_complete(
+    ws: WebSocket,
+    *,
+    home_server: Server | None,
+    roster: list[Server],
+    roster_by_id: dict[str, Server],
+    goal: str,
+    skill: skill_service.Skill | None,
+    steps: list[dict],
+    user_language: str,
+    home_id: str | None,
+) -> tuple[str, str, list[dict]]:
+    """Independent (adversarial) check that a self-declared 'done' mission is REALLY
+    done. Asks the verifier what would PROVE the goal, runs those checks strictly
+    READ-ONLY (streamed as `verifying` steps), then returns (verdict, reason, gathered):
+    'confirmed' only when fresh evidence proves the goal, else 'unverified' with an
+    honest reason. Best-effort — any error resolves to 'unverified' (never a false
+    success), and it never crashes the shared socket."""
+    gathered: list[dict] = []
+    verdict, reason = "unverified", ""
+    for round_no in range(_VERIFY_ROUNDS + 1):  # +1 = a forced final-verdict call
+        rounds_left = max(0, _VERIFY_ROUNDS - 1 - round_no)
+        try:
+            result = await ai_service.verify_mission(
+                goal, roster, steps + gathered, skill, user_language,
+                home_id=home_id, rounds_left=rounds_left,
+            )
+        except Exception as exc:  # noqa: BLE001 — verification must never break the mission
+            logger.warning("mission verification failed: %s", exc)
+            return (
+                "unverified",
+                "I couldn't run my own verification, so I can't confirm this is fully "
+                "done — please double-check.",
+                gathered,
+            )
+        verdict = result.get("verdict", "unverified")
+        reason = str(result.get("reason", "") or "")
+        checks = result.get("checks") or []
+        # Final verdict reached (no checks) or no more gathering allowed → stop.
+        if not checks or round_no >= _VERIFY_ROUNDS:
+            break
+        ran_any = False
+        for check in checks[:_VERIFY_MAX_CHECKS]:
+            cmd = str(check.get("cmd", "")).strip()
+            target = _step_target(check, roster_by_id, home_server)
+            index = len(steps) + len(gathered) + 1
+            if not cmd or target is None:
+                continue
+            why = str(check.get("why", "") or "")[:200]
+            desc = f"Verifying: {why}" if why else "Verifying the result"
+            # A verification check may ONLY observe. Anything mutating is skipped
+            # (recorded so the verifier sees it wasn't run) — never executed.
+            if not safety_service.is_read_only_command(cmd):
+                gathered.append({
+                    "server": target.name, "description": desc, "cmd": cmd,
+                    "exit_code": 1, "output_tail": "",
+                    "note": "skipped — a verification check must be read-only",
+                })
+                await ws.send_text(json.dumps({
+                    "type": "mission_step_done",
+                    "index": index, "cmd": cmd, "description": desc,
+                    "exit_code": 1, "output_tail": "",
+                    "note": "Skipped — a verification check must be read-only.",
+                    "server_id": str(target.id), "server_name": target.name,
+                    "verifying": True,
+                }))
+                continue
+            await ws.send_text(json.dumps({
+                "type": "mission_step",
+                "index": index, "budget": _MISSION_BUDGET,
+                "cmd": cmd, "description": desc, "risk_level": "low",
+                "needs_approval": False,
+                "server_id": str(target.id), "server_name": target.name,
+                "verifying": True,
+            }))
+            exit_code, tail, note = await _mission_execute(target, cmd)
+            gathered.append({
+                "server": target.name, "description": desc, "cmd": cmd,
+                "exit_code": exit_code, "output_tail": tail, "note": note,
+            })
+            await ws.send_text(json.dumps({
+                "type": "mission_step_done",
+                "index": index, "cmd": cmd, "description": desc,
+                "exit_code": exit_code, "output_tail": tail, "note": note,
+                "server_id": str(target.id), "server_name": target.name,
+                "verifying": True,
+            }))
+            ran_any = True
+        if not ran_any:
+            break  # nothing runnable this round — stop with the current verdict
+    return verdict, reason, gathered
+
+
 async def _run_mission(
     ws: WebSocket,
     user: User,
@@ -956,6 +1058,8 @@ async def _run_mission(
 
     skill = skill_service.get(skill_slug) if skill_slug else None
     steps: list[dict] = []
+    verify_attempts = 0  # times the verifier sent the executor back to close a gap
+    verify_step_count = 0  # read-only verification steps — excluded from the budget
     logger.info(
         "mission started: %r (home=%s, roster=%d, skill=%s)",
         goal, home_id, len(roster), skill_slug,
@@ -970,7 +1074,10 @@ async def _run_mission(
     tok = metering_service.start_collection()
     try:
         while True:
-            if len(steps) >= _MISSION_BUDGET:
+            # Read-only verification checks don't count against the executor's budget —
+            # verifying the result must never be what pushes a mission over the limit.
+            executor_steps = len(steps) - verify_step_count
+            if executor_steps >= _MISSION_BUDGET:
                 await ws.send_text(json.dumps({
                     "type": "mission_failed",
                     "reason": (
@@ -992,7 +1099,7 @@ async def _run_mission(
             for attempt in (1, 2):
                 try:
                     decision = await ai_service.plan_mission_step(
-                        goal, roster, steps, _MISSION_BUDGET - len(steps), skill,
+                        goal, roster, steps, _MISSION_BUDGET - executor_steps, skill,
                         user_language, home_id=home_id,
                     )
                     break
@@ -1009,18 +1116,66 @@ async def _run_mission(
 
             status_ = decision.get("status")
             if status_ == "done":
-                # A finished mission may leave one memory note (deploy facts) —
-                # server-scoped on the home server, user-scoped for fleet missions.
-                if decision.get("remember"):
-                    async with AsyncSessionLocal() as db:
-                        await memory_service.save_from_ai(
-                            db, user_id=user.id,
-                            remember=decision.get("remember"),
-                            server_id=home_server.id if home_server is not None else None,
-                        )
+                # VERIFICATION GATE — never accept a self-declared 'done' on trust.
+                # An independent verifier gathers fresh READ-ONLY proof the goal is
+                # truly met (docs/ALLY-MISSIONS.md §verification). This is the engine-
+                # level fix for "claimed success without confirming reality".
+                verdict, vreason, gathered = await _verify_mission_complete(
+                    ws, home_server=home_server, roster=roster, roster_by_id=roster_by_id,
+                    goal=goal, skill=skill, steps=steps, user_language=user_language,
+                    home_id=home_id,
+                )
+                steps.extend(gathered)
+                verify_step_count += len(gathered)  # these don't count against the budget
+                summary = decision.get("summary", "Mission complete.")
+
+                if verdict == "confirmed":
+                    # Only a confirmed goal leaves a memory note (deploy facts) —
+                    # server-scoped on the home server, user-scoped for fleet missions.
+                    if decision.get("remember"):
+                        async with AsyncSessionLocal() as db:
+                            await memory_service.save_from_ai(
+                                db, user_id=user.id,
+                                remember=decision.get("remember"),
+                                server_id=home_server.id if home_server is not None else None,
+                            )
+                    await ws.send_text(json.dumps({
+                        "type": "mission_complete",
+                        "summary": summary,
+                        "verified": True,
+                        "verification": vreason,
+                        "steps_used": len(steps),
+                    }))
+                    return None
+
+                # Not confirmed. Give the executor a bounded chance to close the gap
+                # the verifier found (fed back as an observation), if budget remains —
+                # this is how a genuinely-fixable "almost done" gets finished.
+                verify_attempts += 1
+                if verify_attempts < _VERIFY_MAX_ATTEMPTS and (len(steps) - verify_step_count) < _MISSION_BUDGET:
+                    steps.append({
+                        "description": "Independent verification",
+                        "cmd": "(verification)", "exit_code": 1, "output_tail": "",
+                        "note": f"NOT CONFIRMED — {vreason} Address this, then finish.",
+                    })
+                    verify_step_count += 1  # the fed-back verdict isn't an executor step
+                    await ws.send_text(json.dumps({
+                        "type": "mission_step_done",
+                        "index": len(steps), "cmd": "(verification)",
+                        "description": "Independent verification",
+                        "exit_code": 1, "output_tail": "",
+                        "note": f"Not confirmed yet — {vreason}",
+                        "verifying": True,
+                    }))
+                    continue
+
+                # Out of attempts/budget — finish HONESTLY, not as a success. Never a
+                # false green; no memory note (the goal isn't confirmed).
                 await ws.send_text(json.dumps({
                     "type": "mission_complete",
-                    "summary": decision.get("summary", "Mission complete."),
+                    "summary": summary,
+                    "verified": False,
+                    "caveat": vreason or "I could not confirm the goal is fully done — please double-check.",
                     "steps_used": len(steps),
                 }))
                 return None

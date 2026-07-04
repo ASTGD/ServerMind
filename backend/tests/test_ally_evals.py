@@ -132,3 +132,24 @@ def test_plan_blocked_wins_over_confirm_and_ok():
 def test_plan_confirm_when_any_command_confirms():
     plan = [{"cmd": "df -h"}, {"cmd": "apt-get purge nginx"}]
     assert safety_service.validate_plan(plan, "linux").status == "confirm"
+
+
+# ── Read-only guard (mission verification) ────────────────────────────────────
+
+@pytest.mark.parametrize("cmd", corpus.READONLY_ALLOW, ids=[c[:40] for c in corpus.READONLY_ALLOW])
+def test_verification_allows_read_only(cmd):
+    # A real verification check wrongly rejected → the mission can't confirm success
+    # (annoying but safe). Guard against over-rejection breaking verification.
+    assert safety_service.is_read_only_command(cmd), f"read-only check wrongly rejected: {cmd!r}"
+
+
+@pytest.mark.parametrize("cmd", corpus.READONLY_DENY, ids=[c[:40] for c in corpus.READONLY_DENY])
+def test_verification_denies_mutations(cmd):
+    # SECURITY-CRITICAL: a mutating command wrongly accepted would let a "verification"
+    # step change/delete data. This must never happen.
+    assert not safety_service.is_read_only_command(cmd), f"MUTATING command passed read-only guard: {cmd!r}"
+
+
+def test_verification_rejects_blank():
+    assert not safety_service.is_read_only_command("")
+    assert not safety_service.is_read_only_command("   ")

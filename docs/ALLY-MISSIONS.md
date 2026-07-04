@@ -102,7 +102,40 @@ and move the backup file to TestServer3" as ONE fleet instruction → 7 steps: l
 WordPress (TS4) → read config w/o exposing the password → mysqldump via a temp cnf →
 compress → **transfer TS4→TS3 (23,766 bytes)** → verify on TS3 → done.
 
-## 7. Phase 3 (not built)
+## 7. Verification gate (never trust a self-declared "done")
+
+A mission that *says* it is done is not proof it *is* done — a model can claim
+success while a goal is still unmet (we hit exactly this: an incident-response
+mission reported the server clean while a rogue cron was still live). So the
+engine does not accept `status:"done"` on trust. When the executor declares done,
+an **independent, adversarial verifier** runs before success is reported:
+
+1. `ai_service.verify_mission` (a distinct prompt/role from the executor) is asked:
+   *what fresh evidence would PROVE this goal is met?* It returns read-only
+   `checks[]` and/or a `verdict`.
+2. `_verify_mission_complete` runs those checks — **strictly read-only**, enforced
+   by `safety_service.is_read_only_command` (default-deny: any mutating token →
+   skipped, never executed; a verification pass may only OBSERVE). They stream to
+   the UI with a `verifying` badge and are appended to the transcript.
+3. The verifier renders a final verdict on the fresh evidence:
+   - `confirmed` → `mission_complete` with `verified:true` + what it checked.
+   - `unverified` → the executor gets a **bounded** chance to close the gap the
+     verifier named (fed back as an observation; `_VERIFY_MAX_ATTEMPTS`); if it
+     still can't be proven, the mission finishes **honestly** with `verified:false`
+     + a caveat — an honest non-success, **never a false green**.
+
+Bounds: ≤ `_VERIFY_ROUNDS` gather↔verdict cycles × `_VERIFY_MAX_CHECKS` checks,
+≤ `_VERIFY_MAX_ATTEMPTS` re-loops. Verification steps do **not** count against the
+executor's `_MISSION_BUDGET` (verifying must never be what exhausts a mission).
+Best-effort: any verifier error resolves to `unverified` (safe), never a crash.
+A `confirmed` verdict is required before a mission may leave a memory note.
+
+Tests: `tests/test_mission_verification.py` (engine branching + the read-only
+guarantee — a mutating "check" is never executed) and the read-only corpus in
+`tests/ally_eval_corpus.py`; live: `test_ally_evals_live.py` asserts the real
+verifier refuses to confirm an unmet goal.
+
+## 8. Phase 3 (not built)
 
 Durable missions (survive disconnects, Celery), resume after a blocked step, a
 mission history page, webhook-triggered redeploys, mission templates from the

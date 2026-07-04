@@ -234,6 +234,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             needsApproval: Boolean(msg.needs_approval),
             running: true,
             serverName: (msg.server_name as string | undefined) ?? undefined,
+            verifying: Boolean(msg.verifying),
           }
           updateMission((m) => ({ ...m, steps: [...m.steps.filter((s) => s.index !== step.index), step] }))
           // Risky step — reuse the normal approval UI (approve/cancel go over the socket).
@@ -268,6 +269,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
               outputTail: (msg.output_tail as string) ?? "",
               note: (msg.note as string) ?? "",
               serverName: (msg.server_name as string | undefined) ?? s.serverName,
+              verifying: msg.verifying !== undefined ? Boolean(msg.verifying) : s.verifying,
             })
             // Rejected steps (safety / transfer guards) emit step_done with no prior
             // step event — append a row so the timeline shows what was refused.
@@ -285,6 +287,10 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             ...m,
             status: "complete",
             summary: (msg.summary as string) ?? "Mission complete.",
+            // Verification gate: verified true = goal proven; false = finished but the
+            // goal couldn't be confirmed (shown honestly, not as a green success).
+            verified: msg.verified !== undefined ? Boolean(msg.verified) : undefined,
+            verification: (msg.verification as string | undefined) ?? (msg.caveat as string | undefined),
             steps: m.steps.map((s) => ({ ...s, running: false })),
           }))
           missionMsgIdRef.current = null
