@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import { useParams } from "react-router-dom"
+import { useAssistantStore } from "@/store/assistantStore"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { formatDistanceToNow } from "date-fns"
 import {
@@ -33,6 +34,7 @@ import {
   type ThreatScan,
   type Verdict,
 } from "@/api/security"
+import { getServer } from "@/api/servers"
 
 // ── Threat panel (indicators of compromise) ─────────────────────────────────
 
@@ -46,9 +48,15 @@ const VERDICT: Record<Verdict, { label: string; sub: string; cls: string; Icon: 
 
 function ThreatPanel({ serverId }: { serverId: string }) {
   const qc = useQueryClient()
+  const openServer = useAssistantStore((s) => s.openServer)
   const { data: scans = [] } = useQuery({
     queryKey: ["threat-scans", serverId],
     queryFn: () => listThreatScans(serverId),
+    enabled: !!serverId,
+  })
+  const { data: server } = useQuery({
+    queryKey: ["server", serverId],
+    queryFn: () => getServer(serverId),
     enabled: !!serverId,
   })
   const runMut = useMutation({
@@ -60,6 +68,20 @@ function ThreatPanel({ serverId }: { serverId: string }) {
   // Real IOC findings only (hide the passing/info clutter in this at-a-glance panel).
   const issues = (latest?.findings ?? []).filter((f) => !["pass", "info"].includes(f.severity))
   const scanning = runMut.isPending
+  const needsResponse = latest?.verdict === "at_risk" || latest?.verdict === "compromised"
+
+  /** Open Ally scoped to this server, seeded to offer the guided incident-response
+   *  mission with the concrete findings so it starts targeted. */
+  function respondWithAlly() {
+    if (!server) return
+    const named = issues.slice(0, 5).map((f) => f.title).join("; ")
+    const seed =
+      `My threat scan flagged this server as ${v.label.toLowerCase()}. ` +
+      `Please help me respond to the incident and clean it up safely — preserve evidence first ` +
+      `and confirm each step with me before changing anything.` +
+      (named ? ` What it found: ${named}.` : "")
+    openServer(server, seed)
+  }
 
   return (
     <div className={`rounded-2xl border p-5 ${v.cls}`}>
@@ -77,14 +99,26 @@ function ThreatPanel({ serverId }: { serverId: string }) {
             )}
           </div>
         </div>
-        <button
-          onClick={() => runMut.mutate()}
-          disabled={scanning}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-current/30 bg-background/60 px-3 py-1.5 text-sm font-medium hover:bg-background disabled:opacity-60"
-        >
-          {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-          {scanning ? "Scanning…" : "Scan for threats"}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {needsResponse && (
+            <button
+              onClick={respondWithAlly}
+              disabled={!server}
+              className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+            >
+              <ShieldAlert className="h-4 w-4" />
+              Respond with Ally
+            </button>
+          )}
+          <button
+            onClick={() => runMut.mutate()}
+            disabled={scanning}
+            className="flex items-center gap-1.5 rounded-lg border border-current/30 bg-background/60 px-3 py-1.5 text-sm font-medium hover:bg-background disabled:opacity-60"
+          >
+            {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+            {scanning ? "Scanning…" : "Scan for threats"}
+          </button>
+        </div>
       </div>
 
       {issues.length > 0 && (

@@ -38,7 +38,13 @@ SKILL_ROUTING: list[tuple[str, str, str | None]] = [
     ("mysql queries are really slow", "ubuntu", "mysql-performance"),
     ("my docker container keeps restarting", "ubuntu", "docker-troubles"),
     ("i think my server was hacked", "ubuntu", "security-incident"),
+    ("i see a crypto miner on my server", "ubuntu", "security-incident"),
     ("my emails are going to spam", "ubuntu", "email-deliverability"),
+    # Incident RESPONSE (a mission) must win the "respond/clean up" intent, while the
+    # knowledge first-response skill above keeps the "am I hacked?" intent.
+    ("help me respond to the hack on this server", "ubuntu", "security-incident-response"),
+    ("clean up the malware on this server", "ubuntu", "security-incident-response"),
+    ("remove the webshell from my site", "ubuntu", "security-incident-response"),
     # Negatives — most messages match no skill (no injection, no false trigger).
     ("install nginx", "ubuntu", None),
     ("list the files in /var/www", "ubuntu", None),

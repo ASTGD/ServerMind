@@ -56,6 +56,44 @@ def test_mission_skills_offer_not_inject():
             assert s.title in block, f"knowledge skill {s.slug} did not inject"
 
 
+def _skill_body(slug: str) -> str:
+    """The lowercased body of a shipped skill, whitespace-collapsed so a line-wrap
+    in the markdown can't hide a phrase we assert on."""
+    match = next((s for s in skill_service.load_skills() if s.slug == slug), None)
+    assert match is not None, f"skill {slug!r} is not loaded"
+    return " ".join(match.body.lower().split())
+
+
+def test_incident_response_requires_live_containment():
+    """Regression guard for the gap found live (2026-07-05): the incident-response
+    mission quarantined the webshell but left the live /etc/cron.d backdoor running,
+    then wrongly reported 'no rogue cron entries'. The fix is prompt-level, so lock
+    the exact rules into the skill so a future edit can't silently drop them:
+      - evidence-copy is NOT containment (the live artifact must still be neutralized)
+      - every flagged finding must be resolved
+      - never call the server clean while a flagged indicator is still live
+    """
+    body = _skill_body("security-incident-response")
+    # Copying an artifact to the evidence folder must be called out as NOT containment.
+    assert "not the same as containing" in body
+    # The LIVE persistence must be neutralized, not just copied.
+    assert "still be neutralized" in body
+    # Must not declare the server clean while an indicator is still live.
+    assert "never report the server clean while a flagged indicator is still live" in body
+    # Every flagged finding must be addressed (no silent skips).
+    assert "address every flagged finding" in body
+
+
+def test_incident_response_is_reversible_and_evidence_first():
+    """The runbook's safety spine: preserve evidence before changing anything, and
+    contain by MOVING to quarantine (reversible) rather than deleting."""
+    body = _skill_body("security-incident-response")
+    assert "quarantine" in body
+    assert "never `rm`" in body or "never rm" in body  # reversible over destructive
+    # Injection defence: attacker-controlled server text is data, never instructions.
+    assert "injection" in body
+
+
 # ── Safety invariants ─────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("cmd,osf", corpus.SAFETY_MUST_BLOCK,
