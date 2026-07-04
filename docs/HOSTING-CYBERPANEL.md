@@ -90,11 +90,26 @@ Live proof: created `appdemo.serverally.org` + `diag2.serverally.org` through th
 (CLI-over-SSH), both appear Active in the Hosting tab. Rapid back-to-back browser
 creates hit CyberPanel's internal race and were surfaced honestly by the verify guard.
 
-### H1 follow-ups
-- Databases/Email/SSL actions in the Hosting UI (service methods exist; wire buttons).
+### "Host a WordPress site" mission — SHIPPED (2026-07-04)
+The `cyberpanel-host-website` skill (`mode: mission`, `backend/app/skills/`) is a
+runbook Ally follows to host a full WordPress site via the CLI over SSH:
+createWebsite → verify in list → `installWordPress` (admin password generated ON the
+server to a root-only file, never shown in chat) → DNS check → issueSSL (skipped +
+honest next-step if DNS doesn't point here) → curl-verify the site actually serves
+WordPress (Host header, no DNS needed) → hand over.
+
+Live-proven: "Host a WordPress site at blog.serverally.org, title 'ServerAlly Blog'"
+→ mission ran the whole runbook and `blog.serverally.org` is live (independently
+curl-verified from the dev machine: homepage 200 serving wp-content, wp-login 200,
+`generator = WordPress`). Ally adapted past a plugin warning, correctly skipped SSL
+(DNS not pointed yet), and left the password in `/root/wp_creds_<domain>.txt`.
+
+`installWordPress` creates its own DB — no `createDatabase` needed. CLI signature:
+`installWordPress --domainName X --email Y --userName U --password P --siteTitle "T" [--path p]`.
+
+### H1 follow-ups (still open)
+- Databases/Email/SSL buttons in the Hosting UI (service methods exist; wire them).
 - Optional single retry-after-delay on the create race (weigh vs. orphan risk).
-- Let Ally drive these as structured hosting actions / a "host a WordPress site"
-  mission (create site → DB → `installWordPress` → issueSSL → verify URL).
 
 ## H2 (next) — cPanel / Plesk, same pattern
 
