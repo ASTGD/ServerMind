@@ -1,7 +1,7 @@
 ---
 slug: mysql-performance
 title: MySQL/MariaDB Slow — Performance Triage
-triggers: mysql slow, database slow, database is slow, slow queries, mariadb slow, db performance, mysql high cpu, mysql memory, mysql keeps crashing, database keeps crashing, too many connections
+triggers: mysql slow, mysql is slow, database slow, database is slow, slow queries, slow query, queries are slow, mysql queries, mariadb slow, db performance, mysql high cpu, mysql memory, mysql keeps crashing, database keeps crashing, too many connections
 os: linux
 priority: 6
 ---

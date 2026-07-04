@@ -1,7 +1,7 @@
 ---
 slug: ssl-troubles
 title: SSL/HTTPS Problems — Diagnose & Fix
-triggers: ssl error, certificate expired, cert expired, https not working, ssl not working, not secure, certificate error, renew certificate, renew ssl, letsencrypt error, certbot error, mixed content, ERR_CERT
+triggers: ssl error, ssl certificate, certificate expired, certificate is expired, certificate has expired, cert expired, https not working, ssl not working, not secure, certificate error, renew certificate, renew ssl, letsencrypt error, certbot error, mixed content, ERR_CERT
 os: linux
 priority: 6
 ---
