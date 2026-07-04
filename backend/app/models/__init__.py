@@ -11,6 +11,7 @@ from app.models.backup import Backup, BackupRun
 from app.models.assistant_thread import AssistantThread
 from app.models.ai_usage import AiUsage
 from app.models.ally_memory import AllyMemory
+from app.models.mission import Mission
 
 __all__ = [
     "User",

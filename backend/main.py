@@ -16,6 +16,7 @@ from app.routers import commands as commands_router
 from app.routers import files as files_router
 from app.routers import hosting as hosting_router
 from app.routers import installed as installed_router
+from app.routers import missions as missions_router
 from app.routers import monitoring as monitoring_router
 from app.routers import notifications as notifications_router
 from app.routers import playbooks as playbooks_router
@@ -103,6 +104,7 @@ app.include_router(playbooks_router.router)
 app.include_router(scripts_router.router)
 app.include_router(scheduler_router.router)
 app.include_router(monitoring_router.router)
+app.include_router(missions_router.router)
 app.include_router(notifications_router.router)
 app.include_router(files_router.router)
 app.include_router(security_router.router)
@@ -127,6 +129,10 @@ async def health() -> dict[str, str]:
 async def on_startup() -> None:
     """Run on application startup."""
     logger.info("ServerAlly backend starting up...")
+    # Any mission left "running" from a previous process is orphaned by this restart —
+    # mark it resumable (Ally Missions Phase 3).
+    from app.services import mission_service
+    await mission_service.recover_orphaned()
     async with AsyncSessionLocal() as db:
         await playbook_service.seed_if_empty(db)
         # Apply the saved AI provider config (Settings UI) over the .env default.

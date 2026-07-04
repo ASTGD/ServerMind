@@ -17,6 +17,7 @@ import Backups from "@/routes/Backups"
 import Installed from "@/routes/Installed"
 import Hosting from "@/routes/Hosting"
 import Logs from "@/routes/Logs"
+import Missions from "@/routes/Missions"
 import Team from "@/routes/Team"
 import AcceptInvite from "@/routes/AcceptInvite"
 import Settings from "@/routes/Settings"
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="scripts/generate" element={<ScriptGenerator />} />
           <Route path="scripts" element={<MyScripts />} />
           <Route path="logs" element={<Logs />} />
+          <Route path="missions" element={<Missions />} />
           <Route path="team" element={<Team />} />
           <Route path="team/accept/:token" element={<AcceptInvite />} />
           <Route path="settings" element={<Settings />} />

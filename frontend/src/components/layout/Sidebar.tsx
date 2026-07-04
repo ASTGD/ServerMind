@@ -11,6 +11,7 @@ import {
   Settings,
   Sparkles,
   ArrowRight,
+  Rocket,
   Terminal as TerminalIcon,
 } from "lucide-react"
 import Logo from "@/components/brand/Logo"
@@ -23,6 +24,7 @@ const navItems = [
   { to: "/playbooks", icon: BookOpen, key: "playbooks" },
   { to: "/scripts", icon: FileCode, key: "scripts" },
   { to: "/terminal", icon: TerminalIcon, key: "terminal" },
+  { to: "/missions", icon: Rocket, key: "missions" },
   { to: "/logs", icon: ScrollText, key: "logs" },
   { to: "/team", icon: Users, key: "team" },
   { to: "/settings", icon: Settings, key: "settings" },

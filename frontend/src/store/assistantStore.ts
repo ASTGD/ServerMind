@@ -13,6 +13,8 @@ interface AssistantState {
   target: AssistantTarget
   /** A one-shot prompt to auto-send once connected (e.g. terminal "Hand to AI"). */
   seed: { text: string; key: number } | null
+  /** A one-shot request to resume an interrupted mission once connected (Phase 3). */
+  resume: { missionId: string; key: number } | null
   /** Entity-specific context published by the current route (e.g. an open script), or null.
    *  Ally reads this + the static route context so it knows what the user is looking at. */
   pageContext: PageContext | null
@@ -23,6 +25,9 @@ interface AssistantState {
   threadId: string | null
   openFleet: () => void
   openServer: (server: Server, seedText?: string) => void
+  /** Open Ally on a server (or fleet) and resume the given interrupted mission. */
+  resumeMission: (target: AssistantTarget, missionId: string) => void
+  clearResume: () => void
   setTarget: (target: AssistantTarget) => void
   setPageContext: (ctx: PageContext | null) => void
   setMessages: (updater: MessagesUpdater) => void
@@ -41,6 +46,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   open: false,
   target: { kind: "fleet" },
   seed: null,
+  resume: null,
   pageContext: null,
   messages: [],
   threadId: null,
@@ -51,6 +57,9 @@ export const useAssistantStore = create<AssistantState>((set) => ({
       target: { kind: "server", server },
       seed: seedText ? { text: seedText, key: Date.now() } : null,
     }),
+  resumeMission: (target, missionId) =>
+    set({ open: true, target, seed: null, resume: { missionId, key: Date.now() } }),
+  clearResume: () => set({ resume: null }),
   setTarget: (target) => set({ target, seed: null }),
   setPageContext: (ctx) => set({ pageContext: ctx }),
   setMessages: (updater) =>

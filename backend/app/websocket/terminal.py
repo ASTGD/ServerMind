@@ -21,6 +21,7 @@ from app.models.server import Server
 from app.models.user import User
 from app.services import ai_context_service, ai_service, connection_manager, safety_service
 from app.services import file_service, live_look_service, memory_service, metering_service, skill_service
+from app.services import mission_service
 from app.services import ssh_service, team_service, terminal_session_service
 from app.services.rate_limit_service import check_command_rate
 from app.services.redis_service import get_redis
@@ -395,6 +396,35 @@ async def _unified_loop(ws: WebSocket, user: User, fixed_server: Server | None =
                 goal=str(msg.get("goal", "")),
                 skill_slug=msg.get("skill"),
                 user_language=msg.get("language", "en"),
+            )
+            continue
+
+        # Resume an interrupted mission from its saved transcript (Phase 3).
+        if mtype == "mission_resume":
+            mid = msg.get("mission_id")
+            async with AsyncSessionLocal() as db:
+                m = await mission_service.get_for_user(db, user, str(mid)) if mid else None
+            if m is None:
+                await ws.send_text(json.dumps({"type": "error", "message": "Mission not found."}))
+                continue
+            if m.status != "interrupted":
+                await ws.send_text(json.dumps({
+                    "type": "error", "message": "This mission isn't resumable (it already finished)."}))
+                continue
+            home = None
+            if m.server_id is not None:
+                resolved = await _resolve_execute_target(user, str(m.server_id))
+                if isinstance(resolved, str):
+                    await ws.send_text(json.dumps({"type": "error", "message": resolved}))
+                    continue
+                home = resolved
+            pending_frame = await _run_mission(
+                ws, user,
+                home_server=home,
+                goal=m.goal,
+                skill_slug=m.skill_slug,
+                user_language=msg.get("language", "en"),
+                resume={"mission_id": m.id, "steps": mission_service.steps_of(m)},
             )
             continue
 
@@ -1028,12 +1058,18 @@ async def _run_mission(
     goal: str,
     skill_slug: str | None,
     user_language: str,
+    resume: dict | None = None,
 ) -> dict | None:
     """The mission loop: plan ONE step → validate → (approve if risky) → execute →
     observe → repeat, until done/blocked/stopped/budget. Stage 2: steps carry their
     own target server (validated against the user's executable roster), and a
     "transfer" step copies a file between two servers through the backend.
-    Returns a leftover client frame to reprocess, or None. See docs/ALLY-MISSIONS.md."""
+
+    Phase 3: the mission is checkpointed to the DB after every step, so a dropped
+    socket leaves it ``interrupted`` (resumable) rather than lost. ``resume`` (an
+    ``interrupted`` mission's id + saved transcript) reloads that transcript and
+    continues from it. Returns a leftover client frame to reprocess, or None.
+    See docs/ALLY-MISSIONS.md."""
     goal = (goal or "").strip()[:500]
     if not goal:
         await ws.send_text(json.dumps({"type": "error", "message": "Mission needs a goal."}))
@@ -1093,26 +1129,64 @@ async def _run_mission(
         "goal": goal,
         "skill": skill.slug if skill else None,
         "budget": budget,
+        "resumed": resume is not None,
     }))
+
+    # Phase 3 persistence: reuse the row + transcript on resume (replaying it so the
+    # UI rebuilds the timeline), else create a fresh mission row.
+    if resume is not None:
+        mission_id = resume.get("mission_id")
+        steps = list(resume.get("steps") or [])
+        for i, s in enumerate(steps, 1):
+            await ws.send_text(json.dumps({
+                "type": "mission_step_done",
+                "index": i, "cmd": s.get("cmd", ""), "description": s.get("description", ""),
+                "exit_code": s.get("exit_code", 0), "output_tail": s.get("output_tail", ""),
+                "note": s.get("note", ""), "server_name": s.get("server"),
+                "verifying": bool(s.get("verify")),
+            }))
+        # A resumed executor must not assume its last (possibly half-run) step finished.
+        steps.append({
+            "description": "Mission resumed after interruption",
+            "cmd": "(resumed)", "exit_code": 0, "output_tail": "",
+            "note": ("This mission was interrupted and resumed — re-check the current "
+                     "state before assuming your last step completed, and don't repeat "
+                     "a change that already happened."),
+        })
+        await ws.send_text(json.dumps({
+            "type": "mission_step_done",
+            "index": len(steps), "cmd": "(resumed)",
+            "description": "Mission resumed — re-checking before continuing",
+            "exit_code": 0, "output_tail": "", "note": "resumed", "verifying": True,
+        }))
+    else:
+        mission_id = await mission_service.start(
+            user_id=user.id, server=home_server, skill_slug=skill_slug, goal=goal, budget=budget,
+        )
 
     tok = metering_service.start_collection()
     try:
         while True:
+            # Checkpoint the transcript at the top of each iteration (Phase 3) — this is
+            # the point a resumed mission picks back up from.
+            await mission_service.checkpoint(mission_id, status="running", steps=steps)
+
             # Verification checks and waits don't count against the executor's budget —
             # verifying or polling must never be what pushes a mission over the limit.
             executor_steps = len(steps) - verify_step_count - wait_step_count
             if executor_steps >= budget:
+                reason = (
+                    f"I reached the {budget}-step limit for one mission. "
+                    "The steps so far are above — tell me to continue as a new "
+                    "mission, or take over from here."
+                )
+                await mission_service.finalize(mission_id, status="failed", steps=steps, summary=reason)
                 await ws.send_text(json.dumps({
-                    "type": "mission_failed",
-                    "reason": (
-                        f"I reached the {budget}-step limit for one mission. "
-                        "The steps so far are above — tell me to continue as a new "
-                        "mission, or take over from here."
-                    ),
-                    "steps_used": len(steps),
+                    "type": "mission_failed", "reason": reason, "steps_used": len(steps),
                 }))
                 return None
             if await _mission_stop_requested(ws):
+                await mission_service.finalize(mission_id, status="stopped", steps=steps)
                 await ws.send_text(json.dumps({"type": "mission_stopped", "steps_used": len(steps)}))
                 return None
 
@@ -1131,6 +1205,8 @@ async def _run_mission(
                     plan_error = exc
                     logger.warning("mission step planning failed (attempt %d): %s", attempt, exc)
             if decision is None:
+                await mission_service.finalize(
+                    mission_id, status="failed", steps=steps, summary=f"AI error: {plan_error}")
                 await ws.send_text(json.dumps({
                     "type": "mission_failed",
                     "reason": f"AI error: {plan_error}",
@@ -1163,6 +1239,8 @@ async def _run_mission(
                                 remember=decision.get("remember"),
                                 server_id=home_server.id if home_server is not None else None,
                             )
+                    await mission_service.finalize(
+                        mission_id, status="complete", steps=steps, verified=True, summary=summary)
                     await ws.send_text(json.dumps({
                         "type": "mission_complete",
                         "summary": summary,
@@ -1195,18 +1273,23 @@ async def _run_mission(
 
                 # Out of attempts/budget — finish HONESTLY, not as a success. Never a
                 # false green; no memory note (the goal isn't confirmed).
+                caveat = vreason or "I could not confirm the goal is fully done — please double-check."
+                await mission_service.finalize(
+                    mission_id, status="complete", steps=steps, verified=False, summary=caveat)
                 await ws.send_text(json.dumps({
                     "type": "mission_complete",
                     "summary": summary,
                     "verified": False,
-                    "caveat": vreason or "I could not confirm the goal is fully done — please double-check.",
+                    "caveat": caveat,
                     "steps_used": len(steps),
                 }))
                 return None
             if status_ == "blocked":
+                reason = decision.get("summary", "I can't continue from here.")
+                await mission_service.finalize(mission_id, status="blocked", steps=steps, summary=reason)
                 await ws.send_text(json.dumps({
                     "type": "mission_blocked",
-                    "reason": decision.get("summary", "I can't continue from here."),
+                    "reason": reason,
                     "steps_used": len(steps),
                 }))
                 return None
@@ -1316,6 +1399,8 @@ async def _run_mission(
             # ── Run step: a single command on ONE roster server.
             cmd = str(step.get("cmd", "")).strip()
             if not cmd:
+                await mission_service.finalize(
+                    mission_id, status="failed", steps=steps, summary="The AI returned an empty step.")
                 await ws.send_text(json.dumps({
                     "type": "mission_failed",
                     "reason": "The AI returned an empty step.",
@@ -1364,12 +1449,16 @@ async def _run_mission(
                 "server_id": str(target.id), "server_name": target.name,
             }))
             if needs_approval:
+                # Persist the pause so an approval that never comes (socket drop) leaves
+                # the mission resumable, not lost.
+                await mission_service.checkpoint(mission_id, status="awaiting_approval", steps=steps)
                 raw = await ws.receive_text()
                 try:
                     decision_msg = json.loads(raw)
                 except (TypeError, ValueError):
                     decision_msg = {}
                 if decision_msg.get("type") != "approve":
+                    await mission_service.finalize(mission_id, status="stopped", steps=steps)
                     await ws.send_text(json.dumps({"type": "mission_stopped", "steps_used": len(steps)}))
                     # A new message mid-approval stops the mission and gets answered.
                     if decision_msg.get("type") in ("message", "mission_start"):
@@ -1389,9 +1478,14 @@ async def _run_mission(
                 "server_id": str(target.id), "server_name": target.name,
             }))
     except WebSocketDisconnect:
-        raise  # client is gone — let the outer handler clean up
+        # Client vanished mid-mission — leave it resumable (Phase 3), don't lose it.
+        await mission_service.mark_interrupted(mission_id)
+        raise  # let the outer handler clean up
     except Exception as exc:  # noqa: BLE001 — a mission must never crash the shared socket
         logger.exception("mission crashed (goal=%r)", goal)
+        await mission_service.finalize(
+            mission_id, status="failed", steps=steps,
+            summary=f"The mission hit an unexpected error and stopped: {exc}")
         try:
             await ws.send_text(json.dumps({
                 "type": "mission_failed",

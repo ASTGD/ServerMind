@@ -12,7 +12,8 @@
     "team": "Team",
     "settings": "Settings",
     "assistant": "Ally",
-    "terminal": "Terminal"
+    "terminal": "Terminal",
+    "missions": "Missions"
   },
   "auth": {
     "login": "Log In",

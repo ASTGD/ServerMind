@@ -156,8 +156,39 @@ What does **not** count against that budget:
 The prompt also nudges the executor to be economical — combine related read-only
 checks into one command, and converge (stop exploring, finish) as the budget shrinks.
 
-## 9. Phase 3 (not built)
+## 9. Durable, resumable missions (Phase 3 — built)
 
-Durable missions (survive disconnects, Celery), resume after a blocked step, a
-mission history page, webhook-triggered redeploys, mission templates from the
-community, missions-in-parallel across servers via the batch pattern.
+A mission used to live entirely on the WebSocket: a dropped socket lost it. Now the
+mission is a persisted record (`missions` table, migration 024) checkpointed after
+every step, so it survives, is reviewable, and is resumable.
+
+- **Persistence** — `mission_service` writes the goal, skill, target, budget, status
+  and the full step transcript. `_run_mission` checkpoints at the top of each
+  iteration (and on approval pauses / terminal states). Best-effort by design: a
+  persistence hiccup logs and continues — it never breaks a running mission.
+- **History** — `GET /api/missions` (list) + `/api/missions/{id}` (detail with steps),
+  scoped to the user's own missions. The **Missions** page lists every mission with
+  its status (a completed one shows its verification-gate outcome) and an expandable
+  step transcript.
+- **Interrupt → resume** — when a mission genuinely can't continue it's marked
+  `interrupted` and gets a **Resume** button. Resume (`mission_resume` over the chat
+  socket) reloads the saved transcript, replays it into the UI, injects a
+  *"re-check the current state before assuming your last step finished"* safety note,
+  and continues the loop. Detection: a client disconnect during an approval pause
+  (blocking receive) marks it interrupted immediately; and on **startup**,
+  `recover_orphaned()` flips any mission still `running`/`awaiting_approval` (orphaned
+  by a restart/deploy/crash) to `interrupted` — the most important real-world case.
+- Verified live: a mission interrupted by a mid-flight backend restart resumed from
+  its saved transcript, kept full context ("the earlier flagged cron item… what got
+  saved in the quarantine folder"), and ran to a clean, verified completion.
+
+Known limitation: a client that merely *navigates away* from a **read-only** mission
+(no approval pause to block on) isn't detected promptly — the mission simply finishes
+in the background and shows in history as complete (an acceptable outcome). Robust
+liveness (a client heartbeat, or a dedicated receive task) is the follow-up.
+
+## 10. Phase 4 (not built)
+
+True background execution (the loop runs in Celery with no client attached),
+webhook-triggered redeploys, community mission templates, and missions-in-parallel
+across servers via the batch pattern.

@@ -497,6 +497,20 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seed, status])
 
+  // Resume an interrupted mission (Phase 3) — send it once the socket is open; the
+  // backend replays the saved transcript and continues the loop.
+  const resume = useAssistantStore((s) => s.resume)
+  const clearResume = useAssistantStore((s) => s.clearResume)
+  const lastResumeKey = useRef(0)
+  useEffect(() => {
+    if (resume && resume.key !== lastResumeKey.current && status === "open") {
+      lastResumeKey.current = resume.key
+      send({ type: "mission_resume", mission_id: resume.missionId, language })
+      clearResume()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resume, status])
+
   function handleApprove() {
     send({ type: "approve" })
     setPending(null)
