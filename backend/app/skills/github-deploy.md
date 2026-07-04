@@ -5,6 +5,7 @@ triggers: deploy from github, host github, github repo, github.com/, deploy my r
 os: linux
 priority: 9
 mode: mission
+budget: 25
 ---
 GOAL: Take a GitHub repository and make it live on this server — detect what the app
 is, host it the right way for THIS server (panel-aware), secure it, verify it, and

@@ -153,3 +153,33 @@ def test_verification_denies_mutations(cmd):
 def test_verification_rejects_blank():
     assert not safety_service.is_read_only_command("")
     assert not safety_service.is_read_only_command("   ")
+
+
+# ── Per-skill mission budget ──────────────────────────────────────────────────
+
+def test_mission_budget_parse_and_clamp():
+    """A skill's declared budget is clamped to the safe range; junk → None (default)."""
+    assert skill_service._parse_budget("30") == 30
+    assert skill_service._parse_budget("5") == skill_service.MISSION_BUDGET_MIN     # clamped up
+    assert skill_service._parse_budget("999") == skill_service.MISSION_BUDGET_MAX   # clamped down
+    assert skill_service._parse_budget("") is None
+    assert skill_service._parse_budget(None) is None
+    assert skill_service._parse_budget("abc") is None
+
+
+def test_mission_budget_resolution():
+    """Ad-hoc missions get the default; a skill that declares a budget gets its own."""
+    assert skill_service.resolve_mission_budget(None) == skill_service.MISSION_BUDGET_DEFAULT
+    ir = skill_service.get("security-incident-response")
+    assert ir is not None and ir.budget == 30
+    assert skill_service.resolve_mission_budget(ir) == 30
+
+
+def test_mission_skills_declare_sane_budgets():
+    """No shipped skill can declare a budget outside the safe clamp range — the bound
+    is never removed, just raised within limits."""
+    for s in skill_service.load_skills():
+        if s.budget is not None:
+            assert skill_service.MISSION_BUDGET_MIN <= s.budget <= skill_service.MISSION_BUDGET_MAX, \
+                f"{s.slug} budget {s.budget} out of range"
+            assert s.mode == "mission", f"{s.slug} declares a budget but isn't a mission skill"

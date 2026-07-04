@@ -1,7 +1,7 @@
 import { useState } from "react"
 import {
   Rocket, CheckCircle2, XCircle, Loader2, Square, ChevronDown, ChevronRight,
-  AlertTriangle, Flag, Hand, ShieldCheck, ShieldAlert,
+  AlertTriangle, Flag, Hand, ShieldCheck, ShieldAlert, Clock,
 } from "lucide-react"
 
 export interface MissionStep {
@@ -18,6 +18,8 @@ export interface MissionStep {
   serverName?: string
   /** A read-only check the verification gate ran to prove the goal (not an executor step). */
   verifying?: boolean
+  /** A `wait` step — polling a long-running job; doesn't consume the step budget. */
+  waiting?: boolean
 }
 
 export interface MissionState {
@@ -36,7 +38,11 @@ export interface MissionState {
 function StepRow({ step }: { step: MissionStep }) {
   const [open, setOpen] = useState(false)
   const icon = step.running ? (
-    <Loader2 size={13} className="shrink-0 animate-spin text-indigo-500" />
+    step.waiting ? (
+      <Clock size={13} className="shrink-0 animate-pulse text-amber-500" />
+    ) : (
+      <Loader2 size={13} className="shrink-0 animate-spin text-indigo-500" />
+    )
   ) : step.exitCode === 0 ? (
     <CheckCircle2 size={13} className="shrink-0 text-emerald-500" />
   ) : (
@@ -54,6 +60,11 @@ function StepRow({ step }: { step: MissionStep }) {
           {step.verifying && (
             <span className="mr-1.5 inline-flex items-center gap-0.5 rounded bg-violet-500/10 px-1 py-px text-[10px] font-medium text-violet-600 dark:text-violet-400">
               <ShieldCheck size={9} /> verify
+            </span>
+          )}
+          {step.waiting && (
+            <span className="mr-1.5 inline-flex items-center gap-0.5 rounded bg-amber-500/10 px-1 py-px text-[10px] font-medium text-amber-600 dark:text-amber-400">
+              <Clock size={9} /> wait
             </span>
           )}
           {step.serverName && (

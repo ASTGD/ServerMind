@@ -5,6 +5,7 @@ triggers: host a wordpress, wordpress site, host a website, host a site, host a 
 os: linux
 priority: 8
 mode: mission
+budget: 25
 ---
 GOAL: Put a complete, working website (WordPress by default) live on this CyberPanel
 server — created through the panel's own CLI so it shows up in CyberPanel, secured,

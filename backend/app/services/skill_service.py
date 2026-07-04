@@ -28,6 +28,23 @@ logger = logging.getLogger(__name__)
 _SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
 _BODY_MAX = 5000  # hard cap on injected skill text
 
+# Mission step budgets. Ad-hoc missions use the default; a mission-mode skill may
+# declare its own `budget:` (a deep investigation or multi-stage install needs more
+# than a quick fix) — always clamped to a safe range so no skill can remove the bound.
+MISSION_BUDGET_DEFAULT = 20
+MISSION_BUDGET_MIN = 10
+MISSION_BUDGET_MAX = 40
+
+
+def _parse_budget(raw: str | None) -> int | None:
+    """Parse + clamp a skill's declared mission budget; None if unset/invalid."""
+    if not raw:
+        return None
+    try:
+        return max(MISSION_BUDGET_MIN, min(MISSION_BUDGET_MAX, int(raw)))
+    except (TypeError, ValueError):
+        return None
+
 _SKILL_BLOCK = """\
 
 EXPERT PROCEDURE — "{title}" (ServerAlly's specialist playbook for this kind of task):
@@ -52,7 +69,16 @@ class Skill:
     # 'mission'   = a runbook for the mission engine (chat only OFFERS a mission;
     #               the body is injected into each mission step-planning call).
     mode: str = "knowledge"
+    # Mission-mode only: the step budget this runbook needs (clamped), or None → default.
+    budget: int | None = None
     path: str = field(default="", repr=False)
+
+
+def resolve_mission_budget(skill: "Skill | None") -> int:
+    """The step budget for a mission: the skill's declared budget, else the default."""
+    if skill is not None and skill.budget:
+        return skill.budget
+    return MISSION_BUDGET_DEFAULT
 
 
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
@@ -99,6 +125,7 @@ def load_skills() -> list[Skill]:
                         body=body[:_BODY_MAX],
                         priority=int(meta.get("priority", "0") or 0),
                         mode=(meta.get("mode") or "knowledge").lower(),
+                        budget=_parse_budget(meta.get("budget")),
                         path=str(path),
                     )
                 )

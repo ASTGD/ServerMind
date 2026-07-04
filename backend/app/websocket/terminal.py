@@ -799,9 +799,29 @@ async def _batch_run(ws: WebSocket, user: User) -> None:
 
 # ── Ally Missions (docs/ALLY-MISSIONS.md) ─────────────────────────────────────
 
-_MISSION_BUDGET = 20
+_MISSION_BUDGET = skill_service.MISSION_BUDGET_DEFAULT  # default; a mission-mode skill may raise it
 _MISSION_TAIL_CHARS = 1200
 _MISSION_ROSTER_MAX = 15
+
+# A `wait` step lets a mission poll a long-running background job (an install, a
+# service coming up) WITHOUT burning the step budget — but bounded so a mission can
+# never hang: ≤5 min per wait, ≤1 h and ≤60 waits total across the whole mission.
+_WAIT_MAX_SECONDS = 300
+_WAIT_TOTAL_MAX = 3600
+_WAIT_MAX_STEPS = 60
+
+
+def _wait_plan(seconds_raw: object, wait_step_count: int, total_wait: int) -> tuple[bool, int]:
+    """(allowed, clamped_seconds) for a wait step. Clamps the ask to [1, 5 min] and
+    refuses once the per-mission wait budget (step count or total seconds) is spent.
+    Pure + testable — the actual sleep/stream stays in the loop."""
+    try:
+        seconds = int(seconds_raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        seconds = 0
+    seconds = max(1, min(_WAIT_MAX_SECONDS, seconds))
+    allowed = (wait_step_count + 1) <= _WAIT_MAX_STEPS and (total_wait + seconds) <= _WAIT_TOTAL_MAX
+    return allowed, seconds
 
 
 async def _mission_stop_requested(ws: WebSocket) -> bool:
@@ -917,6 +937,7 @@ async def _verify_mission_complete(
     steps: list[dict],
     user_language: str,
     home_id: str | None,
+    budget: int,
 ) -> tuple[str, str, list[dict]]:
     """Independent (adversarial) check that a self-declared 'done' mission is REALLY
     done. Asks the verifier what would PROVE the goal, runs those checks strictly
@@ -975,7 +996,7 @@ async def _verify_mission_complete(
                 continue
             await ws.send_text(json.dumps({
                 "type": "mission_step",
-                "index": index, "budget": _MISSION_BUDGET,
+                "index": index, "budget": budget,
                 "cmd": cmd, "description": desc, "risk_level": "low",
                 "needs_approval": False,
                 "server_id": str(target.id), "server_name": target.name,
@@ -1057,9 +1078,12 @@ async def _run_mission(
         return None
 
     skill = skill_service.get(skill_slug) if skill_slug else None
+    budget = skill_service.resolve_mission_budget(skill)  # per-skill; default for ad-hoc
     steps: list[dict] = []
     verify_attempts = 0  # times the verifier sent the executor back to close a gap
     verify_step_count = 0  # read-only verification steps — excluded from the budget
+    wait_step_count = 0    # `wait` (poll) steps — also excluded from the budget
+    total_wait = 0         # seconds slept across the mission (bounded by _WAIT_TOTAL_MAX)
     logger.info(
         "mission started: %r (home=%s, roster=%d, skill=%s)",
         goal, home_id, len(roster), skill_slug,
@@ -1068,20 +1092,20 @@ async def _run_mission(
         "type": "mission_started",
         "goal": goal,
         "skill": skill.slug if skill else None,
-        "budget": _MISSION_BUDGET,
+        "budget": budget,
     }))
 
     tok = metering_service.start_collection()
     try:
         while True:
-            # Read-only verification checks don't count against the executor's budget —
-            # verifying the result must never be what pushes a mission over the limit.
-            executor_steps = len(steps) - verify_step_count
-            if executor_steps >= _MISSION_BUDGET:
+            # Verification checks and waits don't count against the executor's budget —
+            # verifying or polling must never be what pushes a mission over the limit.
+            executor_steps = len(steps) - verify_step_count - wait_step_count
+            if executor_steps >= budget:
                 await ws.send_text(json.dumps({
                     "type": "mission_failed",
                     "reason": (
-                        f"I reached the {_MISSION_BUDGET}-step limit for one mission. "
+                        f"I reached the {budget}-step limit for one mission. "
                         "The steps so far are above — tell me to continue as a new "
                         "mission, or take over from here."
                     ),
@@ -1099,7 +1123,7 @@ async def _run_mission(
             for attempt in (1, 2):
                 try:
                     decision = await ai_service.plan_mission_step(
-                        goal, roster, steps, _MISSION_BUDGET - executor_steps, skill,
+                        goal, roster, steps, budget - executor_steps, skill,
                         user_language, home_id=home_id,
                     )
                     break
@@ -1123,7 +1147,7 @@ async def _run_mission(
                 verdict, vreason, gathered = await _verify_mission_complete(
                     ws, home_server=home_server, roster=roster, roster_by_id=roster_by_id,
                     goal=goal, skill=skill, steps=steps, user_language=user_language,
-                    home_id=home_id,
+                    home_id=home_id, budget=budget,
                 )
                 steps.extend(gathered)
                 verify_step_count += len(gathered)  # these don't count against the budget
@@ -1152,7 +1176,7 @@ async def _run_mission(
                 # the verifier found (fed back as an observation), if budget remains —
                 # this is how a genuinely-fixable "almost done" gets finished.
                 verify_attempts += 1
-                if verify_attempts < _VERIFY_MAX_ATTEMPTS and (len(steps) - verify_step_count) < _MISSION_BUDGET:
+                if verify_attempts < _VERIFY_MAX_ATTEMPTS and (len(steps) - verify_step_count - wait_step_count) < budget:
                     steps.append({
                         "description": "Independent verification",
                         "cmd": "(verification)", "exit_code": 1, "output_tail": "",
@@ -1213,7 +1237,7 @@ async def _run_mission(
                 display = f"transfer {src.name}:{src_path} → {dst.name}:{dst_path}"
                 await ws.send_text(json.dumps({
                     "type": "mission_step",
-                    "index": index, "budget": _MISSION_BUDGET,
+                    "index": index, "budget": budget,
                     "cmd": display, "description": description, "risk_level": risk,
                     "needs_approval": False,
                     "server_id": str(dst.id), "server_name": f"{src.name} → {dst.name}",
@@ -1235,6 +1259,58 @@ async def _run_mission(
                     "exit_code": exit_code, "output_tail": tail, "note": note,
                     "server_id": str(dst.id), "server_name": f"{src.name} → {dst.name}",
                 }))
+                continue
+
+            # ── Wait step: poll a long-running background job (install finishing, a
+            # service coming up) WITHOUT spending the step budget. Bounded so a mission
+            # can never hang, and a Stop takes effect promptly.
+            if action == "wait":
+                allowed, seconds = _wait_plan(
+                    step.get("seconds", step.get("wait_seconds", 0)), wait_step_count, total_wait
+                )
+                wait_step_count += 1
+                if not allowed:
+                    steps.append({
+                        "description": description, "cmd": "(wait)", "exit_code": 1,
+                        "output_tail": "", "note": "wait budget spent — wrap up or hand over",
+                    })
+                    await ws.send_text(json.dumps({
+                        "type": "mission_step_done",
+                        "index": index, "cmd": "(wait)", "description": description,
+                        "exit_code": 1, "output_tail": "",
+                        "note": "I've waited as long as I safely can — wrapping up.",
+                        "waiting": True,
+                    }))
+                    continue
+                display = f"wait {seconds}s"
+                await ws.send_text(json.dumps({
+                    "type": "mission_step",
+                    "index": index, "budget": budget,
+                    "cmd": display,
+                    "description": description or f"Waiting {seconds}s for the last step to finish…",
+                    "risk_level": "low", "needs_approval": False, "waiting": True,
+                }))
+                slept, stopped = 0, False
+                while slept < seconds:
+                    chunk = min(3, seconds - slept)
+                    await asyncio.sleep(chunk)
+                    slept += chunk
+                    if await _mission_stop_requested(ws):
+                        stopped = True
+                        break
+                total_wait += slept
+                steps.append({
+                    "description": description, "cmd": display, "exit_code": 0,
+                    "output_tail": f"waited {slept}s", "note": "",
+                })
+                await ws.send_text(json.dumps({
+                    "type": "mission_step_done",
+                    "index": index, "cmd": display, "description": description,
+                    "exit_code": 0, "output_tail": f"waited {slept}s", "note": "", "waiting": True,
+                }))
+                if stopped:
+                    await ws.send_text(json.dumps({"type": "mission_stopped", "steps_used": len(steps)}))
+                    return None
                 continue
 
             # ── Run step: a single command on ONE roster server.
@@ -1282,7 +1358,7 @@ async def _run_mission(
             needs_approval = safety.status == "confirm" or bool(step.get("requires_confirmation")) or risk == "high"
             await ws.send_text(json.dumps({
                 "type": "mission_step",
-                "index": index, "budget": _MISSION_BUDGET,
+                "index": index, "budget": budget,
                 "cmd": cmd, "description": description, "risk_level": risk,
                 "needs_approval": needs_approval,
                 "server_id": str(target.id), "server_name": target.name,

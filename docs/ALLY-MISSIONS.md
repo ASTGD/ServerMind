@@ -135,7 +135,28 @@ guarantee — a mutating "check" is never executed) and the read-only corpus in
 `tests/ally_eval_corpus.py`; live: `test_ally_evals_live.py` asserts the real
 verifier refuses to confirm an unmet goal.
 
-## 8. Phase 3 (not built)
+## 8. Budgets & long-running work
+
+A mission runs at most `budget` steps. Ad-hoc missions use `MISSION_BUDGET_DEFAULT`
+(20); a **mission-mode skill may declare its own** `budget:` in frontmatter,
+clamped to `[10, 40]` (a deep investigation or multi-stage install needs more than
+a quick fix — but no skill can remove the bound). Set today: security-incident-
+response 30, cyberpanel-host-website 25, github-deploy 25.
+
+What does **not** count against that budget:
+- **Verification checks** (§7) — verifying must never be what exhausts a mission.
+- **`wait` steps** — a mission polls a long-running background job (install
+  finishing, a service coming up) with `action:"wait"` (`seconds`, ≤5 min each).
+  The prompt tells the executor to launch slow work in the background
+  (`nohup … > log 2>&1 &`) and `wait`-poll instead of blocking one command for
+  minutes (which risks the SSH idle-watchdog and hides progress). Waits are bounded
+  so a mission can never hang: ≤5 min each, ≤1 h and ≤60 waits total; a Stop takes
+  effect mid-wait. Bounding logic is the pure, tested `_wait_plan`.
+
+The prompt also nudges the executor to be economical — combine related read-only
+checks into one command, and converge (stop exploring, finish) as the budget shrinks.
+
+## 9. Phase 3 (not built)
 
 Durable missions (survive disconnects, Celery), resume after a blocked step, a
 mission history page, webhook-triggered redeploys, mission templates from the

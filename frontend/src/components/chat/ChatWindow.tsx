@@ -235,6 +235,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             running: true,
             serverName: (msg.server_name as string | undefined) ?? undefined,
             verifying: Boolean(msg.verifying),
+            waiting: Boolean(msg.waiting),
           }
           updateMission((m) => ({ ...m, steps: [...m.steps.filter((s) => s.index !== step.index), step] }))
           // Risky step — reuse the normal approval UI (approve/cancel go over the socket).
@@ -270,6 +271,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
               note: (msg.note as string) ?? "",
               serverName: (msg.server_name as string | undefined) ?? s.serverName,
               verifying: msg.verifying !== undefined ? Boolean(msg.verifying) : s.verifying,
+              waiting: msg.waiting !== undefined ? Boolean(msg.waiting) : s.waiting,
             })
             // Rejected steps (safety / transfer guards) emit step_done with no prior
             // step event — append a row so the timeline shows what was refused.

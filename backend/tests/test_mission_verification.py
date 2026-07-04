@@ -67,7 +67,7 @@ async def _run_gate(monkeypatch, verify_returns, executed_sink=None):
     fake_ws = _FakeWS()
     verdict, reason, gathered = await ws._verify_mission_complete(
         fake_ws, home_server=srv, roster=roster, roster_by_id=roster_by_id,
-        goal="prove it", skill=None, steps=[], user_language="en", home_id="srv-1",
+        goal="prove it", skill=None, steps=[], user_language="en", home_id="srv-1", budget=20,
     )
     return verdict, reason, gathered, fake_ws.sent
 
@@ -164,6 +164,27 @@ async def test_verifier_error_is_unverified_not_crash(monkeypatch):
     fake_ws = _FakeWS()
     verdict, reason, gathered = await ws._verify_mission_complete(
         fake_ws, home_server=srv, roster=[srv], roster_by_id={"srv-1": srv},
-        goal="g", skill=None, steps=[], user_language="en", home_id="srv-1",
+        goal="g", skill=None, steps=[], user_language="en", home_id="srv-1", budget=20,
     )
     assert verdict == "unverified" and reason and gathered == []
+
+
+# ── Wait action bounding (poll long-running work without burning the budget) ──
+
+@pytest.mark.parametrize("raw,expected", [
+    (500, (True, 300)),    # clamped down to the 5-min per-wait cap
+    (0, (True, 1)),        # clamped up to the 1-second floor
+    ("x", (True, 1)),      # junk -> floor, still allowed
+    (30, (True, 30)),      # normal
+])
+def test_wait_plan_clamps_seconds(raw, expected):
+    assert ws._wait_plan(raw, 0, 0) == expected
+
+
+def test_wait_plan_refuses_when_budget_spent():
+    # 61st wait step is refused (per-mission wait-step cap).
+    assert ws._wait_plan(10, ws._WAIT_MAX_STEPS, 0)[0] is False
+    # A wait that would push total sleep past the 1-hour cap is refused.
+    assert ws._wait_plan(300, 0, ws._WAIT_TOTAL_MAX - 1)[0] is False
+    # Within both caps -> allowed.
+    assert ws._wait_plan(30, 5, 100)[0] is True
