@@ -1,9 +1,10 @@
-"""Detached mission runner + bridge (Ally Missions Phase 4).
+"""Detached mission runner + hub (Ally Missions Phase 4 → Pass 2 concurrency).
 
-Covers the concurrency that lets a mission outlive its client: the runner's event
-fan-out + approval/stop signalling, and the bridge that forwards events to a socket
-and routes approve/stop back — plus the three ways a bridge ends (mission finished /
-client sent something else / socket dropped) with the mission always kept running.
+Covers the concurrency that lets missions outlive their client AND run several at
+once: the runner's event fan-out + approval/stop signalling, the mission_id tagging
+that routes events to the right workspace card, and the per-connection _MissionHub
+that pumps N missions' events over one socket and routes control frames by
+mission_id — scoped to hub-attached runners only (never the global registry).
 No API, no DB.
 """
 from __future__ import annotations
@@ -11,11 +12,8 @@ from __future__ import annotations
 import asyncio
 import json
 
-import pytest
-from fastapi import WebSocketDisconnect
-
 from app.websocket import mission_runner
-from app.websocket.terminal import _bridge_mission
+from app.websocket.terminal import _MissionHub
 
 
 # ── Runner ────────────────────────────────────────────────────────────────────
@@ -89,76 +87,137 @@ async def test_send_text_shim_emits_parsed_event():
     assert q.get_nowait() == {"type": "mission_step", "i": 3}
 
 
-# ── Bridge ────────────────────────────────────────────────────────────────────
+async def test_send_text_shim_tags_events_with_mission_id():
+    """Once registered, every event the mission loop sends carries the mission's id —
+    this is what lets a client route events to the right one of several cards."""
+    r = mission_runner.create()
+    mission_runner.register(r, "m-tag")
+    q = r.subscribe()
+    await r.send_text(json.dumps({"type": "mission_step", "index": 1}))
+    assert q.get_nowait() == {"type": "mission_step", "index": 1, "mission_id": "m-tag"}
+    # An explicit mission_id (mission_started sets its own) is never overwritten.
+    await r.send_text(json.dumps({"type": "mission_started", "mission_id": "explicit"}))
+    assert q.get_nowait()["mission_id"] == "explicit"
+    r.finish()
+
+
+# ── Hub (Pass 2 — N missions over one socket) ─────────────────────────────────
 
 class _FakeWS:
     def __init__(self) -> None:
         self.sent: list[dict] = []
-        self._incoming: asyncio.Queue = asyncio.Queue()
 
     async def send_text(self, raw: str) -> None:
         self.sent.append(json.loads(raw))
 
-    async def receive_text(self) -> str:
-        item = await self._incoming.get()
-        if isinstance(item, Exception):
-            raise item
-        return item
 
-    def feed(self, msg: dict) -> None:
-        self._incoming.put_nowait(json.dumps(msg))
-
-    def disconnect(self) -> None:
-        self._incoming.put_nowait(WebSocketDisconnect())
-
-
-async def test_bridge_forwards_events_then_ends_when_mission_finishes():
-    r = mission_runner.create()
+async def test_hub_pumps_two_missions_concurrently():
     ws = _FakeWS()
-    bridge = asyncio.create_task(_bridge_mission(ws, r))
-    await asyncio.sleep(0.02)  # let it subscribe + start pump/reader
-    r.emit({"type": "mission_step", "index": 1})
-    await asyncio.sleep(0.02)
-    assert {"type": "mission_step", "index": 1} in ws.sent
-    r.finish()  # mission ended → pump stops → bridge returns
-    assert await asyncio.wait_for(bridge, 1) is None
+    hub = _MissionHub(ws)
+    a, b = mission_runner.create(), mission_runner.create()
+    mission_runner.register(a, "m-a")
+    mission_runner.register(b, "m-b")
+    hub.attach(a)
+    hub.attach(b)
+    await a.send_text(json.dumps({"type": "mission_step", "index": 1}))
+    await b.send_text(json.dumps({"type": "mission_step", "index": 1}))
+    await a.send_text(json.dumps({"type": "mission_step_done", "index": 1}))
+    await asyncio.sleep(0.05)
+    got = {(e["mission_id"], e["type"], e.get("index")) for e in ws.sent}
+    assert ("m-a", "mission_step", 1) in got
+    assert ("m-b", "mission_step", 1) in got
+    assert ("m-a", "mission_step_done", 1) in got
+    a.finish(); b.finish()
+    hub.close()
 
 
-async def test_bridge_routes_approve_and_stop_to_runner():
-    r = mission_runner.create()
-    ws = _FakeWS()
-    bridge = asyncio.create_task(_bridge_mission(ws, r))
-    await asyncio.sleep(0.02)
-    # approve reaches a waiting mission
-    fut = asyncio.ensure_future(r.wait_decision(timeout=2))
+async def test_hub_routes_approve_by_mission_id_to_the_right_runner():
+    """With TWO missions waiting at an approval, an approve frame must reach exactly
+    the mission it names — never the other one."""
+    hub = _MissionHub(_FakeWS())
+    a, b = mission_runner.create(), mission_runner.create()
+    mission_runner.register(a, "m-a")
+    mission_runner.register(b, "m-b")
+    hub.attach(a); hub.attach(b)
+    fa = asyncio.ensure_future(a.wait_decision(timeout=2))
+    fb = asyncio.ensure_future(b.wait_decision(timeout=0.3))
     await asyncio.sleep(0.01)
-    ws.feed({"type": "approve"})
-    assert (await asyncio.wait_for(fut, 1)) == {"type": "approve"}
-    # stop sets the flag
-    ws.feed({"type": "mission_stop"})
-    await asyncio.sleep(0.02)
-    assert r.stop_requested is True
-    r.finish()
-    await asyncio.wait_for(bridge, 1)
+    assert hub.route({"type": "approve", "mission_id": "m-b"}) is True
+    assert (await asyncio.wait_for(fb, 1)) == {"type": "approve", "mission_id": "m-b"}
+    assert a.awaiting_decision is True  # untouched
+    a.request_stop()
+    await asyncio.wait_for(fa, 1)
+    a.finish(); b.finish(); hub.close()
 
 
-async def test_bridge_returns_other_message_as_leftover_mission_keeps_running():
-    r = mission_runner.create()
+async def test_hub_idless_frame_only_routes_when_unambiguous():
+    """An approve/stop WITHOUT mission_id (older client) routes only when exactly one
+    mission is live — with two, it's ambiguous and must be dropped."""
+    hub = _MissionHub(_FakeWS())
+    a, b = mission_runner.create(), mission_runner.create()
+    mission_runner.register(a, "m-a")
+    mission_runner.register(b, "m-b")
+    hub.attach(a); hub.attach(b)
+    assert hub.route({"type": "mission_stop"}) is False  # two live → ambiguous
+    assert a.stop_requested is False and b.stop_requested is False
+    b.finish()  # now only a is live
+    assert hub.route({"type": "mission_stop"}) is True
+    assert a.stop_requested is True
+    a.finish(); hub.close()
+
+
+async def test_hub_stop_by_id_stops_only_that_mission():
+    hub = _MissionHub(_FakeWS())
+    a, b = mission_runner.create(), mission_runner.create()
+    mission_runner.register(a, "m-a")
+    mission_runner.register(b, "m-b")
+    hub.attach(a); hub.attach(b)
+    assert hub.route({"type": "mission_stop", "mission_id": "m-a"}) is True
+    assert a.stop_requested is True and b.stop_requested is False
+    a.finish(); b.finish(); hub.close()
+
+
+async def test_hub_never_routes_to_unattached_runners():
+    """Access scoping: a runner in the GLOBAL registry that was never attached through
+    this connection's checked paths is unreachable — a guessed mission_id from another
+    user's session can't approve or stop someone else's mission."""
+    hub = _MissionHub(_FakeWS())
+    other = mission_runner.create()
+    mission_runner.register(other, "m-other")  # global registry, NOT hub-attached
+    fut = asyncio.ensure_future(other.wait_decision(timeout=0.3))
+    await asyncio.sleep(0.01)
+    assert hub.route({"type": "approve", "mission_id": "m-other"}) is False
+    assert other.awaiting_decision is True  # decision never delivered
+    other.request_stop()
+    await asyncio.wait_for(fut, 1)
+    other.finish(); hub.close()
+
+
+async def test_hub_is_control_classification():
+    """mission_stop is always mission control; approve/reject/cancel only WITH a
+    mission_id (or the explicit ``mission: true`` marker for id-less missions) —
+    a plain id-less approve/cancel stays a plan decision."""
+    assert _MissionHub.is_control({"type": "mission_stop"}) is True
+    assert _MissionHub.is_control({"type": "approve", "mission_id": "m"}) is True
+    assert _MissionHub.is_control({"type": "reject", "mission_id": "m"}) is True
+    assert _MissionHub.is_control({"type": "cancel", "mission_id": "m"}) is True
+    assert _MissionHub.is_control({"type": "approve", "mission": True}) is True
+    assert _MissionHub.is_control({"type": "approve"}) is False
+    assert _MissionHub.is_control({"type": "cancel"}) is False
+    assert _MissionHub.is_control({"type": "message", "content": "hi"}) is False
+
+
+async def test_hub_close_stops_pumping_but_missions_keep_running():
     ws = _FakeWS()
-    bridge = asyncio.create_task(_bridge_mission(ws, r))
-    await asyncio.sleep(0.02)
-    ws.feed({"type": "message", "content": "hi"})
-    leftover = await asyncio.wait_for(bridge, 1)
-    assert leftover == {"type": "message", "content": "hi"}
-    assert r.done is False  # the mission was NOT stopped — it runs on detached
-
-
-async def test_bridge_reraises_disconnect_mission_keeps_running():
+    hub = _MissionHub(ws)
     r = mission_runner.create()
-    ws = _FakeWS()
-    bridge = asyncio.create_task(_bridge_mission(ws, r))
+    mission_runner.register(r, "m-r")
+    hub.attach(r)
+    hub.close()
+    await asyncio.sleep(0.02)  # let the pump cancellation land
+    await r.send_text(json.dumps({"type": "mission_step", "index": 9}))
     await asyncio.sleep(0.02)
-    ws.disconnect()
-    with pytest.raises(WebSocketDisconnect):
-        await asyncio.wait_for(bridge, 1)
+    assert all(e.get("index") != 9 for e in ws.sent)  # nothing pumped after close
     assert r.done is False  # dropping the client does NOT end the mission
+    assert len(r.subscribers) == 0  # pump unsubscribed on the way out
+    r.finish()

@@ -212,7 +212,37 @@ Bounds/limits: an approval a nobody returns to times out (30 min → blocked). S
 in-process (single-process; horizontal scaling would move the fan-out to Redis
 pub/sub). A backend restart is covered by `recover_orphaned` (→ resumable).
 
-## 11. Phase 5 (not built)
+## 11. Concurrent workspace cards ("One Ally" Pass 2)
+
+Phase 4 made a mission detached; Pass 2 makes SEVERAL run at once as calm inline
+**workspace cards** in the one conversation, without blocking chat.
+
+- **Multiplexed events.** Every mission event is tagged with its `mission_id` (once, in
+  `MissionRunner.send_text` — covers every emit site). A per-connection **`_MissionHub`**
+  attaches a small pump task per runner, so N missions stream over the one socket while
+  the main loop keeps handling chat. The old blocking `_bridge_mission` is gone.
+- **Control routed by id.** approve / reject / mission_stop carry a `mission_id` (or the
+  `mission:true` marker for an id-less mission) and are routed by `_MissionHub.route` to
+  exactly that mission — **only to hub-attached runners** (never the global registry), so
+  a guessed id from another session can't touch someone else's mission. A plan approval
+  stays id-less and is handled inside the plan wait (which now drains mission-control
+  frames so a card's Approve can never approve a chat plan).
+- **In-card approvals.** A risky step pauses INSIDE its own card (green Approve / Stop),
+  so with several cards live the OK visibly binds to one mission. The global plan-approval
+  bar is now chat-plans-only.
+- **Calm UI.** Each card collapses to a one-line pill and pops to a full-screen centered
+  overlay via `⤢` (portaled to `<body>` so the drawer's CSS transform can't confine it).
+  The header carries the home server's stable color; a short narration line ("Mission
+  started on X — follow it in the card; you can keep chatting") replaces the old
+  input-lock. The input is never disabled for a mission.
+- Verified LIVE: a TestServer3 mission (stop→verify→start→verify cron, with a risky step)
+  ran while two TestServer1 requests were sent and answered in between; its in-card
+  Approve continued *that* mission (not the TS1 plan); it finished **Verified** (the
+  verification gate ran a fresh read-only check); collapse + full-screen expand worked; no
+  console errors. 15 deterministic runner/hub tests incl. the access-scoping property
+  (a non-attached runner is unreachable) + id-less-ambiguity rule.
+
+## 12. Phase 5 (not built)
 
 Redis-pub/sub fan-out (so a background mission survives a specific web worker and
 scales horizontally), webhook-triggered redeploys, community mission templates, and

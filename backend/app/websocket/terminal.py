@@ -373,147 +373,162 @@ async def _unified_loop(ws: WebSocket, user: User, fixed_server: Server | None =
     a running mission stays bound server-side to the server it was made for, no
     matter what the client switches to. ``fixed_server`` pins the target (the
     per-server endpoint) and per-message ids are ignored there."""
+    hub = _MissionHub(ws)
     pending_frame: dict | None = None
-    while True:
-        if pending_frame is not None:
-            msg, pending_frame = pending_frame, None
-        else:
-            msg = json.loads(await ws.receive_text())
-        mtype = msg.get("type")
+    try:
+        while True:
+            if pending_frame is not None:
+                msg, pending_frame = pending_frame, None
+            else:
+                msg = json.loads(await ws.receive_text())
+            mtype = msg.get("type")
 
-        # Ally Missions — the user clicked Start on a mission offer. The home server
-        # is optional: a fleet-offered mission may span several servers.
-        if mtype == "mission_start":
-            home: Server | None = fixed_server
-            if home is None:
+            # Control frames for a RUNNING mission (Pass 2: several may stream at once
+            # as workspace cards) — routed by mission_id, never blocking the chat loop.
+            if _MissionHub.is_control(msg):
+                hub.route(msg)
+                continue
+
+            # Ally Missions — the user clicked Start on a mission offer. The home server
+            # is optional: a fleet-offered mission may span several servers.
+            if mtype == "mission_start":
+                home: Server | None = fixed_server
+                if home is None:
+                    resolved = await _resolve_execute_target(user, msg.get("server_id"))
+                    if isinstance(resolved, str):
+                        await ws.send_text(json.dumps({"type": "error", "message": resolved}))
+                        continue
+                    home = resolved
+                # Phase 4: run DETACHED — a background task pumped to this client. If
+                # the client leaves, the task keeps running. Attach (subscribe) BEFORE
+                # the task can yield so the first events can't be missed.
+                runner = mission_runner.create()
+                hub.attach(runner)
+                runner.task = asyncio.create_task(_run_mission_detached(
+                    runner, user, home_server=home, goal=str(msg.get("goal", "")),
+                    skill_slug=msg.get("skill"), user_language=msg.get("language", "en"),
+                ))
+                continue
+
+            # Resume an interrupted mission from its saved transcript (Phase 3), detached.
+            if mtype == "mission_resume":
+                mid = msg.get("mission_id")
+                async with AsyncSessionLocal() as db:
+                    m = await mission_service.get_for_user(db, user, str(mid)) if mid else None
+                if m is None:
+                    await ws.send_text(json.dumps({"type": "error", "message": "Mission not found."}))
+                    continue
+                if m.status != "interrupted":
+                    await ws.send_text(json.dumps({
+                        "type": "error", "message": "This mission isn't resumable (it already finished)."}))
+                    continue
+                home = None
+                if m.server_id is not None:
+                    resolved = await _resolve_execute_target(user, str(m.server_id))
+                    if isinstance(resolved, str):
+                        await ws.send_text(json.dumps({"type": "error", "message": resolved}))
+                        continue
+                    home = resolved
+                runner = mission_runner.create()
+                hub.attach(runner)
+                runner.task = asyncio.create_task(_run_mission_detached(
+                    runner, user, home_server=home, goal=m.goal, skill_slug=m.skill_slug,
+                    user_language=msg.get("language", "en"),
+                    resume={"mission_id": m.id, "steps": mission_service.steps_of(m)},
+                ))
+                continue
+
+            # Attach to a mission running in the background (Phase 4) — reconnect + watch.
+            if mtype == "mission_attach":
+                mid = str(msg.get("mission_id") or "")
+                async with AsyncSessionLocal() as db:
+                    m = await mission_service.get_for_user(db, user, mid) if mid else None
+                if m is None:
+                    await ws.send_text(json.dumps({"type": "error", "message": "Mission not found."}))
+                    continue
+                runner = mission_runner.get(mid)
+                if runner is not None and not runner.done:
+                    # Still running here: replay current state, re-show any pending
+                    # approval prompt (so a client attaching mid-approval can act),
+                    # then pump live events alongside everything else.
+                    await _replay_mission_to(ws, m)
+                    if runner.awaiting_decision and runner.pending_approval:
+                        await ws.send_text(json.dumps(
+                            {**runner.pending_approval, "mission_id": runner.mission_id}))
+                    hub.attach(runner)
+                elif m.status == "interrupted":
+                    await ws.send_text(json.dumps({
+                        "type": "error", "message": "This mission was interrupted — use Resume."}))
+                else:
+                    # Already finished — show its final state.
+                    await _replay_mission_to(ws, m)
+                    await ws.send_text(json.dumps({
+                        "type": "mission_complete" if m.status == "complete"
+                        else "mission_blocked" if m.status == "blocked"
+                        else "mission_failed" if m.status == "failed" else "mission_stopped",
+                        "mission_id": str(m.id),
+                        "summary": m.summary or "Mission finished.",
+                        "verified": m.verified, "steps_used": m.steps_used,
+                        "reason": m.summary or "", "caveat": m.summary or "",
+                    }))
+                continue
+
+            if mtype != "message":
+                continue
+
+            user_input: str = msg.get("content", "").strip()
+            user_language: str = msg.get("language", "en")
+            page_context = _page_context_from(msg)
+            history = _history_from(msg)
+            if not user_input:
+                continue
+
+            server = fixed_server
+            if server is None:
                 resolved = await _resolve_execute_target(user, msg.get("server_id"))
                 if isinstance(resolved, str):
                     await ws.send_text(json.dumps({"type": "error", "message": resolved}))
                     continue
-                home = resolved
-            # Phase 4: run DETACHED — a background task, bridged to this client. If the
-            # client leaves, the task keeps running.
-            runner = mission_runner.create()
-            runner.task = asyncio.create_task(_run_mission_detached(
-                runner, user, home_server=home, goal=str(msg.get("goal", "")),
-                skill_slug=msg.get("skill"), user_language=msg.get("language", "en"),
-            ))
-            pending_frame = await _bridge_mission(ws, runner)
-            continue
+                server = resolved
 
-        # Resume an interrupted mission from its saved transcript (Phase 3), detached.
-        if mtype == "mission_resume":
-            mid = msg.get("mission_id")
-            async with AsyncSessionLocal() as db:
-                m = await mission_service.get_for_user(db, user, str(mid)) if mid else None
-            if m is None:
-                await ws.send_text(json.dumps({"type": "error", "message": "Mission not found."}))
+            # No target → the fleet path (advisory; may offer handoffs, batches, missions).
+            if server is None:
+                await _fleet_answer(ws, user, user_input, user_language, page_context, history)
                 continue
-            if m.status != "interrupted":
-                await ws.send_text(json.dumps({
-                    "type": "error", "message": "This mission isn't resumable (it already finished)."}))
-                continue
-            home = None
-            if m.server_id is not None:
-                resolved = await _resolve_execute_target(user, str(m.server_id))
-                if isinstance(resolved, str):
-                    await ws.send_text(json.dumps({"type": "error", "message": resolved}))
-                    continue
-                home = resolved
-            runner = mission_runner.create()
-            runner.task = asyncio.create_task(_run_mission_detached(
-                runner, user, home_server=home, goal=m.goal, skill_slug=m.skill_slug,
-                user_language=msg.get("language", "en"),
-                resume={"mission_id": m.id, "steps": mission_service.steps_of(m)},
-            ))
-            pending_frame = await _bridge_mission(ws, runner)
-            continue
 
-        # Attach to a mission running in the background (Phase 4) — reconnect + watch.
-        if mtype == "mission_attach":
-            mid = str(msg.get("mission_id") or "")
-            async with AsyncSessionLocal() as db:
-                m = await mission_service.get_for_user(db, user, mid) if mid else None
-            if m is None:
-                await ws.send_text(json.dumps({"type": "error", "message": "Mission not found."}))
-                continue
-            runner = mission_runner.get(mid)
-            if runner is not None and not runner.done:
-                # Still running here: replay current state, re-show any pending approval
-                # prompt (so a client attaching mid-approval can act), then bridge live.
-                await _replay_mission_to(ws, m)
-                if runner.awaiting_decision and runner.pending_approval:
-                    await ws.send_text(json.dumps(runner.pending_approval))
-                pending_frame = await _bridge_mission(ws, runner)
-            elif m.status == "interrupted":
+            if not await check_command_rate(str(user.id), str(server.id)):
                 await ws.send_text(json.dumps({
-                    "type": "error", "message": "This mission was interrupted — use Resume."}))
-            else:
-                # Already finished — show its final state.
-                await _replay_mission_to(ws, m)
-                await ws.send_text(json.dumps({
-                    "type": "mission_complete" if m.status == "complete"
-                    else "mission_blocked" if m.status == "blocked"
-                    else "mission_failed" if m.status == "failed" else "mission_stopped",
-                    "summary": m.summary or "Mission finished.",
-                    "verified": m.verified, "steps_used": m.steps_used,
-                    "reason": m.summary or "", "caveat": m.summary or "",
+                    "type": "error",
+                    "message": "Rate limit reached — wait a minute before sending more commands.",
                 }))
-            continue
-
-        if mtype != "message":
-            continue
-
-        user_input: str = msg.get("content", "").strip()
-        user_language: str = msg.get("language", "en")
-        page_context = _page_context_from(msg)
-        history = _history_from(msg)
-        if not user_input:
-            continue
-
-        server = fixed_server
-        if server is None:
-            resolved = await _resolve_execute_target(user, msg.get("server_id"))
-            if isinstance(resolved, str):
-                await ws.send_text(json.dumps({"type": "error", "message": resolved}))
                 continue
-            server = resolved
 
-        # No target → the fleet path (advisory; may offer handoffs, batches, missions).
-        if server is None:
-            await _fleet_answer(ws, user, user_input, user_language, page_context, history)
-            continue
+            # AI quota gate (docs/AI-METERING.md §4) — per-server chat draws from the
+            # server OWNER's pool (§8 team pooling). The wall only blocks when
+            # ENFORCE_PLAN_LIMITS is on; otherwise this is a no-op numbers check.
+            try:
+                async with AsyncSessionLocal() as db:
+                    owner = await db.get(User, server.user_id)
+                    g = await metering_service.gate(db, owner) if owner else None
+            except Exception as exc:  # noqa: BLE001 — gate failure must not kill chat
+                logger.warning("quota gate failed for server %s: %s", server.id, exc)
+                g = None
+            if g and not g.allowed:
+                await ws.send_text(json.dumps({
+                    "type": "quota_exceeded",
+                    "used": g.used, "limit": g.limit, "resets_at": g.resets_at,
+                    "message": metering_service.quota_message(g),
+                }))
+                continue
 
-        if not await check_command_rate(str(user.id), str(server.id)):
-            await ws.send_text(json.dumps({
-                "type": "error",
-                "message": "Rate limit reached — wait a minute before sending more commands.",
-            }))
-            continue
-
-        # AI quota gate (docs/AI-METERING.md §4) — per-server chat draws from the
-        # server OWNER's pool (§8 team pooling). The wall only blocks when
-        # ENFORCE_PLAN_LIMITS is on; otherwise this is a no-op numbers check.
-        try:
-            async with AsyncSessionLocal() as db:
-                owner = await db.get(User, server.user_id)
-                g = await metering_service.gate(db, owner) if owner else None
-        except Exception as exc:  # noqa: BLE001 — gate failure must not kill chat
-            logger.warning("quota gate failed for server %s: %s", server.id, exc)
-            g = None
-        if g and not g.allowed:
-            await ws.send_text(json.dumps({
-                "type": "quota_exceeded",
-                "used": g.used, "limit": g.limit, "resets_at": g.resets_at,
-                "message": metering_service.quota_message(g),
-            }))
-            continue
-
-        os_family = "windows" if server.connection_type == "winrm" else "linux"
-        pending_frame = await _handle_message(
-            ws, server, user_input, user_language, os_family, page_context, history,
-            acting_user_id=str(user.id),
-        )
+            os_family = "windows" if server.connection_type == "winrm" else "linux"
+            pending_frame = await _handle_message(
+                ws, server, user_input, user_language, os_family, page_context, history,
+                acting_user_id=str(user.id), mission_control=hub,
+            )
+    finally:
+        # Client gone (or loop error): stop pumping. Missions keep running detached.
+        hub.close()
 
 
 # ── Fleet chat WebSocket (global assistant, advisory) ─────────────────────────
@@ -925,21 +940,95 @@ def _wait_plan(seconds_raw: object, wait_step_count: int, total_wait: int) -> tu
     return allowed, seconds
 
 
-async def _mission_stop_requested(ws: WebSocket) -> bool:
-    """Non-blocking drain of queued client frames between steps — True if the user
-    asked to stop. Other frame types received mid-mission are ignored (the input is
-    disabled client-side while a mission runs)."""
-    while True:
-        try:
-            raw = await asyncio.wait_for(ws.receive_text(), timeout=0.05)
-        except asyncio.TimeoutError:
+class _MissionHub:
+    """The missions THIS connection is watching (Pass 2 — concurrent workspace cards).
+
+    Replaces the old blocking bridge: each started/resumed/attached mission gets a
+    small pump task that forwards the runner's events to the socket, so N missions
+    stream live while the main loop keeps handling chat. Mission-control frames
+    (approve / reject / mission_stop) are routed by ``mission_id`` — and ONLY to
+    runners attached through this hub's access-checked paths, never the global
+    registry, so a frame can't reach another user's mission."""
+
+    def __init__(self, ws: WebSocket) -> None:
+        self._ws = ws
+        self._runners: list[mission_runner.MissionRunner] = []
+        self._pumps: set[asyncio.Task] = set()
+        # Sends can now overlap (pumps + the main loop); a message-level lock keeps
+        # the new concurrent path defensive regardless of the ASGI ws backend.
+        self._send_lock = asyncio.Lock()
+
+    def attach(self, runner: mission_runner.MissionRunner) -> None:
+        """Subscribe + start pumping a runner's events to this client. Subscribing is
+        synchronous (before the mission task ever yields) so the first events — e.g.
+        ``mission_started`` — can't be missed."""
+        if runner in self._runners:
+            return
+        q = runner.subscribe()
+        self._runners.append(runner)
+
+        async def _pump() -> None:
+            try:
+                while True:
+                    event = await q.get()
+                    if event is mission_runner.ENDED:
+                        return
+                    async with self._send_lock:
+                        await self._ws.send_text(json.dumps(event))
+            except Exception:  # socket gone — the main loop's receive notices; just stop
+                pass
+
+        t = asyncio.create_task(_pump())
+        self._pumps.add(t)
+
+        def _done(_t: asyncio.Task) -> None:
+            # Runs even if the pump was cancelled before it ever started — the
+            # subscription must never outlive the pump (unsubscribe is idempotent).
+            runner.unsubscribe(q)
+            self._pumps.discard(_t)
+
+        t.add_done_callback(_done)
+
+    def _find(self, mission_id: object) -> mission_runner.MissionRunner | None:
+        mid = str(mission_id or "").strip()
+        live = [r for r in self._runners if not r.done]
+        if mid:
+            return next((r for r in live if r.mission_id == mid), None)
+        # No id (older client / a mission whose row couldn't be created): only safe
+        # when exactly one mission is live — otherwise the frame is ambiguous.
+        return live[0] if len(live) == 1 else None
+
+    def route(self, msg: dict) -> bool:
+        """Deliver a mission-control frame to its mission. Returns True if handled."""
+        t = msg.get("type")
+        runner = self._find(msg.get("mission_id"))
+        if runner is None:
             return False
-        try:
-            m = json.loads(raw)
-        except (TypeError, ValueError):
-            continue
-        if m.get("type") in ("mission_stop", "cancel"):
+        if t in ("approve", "reject"):
+            return runner.provide_decision(msg)
+        if t in ("mission_stop", "cancel"):
+            runner.request_stop()
             return True
+        return False
+
+    @staticmethod
+    def is_control(msg: dict) -> bool:
+        """Frames meant for a RUNNING mission, not the chat turn. An id-less
+        approve/cancel stays a plan decision (handled inside the plan wait) — unless
+        it carries the ``mission: true`` marker (a mission whose row couldn't be
+        persisted has no id; the sole-live-runner fallback routes it)."""
+        t = msg.get("type")
+        if t == "mission_stop":
+            return True
+        if t not in ("approve", "reject", "cancel"):
+            return False
+        return bool(msg.get("mission_id")) or bool(msg.get("mission"))
+
+    def close(self) -> None:
+        """Client is gone — stop pumping. The missions themselves keep running
+        (Phase 4: detached); a client can re-attach later."""
+        for t in list(self._pumps):
+            t.cancel()
 
 
 async def _mission_roster(user: User, home_server: Server | None) -> list[Server]:
@@ -1215,6 +1304,9 @@ async def _run_mission(
         "skill": skill.slug if skill else None,
         "budget": budget,
         "resumed": resume is not None,
+        # Home server → the card's identity tint (fleet missions carry none).
+        "server_id": home_id,
+        "server_name": home_server.name if home_server is not None else None,
     }))
 
     # On resume, replay the saved transcript into the UI so the timeline rebuilds.
@@ -1610,68 +1702,23 @@ async def _run_mission_detached(runner: mission_runner.MissionRunner, user: User
 
 async def _replay_mission_to(ws: WebSocket, m) -> None:
     """Send a reconnecting client the mission's current state (a fresh mission_started
-    + every step so far, from the DB) so it catches up before live events resume."""
+    + every step so far, from the DB) so it catches up before live events resume.
+    Everything is tagged with the mission's id so it lands on the right card."""
+    mid = str(m.id)
     await ws.send_text(json.dumps({
-        "type": "mission_started", "mission_id": str(m.id), "goal": m.goal,
+        "type": "mission_started", "mission_id": mid, "goal": m.goal,
         "skill": m.skill_slug, "budget": m.budget, "resumed": False, "attached": True,
+        "server_id": str(m.server_id) if m.server_id else None,
+        "server_name": m.server_name,
     }))
     for i, s in enumerate(mission_service.steps_of(m), 1):
         await ws.send_text(json.dumps({
-            "type": "mission_step_done",
+            "type": "mission_step_done", "mission_id": mid,
             "index": i, "cmd": s.get("cmd", ""), "description": s.get("description", ""),
             "exit_code": s.get("exit_code", 0), "output_tail": s.get("output_tail", ""),
             "note": s.get("note", ""), "server_name": s.get("server"),
             "verifying": bool(s.get("verify")),
         }))
-
-
-async def _bridge_mission(ws: WebSocket, runner: mission_runner.MissionRunner) -> dict | None:
-    """Bridge an attached client to a running mission: forward the runner's events to
-    the socket, and forward the client's approve/stop back to the runner — until the
-    mission ends, the client sends something else (returned as a leftover frame to
-    reprocess), or the socket drops (WebSocketDisconnect, re-raised). The mission KEEPS
-    RUNNING regardless — dropping the client no longer ends it."""
-    q = runner.subscribe()
-
-    async def _pump() -> None:
-        while True:
-            event = await q.get()
-            if event is mission_runner.ENDED:
-                return
-            await ws.send_text(json.dumps(event))
-
-    async def _read() -> dict | None:
-        while True:
-            raw = await ws.receive_text()
-            try:
-                msg = json.loads(raw)
-            except (TypeError, ValueError):
-                continue
-            t = msg.get("type")
-            if t in ("approve", "reject"):
-                runner.provide_decision(msg)
-            elif t in ("mission_stop", "cancel"):
-                runner.request_stop()
-            else:
-                return msg  # leftover — the main loop handles it; the mission runs on
-
-    pump = asyncio.create_task(_pump())
-    reader = asyncio.create_task(_read())
-    leftover: dict | None = None
-    try:
-        done, _pending = await asyncio.wait({pump, reader}, return_when=asyncio.FIRST_COMPLETED)
-        if reader in done:
-            exc = reader.exception()
-            if exc is not None:
-                raise exc  # WebSocketDisconnect (or other) — client is gone
-            leftover = reader.result()
-        # else: pump finished (mission ended) — reader is cancelled below
-        return leftover
-    finally:
-        runner.unsubscribe(q)
-        for t in (pump, reader):
-            if not t.done():
-                t.cancel()
 
 
 async def _handle_message(
@@ -1683,6 +1730,7 @@ async def _handle_message(
     page_context: str | None = None,
     history: list[dict] | None = None,
     acting_user_id: str | None = None,
+    mission_control: "_MissionHub | None" = None,
 ) -> dict | None:
     """Metered wrapper (docs/AI-METERING.md) — collects every model call made for this
     one user message (plan → execute → explain = 1 action) and writes the ledger,
@@ -1702,6 +1750,7 @@ async def _handle_message(
         return await _handle_message_inner(
             ws, server, user_input, user_language, os_family, page_context, history,
             acting_user_id=acting_user_id, skill=skill, meta=meta,
+            mission_control=mission_control,
         )
     finally:
         calls = metering_service.finish_collection(tok)
@@ -1725,6 +1774,7 @@ async def _handle_message_inner(
     acting_user_id: str | None = None,
     skill: skill_service.Skill | None = None,
     meta: dict | None = None,
+    mission_control: "_MissionHub | None" = None,
 ) -> dict | None:
     """Plan, validate, execute and explain one user message. Returns a leftover
     client frame (a new message that arrived instead of approve/cancel) or None."""
@@ -1859,13 +1909,20 @@ async def _handle_message_inner(
     # ── 4. Wait for approval if required ─────────────────────────────────────
     # The approval binds server-side to THIS plan on THIS server. A new message
     # arriving instead of approve/cancel cancels the plan and is handed back to
-    # the loop so the user's words are never swallowed (unified socket).
+    # the loop so the user's words are never swallowed (unified socket). Control
+    # frames for a RUNNING mission (they carry a mission_id) are routed to it and
+    # never touch this plan — a mission card's Approve can't approve a plan.
     if requires_approval:
-        raw = await ws.receive_text()
-        try:
-            decision = json.loads(raw)
-        except (TypeError, ValueError):
-            decision = {}
+        while True:
+            raw = await ws.receive_text()
+            try:
+                decision = json.loads(raw)
+            except (TypeError, ValueError):
+                decision = {}
+            if mission_control is not None and _MissionHub.is_control(decision):
+                mission_control.route(decision)
+                continue
+            break
         if decision.get("type") != "approve":
             log = await _save_log(server, user_input, user_language, plan, "", "cancelled")
             await ws.send_text(json.dumps({"type": "cancelled", "log_id": str(log.id)}))

@@ -1,8 +1,11 @@
 import { useState } from "react"
+import { createPortal } from "react-dom"
 import {
   Rocket, CheckCircle2, XCircle, Loader2, Square, ChevronDown, ChevronRight,
-  AlertTriangle, Flag, Hand, ShieldCheck, ShieldAlert, Clock,
+  AlertTriangle, Flag, Hand, ShieldCheck, ShieldAlert, Clock, Maximize2, Minimize2, Check,
 } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { serverColor, FLEET_COLOR } from "@/lib/serverColor"
 import ServerTag from "./ServerTag"
 
 export interface MissionStep {
@@ -23,8 +26,23 @@ export interface MissionStep {
   waiting?: boolean
 }
 
+/** A risky step paused for the user — rendered INSIDE this mission's card so the
+ *  approval always binds visibly to ITS mission (several may run at once). */
+export interface MissionApproval {
+  index: number
+  cmd: string
+  description: string
+  riskLevel?: string
+  serverName?: string | null
+}
+
 export interface MissionState {
+  /** Routing key for control frames (approve/stop) — null if the mission row
+   *  couldn't be persisted (the backend then routes to the sole live mission). */
+  missionId?: string | null
   goal: string
+  /** The home server — the card's identity tint. Fleet missions carry none. */
+  serverName?: string | null
   status: "running" | "complete" | "blocked" | "failed" | "stopped"
   steps: MissionStep[]
   summary?: string
@@ -34,6 +52,8 @@ export interface MissionState {
   verified?: boolean
   /** What the verifier confirmed (verified) or what's still unproven (caveat). */
   verification?: string
+  /** Set while a risky step waits for the user's OK (in-card approval). */
+  pendingApproval?: MissionApproval | null
 }
 
 function StepRow({ step }: { step: MissionStep }) {
@@ -92,21 +112,68 @@ function StepRow({ step }: { step: MissionStep }) {
   )
 }
 
-/** Live mission timeline — one row per step, a Stop button while running, and a final
- *  banner (done / blocked / failed / stopped). */
+/** The status icon used by both the full card header and the collapsed pill. */
+function StatusIcon({ mission }: { mission: MissionState }) {
+  if (mission.status === "running") return <Loader2 size={13} className="shrink-0 animate-spin text-indigo-500" />
+  if (mission.status === "complete")
+    return mission.verified === false
+      ? <ShieldAlert size={13} className="shrink-0 text-amber-500" />
+      : <CheckCircle2 size={13} className="shrink-0 text-emerald-500" />
+  if (mission.status === "blocked") return <Hand size={13} className="shrink-0 text-amber-500" />
+  if (mission.status === "stopped") return <Square size={13} className="shrink-0 text-muted-foreground" />
+  return <XCircle size={13} className="shrink-0 text-red-500" />
+}
+
+/**
+ * A mission "workspace card": live step timeline, an in-card approval box when a risky
+ * step pauses, a Stop while running, and a final banner. Collapses to a one-line pill
+ * (the conversation stays calm around long work) and pops into a bigger overlay via ⤢.
+ * The header carries the home server's stable color, so with several cards running you
+ * can tell whose work is whose at a glance.
+ */
 export default function MissionProgress({
   mission,
   onStop,
+  onApprove,
 }: {
   mission: MissionState
   onStop: () => void
+  /** Approve the step in `mission.pendingApproval` (routed by mission id). */
+  onApprove?: () => void
 }) {
+  const [collapsed, setCollapsed] = useState(false)
+  const [big, setBig] = useState(false)
   const running = mission.status === "running"
-  return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card">
+  const color = mission.serverName ? serverColor(mission.serverName) : FLEET_COLOR
+
+  // Collapsed → a single calm line: status, goal, step count. Click to reopen.
+  if (collapsed) {
+    return (
+      <button
+        onClick={() => setCollapsed(false)}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-xl border border-l-4 bg-card px-3 py-2 text-left",
+          "border-border", color.ring,
+        )}
+        title="Show the mission card"
+      >
+        <StatusIcon mission={mission} />
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">{mission.goal}</span>
+        {mission.serverName && <ServerTag name={mission.serverName} />}
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          {mission.steps.length} step{mission.steps.length === 1 ? "" : "s"}
+        </span>
+        <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
+      </button>
+    )
+  }
+
+  const card = (
+    <div className={cn("overflow-hidden rounded-xl border border-l-4 border-border bg-card", color.ring, big && "flex max-h-full flex-col")}>
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <Rocket size={15} className="shrink-0 text-primary" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{mission.goal}</span>
+        {mission.serverName && <ServerTag name={mission.serverName} />}
         {running ? (
           <button
             onClick={onStop}
@@ -119,9 +186,25 @@ export default function MissionProgress({
             {mission.steps.length} step{mission.steps.length === 1 ? "" : "s"}
           </span>
         )}
+        <button
+          onClick={() => setBig((b) => !b)}
+          title={big ? "Back to the chat view" : "Open bigger"}
+          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {big ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+        </button>
+        {!big && (
+          <button
+            onClick={() => setCollapsed(true)}
+            title="Collapse to one line"
+            className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronDown size={13} className="rotate-180" />
+          </button>
+        )}
       </div>
 
-      <div className="space-y-1.5 px-3 py-2.5">
+      <div className={cn("space-y-1.5 px-3 py-2.5", big && "min-h-0 flex-1 overflow-y-auto")}>
         {mission.steps.length === 0 && running && (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Loader2 size={12} className="animate-spin" /> Planning the first step…
@@ -130,12 +213,50 @@ export default function MissionProgress({
         {mission.steps.map((s) => (
           <StepRow key={s.index} step={s} />
         ))}
-        {running && mission.steps.length > 0 && mission.steps.every((s) => !s.running) && (
+        {running && mission.steps.length > 0 && mission.steps.every((s) => !s.running) && !mission.pendingApproval && (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Loader2 size={12} className="animate-spin" /> Deciding the next step…
           </p>
         )}
       </div>
+
+      {/* In-card approval — the OK always binds visibly to THIS mission's step. */}
+      {running && mission.pendingApproval && (
+        <div className="space-y-1.5 border-t border-amber-500/25 bg-amber-500/5 px-3 py-2.5">
+          <p className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+            <Hand size={12} className="shrink-0" />
+            Ally needs your OK for this step
+            {mission.pendingApproval.serverName && (
+              <ServerTag name={mission.pendingApproval.serverName} />
+            )}
+          </p>
+          {mission.pendingApproval.description && (
+            <p className="text-xs text-foreground">{mission.pendingApproval.description}</p>
+          )}
+          <pre className="overflow-x-auto rounded bg-[#0d0d0d] px-2 py-1 font-mono text-[11px] text-zinc-300">
+            $ {mission.pendingApproval.cmd}
+          </pre>
+          <div className="flex items-center gap-2 pt-0.5">
+            <button
+              onClick={onApprove}
+              className="flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-500"
+            >
+              <Check size={11} /> Approve
+            </button>
+            <button
+              onClick={onStop}
+              className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-accent"
+            >
+              <Square size={10} /> Stop the mission
+            </button>
+            {mission.pendingApproval.riskLevel === "high" && (
+              <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400">
+                high risk
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {mission.status !== "running" && (() => {
         // A completed mission that the verification gate could NOT confirm is finished
@@ -181,4 +302,29 @@ export default function MissionProgress({
       })()}
     </div>
   )
+
+  // ⤢ big view: the SAME card in a roomy centered overlay; a slim inline stub keeps its
+  // place in the conversation. Portaled to <body> so the drawer's CSS transform (which
+  // would otherwise re-root position:fixed) can't confine the backdrop.
+  if (big) {
+    return (
+      <>
+        <div className="flex items-center gap-2 rounded-xl border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+          <StatusIcon mission={mission} />
+          <span className="min-w-0 flex-1 truncate">{mission.goal}</span>
+          <span className="shrink-0">viewing large</span>
+        </div>
+        {createPortal(
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 md:p-10" onClick={() => setBig(false)}>
+            <div className="max-h-full w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
+              {card}
+            </div>
+          </div>,
+          document.body,
+        )}
+      </>
+    )
+  }
+
+  return card
 }

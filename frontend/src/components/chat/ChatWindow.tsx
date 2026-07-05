@@ -70,8 +70,11 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   // Set when a durable (worker) run starts — enables the Stop button.
   const [runningLogId, setRunningLogId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
-  // The active mission's message id — mission_* events update that message in place.
-  const missionMsgIdRef = useRef<string | null>(null)
+  // Pass 2 — several missions can stream at once as workspace cards. Each event
+  // carries a mission_id; this map routes it to its card's message. The fallback key
+  // covers events from a mission whose row couldn't be persisted (id-less).
+  const missionMsgIdsRef = useRef<Map<string, string>>(new Map())
+  const lastMissionKeyRef = useRef<string | null>(null)
   // The last thing the user asked — re-sent when they pick a server from a "which one?"
   // clarification, so the pick answers the question without retyping.
   const pendingIntentRef = useRef<string>("")
@@ -80,15 +83,13 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     setMessages((prev) => [...prev, msg])
   }, [setMessages])
 
-  // Update the live mission message (steps append, statuses flip) without remounting.
-  // The target id is captured NOW, not inside the queued updater — handlers null the
-  // ref right after queueing a terminal update, and React runs the updater later.
-  const updateMission = useCallback((fn: (m: MissionState) => MissionState) => {
-    const targetId = missionMsgIdRef.current
-    if (!targetId) return
+  // Update ONE mission card (steps append, statuses flip) without remounting.
+  const updateMission = useCallback((key: string | null | undefined, fn: (m: MissionState) => MissionState) => {
+    const msgId = key ? missionMsgIdsRef.current.get(key) : undefined
+    if (!msgId) return
     setMessages((prev) =>
       prev.map((m) =>
-        m.id === targetId && m.role === "assistant" && m.kind === "mission"
+        m.id === msgId && m.role === "assistant" && m.kind === "mission"
           ? { ...m, mission: fn(m.mission) }
           : m,
       ),
@@ -223,19 +224,39 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           break
 
         case "mission_started": {
-          setIsLoading(true)
-          const id = nextId()
-          missionMsgIdRef.current = id
-          addMsg({
-            id,
-            role: "assistant",
-            kind: "mission",
-            mission: { goal: (msg.goal as string) ?? "", status: "running", steps: [] },
-          })
+          // Pass 2: each mission is its own workspace card. The chat input stays
+          // usable — missions run detached and stream in concurrently.
+          const key = (msg.mission_id as string | undefined) ?? `local-${nextId()}`
+          lastMissionKeyRef.current = key
+          const fresh: MissionState = {
+            missionId: key,
+            goal: (msg.goal as string) ?? "",
+            serverName: (msg.server_name as string | undefined) ?? null,
+            status: "running",
+            steps: [],
+            pendingApproval: null,
+          }
+          if (missionMsgIdsRef.current.has(key)) {
+            // Re-attach replay for a card we already show: reset it; the replayed
+            // steps repopulate the timeline (no duplicate cards).
+            updateMission(key, () => fresh)
+          } else {
+            const id = nextId()
+            missionMsgIdsRef.current.set(key, id)
+            addMsg({ id, role: "assistant", kind: "mission", mission: fresh })
+            // A short narration line — the card is the workspace; the chat stays free.
+            if (!msg.attached) {
+              addMsg({
+                id: nextId(), role: "system", kind: "divider",
+                label: `Mission ${msg.resumed ? "resumed" : "started"}${fresh.serverName ? ` on ${fresh.serverName}` : ""} — follow it in the card; you can keep chatting`,
+              })
+            }
+          }
           break
         }
 
         case "mission_step": {
+          const key = (msg.mission_id as string | undefined) ?? lastMissionKeyRef.current
           const step: MissionStep = {
             index: msg.index as number,
             cmd: (msg.cmd as string) ?? "",
@@ -247,29 +268,24 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             verifying: Boolean(msg.verifying),
             waiting: Boolean(msg.waiting),
           }
-          updateMission((m) => ({ ...m, steps: [...m.steps.filter((s) => s.index !== step.index), step] }))
-          // Risky step — reuse the normal approval UI (approve/cancel go over the socket).
-          if (step.needsApproval) {
-            setPending({
-              planSummary: step.description || step.cmd,
-              commands: [{
-                cmd: step.cmd,
-                description: step.description,
-                risk_level: (step.riskLevel ?? "low") as CommandItem["risk_level"],
-                requires_confirmation: true,
-              }],
-              requiresApproval: true,
-              riskLevel: step.riskLevel ?? "low",
-              estimatedSeconds: 30,
-              serverName: step.serverName ?? null,
-            })
-          }
+          // A risky step pauses INSIDE its own card (several missions may be running —
+          // the approval must visibly bind to exactly one of them).
+          updateMission(key, (m) => ({
+            ...m,
+            steps: [...m.steps.filter((s) => s.index !== step.index), step],
+            pendingApproval: step.needsApproval
+              ? {
+                  index: step.index, cmd: step.cmd, description: step.description,
+                  riskLevel: step.riskLevel, serverName: step.serverName ?? null,
+                }
+              : m.pendingApproval,
+          }))
           break
         }
 
-        case "mission_step_done":
-          setPending(null)
-          updateMission((m) => {
+        case "mission_step_done": {
+          const key = (msg.mission_id as string | undefined) ?? lastMissionKeyRef.current
+          updateMission(key, (m) => {
             const idx = msg.index as number
             const apply = (s: MissionStep): MissionStep => ({
               ...s,
@@ -283,65 +299,54 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
               verifying: msg.verifying !== undefined ? Boolean(msg.verifying) : s.verifying,
               waiting: msg.waiting !== undefined ? Boolean(msg.waiting) : s.waiting,
             })
+            const done = {
+              // This step is resolved — a pending approval for it is over.
+              pendingApproval: m.pendingApproval?.index === idx ? null : m.pendingApproval,
+            }
             // Rejected steps (safety / transfer guards) emit step_done with no prior
             // step event — append a row so the timeline shows what was refused.
             if (!m.steps.some((s) => s.index === idx)) {
-              return { ...m, steps: [...m.steps, apply({ index: idx, cmd: "", description: "", running: false })] }
+              return { ...m, ...done, steps: [...m.steps, apply({ index: idx, cmd: "", description: "", running: false })] }
             }
-            return { ...m, steps: m.steps.map((s) => (s.index === idx ? apply(s) : s)) }
+            return { ...m, ...done, steps: m.steps.map((s) => (s.index === idx ? apply(s) : s)) }
           })
           break
+        }
 
         case "mission_complete":
-          setIsLoading(false)
-          setPending(null)
-          updateMission((m) => ({
+        case "mission_blocked":
+        case "mission_failed":
+        case "mission_stopped": {
+          const key = (msg.mission_id as string | undefined) ?? lastMissionKeyRef.current
+          const status =
+            msg.type === "mission_complete" ? "complete"
+            : msg.type === "mission_blocked" ? "blocked"
+            : msg.type === "mission_failed" ? "failed" : "stopped"
+          updateMission(key, (m) => ({
             ...m,
-            status: "complete",
-            summary: (msg.summary as string) ?? "Mission complete.",
+            status,
+            summary:
+              status === "complete" ? ((msg.summary as string) ?? "Mission complete.")
+              : status === "blocked" ? ((msg.reason as string) ?? "I can't continue from here.")
+              : status === "failed" ? ((msg.reason as string) ?? "The mission failed.")
+              : m.summary,
             // Verification gate: verified true = goal proven; false = finished but the
             // goal couldn't be confirmed (shown honestly, not as a green success).
-            verified: msg.verified !== undefined ? Boolean(msg.verified) : undefined,
-            verification: (msg.verification as string | undefined) ?? (msg.caveat as string | undefined),
+            verified:
+              status === "complete" && msg.verified !== undefined ? Boolean(msg.verified) : m.verified,
+            verification:
+              status === "complete"
+                ? ((msg.verification as string | undefined) ?? (msg.caveat as string | undefined) ?? m.verification)
+                : m.verification,
+            pendingApproval: null,
             steps: m.steps.map((s) => ({ ...s, running: false })),
           }))
-          missionMsgIdRef.current = null
+          if (key) {
+            missionMsgIdsRef.current.delete(key)
+            if (lastMissionKeyRef.current === key) lastMissionKeyRef.current = null
+          }
           break
-
-        case "mission_blocked":
-          setIsLoading(false)
-          setPending(null)
-          updateMission((m) => ({
-            ...m,
-            status: "blocked",
-            summary: (msg.reason as string) ?? "I can't continue from here.",
-            steps: m.steps.map((s) => ({ ...s, running: false })),
-          }))
-          missionMsgIdRef.current = null
-          break
-
-        case "mission_failed":
-          setIsLoading(false)
-          setPending(null)
-          updateMission((m) => ({
-            ...m,
-            status: "failed",
-            summary: (msg.reason as string) ?? "The mission failed.",
-            steps: m.steps.map((s) => ({ ...s, running: false })),
-          }))
-          missionMsgIdRef.current = null
-          break
-
-        case "mission_stopped":
-          setIsLoading(false)
-          setPending(null)
-          updateMission((m) => ({
-            ...m,
-            status: "stopped",
-            steps: m.steps.map((s) => ({ ...s, running: false })),
-          }))
-          missionMsgIdRef.current = null
-          break
+        }
 
         case "quota_exceeded":
           setIsLoading(false)
@@ -512,8 +517,24 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     })
   }
 
-  function handleStopMission() {
-    send({ type: "mission_stop" })
+  // Mission control is routed by mission_id (several cards can run at once). A
+  // "local-" key means the mission row couldn't be persisted — the backend then
+  // routes to the sole live mission; the `mission: true` marker keeps an id-less
+  // mission approval distinct from a plan approval.
+  function missionWire(m: MissionState): Record<string, unknown> {
+    return m.missionId && !m.missionId.startsWith("local-")
+      ? { mission_id: m.missionId }
+      : { mission: true }
+  }
+
+  function handleStopMission(mission: MissionState) {
+    send({ type: "mission_stop", ...missionWire(mission) })
+  }
+
+  function handleApproveMission(mission: MissionState) {
+    send({ type: "approve", ...missionWire(mission) })
+    // Optimistic: the box closes now; the step's own done event settles the row.
+    updateMission(mission.missionId, (m) => ({ ...m, pendingApproval: null }))
   }
 
   // "Hand to AI" handoff — auto-send the seeded prompt once, after the socket is open.
@@ -636,6 +657,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             onBatch={handleBatch}
             onStartMission={handleStartMission}
             onStopMission={handleStopMission}
+            onApproveMission={handleApproveMission}
             servers={servers}
             onServerClick={handleServerClick}
             onPickServer={handlePickServer}
@@ -673,8 +695,8 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
         </div>
       )}
 
-      {/* Input — held while Ally is thinking or a mission is running (the mission
-          loop owns the socket then; Stop and Approve stay available). */}
+      {/* Input — held only while Ally is thinking about a chat turn. Missions run
+          detached in their cards (Pass 2): you can keep chatting while they work. */}
       <div className="border-t border-border p-3">
         {/* Light, continuous focus indicator (replaces the "Now talking to X" divider):
             which server "this" means, clearable back to the whole fleet. */}

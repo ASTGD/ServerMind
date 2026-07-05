@@ -47,7 +47,10 @@ interface Props {
   onHandoff?: (handoff: Handoff) => void
   onBatch?: (batch: BatchSpec) => void
   onStartMission?: (offer: MissionOffer) => void
-  onStopMission?: () => void
+  /** Stop THIS card's mission (several may run at once — routed by mission id). */
+  onStopMission?: (mission: MissionState) => void
+  /** Approve THIS card's paused step (in-card approval). */
+  onApproveMission?: (mission: MissionState) => void
   /** Known servers — their names render as clickable chips in text bubbles. */
   servers?: MentionServer[]
   onServerClick?: (id: string) => void
@@ -55,7 +58,7 @@ interface Props {
   onPickServer?: (id: string) => void
 }
 
-export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch, onStartMission, onStopMission, servers, onServerClick, onPickServer }: Props) {
+export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch, onStartMission, onStopMission, onApproveMission, servers, onServerClick, onPickServer }: Props) {
   const isUser = message.role === "user"
   const names = servers ?? []
   // The resource this message is about → a stable-colored chip above the bubble. Only
@@ -246,7 +249,11 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch,
           <MissionCard offer={message.offer} onStart={(o) => onStartMission?.(o)} />
         )}
         {message.role === "assistant" && message.kind === "mission" && (
-          <MissionProgress mission={message.mission} onStop={() => onStopMission?.()} />
+          <MissionProgress
+            mission={message.mission}
+            onStop={() => onStopMission?.(message.mission)}
+            onApprove={() => onApproveMission?.(message.mission)}
+          />
         )}
 
         {/* Out of Ally actions this month (the quota wall — docs/AI-METERING.md) */}

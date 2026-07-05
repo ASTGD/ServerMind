@@ -65,12 +65,19 @@ class MissionRunner:
     async def send_text(self, raw: str) -> None:
         """WebSocket-compatible shim so the mission loop can stay written against a
         ``.send_text(json)`` sink — here it just fans the event out to clients. This is
-        what lets ``_run_mission`` be handed a runner in place of a socket unchanged."""
+        what lets ``_run_mission`` be handed a runner in place of a socket unchanged.
+
+        Every event is tagged with this runner's ``mission_id`` (one place, covers every
+        emit site in the loop) so a client showing SEVERAL concurrent missions can route
+        each event to the right card."""
         import json
         try:
-            self.emit(json.loads(raw))
+            event = json.loads(raw)
         except (ValueError, TypeError):  # pragma: no cover — we always send valid json
-            pass
+            return
+        if self.mission_id and isinstance(event, dict):
+            event.setdefault("mission_id", self.mission_id)
+        self.emit(event)
 
     def _broadcast_ended(self) -> None:
         for q in list(self.subscribers):
