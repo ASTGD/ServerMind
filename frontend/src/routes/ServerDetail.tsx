@@ -1,11 +1,12 @@
 import { useState } from "react"
 import { useParams, useNavigate, Link, NavLink, Outlet } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, Loader2, MessageSquare, Terminal as TerminalIcon, AlertTriangle, KeyRound } from "lucide-react"
+import { ChevronLeft, Loader2, MessageSquare, Terminal as TerminalIcon, AlertTriangle, KeyRound, Monitor } from "lucide-react"
 import { getServer, deleteServer, testConnection, detectOs, trustKey } from "@/api/servers"
 import ConnectionStatus from "@/components/server/ConnectionStatus"
 import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
 import EditServerModal from "@/components/server/EditServerModal"
+import RdpDesktopModal from "@/components/server/RdpDesktopModal"
 import ServerActionsMenu from "@/components/server/ServerActionsMenu"
 import { useAssistantStore } from "@/store/assistantStore"
 import { useTerminalStore } from "@/store/terminalStore"
@@ -21,6 +22,7 @@ export default function ServerDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showCreds, setShowCreds] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
+  const [showDesktop, setShowDesktop] = useState(false)
   const openServer = useAssistantStore((s) => s.openServer)
   const openTerminal = useTerminalStore((s) => s.openSession)
 
@@ -108,6 +110,16 @@ export default function ServerDetail() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {server.connection_type === "winrm" && (
+            <button
+              onClick={() => setShowDesktop(true)}
+              title="Open the Windows desktop over RDP"
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              <Monitor size={14} />
+              Open Desktop
+            </button>
+          )}
           <button
             onClick={() => openServer(server)}
             title="Ask Ally about this server"
@@ -159,6 +171,7 @@ export default function ServerDetail() {
 
       {showEdit && <EditServerModal server={server} onClose={() => setShowEdit(false)} />}
       {showCreds && <UpdateCredentialsModal server={server} onClose={() => setShowCreds(false)} />}
+      {showDesktop && <RdpDesktopModal server={server} onClose={() => setShowDesktop(false)} />}
 
       {/* Login rejected (stale credentials) */}
       {server.status === "auth_failed" && (

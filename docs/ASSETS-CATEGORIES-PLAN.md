@@ -44,7 +44,21 @@
 > user), so adding a cloud is one backend adapter + one config entry. **Live-verified** the
 > provider picker (AWS/DO/Hetzner render), DO's single-token form, and the DO reject path
 > end-to-end (real `/v2/account` 401 → friendly message, no account created). 6 new mock
-> tests (18 cloud total). GCP + Azure are Phase D part 2. Phase E (RDP viewer) remains.
+> tests (18 cloud total). GCP + Azure are Phase D part 2.
+>
+> **Status: Phase E foundation shipped (2026-07-06).** Remote Desktop as a Windows-asset
+> capability. **Security core (fully wired + tested):** `rdp_enabled` opt-in per asset
+> (migration 028, default off); `rdp_service` guards (Windows-only + enabled) + a short-lived,
+> **credential-free** signed session token (RDP creds never reach the browser); endpoints
+> `POST /rdp/enable` (needs manage) + `POST /rdp/session` (needs execute — so a **viewer role
+> can never open a live desktop**, via the shared `resolve_server` gate). Frontend: an "Open
+> Desktop" button on Windows assets + `RdpDesktopModal` (enable → issue session → an honest
+> "streaming service not configured yet" state, or the connecting canvas once guacd is set).
+> `RDP_GUACD_URL` empty = streaming not deployed. Verified: 6 rdp-service tests (guards +
+> scoped token), route live + auth-gated, and the button correctly **hidden on non-Windows
+> assets** (live). **Phase E part 2 (needs a live Windows/RDP host — same limit as WinRM,
+> which was always mock-only):** the Apache Guacamole (`guacd`) Docker service +
+> guacamole-common-js viewer that streams real pixels.
 
 ## The idea in one line
 

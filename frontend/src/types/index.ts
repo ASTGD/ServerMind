@@ -26,6 +26,7 @@ export interface Server {
   os_version: string | null
   arch: string | null
   shell: string
+  rdp_enabled?: boolean // Windows Remote Desktop opt-in (Phase E)
   status: "online" | "offline" | "unknown" | "auth_failed" | "host_changed"
   tags: string[] | null
   notes: string | null
