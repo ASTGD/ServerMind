@@ -146,8 +146,9 @@ class CpanelAdapter(_Adapter):
             resp = requests.get(url, headers=headers, params=params or {}, verify=settings.HOSTING_TLS_VERIFY, timeout=_TIMEOUT)
         except requests.RequestException as exc:
             raise HostingError(f"Could not reach cPanel: {exc}")
-        if resp.status_code == 401:
-            raise HostingError("cPanel authentication failed (check username / API token).")
+        # Live cpsrvd returns 403 (not 401) for a bad/forbidden API token — treat both as auth.
+        if resp.status_code in (401, 403):
+            raise HostingError("cPanel denied the request (check the username and API token, and that the token has access).")
         if resp.status_code >= 400:
             raise HostingError(f"cPanel returned HTTP {resp.status_code}")
         try:
