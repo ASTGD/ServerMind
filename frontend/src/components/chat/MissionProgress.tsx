@@ -2,7 +2,7 @@ import { useState } from "react"
 import { createPortal } from "react-dom"
 import {
   Rocket, CheckCircle2, XCircle, Loader2, Square, ChevronDown, ChevronRight,
-  AlertTriangle, Flag, Hand, ShieldCheck, ShieldAlert, Clock, Maximize2, Minimize2, Check,
+  AlertTriangle, Flag, Hand, ShieldCheck, ShieldAlert, Clock, Maximize2, Minimize2, Check, Brain,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { serverColor, FLEET_COLOR } from "@/lib/serverColor"
@@ -24,6 +24,8 @@ export interface MissionStep {
   verifying?: boolean
   /** A `wait` step — polling a long-running job; doesn't consume the step budget. */
   waiting?: boolean
+  /** Planned with a stronger model (the mission was struggling) — model ladder. */
+  strong?: boolean
 }
 
 /** A risky step paused for the user — rendered INSIDE this mission's card so the
@@ -86,6 +88,14 @@ function StepRow({ step }: { step: MissionStep }) {
           {step.waiting && (
             <span className="mr-1.5 inline-flex items-center gap-0.5 rounded bg-amber-500/10 px-1 py-px text-[10px] font-medium text-amber-600 dark:text-amber-400">
               <Clock size={9} /> wait
+            </span>
+          )}
+          {step.strong && (
+            <span
+              className="mr-1.5 inline-flex items-center gap-0.5 rounded bg-fuchsia-500/10 px-1 py-px text-[10px] font-medium text-fuchsia-600 dark:text-fuchsia-400"
+              title="Ally used a stronger model for this step"
+            >
+              <Brain size={9} /> stronger model
             </span>
           )}
           {step.serverName && <ServerTag name={step.serverName} className="mr-1.5" />}

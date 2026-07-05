@@ -28,6 +28,29 @@ _DEFAULT_MODELS = {
     "servermind": "servermind",  # the hosted gateway picks the real upstream model
 }
 
+# The model ladder (docs/AI-MODEL-LADDER.md): Ally uses the right-sized brain per task.
+# 'default' is the resolved provider model; 'low'/'high' swap to a cheaper / stronger
+# model for trivial / high-stakes work. Applied for the ANTHROPIC provider only — a
+# bring-your-own-key user on another provider keeps their one configured model, and the
+# whole thing is gated by settings.ENABLE_MODEL_LADDER.
+TIERS = ("low", "default", "high")
+_TIER_DEFAULTS = {"low": "claude-haiku-4-5-20251001", "high": "claude-opus-4-8"}
+
+
+def _tier_model(provider: str, tier: str) -> str | None:
+    """The model to use for a non-default tier, or None to keep the resolved model
+    (ladder off, unsupported provider, or unknown tier)."""
+    if not settings.ENABLE_MODEL_LADDER or provider != "anthropic" or tier not in ("low", "high"):
+        return None
+    override = settings.AI_MODEL_HIGH if tier == "high" else settings.AI_MODEL_LOW
+    return override or _TIER_DEFAULTS[tier]
+
+
+def model_for_tier(tier: str = "default") -> str:
+    """The concrete model id a call at this tier would use (for logging / tests)."""
+    provider, _key, model, _base = _resolve()
+    return _tier_model(provider, tier) or model
+
 # OpenAI-compatible base URLs for non-OpenAI providers reached via the openai SDK.
 _OPENAI_COMPATIBLE_BASE = {
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -91,10 +114,16 @@ def _resolve() -> tuple[str, str, str, str | None]:
 
 
 async def complete(
-    system: str, user: str, *, max_tokens: int = 2048, system_volatile: str = ""
+    system: str, user: str, *, max_tokens: int = 2048, system_volatile: str = "",
+    tier: str = "default",
 ) -> str:
     """Single-turn completion: a system prompt + one user message → text response.
     Routes to the configured provider.
+
+    ``tier`` picks the model size (docs/AI-MODEL-LADDER.md): 'default' uses the
+    configured model; 'high' swaps to a stronger model for high-stakes judgment and
+    'low' to a cheaper/faster one for trivial parses — Anthropic provider only, gated by
+    ENABLE_MODEL_LADDER (a no-op elsewhere, so callers can always pass a tier safely).
 
     Prompt caching (Ally Context C3): ``system`` is the STABLE prefix (identical across
     consecutive calls in a conversation — persona, rules, server identity, skill) and
@@ -108,6 +137,7 @@ async def complete(
         raise RuntimeError(
             "No AI API key configured — set AI_API_KEY (or ANTHROPIC_API_KEY) and AI_PROVIDER."
         )
+    model = _tier_model(provider, tier) or model
     if provider == "anthropic":
         return await _anthropic_complete(key, model, system, system_volatile, user, max_tokens)
     # openai / gemini / openai_compatible / others → the OpenAI-protocol client.

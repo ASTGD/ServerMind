@@ -267,6 +267,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             serverName: (msg.server_name as string | undefined) ?? undefined,
             verifying: Boolean(msg.verifying),
             waiting: Boolean(msg.waiting),
+            strong: Boolean(msg.strong),
           }
           // A risky step pauses INSIDE its own card (several missions may be running —
           // the approval must visibly bind to exactly one of them).

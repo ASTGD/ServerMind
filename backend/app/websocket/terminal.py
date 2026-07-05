@@ -1361,14 +1361,19 @@ async def _run_mission(
                 return None
 
             # 1) Plan the next step from everything observed so far. One retry — a
-            # single malformed reply must not kill a long mission.
+            # single malformed reply must not kill a long mission. Model ladder: hand a
+            # STRUGGLING mission (verifier bounced it back, or repeated failures) a
+            # stronger brain for this step, then drop back once it's moving again.
+            step_tier = ai_service.mission_step_tier(steps, verify_attempts)
+            if step_tier == "high":
+                logger.info("mission %s: escalating next step to a stronger model", mission_id)
             decision = None
             plan_error: Exception | None = None
             for attempt in (1, 2):
                 try:
                     decision = await ai_service.plan_mission_step(
                         goal, roster, steps, budget - executor_steps, skill,
-                        user_language, home_id=home_id,
+                        user_language, home_id=home_id, tier=step_tier,
                     )
                     break
                 except Exception as exc:  # noqa: BLE001
@@ -1617,6 +1622,9 @@ async def _run_mission(
                 "cmd": cmd, "description": description, "risk_level": risk,
                 "needs_approval": needs_approval,
                 "server_id": str(target.id), "server_name": target.name,
+                # Model ladder: this step was planned with a stronger brain (the mission
+                # was struggling) — the UI shows a subtle badge.
+                "strong": step_tier == "high",
             }
             await ws.send_text(json.dumps(step_event))
             if needs_approval:

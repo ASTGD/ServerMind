@@ -493,6 +493,20 @@ def _mission_roster(servers: list[Server], home_id: str | None) -> str:
     return "\n".join(lines) if lines else "(no servers)"
 
 
+def mission_step_tier(steps: list[dict], verify_attempts: int) -> str:
+    """Pick the brain size for the NEXT mission step (model ladder). Escalate to 'high'
+    when the mission is genuinely struggling — the verifier bounced it back, or the last
+    two real steps both failed — then drop back to 'default' once it's moving again.
+    Pure so it's unit-tested; keeps escalation bounded (missions are short)."""
+    if verify_attempts > 0:
+        return "high"
+    real = [s for s in steps if s.get("cmd") and s.get("cmd") not in ("(resumed)", "(verification)")]
+    recent = real[-2:]
+    if len(recent) >= 2 and all((s.get("exit_code") or 0) != 0 for s in recent):
+        return "high"
+    return "default"
+
+
 async def plan_mission_step(
     goal: str,
     servers: list[Server],
@@ -501,10 +515,14 @@ async def plan_mission_step(
     skill: skill_service.Skill | None = None,
     user_language: str = "en",
     home_id: str | None = None,
+    tier: str = "default",
 ) -> dict:
     """One iteration of the mission loop: given the goal, the runbook, the servers the
     user can act on, and everything that has happened, decide the next step (or
-    done/blocked). Steps carry a server_id — a mission may span several servers."""
+    done/blocked). Steps carry a server_id — a mission may span several servers.
+
+    ``tier`` (model ladder) lets the loop hand a struggling mission a stronger brain for
+    the next step (see ``mission_step_tier``); normal steps run on the default model."""
     runbook = ""
     if skill is not None:
         runbook = f"THE RUNBOOK (follow its stages and pitfalls):\n{skill.body}"
@@ -519,7 +537,8 @@ async def plan_mission_step(
     )
     raw = _extract_json(
         await llm_service.complete(
-            system, "Decide the next mission step.", max_tokens=3072, system_volatile=volatile
+            system, "Decide the next mission step.", max_tokens=3072,
+            system_volatile=volatile, tier=tier,
         )
     )
     try:
@@ -623,9 +642,11 @@ async def verify_mission(
         transcript=_mission_transcript(steps), rounds_left=rounds_left
     )
     raw = _extract_json(
+        # HIGH tier (model ladder): the verification gate is the last line against a
+        # false "done" — worth the strongest brain we have.
         await llm_service.complete(
             system, "Verify the mission goal is truly achieved.",
-            max_tokens=2048, system_volatile=volatile,
+            max_tokens=2048, system_volatile=volatile, tier="high",
         )
     )
     try:
@@ -875,13 +896,16 @@ async def explain_output(
     """Generate a plain-language explanation of the command output."""
     system = _EXPLAIN_SYSTEM.format(user_language=user_language)
     prompt = f"Plan: {plan_summary}\n\nOutput:\n{output[:3000]}"
-
-    return (await llm_service.complete(system, prompt, max_tokens=1024)).strip()
+    # LOW tier (model ladder): summarising output in plain English is easy work.
+    return (await llm_service.complete(system, prompt, max_tokens=1024, tier="low")).strip()
 
 
 async def parse_schedule(human_input: str) -> dict:
     """Convert natural language schedule description to a cron expression via Claude."""
-    raw = _extract_json(await llm_service.complete(_SCHEDULE_SYSTEM, human_input, max_tokens=512))
+    # LOW tier (model ladder): NL → cron is a small, mechanical parse.
+    raw = _extract_json(
+        await llm_service.complete(_SCHEDULE_SYSTEM, human_input, max_tokens=512, tier="low")
+    )
     try:
         return _parse_json(raw)
     except json.JSONDecodeError as exc:
