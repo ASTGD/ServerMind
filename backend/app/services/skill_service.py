@@ -30,7 +30,7 @@ _SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
 # runbooks (e.g. security-incident-response) that carry a lot of essential procedure,
 # and they ride in the CACHED prompt prefix — full cost only on the first step, ~10%
 # after — so the token impact of a longer runbook is small. Still bounds a runaway file.
-_BODY_MAX = 8000
+_BODY_MAX = 8500
 
 # Mission step budgets. Ad-hoc missions use the default; a mission-mode skill may
 # declare its own `budget:` (a deep investigation or multi-stage install needs more

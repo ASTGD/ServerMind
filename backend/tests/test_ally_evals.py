@@ -66,22 +66,40 @@ def _skill_body(slug: str) -> str:
 
 def test_incident_response_requires_live_containment():
     """Regression guard for the gap found live (2026-07-05): the incident-response
-    mission quarantined the webshell but left the live /etc/cron.d backdoor running,
-    then wrongly reported 'no rogue cron entries'. The fix is prompt-level, so lock
-    the exact rules into the skill so a future edit can't silently drop them:
+    mission quarantined the webshells but left the live /etc/cron.d backdoor running
+    (it got lost among the box's many legitimate CyberPanel crons) and its first pass
+    didn't resolve every seeded finding. The fix is prompt-level — an explicit
+    findings-ledger discipline + a finish check — so lock those rules into the skill so
+    a future edit can't silently drop them:
+      - build a FINDINGS LEDGER from the scan's exact indicators and track each to resolved
+      - go to the EXACT flagged path (don't dilute it in a general survey)
       - evidence-copy is NOT containment (the live artifact must still be neutralized)
-      - every flagged finding must be resolved
+      - a FINISH CHECK must walk the ledger before "done"; no open item may remain
       - never call the server clean while a flagged indicator is still live
     """
     body = _skill_body("security-incident-response")
-    # Copying an artifact to the evidence folder must be called out as NOT containment.
-    assert "not the same as containing" in body
-    # The LIVE persistence must be neutralized, not just copied.
-    assert "still be neutralized" in body
-    # Must not declare the server clean while an indicator is still live.
-    assert "never report the server clean while a flagged indicator is still live" in body
-    # Every flagged finding must be addressed (no silent skips).
-    assert "address every flagged finding" in body
+    # Turn the scan's indicators into an explicit, tracked ledger.
+    assert "track every finding to resolution" in body
+    assert "findings ledger" in body
+    # Go straight to the exact flagged path rather than a general survey that hides it.
+    assert "exact flagged path" in body
+    # Copying an artifact to the evidence folder is NOT containment.
+    assert "not containment" in body
+    # May not finish while any ledger item is still uninvestigated (OPEN).
+    assert "forbids finishing" in body
+    assert "only an uninvestigated" in body
+    # A finish check must reconcile the ledger before declaring done.
+    assert "finish check" in body
+    # Must not declare the server clean while an indicator is unresolved.
+    assert "never report the server clean" in body
+    # Adversarial-review must-fixes (2026-07-05), so the gap can't reopen and the fix
+    # can't create a NEW over-eager failure:
+    #  (1) BENIGN needs POSITIVE attribution — reading contents + "looks legit" is how the
+    #      rogue cron was originally rationalised; require naming the legitimate software.
+    assert "positively name" in body
+    #  (2) A first-class honest-incomplete terminal status, so a genuinely unresolvable item
+    #      isn't force-CONTAINED or force-BENIGN just to clear the ledger.
+    assert "needs-human" in body
 
 
 def test_incident_response_is_reversible_and_evidence_first():
