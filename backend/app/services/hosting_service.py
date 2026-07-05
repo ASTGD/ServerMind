@@ -8,6 +8,7 @@ Supported panels (``server.panel_type``):
 - ``cyberpanel`` — cloud-style JSON API (default port 8090, HTTPS)
 - ``cpanel``     — UAPI with API-token auth (default port 2083, HTTPS)
 - ``plesk``      — REST API v2 with Basic auth (default port 8443, HTTPS)
+- ``directadmin``— legacy CMD_API_* with Basic auth (default port 2222, HTTPS)
 
 All calls are read-only or panel-mediated writes (create site / DB / email,
 issue SSL). No raw shell commands are run — that is the whole point of Hosting
@@ -21,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from urllib.parse import parse_qs
 
 import requests
 from requests.auth import HTTPBasicAuth
@@ -233,10 +235,88 @@ class PleskAdapter(_Adapter):
         return {"status": "created", "domain": body["domain"]}
 
 
+class DirectAdminAdapter(_Adapter):
+    """DirectAdmin legacy API (``/CMD_API_*``, default port 2222, HTTP Basic auth).
+
+    Responses are URL-encoded ``key=value`` (the most version-compatible format,
+    parsed with ``parse_qs``); list results come back as repeated ``list[]`` keys,
+    and a command failure is signalled by ``error=1`` in the body (HTTP 200). Auth
+    uses the panel username + password, or a DirectAdmin login key as the password.
+
+    Covers the same surface as the cPanel adapter (connect + list sites, list/create
+    databases, list/create email). NOTE: endpoint shape follows DirectAdmin's
+    documented legacy API — validate against your DA version before relying on the
+    write operations (no live DA panel was available at build time)."""
+
+    def _api(self, cmd: str, params: dict | None = None, method: str = "GET") -> dict:
+        url = f"{self._base()}/CMD_API_{cmd}"
+        try:
+            resp = requests.request(
+                method, url,
+                params=params if method == "GET" else None,
+                data=params if method != "GET" else None,
+                verify=settings.HOSTING_TLS_VERIFY, timeout=_TIMEOUT,
+                auth=HTTPBasicAuth(self.username, self.secret),
+            )
+        except requests.RequestException as exc:
+            raise HostingError(f"Could not reach DirectAdmin: {exc}")
+        if resp.status_code == 401:
+            raise HostingError("DirectAdmin authentication failed (check username / password or login key).")
+        if resp.status_code >= 400:
+            raise HostingError(f"DirectAdmin returned HTTP {resp.status_code}")
+        # A valid API reply is URL-encoded; an HTML page means we hit the login/UI
+        # (wrong port, or credentials rejected without a 401).
+        if resp.text.lstrip().startswith("<"):
+            raise HostingError("DirectAdmin returned a non-API (HTML) response — check host, port, and credentials.")
+        parsed = parse_qs(resp.text)
+        if parsed.get("error", ["0"])[0] not in ("0", ""):
+            msg = parsed.get("text", [""])[0] or parsed.get("details", [""])[0] or "DirectAdmin command failed"
+            raise HostingError(msg.replace("_", " "))
+        return parsed
+
+    @staticmethod
+    def _items(parsed: dict) -> list[str]:
+        return parsed.get("list[]") or parsed.get("list", [])
+
+    def test_connection(self) -> dict:
+        self._api("SHOW_DOMAINS")
+        return {"ok": True}
+
+    def list_websites(self) -> list[dict]:
+        return [{"domain": d, "state": "active"} for d in self._items(self._api("SHOW_DOMAINS"))]
+
+    def list_databases(self) -> list[dict]:
+        return [{"db_name": d} for d in self._items(self._api("DATABASES", {"action": "list"}))]
+
+    def create_database(self, body: dict) -> dict:
+        name = body["db_name"]
+        pw = body.get("db_password") or ""
+        self._api("DATABASES", {
+            "action": "create", "name": name,
+            "user": body.get("db_user") or name, "passwd": pw, "passwd2": pw,
+        }, method="POST")
+        return {"status": "created", "db_name": name}
+
+    def list_email(self, domain: str | None) -> list[dict]:
+        if not domain:
+            raise HostingError("DirectAdmin needs a domain to list its email accounts.")
+        users = self._items(self._api("POP", {"action": "list", "domain": domain}))
+        return [{"email": f"{u}@{domain}", "domain": domain} for u in users]
+
+    def create_email(self, body: dict) -> dict:
+        pw = body["password"]
+        self._api("POP", {
+            "action": "create", "domain": body["domain"], "user": body["user"],
+            "passwd": pw, "passwd2": pw, "quota": 0, "limit": 0,
+        }, method="POST")
+        return {"status": "created", "email": f"{body['user']}@{body['domain']}"}
+
+
 _ADAPTERS = {
     "cyberpanel": CyberPanelAdapter,
     "cpanel": CpanelAdapter,
     "plesk": PleskAdapter,
+    "directadmin": DirectAdminAdapter,
 }
 
 

@@ -46,7 +46,7 @@ export default function AddServerModal({ onClose }: Props) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  const HOSTING_PORTS: Record<string, number> = { cyberpanel: 8090, cpanel: 2083, plesk: 8443 }
+  const HOSTING_PORTS: Record<string, number> = { cyberpanel: 8090, cpanel: 2083, plesk: 8443, directadmin: 2222 }
 
   function setConnectionType(value: ServerCreateBody["connection_type"]) {
     setForm((prev) => {
@@ -166,6 +166,7 @@ export default function AddServerModal({ onClose }: Props) {
                 <option value="cyberpanel">CyberPanel</option>
                 <option value="cpanel">cPanel</option>
                 <option value="plesk">Plesk</option>
+                <option value="directadmin">DirectAdmin</option>
               </select>
             </div>
           ) : form.connection_type === "ssh" ? (

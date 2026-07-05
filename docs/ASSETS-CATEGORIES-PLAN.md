@@ -10,7 +10,14 @@
 > (`frontend/src/lib/assetCategories.tsx`), the category-first Add-Asset flow (tiles that
 > cascade the right transport), category icons/badges on asset cards, an Edit re-file
 > control, and i18n across all 4 locales. Cloud shows as a dimmed "Soon" tile.
-> Live-verified: nav/cards/tiles + the SSH/WinRM/Hosting cascades. Phases B–E below remain.
+> Live-verified: nav/cards/tiles + the SSH/WinRM/Hosting cascades.
+>
+> **Status: Phase B shipped (2026-07-06).** The 4th hosting adapter — **DirectAdmin**
+> (`DirectAdminAdapter` in `hosting_service.py`: legacy `CMD_API_*`, HTTP Basic auth,
+> URL-encoded `parse_qs` responses; connect + list sites, list/create DB, list/create
+> email) + the Add-Asset panel picker (CyberPanel/cPanel/Plesk/**DirectAdmin**, port 2222).
+> Mock-tested (11 cases) against the documented DA API — like cPanel/Plesk it needs one
+> live pass per panel version (CyberPanel remains the live-proven one). Phases C–E remain.
 
 ## The idea in one line
 
