@@ -45,6 +45,19 @@ async def list_servers(
     return await team_service.accessible_servers(db, current_user)
 
 
+def infer_category(connection_type: str, panel_type: str | None) -> str:
+    """The user-facing Assets category for an asset when the client didn't send one
+    (older clients, or backfill). Bare-metal can't be inferred from transport → a plain
+    SSH box defaults to 'vps'; the user can re-file it in Edit."""
+    if connection_type == "winrm":
+        return "windows"
+    if connection_type == "hosting":
+        return "hosting"
+    if connection_type == "ssh" and panel_type:
+        return "hosting"
+    return "vps"
+
+
 @router.post("", response_model=ServerOut, status_code=status.HTTP_201_CREATED)
 async def create_server(
     request: Request,
@@ -72,6 +85,7 @@ async def create_server(
         auth_type=body.auth_type,
         connection_type=body.connection_type,
         panel_type=body.panel_type,
+        category=body.category or infer_category(body.connection_type, body.panel_type),
         encrypted_cred=encrypted,
         shell="powershell" if body.connection_type == "winrm" else "bash",
         tags=body.tags,
@@ -151,6 +165,8 @@ async def update_server(
         server.tags = body.tags
     if body.notes is not None:
         server.notes = body.notes
+    if body.category is not None:
+        server.category = body.category
 
     conn_changed = False
     if body.host is not None and body.host != server.host:

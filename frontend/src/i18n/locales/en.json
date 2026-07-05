@@ -5,7 +5,7 @@
   },
   "nav": {
     "dashboard": "Dashboard",
-    "servers": "Servers",
+    "servers": "Assets",
     "playbooks": "Playbooks",
     "scripts": "My Scripts",
     "logs": "Logs",
@@ -25,7 +25,7 @@
     "logout": "Log Out"
   },
   "servers": {
-    "add": "Add Server",
+    "add": "Add Asset",
     "connect": "Connect",
     "disconnect": "Disconnect",
     "status": {

@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import {
   LayoutDashboard,
-  Server,
+  Boxes,
   BookOpen,
   FileCode,
   ScrollText,
@@ -20,7 +20,7 @@ import UpgradeModal from "./UpgradeModal"
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, key: "dashboard" },
   { to: "/assistant", icon: Sparkles, key: "assistant" },
-  { to: "/servers", icon: Server, key: "servers" },
+  { to: "/servers", icon: Boxes, key: "servers" },
   { to: "/playbooks", icon: BookOpen, key: "playbooks" },
   { to: "/scripts", icon: FileCode, key: "scripts" },
   { to: "/terminal", icon: TerminalIcon, key: "terminal" },

@@ -5,7 +5,7 @@
   },
   "nav": {
     "dashboard": "Panel",
-    "servers": "Servidores",
+    "servers": "Activos",
     "playbooks": "Guías",
     "scripts": "Mis Scripts",
     "logs": "Registros",
@@ -22,7 +22,7 @@
     "logout": "Cerrar sesión"
   },
   "servers": {
-    "add": "Agregar servidor",
+    "add": "Agregar activo",
     "connect": "Conectar",
     "disconnect": "Desconectar",
     "status": {

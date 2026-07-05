@@ -23,6 +23,8 @@ class Server(Base):
     auth_type: Mapped[str] = mapped_column(String(20), nullable=False)       # 'password' | 'key'
     connection_type: Mapped[str] = mapped_column(String(20), nullable=False) # 'ssh' | 'winrm' | 'hosting'
     panel_type: Mapped[str | None] = mapped_column(String(20))               # 'cyberpanel'|'cpanel'|'plesk'|null
+    # User-facing "Assets" grouping (what it IS), independent of the transport above.
+    category: Mapped[str | None] = mapped_column(String(20))                 # 'bare_metal'|'vps'|'hosting'|'windows'|'cloud'
     encrypted_cred: Mapped[str] = mapped_column(Text, nullable=False)
     fingerprint: Mapped[str | None] = mapped_column(Text)
     os_type: Mapped[str | None] = mapped_column(String(50))

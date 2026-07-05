@@ -5,7 +5,7 @@
   },
   "nav": {
     "dashboard": "لوحة التحكم",
-    "servers": "الخوادم",
+    "servers": "الأصول",
     "playbooks": "الأدلة",
     "scripts": "نصوصي",
     "logs": "السجلات",
@@ -22,7 +22,7 @@
     "logout": "تسجيل الخروج"
   },
   "servers": {
-    "add": "إضافة خادم",
+    "add": "إضافة أصل",
     "connect": "اتصال",
     "disconnect": "قطع الاتصال",
     "status": {

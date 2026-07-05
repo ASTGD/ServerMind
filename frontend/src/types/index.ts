@@ -21,6 +21,7 @@ export interface Server {
   auth_type: "password" | "key"
   connection_type: "ssh" | "winrm" | "hosting"
   panel_type: string | null
+  category: string | null // 'bare_metal'|'vps'|'hosting'|'windows'|'cloud' (Assets grouping)
   os_type: string | null
   os_version: string | null
   arch: string | null

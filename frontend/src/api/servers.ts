@@ -9,6 +9,7 @@ export interface ServerCreateBody {
   auth_type: "password" | "key"
   connection_type: "ssh" | "winrm" | "hosting"
   panel_type?: string | null
+  category?: string | null
   credential: string
   tags?: string[] | null
   notes?: string | null
@@ -18,6 +19,7 @@ export interface ServerUpdateBody {
   name?: string
   tags?: string[] | null
   notes?: string | null
+  category?: string | null
   host?: string
   port?: number
   username?: string

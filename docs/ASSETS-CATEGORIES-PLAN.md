@@ -3,8 +3,14 @@
 > **Supersedes and expands [SERVER-CATEGORIES.md](SERVER-CATEGORIES.md).** That doc scoped
 > the rename + a 4-way category picker; this one is the full design for a **category-first
 > "Assets" model with a proper, tailored UI per category**, plus the two real sub-products
-> that surfaced (cloud-account import, RDP viewer). Nothing here is built yet — it's the
-> plan to implement gradually.
+> that surfaced (cloud-account import, RDP viewer). Implemented gradually.
+>
+> **Status: Phase A shipped (2026-07-05).** Servers→Assets (user-facing; DB stays
+> `servers`), the `category` column (migration 026 + backfill), the Category Registry
+> (`frontend/src/lib/assetCategories.tsx`), the category-first Add-Asset flow (tiles that
+> cascade the right transport), category icons/badges on asset cards, an Edit re-file
+> control, and i18n across all 4 locales. Cloud shows as a dimmed "Soon" tile.
+> Live-verified: nav/cards/tiles + the SSH/WinRM/Hosting cascades. Phases B–E below remain.
 
 ## The idea in one line
 

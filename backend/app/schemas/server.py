@@ -13,6 +13,7 @@ class ServerCreate(BaseModel):
     auth_type: str  # 'password' | 'key'
     connection_type: str  # 'ssh' | 'winrm' | 'hosting'
     panel_type: str | None = None
+    category: str | None = None  # 'bare_metal'|'vps'|'hosting'|'windows'|'cloud' (inferred if omitted)
     credential: str  # plaintext — encrypted before storage
     tags: list[str] | None = None
     notes: str | None = None
@@ -22,6 +23,7 @@ class ServerUpdate(BaseModel):
     name: str | None = None
     tags: list[str] | None = None
     notes: str | None = None
+    category: str | None = None      # re-file an asset into another category
     # Connection details (all optional) — provide `credential` to change the password/key.
     host: str | None = None
     port: int | None = None
@@ -39,6 +41,7 @@ class ServerOut(BaseModel):
     auth_type: str
     connection_type: str
     panel_type: str | None
+    category: str | None
     os_type: str | None
     os_version: str | None
     arch: str | None

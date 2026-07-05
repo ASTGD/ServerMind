@@ -1,0 +1,56 @@
+import { HardDrive, Server as ServerIcon, LayoutPanelTop, AppWindow, Cloud } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
+import type { Server } from "@/types"
+
+/**
+ * The Category Registry — the single declarative source the "Assets" model reads from
+ * (see docs/ASSETS-CATEGORIES-PLAN.md). Every surface (the Add-Asset tiles, the AssetCard
+ * icon/badge, later the detail-page capabilities) reads a category descriptor here, so
+ * adding a category is config + a form, not scattered `if`s.
+ *
+ * NOTE: `category` is a user-facing GROUPING on the same `servers` row; the transport
+ * (`connection_type`/`panel_type`) still does the connecting. Bare Metal and VPS are two
+ * tiles over the SAME ssh transport — a distinction users think in, not two engines.
+ */
+export type AssetCategoryId = "bare_metal" | "vps" | "hosting" | "windows" | "cloud"
+
+export interface AssetCategory {
+  id: AssetCategoryId
+  label: string
+  blurb: string
+  icon: LucideIcon
+  /** The transport a NEW asset of this category connects over (undefined = not yet
+   *  addable, e.g. Cloud, which is a separate account-import flow — Phase C). */
+  connectionType?: Server["connection_type"]
+  /** false → shown as a dimmed "coming soon" tile, not addable yet. */
+  available: boolean
+}
+
+export const ASSET_CATEGORIES: AssetCategory[] = [
+  { id: "bare_metal", label: "Bare Metal", blurb: "A physical server you have SSH to", icon: HardDrive, connectionType: "ssh", available: true },
+  { id: "vps", label: "VPS", blurb: "A cloud/rented Linux server over SSH", icon: ServerIcon, connectionType: "ssh", available: true },
+  { id: "hosting", label: "Hosting Panel", blurb: "cPanel, CyberPanel or Plesk", icon: LayoutPanelTop, connectionType: "hosting", available: true },
+  { id: "windows", label: "Windows Server", blurb: "Managed over WinRM (RDP viewer soon)", icon: AppWindow, connectionType: "winrm", available: true },
+  { id: "cloud", label: "Cloud Account", blurb: "Import instances from AWS & more", icon: Cloud, available: false },
+]
+
+export const ADDABLE_CATEGORIES = ASSET_CATEGORIES.filter((c) => c.available)
+
+export function categoryById(id: string | null | undefined): AssetCategory | undefined {
+  return ASSET_CATEGORIES.find((c) => c.id === id)
+}
+
+/** Infer a category from an existing asset's transport — mirrors the backend
+ *  `infer_category`, used as a fallback for rows without a stored category. */
+export function inferCategory(connectionType: string, panelType: string | null): AssetCategoryId {
+  if (connectionType === "winrm") return "windows"
+  if (connectionType === "hosting") return "hosting"
+  if (connectionType === "ssh" && panelType) return "hosting"
+  return "vps"
+}
+
+/** The category descriptor for an existing asset (stored category, else inferred). */
+export function categoryForServer(s: Pick<Server, "category" | "connection_type" | "panel_type">): AssetCategory {
+  const id = s.category ?? inferCategory(s.connection_type, s.panel_type)
+  return categoryById(id) ?? ASSET_CATEGORIES[1] // fallback → VPS
+}

@@ -1,7 +1,8 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
-import { Server as ServerIcon, Cpu, AlertTriangle } from "lucide-react"
+import { Cpu, AlertTriangle } from "lucide-react"
 import type { Server } from "@/types"
+import { categoryForServer } from "@/lib/assetCategories"
 import ConnectionStatus from "./ConnectionStatus"
 
 interface Props {
@@ -10,6 +11,8 @@ interface Props {
 
 export default function ServerCard({ server }: Props) {
   const [showMsg, setShowMsg] = useState(false)
+  const cat = categoryForServer(server)
+  const CatIcon = cat.icon
   return (
     <Link
       to={`/servers/${server.id}`}
@@ -17,8 +20,8 @@ export default function ServerCard({ server }: Props) {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted">
-            <ServerIcon size={18} className="text-muted-foreground" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary" title={cat.label}>
+            <CatIcon size={18} />
           </div>
           <div className="min-w-0">
             <p className="truncate font-medium text-foreground">{server.name}</p>
@@ -83,9 +86,12 @@ export default function ServerCard({ server }: Props) {
             {server.arch ? ` · ${server.arch}` : ""}
           </span>
         )}
-        {server.connection_type && (
-          <span className="rounded bg-muted px-1.5 py-0.5 uppercase font-mono">
-            {server.connection_type}
+        <span className="rounded bg-muted px-1.5 py-0.5 font-medium">
+          {cat.label}
+        </span>
+        {server.panel_type && (
+          <span className="rounded bg-muted px-1.5 py-0.5 capitalize">
+            {server.panel_type}
           </span>
         )}
       </div>
