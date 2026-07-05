@@ -1,6 +1,12 @@
 # Ally Recipes — pre-loaded workflow missions (planning doc, 2026-07-05)
 
-> Not built yet. A **Recipe** is a curated, one-click-launchable Mission: pick it from
+> **Status: Slices 1 + 2 shipped (2026-07-05).** Backend (recipe frontmatter,
+> `list_recipes`, `GET /api/recipes`) + the two promoted recipes (WordPress-on-CyberPanel,
+> GitHub-deploy) + the gallery on the Missions page + `RunRecipeModal`. Live-verified: a
+> recipe form composes the goal_template and routes to the correct mission runbook. Slice 3
+> (authoring the new starter recipes below) is the remaining work.
+>
+> A **Recipe** is a curated, one-click-launchable Mission: pick it from
 > a gallery, fill in a few fields, and Ally runs the same staged runbook
 > `cyberpanel-host-website` and `github-deploy` already prove out — no new execution
 > engine. Companion to [ALLY-MISSIONS.md](ALLY-MISSIONS.md) (the engine) and the

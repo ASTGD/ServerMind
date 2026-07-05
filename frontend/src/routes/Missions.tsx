@@ -8,6 +8,7 @@ import {
 import { listMissions, getMission, type MissionSummary, type MissionStatus } from "@/api/missions"
 import { listServers } from "@/api/servers"
 import { useAssistantStore, type AssistantTarget } from "@/store/assistantStore"
+import RecipeLibrary from "@/components/recipes/RecipeLibrary"
 
 const STATUS: Record<MissionStatus, { label: string; cls: string }> = {
   running: { label: "Running", cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
@@ -113,6 +114,8 @@ export default function Missions() {
         Every guided mission Ally has run — what it did, and how it ended. An interrupted
         mission (a dropped connection) can be resumed from where it left off.
       </p>
+
+      <RecipeLibrary />
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
