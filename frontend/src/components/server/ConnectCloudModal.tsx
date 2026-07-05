@@ -16,6 +16,68 @@ interface Props {
 
 type Step = "connect" | "discover"
 
+interface ProviderField {
+  key: string
+  label: string
+  placeholder: string
+  secret?: boolean
+  optional?: boolean
+  mono?: boolean
+}
+interface ProviderDef {
+  id: string
+  label: string
+  defaultUser: string
+  fields: ProviderField[]
+  hint: React.ReactNode
+}
+
+/** Declarative provider config — add a cloud by adding an entry (matches the backend
+ *  `cloud_service` adapters + `SUPPORTED_PROVIDERS`). */
+const PROVIDERS: ProviderDef[] = [
+  {
+    id: "aws",
+    label: "Amazon Web Services (EC2)",
+    defaultUser: "ec2-user",
+    fields: [
+      { key: "access_key_id", label: "Access Key ID", placeholder: "AKIA...", mono: true },
+      { key: "secret_access_key", label: "Secret Access Key", placeholder: "Your AWS secret access key", secret: true, mono: true },
+      { key: "region", label: "Region (optional)", placeholder: "us-east-1 — leave blank to scan all regions", optional: true },
+    ],
+    hint: (
+      <>
+        Use a <strong className="text-foreground">read-only</strong> IAM key. It only needs
+        <code className="mx-1 rounded bg-background px-1">sts:GetCallerIdentity</code> and
+        <code className="mx-1 rounded bg-background px-1">ec2:DescribeInstances</code>.
+      </>
+    ),
+  },
+  {
+    id: "digitalocean",
+    label: "DigitalOcean",
+    defaultUser: "root",
+    fields: [{ key: "api_token", label: "API Token", placeholder: "dop_v1_...", secret: true, mono: true }],
+    hint: (
+      <>
+        Paste a <strong className="text-foreground">read-only</strong> Personal Access Token (Droplet read scope) from
+        API → Tokens.
+      </>
+    ),
+  },
+  {
+    id: "hetzner",
+    label: "Hetzner Cloud",
+    defaultUser: "root",
+    fields: [{ key: "api_token", label: "API Token", placeholder: "Your Hetzner Cloud API token", secret: true, mono: true }],
+    hint: (
+      <>
+        Paste a <strong className="text-foreground">Read</strong> API token from your Hetzner project (Security → API
+        Tokens).
+      </>
+    ),
+  },
+]
+
 /**
  * Cloud Account flow (Assets Phase C): connect a provider account by API key → discover its
  * instances → import the chosen ones as assets. The provider API only LISTS machines — it
@@ -28,21 +90,34 @@ export default function ConnectCloudModal({ onClose }: Props) {
   const [account, setAccount] = useState<CloudAccount | null>(null)
 
   // ── Connect form ──────────────────────────────────────────────────────────
+  const [providerId, setProviderId] = useState("aws")
+  const provider = PROVIDERS.find((p) => p.id === providerId)!
   const [label, setLabel] = useState("")
-  const [accessKeyId, setAccessKeyId] = useState("")
-  const [secretKey, setSecretKey] = useState("")
-  const [region, setRegion] = useState("")
+  const [credVals, setCredVals] = useState<Record<string, string>>({})
   const [showSecret, setShowSecret] = useState(false)
   const [connectError, setConnectError] = useState<string | null>(null)
 
+  function pickProvider(id: string) {
+    setProviderId(id)
+    setCredVals({})
+    setConnectError(null)
+  }
+
   const connectMut = useMutation({
-    mutationFn: () =>
-      connectCloudAccount({
-        provider: "aws",
-        label: label.trim() || "AWS account",
-        credential: { access_key_id: accessKeyId.trim(), secret_access_key: secretKey, region: region.trim() },
-      }),
+    mutationFn: () => {
+      const credential: Record<string, string> = {}
+      for (const f of provider.fields) {
+        const v = credVals[f.key] ?? ""
+        credential[f.key] = f.secret ? v : v.trim() // never trim a secret
+      }
+      return connectCloudAccount({
+        provider: providerId,
+        label: label.trim() || `${provider.label} account`,
+        credential,
+      })
+    },
     onSuccess: (acc) => {
+      setUsername(provider.defaultUser) // sensible SSH login default per provider
       setAccount(acc)
       setStep("discover")
     },
@@ -51,6 +126,8 @@ export default function ConnectCloudModal({ onClose }: Props) {
       setConnectError(msg ?? "Could not connect. Check the key and try again.")
     },
   })
+
+  const requiredFilled = provider.fields.every((f) => f.optional || (credVals[f.key] ?? "").trim())
 
   // ── Discover ──────────────────────────────────────────────────────────────
   const instancesQ = useQuery<CloudInstance[]>({
@@ -131,62 +208,69 @@ export default function ConnectCloudModal({ onClose }: Props) {
           >
             <div>
               <label className={labelCls}>Provider</label>
-              <div className="inline-flex items-center gap-2 rounded-md border border-primary bg-primary/10 px-3 py-2 text-sm font-medium text-primary">
-                <Cloud size={15} /> Amazon Web Services (EC2)
+              <div className="flex flex-wrap gap-2">
+                {PROVIDERS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => pickProvider(p.id)}
+                    className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition ${
+                      providerId === p.id
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-foreground hover:border-primary/50"
+                    }`}
+                  >
+                    <Cloud size={15} /> {p.label}
+                  </button>
+                ))}
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">Google Cloud, Azure, Hetzner &amp; DigitalOcean coming next.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Google Cloud &amp; Azure coming next.</p>
             </div>
 
             <div>
               <label className={labelCls}>Account name</label>
-              <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="My AWS account" className={inputCls} />
+              <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="My cloud account" className={inputCls} />
             </div>
 
-            <div>
-              <label className={labelCls}>Access Key ID</label>
-              <input
-                required
-                value={accessKeyId}
-                onChange={(e) => setAccessKeyId(e.target.value)}
-                placeholder="AKIA..."
-                autoComplete="off"
-                className={`${inputCls} font-mono`}
-              />
-            </div>
-
-            <div>
-              <label className={labelCls}>Secret Access Key</label>
-              <div className="relative">
-                <input
-                  required
-                  type={showSecret ? "text" : "password"}
-                  value={secretKey}
-                  onChange={(e) => setSecretKey(e.target.value)}
-                  placeholder="Your AWS secret access key"
-                  autoComplete="off"
-                  className={`${inputCls} pr-10 font-mono`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSecret((v) => !v)}
-                  className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
-                >
-                  {showSecret ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
+            {provider.fields.map((f) => (
+              <div key={f.key}>
+                <label className={labelCls}>{f.label}</label>
+                {f.secret ? (
+                  <div className="relative">
+                    <input
+                      required={!f.optional}
+                      type={showSecret ? "text" : "password"}
+                      value={credVals[f.key] ?? ""}
+                      onChange={(e) => setCredVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                      placeholder={f.placeholder}
+                      autoComplete="off"
+                      className={`${inputCls} pr-10 ${f.mono ? "font-mono" : ""}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSecret((v) => !v)}
+                      className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                    >
+                      {showSecret ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    required={!f.optional}
+                    value={credVals[f.key] ?? ""}
+                    onChange={(e) => setCredVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder}
+                    autoComplete="off"
+                    className={`${inputCls} ${f.mono ? "font-mono" : ""}`}
+                  />
+                )}
               </div>
-            </div>
-
-            <div>
-              <label className={labelCls}>Region (optional)</label>
-              <input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="us-east-1 — leave blank to scan all regions" className={inputCls} />
-            </div>
+            ))}
 
             <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
               <ShieldCheck size={15} className="mt-0.5 shrink-0 text-primary" />
               <span>
-                Use a <strong className="text-foreground">read-only</strong> IAM key. It only needs
-                <code className="mx-1 rounded bg-background px-1">sts:GetCallerIdentity</code> and
-                <code className="mx-1 rounded bg-background px-1">ec2:DescribeInstances</code>. We store it encrypted (AES-256-GCM) and only use it to list your instances.
+                {provider.hint} We store it encrypted (AES-256-GCM) and only use it to list your instances.
               </span>
             </div>
 
@@ -200,7 +284,7 @@ export default function ConnectCloudModal({ onClose }: Props) {
               </button>
               <button
                 type="submit"
-                disabled={connectMut.isPending}
+                disabled={connectMut.isPending || !requiredFilled}
                 className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
                 {connectMut.isPending && <Loader2 size={14} className="animate-spin" />}
@@ -290,7 +374,7 @@ export default function ConnectCloudModal({ onClose }: Props) {
                             </td>
                             <td className="py-2 capitalize text-muted-foreground">{i.os}</td>
                             <td className="py-2">
-                              <span className={i.state === "running" ? "text-green-500" : "text-muted-foreground"}>{i.state}</span>
+                              <span className={["running", "active"].includes(i.state) ? "text-green-500" : "text-muted-foreground"}>{i.state}</span>
                             </td>
                             <td className="py-2 font-mono text-xs text-muted-foreground">{i.public_ip ?? "—"}</td>
                             <td className="py-2 text-xs text-muted-foreground">{i.region ?? "—"}</td>
@@ -305,7 +389,7 @@ export default function ConnectCloudModal({ onClose }: Props) {
                 {importable.length > 0 && (
                   <div className="border-t border-border bg-muted/30 p-5">
                     <p className="mb-3 text-xs text-muted-foreground">
-                      AWS doesn't share instance logins, so set the SSH login for the{" "}
+                      Cloud providers don't share instance logins, so set the SSH login for the{" "}
                       <strong className="text-foreground">{selected.size}</strong> selected — you can adjust each asset later.
                     </p>
                     <div className="grid grid-cols-2 gap-3">

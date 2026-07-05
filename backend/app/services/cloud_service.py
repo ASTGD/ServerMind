@@ -18,12 +18,14 @@ import json
 import logging
 from dataclasses import dataclass, asdict
 
+import requests
+
 from app.models.cloud_account import CloudAccount
 from app.services.crypto_service import decrypt
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_PROVIDERS = ("aws",)  # Phase D adds: digitalocean, hetzner, gcp, azure
+SUPPORTED_PROVIDERS = ("aws", "digitalocean", "hetzner")  # Phase D+; gcp/azure later
 
 
 class CloudError(Exception):
@@ -134,7 +136,114 @@ class AWSAdapter(_CloudAdapter):
         return out
 
 
-_ADAPTERS = {"aws": AWSAdapter}
+class _TokenAdapter(_CloudAdapter):
+    """Shared base for the simple bearer-token REST clouds (DigitalOcean, Hetzner). Both
+    are global APIs — one token, no region dance — so listing returns every instance."""
+
+    BASE = ""
+    PROVIDER = ""
+
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.cred.get('api_token', '')}",
+                "Content-Type": "application/json"}
+
+    def _get(self, url: str, timeout: int = 20) -> dict:
+        try:
+            r = requests.get(url, headers=self._headers(), timeout=timeout)
+        except requests.RequestException as exc:  # network / DNS / TLS
+            raise CloudError(f"Could not reach {self.PROVIDER}: {exc}")
+        if r.status_code in (401, 403):
+            raise CloudError(f"{self.PROVIDER} rejected this API token — check it has read access.")
+        if r.status_code >= 400:
+            raise CloudError(f"{self.PROVIDER} API error {r.status_code}: {r.text[:200]}")
+        try:
+            return r.json()
+        except ValueError:
+            raise CloudError(f"{self.PROVIDER} returned an unexpected (non-JSON) response.")
+
+
+class DigitalOceanAdapter(_TokenAdapter):
+    """DigitalOcean droplets. Verify with /v2/account; list /v2/droplets (paginated)."""
+
+    BASE = "https://api.digitalocean.com"
+    PROVIDER = "DigitalOcean"
+
+    def verify(self) -> dict:
+        acct = self._get(f"{self.BASE}/v2/account").get("account", {})
+        return {"account": acct.get("email"), "uuid": acct.get("uuid")}
+
+    @staticmethod
+    def _map(d: dict) -> Instance:
+        nets = (d.get("networks") or {}).get("v4") or []
+        public = next((n.get("ip_address") for n in nets if n.get("type") == "public"), None)
+        private = next((n.get("ip_address") for n in nets if n.get("type") == "private"), None)
+        distro = ((d.get("image") or {}).get("distribution") or "")
+        return Instance(
+            instance_id=str(d.get("id", "")),
+            name=d.get("name") or str(d.get("id", "")),
+            public_ip=public,
+            private_ip=private,
+            os="windows" if "windows" in distro.lower() else "linux",
+            state=d.get("status", "unknown"),          # active | off | new
+            region=(d.get("region") or {}).get("slug"),
+            instance_type=d.get("size_slug"),
+        )
+
+    def list_instances(self) -> list[Instance]:
+        out: list[Instance] = []
+        url = f"{self.BASE}/v2/droplets?per_page=200"
+        while url:
+            data = self._get(url, timeout=30)
+            for d in data.get("droplets", []):
+                out.append(self._map(d))
+            url = ((data.get("links") or {}).get("pages") or {}).get("next")  # cursor
+        return out
+
+
+class HetznerAdapter(_TokenAdapter):
+    """Hetzner Cloud servers. Verify + list via /v1/servers (paginated)."""
+
+    BASE = "https://api.hetzner.cloud"
+    PROVIDER = "Hetzner"
+
+    def verify(self) -> dict:
+        # Any authenticated call proves the token; keep it tiny.
+        self._get(f"{self.BASE}/v1/servers?per_page=1")
+        return {"account": "hetzner-project"}
+
+    @staticmethod
+    def _map(s: dict) -> Instance:
+        public = ((s.get("public_net") or {}).get("ipv4") or {}).get("ip")
+        privs = s.get("private_net") or []
+        private = privs[0].get("ip") if privs else None
+        flavor = ((s.get("image") or {}).get("os_flavor") or "")
+        return Instance(
+            instance_id=str(s.get("id", "")),
+            name=s.get("name") or str(s.get("id", "")),
+            public_ip=public,
+            private_ip=private,
+            os="windows" if "windows" in flavor.lower() else "linux",
+            state=s.get("status", "unknown"),          # running | off | ...
+            region=((s.get("datacenter") or {}).get("location") or {}).get("name"),
+            instance_type=(s.get("server_type") or {}).get("name"),
+        )
+
+    def list_instances(self) -> list[Instance]:
+        out: list[Instance] = []
+        page = 1
+        while page:
+            data = self._get(f"{self.BASE}/v1/servers?per_page=50&page={page}", timeout=30)
+            for s in data.get("servers", []):
+                out.append(self._map(s))
+            page = (((data.get("meta") or {}).get("pagination") or {}).get("next_page"))
+        return out
+
+
+_ADAPTERS = {
+    "aws": AWSAdapter,
+    "digitalocean": DigitalOceanAdapter,
+    "hetzner": HetznerAdapter,
+}
 
 
 # ── Import mapping ────────────────────────────────────────────────────────────

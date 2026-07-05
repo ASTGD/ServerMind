@@ -33,7 +33,18 @@
 > import), imported assets carry a provider badge. Mock-tested (12 cases, no live AWS);
 > **live-verified the connect + error path end-to-end** (real STS rejection surfaced as a
 > friendly message, no account created) — the discover/import happy path needs one pass on
-> a real AWS account (same caveat as the hosting adapters). Phases D–E remain.
+> a real AWS account (same caveat as the hosting adapters).
+>
+> **Status: Phase D (part 1) shipped (2026-07-06).** Two more clouds — **DigitalOcean** +
+> **Hetzner Cloud** — via a shared `_TokenAdapter` (bearer-token REST, one global endpoint,
+> no region dance): DO verifies on `/v2/account` + lists `/v2/droplets` (paginated); Hetzner
+> verifies + lists `/v1/servers` (paginated); friendly 401→"rejected this API token" +
+> network-error mapping. The `ConnectCloudModal` is now **provider-driven** (a declarative
+> `PROVIDERS` config → provider picker + per-provider credential fields + hint + default SSH
+> user), so adding a cloud is one backend adapter + one config entry. **Live-verified** the
+> provider picker (AWS/DO/Hetzner render), DO's single-token form, and the DO reject path
+> end-to-end (real `/v2/account` 401 → friendly message, no account created). 6 new mock
+> tests (18 cloud total). GCP + Azure are Phase D part 2. Phase E (RDP viewer) remains.
 
 ## The idea in one line
 

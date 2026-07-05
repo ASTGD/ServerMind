@@ -187,3 +187,101 @@ async def test_list_instances_async_reads_account_credential():
     with patch.object(AWSAdapter, "_session", return_value=sess):
         out = await cs.list_instances(account)
     assert [i.instance_id for i in out] == ["i-linux1"]
+
+
+# ── Phase D: DigitalOcean + Hetzner (bearer-token REST, mock requests.get) ──────
+
+from app.services.cloud_service import DigitalOceanAdapter, HetznerAdapter  # noqa: E402
+
+
+class FakeResp:
+    def __init__(self, payload=None, status=200, text=""):
+        self._payload = payload
+        self.status_code = status
+        self.text = text or (json.dumps(payload) if payload is not None else "")
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("no json")
+        return self._payload
+
+
+def test_providers_registered():
+    assert set(cs.SUPPORTED_PROVIDERS) == {"aws", "digitalocean", "hetzner"}
+    assert cs._ADAPTERS["digitalocean"] is DigitalOceanAdapter
+    assert cs._ADAPTERS["hetzner"] is HetznerAdapter
+
+
+def test_do_verify_and_bad_token():
+    with patch("app.services.cloud_service.requests.get",
+               return_value=FakeResp({"account": {"email": "me@x.com", "uuid": "u1"}})):
+        assert DigitalOceanAdapter({"api_token": "t"}).verify()["account"] == "me@x.com"
+    with patch("app.services.cloud_service.requests.get", return_value=FakeResp(status=401, text="unauth")):
+        with pytest.raises(CloudError, match="rejected this API token"):
+            DigitalOceanAdapter({"api_token": "bad"}).verify()
+
+
+def test_do_list_maps_and_paginates():
+    page1 = {
+        "droplets": [{
+            "id": 111, "name": "web1", "status": "active", "size_slug": "s-1vcpu-1gb",
+            "region": {"slug": "nyc3"},
+            "image": {"distribution": "Ubuntu"},
+            "networks": {"v4": [
+                {"ip_address": "1.2.3.4", "type": "public"},
+                {"ip_address": "10.0.0.2", "type": "private"},
+            ]},
+        }],
+        "links": {"pages": {"next": "https://api.digitalocean.com/v2/droplets?page=2"}},
+    }
+    page2 = {"droplets": [{"id": 222, "name": "win1", "status": "off",
+                           "image": {"distribution": "Windows"}, "networks": {"v4": []}}],
+             "links": {}}
+    with patch("app.services.cloud_service.requests.get", side_effect=[FakeResp(page1), FakeResp(page2)]):
+        out = DigitalOceanAdapter({"api_token": "t"}).list_instances()
+    assert [i.instance_id for i in out] == ["111", "222"]
+    web, win = out
+    assert web.name == "web1" and web.os == "linux" and web.public_ip == "1.2.3.4"
+    assert web.private_ip == "10.0.0.2" and web.region == "nyc3" and web.state == "active"
+    assert win.os == "windows" and win.public_ip is None and win.state == "off"
+
+
+def test_hetzner_verify_and_list_maps():
+    with patch("app.services.cloud_service.requests.get", return_value=FakeResp({"servers": []})):
+        assert HetznerAdapter({"api_token": "t"}).verify()["account"] == "hetzner-project"
+    page = {
+        "servers": [{
+            "id": 99, "name": "hz1", "status": "running",
+            "public_net": {"ipv4": {"ip": "5.6.7.8"}},
+            "private_net": [{"ip": "10.1.0.3"}],
+            "image": {"os_flavor": "ubuntu"},
+            "datacenter": {"location": {"name": "fsn1"}},
+            "server_type": {"name": "cx22"},
+        }],
+        "meta": {"pagination": {"next_page": None}},
+    }
+    with patch("app.services.cloud_service.requests.get", return_value=FakeResp(page)):
+        out = HetznerAdapter({"api_token": "t"}).list_instances()
+    assert len(out) == 1
+    hz = out[0]
+    assert hz.instance_id == "99" and hz.public_ip == "5.6.7.8" and hz.private_ip == "10.1.0.3"
+    assert hz.os == "linux" and hz.region == "fsn1" and hz.instance_type == "cx22" and hz.state == "running"
+
+
+def test_token_adapter_network_error_is_cloud_error():
+    import requests as _rq
+    with patch("app.services.cloud_service.requests.get", side_effect=_rq.ConnectionError("boom")):
+        with pytest.raises(CloudError, match="Could not reach"):
+            HetznerAdapter({"api_token": "t"}).verify()
+
+
+async def test_do_async_dispatch_reads_account():
+    cred = {"api_token": "tok"}
+    account = CloudAccount(provider="digitalocean", label="do", encrypted_credential=encrypt(json.dumps(cred)))
+    payload = {"droplets": [{"id": 7, "name": "d7", "status": "active",
+                             "image": {"distribution": "Debian"},
+                             "networks": {"v4": [{"ip_address": "9.9.9.9", "type": "public"}]}}],
+               "links": {}}
+    with patch("app.services.cloud_service.requests.get", return_value=FakeResp(payload)):
+        out = await cs.list_instances(account)
+    assert out[0].instance_id == "7" and out[0].public_ip == "9.9.9.9"
