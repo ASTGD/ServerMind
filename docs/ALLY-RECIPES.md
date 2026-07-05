@@ -1,10 +1,18 @@
 # Ally Recipes — pre-loaded workflow missions (planning doc, 2026-07-05)
 
-> **Status: Slices 1 + 2 shipped (2026-07-05).** Backend (recipe frontmatter,
-> `list_recipes`, `GET /api/recipes`) + the two promoted recipes (WordPress-on-CyberPanel,
-> GitHub-deploy) + the gallery on the Missions page + `RunRecipeModal`. Live-verified: a
-> recipe form composes the goal_template and routes to the correct mission runbook. Slice 3
-> (authoring the new starter recipes below) is the remaining work.
+> **Status: Slices 1–3 shipped (2026-07-05).** Backend (recipe frontmatter,
+> `list_recipes`, `GET /api/recipes`) + the gallery on the Missions page + `RunRecipeModal`
+> + **6 recipes**: WordPress-on-CyberPanel & GitHub-deploy (promoted) and 4 new — **Migrate
+> a Website**, **Harden This Server**, **Set Up Automatic Backups**, **Point a Domain + Get
+> SSL**. The modal renders migrate's `source` as a server picker. Live-verified end to end:
+> the **Migrate** flagship ran from the gallery — homed on the chosen TARGET, dumped the DB
+> secret-safely on the SOURCE, and transferred a real ~30 MB WordPress archive + DB dump
+> across servers (TestServer4 → TestServer3) via the cross-server `transfer` action.
+>
+> A real bug surfaced + fixed during that run: a recipe's composed sentence NAMES the
+> source server, and the "one Ally" auto-target detection homed the mission on the source
+> instead of the chosen target — fixed by PINNING a seeded message to its chosen server
+> (`assistantStore` seed `serverId`), so a server name in the text can't redirect it.
 >
 > A **Recipe** is a curated, one-click-launchable Mission: pick it from
 > a gallery, fill in a few fields, and Ally runs the same staged runbook
