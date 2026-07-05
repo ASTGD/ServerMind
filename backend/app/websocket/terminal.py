@@ -562,6 +562,22 @@ async def fleet_chat_ws(
             pass
 
 
+def _match_server_by_name(name: object, servers: list[Server]) -> Server | None:
+    """Resolve ONE server from an AI-provided name. Exact (case-insensitive) match wins;
+    a substring match is used ONLY when it is UNAMBIGUOUS (exactly one server). An
+    ambiguous name — e.g. 'prod-db' when both 'prod-db' and 'prod-db-replica' exist —
+    returns None rather than guessing, because an action on the wrong server is never
+    acceptable (the red-team's bidirectional-substring collision)."""
+    key = str(name or "").strip().lower()
+    if not key:
+        return None
+    exact = next((s for s in servers if s.name.strip().lower() == key), None)
+    if exact is not None:
+        return exact
+    fuzzy = [s for s in servers if key in s.name.strip().lower() or s.name.strip().lower() in key]
+    return fuzzy[0] if len(fuzzy) == 1 else None
+
+
 def _resolve_handoff(handoff: object, servers: list[Server]) -> dict | None:
     """Match the AI's suggested server name to a real server the user owns.
 
@@ -569,16 +585,10 @@ def _resolve_handoff(handoff: object, servers: list[Server]) -> dict | None:
     name doesn't match a server (so we never hand off to something that isn't there)."""
     if not isinstance(handoff, dict):
         return None
-    name = str(handoff.get("server", "")).strip().lower()
     prompt = str(handoff.get("prompt", "")).strip()
-    if not name or not prompt:
+    if not prompt:
         return None
-    match = next((s for s in servers if s.name.strip().lower() == name), None)
-    if match is None:
-        match = next(
-            (s for s in servers if name in s.name.strip().lower() or s.name.strip().lower() in name),
-            None,
-        )
+    match = _match_server_by_name(handoff.get("server"), servers)
     if match is None:
         return None
     return {"server_id": str(match.id), "server_name": match.name, "prompt": prompt}
@@ -593,17 +603,10 @@ def _resolve_batch(batch: object, servers: list[Server]) -> dict | None:
     prompt = str(batch.get("prompt", "")).strip()
     if not prompt or not isinstance(names, list) or not names:
         return None
-    by_name = {s.name.strip().lower(): s for s in servers}
     targets: list[dict] = []
     seen: set = set()
     for n in names:
-        key = str(n).strip().lower()
-        s = by_name.get(key)
-        if s is None:
-            s = next(
-                (sv for sv in servers if key and (key in sv.name.strip().lower() or sv.name.strip().lower() in key)),
-                None,
-            )
+        s = _match_server_by_name(n, servers)
         if s is not None and s.id not in seen:
             seen.add(s.id)
             targets.append({"server_id": str(s.id), "server_name": s.name})
@@ -620,13 +623,11 @@ def _resolve_mission_offer(mission: object, servers: list[Server]) -> dict | Non
     goal = str(mission.get("goal", "")).strip()
     if not goal:
         return None
-    resolved = _resolve_handoff(
-        {"server": mission.get("server"), "prompt": goal}, servers
-    ) if mission.get("server") else None
+    match = _match_server_by_name(mission.get("server"), servers) if mission.get("server") else None
     return {
         "goal": goal[:500],
-        "server_id": resolved["server_id"] if resolved else None,
-        "server_name": resolved["server_name"] if resolved else None,
+        "server_id": str(match.id) if match else None,
+        "server_name": match.name if match else None,
     }
 
 
@@ -637,17 +638,10 @@ def _resolve_ask_servers(names: object, servers: list[Server]) -> list[dict]:
     server they can actually reach)."""
     if not isinstance(names, list) or not names:
         return []
-    by_name = {s.name.strip().lower(): s for s in servers}
     out: list[dict] = []
     seen: set = set()
     for n in names:
-        key = str(n).strip().lower()
-        s = by_name.get(key)
-        if s is None:
-            s = next(
-                (sv for sv in servers if key and (key in sv.name.strip().lower() or sv.name.strip().lower() in key)),
-                None,
-            )
+        s = _match_server_by_name(n, servers)
         if s is not None and s.id not in seen:
             seen.add(s.id)
             out.append({"id": str(s.id), "name": s.name})
@@ -788,6 +782,25 @@ async def _run_on_server(server: Server, prompt: str, lang: str) -> tuple[str, s
     if safety.status == "blocked":
         await _save_log(server, prompt, lang, plan, "", "blocked")
         return "blocked", safety.reason or "Blocked by the safety policy."
+    # The batch path is fire-and-forget across many servers — it has NO per-server
+    # approval prompt, so anything the safety policy flags for CONFIRMATION (a recursive
+    # delete, a remote-code-execute, a data-file wipe, …) must NOT auto-run here. Refuse
+    # it and point the user at the per-server assistant, which runs it with a preview +
+    # approval. (Without this, confirm-level commands ran unattended on every box.)
+    if safety.status == "confirm":
+        await _save_log(server, prompt, lang, plan, "", "blocked")
+        return "blocked", (
+            "This action needs your approval before it runs, so I didn't run it in a "
+            "batch. Open this server directly and I'll do it with a preview and your OK."
+        )
+    # A step the AI itself flagged high-risk / requires_confirmation is likewise not for
+    # the unattended batch path.
+    if any(c.get("requires_confirmation") or c.get("risk_level") == "high" for c in commands):
+        await _save_log(server, prompt, lang, plan, "", "blocked")
+        return "blocked", (
+            "This looked risky, so I didn't run it unattended across servers. Open this "
+            "server directly and I'll walk you through it with a preview and approval."
+        )
 
     full_output: list[str] = []
     status = "success"

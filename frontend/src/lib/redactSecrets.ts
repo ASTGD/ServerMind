@@ -10,10 +10,17 @@
 export const SECRET_MASK = "[secret hidden]"
 
 // Key names whose value should be hidden. Precise enough to avoid masking ordinary
-// config (kept out: bare "auth", "key", "credentials" — too broad).
+// config (kept out: bare "auth", "key" — too broad).
 const SENSITIVE_KEY =
   "pass(?:word|wd|phrase)?|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|" +
-  "secret[_-]?key|private[_-]?key|client[_-]?secret|auth[_-]?token"
+  "secret[_-]?key|private[_-]?key|client[_-]?secret|auth[_-]?token|bearer|" +
+  "authorization|credentials?|encryption[_-]?key|signing[_-]?key|master[_-]?key"
+
+/** Indentation width of a line (spaces/tabs before the first non-space char). */
+function indentOf(line: string): number {
+  const m = /^[ \t]*/.exec(line)
+  return m ? m[0].length : 0
+}
 
 // Standalone high-signal tokens, masked wherever they appear.
 const TOKEN_PATTERNS: RegExp[] = [
@@ -29,6 +36,9 @@ const TOKEN_PATTERNS: RegExp[] = [
 export function redactSecrets(input: string): { text: string; count: number } {
   let count = 0
   let inPem = false
+  // When a sensitive key holds its value on FOLLOWING (more-indented) lines — a YAML
+  // block scalar (`password: |`) or a value on the next line — mask that block too.
+  let blockKeyIndent: number | null = null
 
   const lines = input.split("\n").map((raw) => {
     // Multi-line PEM private-key blocks → mask the body.
@@ -43,6 +53,29 @@ export function redactSecrets(input: string): { text: string; count: number } {
         return raw
       }
       return raw.trim() ? SECRET_MASK : raw
+    }
+
+    // Inside a block scalar under a sensitive key: mask more-indented content lines.
+    if (blockKeyIndent !== null) {
+      if (!raw.trim()) return raw // blank line stays; block may continue
+      if (indentOf(raw) > blockKeyIndent) {
+        count++
+        return raw.slice(0, indentOf(raw)) + SECRET_MASK
+      }
+      blockKeyIndent = null // de-indented → the block ended; fall through to normal
+    }
+
+    // A sensitive key with NO inline value (or a `|`/`>` block indicator) → its value is
+    // on the following indented lines. Arm block masking.
+    const blockHead = new RegExp(
+      `^([ \\t]*)['"]?[\\w.\\- ]*(?:${SENSITIVE_KEY})[\\w.\\- ]*['"]?\\s*:\\s*[|>][+-]?\\d*\\s*$|` +
+        `^([ \\t]*)['"]?[\\w.\\- ]*(?:${SENSITIVE_KEY})[\\w.\\- ]*['"]?\\s*:\\s*$`,
+      "i",
+    )
+    const bh = blockHead.exec(raw)
+    if (bh) {
+      blockKeyIndent = indentOf(raw)
+      return raw
     }
 
     let line = raw

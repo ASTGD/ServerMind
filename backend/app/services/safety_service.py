@@ -6,16 +6,38 @@ from dataclasses import dataclass
 
 # ── Blocklists ────────────────────────────────────────────────────────────────
 
+# BLOCK = catastrophic, irreversible destruction of the system/disk. Never legitimate,
+# so we refuse outright (no approval offered). Written to catch practical VARIANTS, not
+# just the one canonical form — the red-team proved literal-only patterns are trivially
+# dodged (rm -rf /{bin,..}, dd of=/dev/nvme0, find / -delete, chmod 777 -R /, spaced
+# fork bomb all slipped through before). Recursive-delete of a NON-system path is a
+# CONFIRM (below), not a block, so legitimate cleanup still works with approval.
+_SYS_DIRS = r"(bin|boot|dev|etc|lib|lib32|lib64|proc|root|run|sbin|srv|sys|usr|var)"
+_BLOCK_DEV = r"(sd[a-z]|nvme\d|vd[a-z]|xvd[a-z]|hd[a-z]|mmcblk\d|dm-\d|loop\d|disk\d)"
 LINUX_BLOCKED = [
-    r"rm\s+-[rf]+\s+/\s*$",
-    r"rm\s+-[rf]+\s+/\*",
-    r"mkfs\.",
-    r"dd\s+if=/dev/(zero|random)\s+of=/dev/[a-z]+\b",
-    r":\(\)\s*\{\s*:\|:&\s*\}",
-    r"chmod\s+-R\s+[0-7]*7[0-7]*\s+/",
-    r">\s*/dev/sd[a-z]",
-    r"mv\s+/\s+",
-    r"chown\s+-R\s+.+\s+/\s*$",
+    # rm -rf targeting root, /*, --no-preserve-root, or a system directory (incl. brace
+    # expansion like /{bin,etc,...}). Flag order (-rf / -fr / -r -f) and extra flags allowed.
+    r"\brm\b(?=[^\n]*\s-[a-zA-Z]*r)(?=[^\n]*\s-[a-zA-Z]*f|[^\n]*--force)[^\n]*\s--no-preserve-root",
+    r"\brm\b(?=[^\n]*\s-[a-zA-Z]*r)[^\n]*\s/\s*(;|$|&&|\|\|)",         # rm -r ... /
+    r"\brm\b(?=[^\n]*\s-[a-zA-Z]*r)[^\n]*\s/\*",                        # rm -r ... /*
+    r"\brm\b(?=[^\n]*\s-[a-zA-Z]*r)[^\n]*\s/\{[^}]*" + _SYS_DIRS,       # rm -r ... /{bin,..}
+    # rm -r ... /<systemdir>  ITSELF (/var, /var/, /var/*, /var*) — but NOT a deeper
+    # path like /var/www/... (that clears a subdir → CONFIRM, not a catastrophic block).
+    r"\brm\b(?=[^\n]*\s-[a-zA-Z]*r)[^\n]*\s/" + _SYS_DIRS + r"/?\*?(?=\s|;|\||&|$)",
+    # find deleting/exec-rm starting at root
+    r"\bfind\s+/\s[^\n]*-delete\b", r"\bfind\s+/\s[^\n]*-exec\s+rm\b",
+    # filesystem creation / raw block-device writes (any device, any write path)
+    r"\bmkfs\b", r"\bmke2fs\b", r"\bwipefs\b",
+    r"\bdd\b[^|\n]*\bof=/dev/" + _BLOCK_DEV,
+    r">\s*/dev/" + _BLOCK_DEV,
+    r"\btee\b[^|\n]*\s/dev/" + _BLOCK_DEV,
+    # fork bomb — whitespace-tolerant (': () { : | : & } ; :' slipped the old regex)
+    r":\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}",
+    # recursive world-writable chmod / recursive chown of the whole system root
+    r"\bchmod\b[^\n]*\s-[a-zA-Z]*R[a-zA-Z]*[^\n]*\s[0-7]*7[0-7]*\s+/\s*(;|$)",
+    r"\bchmod\b[^\n]*\s[0-7]*7[0-7]*\s+-[a-zA-Z]*R[a-zA-Z]*\s+/\s*(;|$)",
+    r"\bchown\b[^\n]*\s-[a-zA-Z]*R[a-zA-Z]*[^\n]*\s/\s*(;|$)",
+    r"\bmv\s+/\s+\S",                                                    # mv / <dest>
 ]
 
 WINDOWS_BLOCKED = [
@@ -30,12 +52,15 @@ WINDOWS_BLOCKED = [
     r"Initialize-Disk",
 ]
 
+# CONFIRM = risky but sometimes legitimate → PAUSE for the user's explicit approval
+# (never runs unattended). Bias broad: a recursive delete, a remote-code-execute, a
+# data-file wipe, or an SSH-key write should ALWAYS be seen before it runs, even if the
+# model labelled it "low risk". Approval is cheap; an unattended destructive command is not.
 CONFIRM_PATTERNS = [
     r"apt.*(remove|purge|autoremove)",
     r"(systemctl|service)\s+(stop|disable)",
     r"ufw\s+(disable|reset)",
     r"passwd\s+root",
-    r"(wget|curl).+\|\s*(ba)?sh",
     r"Uninstall-WindowsFeature",
     r"Stop-Service",
     r"Disable-WindowsOptionalFeature",
@@ -43,6 +68,26 @@ CONFIRM_PATTERNS = [
     r"DROP\s+(TABLE|DATABASE)",
     r"crontab\s+-r",
     r"Restart-Computer",
+    # Any recursive/forced delete (the catastrophic paths are BLOCKED above; everything
+    # else — rm -rf /var/www/*, /home/x, /tmp/build — must be approved, not auto-run).
+    r"\brm\b(?=[^\n]*\s-[a-zA-Z]*r)", r"\brm\b[^\n]*--recursive",
+    r"\bfind\b[^\n]*\s-delete\b",
+    r"\bfind\b[^\n]*\s-exec(dir)?\s+(rm|mv|dd|chmod|chown|shred|truncate|sh|bash)\b",
+    r"\bshred\b",
+    r"\btruncate\b[^\n]*(-s\s*0|--size(=|\s)0)\b",         # zeroing a file (e.g. a DB data file)
+    r"\bdd\b[^|\n]*\bof=/(?!dev/null)\S",                   # dd writing anywhere (devices are BLOCKED)
+    r"\bchmod\b[^\n]*\s-[a-zA-Z]*R",                        # any recursive chmod
+    r"\bchown\b[^\n]*\s-[a-zA-Z]*R",                        # any recursive chown
+    r"authorized_keys",                                     # any touch of an SSH authorized_keys file
+    # Remote-code-execution — fetch-and-run in EVERY practical form (the old single
+    # `curl|sh` regex missed download-then-run, eval $(curl), base64|sh, bash <(curl)).
+    r"(curl|wget|fetch)\b[^\n]*\|\s*(ba|z|c|k|da)?sh\b",
+    r"(curl|wget|fetch)\b[^\n]*(-o|-O)\b[^\n]*(&&|;|\|\|)[^\n]*\b(ba|z|c|k|da)?sh\b",
+    r"\beval\b[^\n]*\$\(\s*(curl|wget|fetch)\b",
+    r"\b(ba|z|c|k|da)?sh\b[^\n]*<\(\s*(curl|wget|fetch)\b",
+    r"base64\b[^\n]*\|\s*(ba|z|c|k|da)?sh\b",
+    r"(curl|wget|fetch)\b[^\n]*(&&|;)\s*(ba|z|c|k|da)?sh\b",
+    r"\bRemove-Item\b[^\n]*-Recurse",                      # PowerShell recursive delete
 ]
 
 
@@ -111,12 +156,24 @@ _MUTATION_TOKENS_I = [
     r"\bwp\s+[\w-]+\s+(install|activate|deactivate|update|delete|create|import|reset|add|regenerate|download|scaffold|flush|set)\b",
     r"\bgit\s+(clone|pull|fetch|checkout|reset|merge|push|apply|clean|rm|commit)\b",
     r"\bdocker(-compose)?\s+(run|rm|start|stop|restart|kill|exec|pull|build|up|down|create)\b",
+    # `find` that deletes or executes anything (a plain search is fine; -delete/-exec is not)
+    r"\bfind\b[^\n]*\s-(delete|exec|execdir|ok|fprint|fls)\b",
+    # awk/sed that call out to the shell or write a file (a plain filter is read-only)
+    r"\bawk\b[^\n]*system\s*\(", r"\bawk\b[^\n]*\bprint[^\n]*>\s*\"?/",
+    # Editors / stream editors that can write the file they open
+    r"\b(vi|vim|nano|pico|emacs|ed|ex)\b", r"\bsed\b[^\n]*\s-i",
+    # Executing arbitrary code via a shell: sh -c, process substitution, source, exec
+    r"\b(ba|z|c|k|da)?sh\b\s+(-c\b|<)", r"<\(", r"\bsource\b", r"(^|\s|;)\.\s+\S",
     # Shell-level mutation: redirect into a real file, pipe to a shell, background exec
-    r">\s*/(?!dev/null)", r">>", r"\|\s*(ba|z|c|k)?sh\b", r"\beval\b", r"\bnohup\b",
+    r">\s*/(?!dev/null)", r">>", r"\|\s*(ba|z|c|k)?sh\b", r"\beval\b", r"\bnohup\b", r"\bxargs\b",
 ]
 # Case-SENSITIVE tokens — curl -O vs -o and PowerShell PascalCase cmdlets carry
 # meaning in their case, so matching case-insensitively would flag benign reads.
 _MUTATION_TOKENS_CS = [
+    # Language interpreters with INLINE code (lowercase code flags: -c/-e/-r/-f) can do
+    # ANYTHING (unlink, file_put_contents, plant a fake proof marker) — never a legit
+    # read-only check. Case-sensitive so `awk -F:` / `perl -F` (field split) don't match.
+    r"\b(python|python3|php|perl|ruby|node|nodejs|lua|Rscript)\b[^\n]*\s-[cerf]\b",
     r"\bwget\b(?![^|;]*O-(\s|$))",          # wget that SAVES a file (not `-O-` to stdout)
     r"\bcurl\b[^|;]*\s-O\b",                # curl -O (save as remote name)
     r"\bcurl\b[^|;]*-o\s+(?!/dev/null)\S",  # curl -o <file> (but /dev/null is fine)
