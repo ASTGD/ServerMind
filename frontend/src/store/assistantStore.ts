@@ -11,8 +11,11 @@ type MessagesUpdater = ChatMessageData[] | ((prev: ChatMessageData[]) => ChatMes
 interface AssistantState {
   open: boolean
   target: AssistantTarget
-  /** A one-shot prompt to auto-send once connected (e.g. terminal "Hand to AI"). */
-  seed: { text: string; key: number } | null
+  /** A one-shot prompt to auto-send once connected (e.g. terminal "Hand to AI", a Recipe).
+   *  `serverId` PINS the message to a chosen server — it wins over any server NAME inside
+   *  the text (a migrate recipe names the SOURCE server in its sentence, but must run on
+   *  the chosen TARGET), so the auto-target detection can't redirect it. */
+  seed: { text: string; key: number; serverId?: string } | null
   /** A one-shot request to resume an interrupted mission once connected (Phase 3). */
   resume: { missionId: string; key: number } | null
   /** A one-shot request to attach to a mission running in the background (Phase 4). */
@@ -61,7 +64,8 @@ export const useAssistantStore = create<AssistantState>((set) => ({
     set({
       open: true,
       target: { kind: "server", server },
-      seed: seedText ? { text: seedText, key: Date.now() } : null,
+      // Pin the seed to THIS server so a server name inside the text can't redirect it.
+      seed: seedText ? { text: seedText, key: Date.now(), serverId: server.id } : null,
     }),
   resumeMission: (target, missionId) =>
     set({ open: true, target, seed: null, resume: { missionId, key: Date.now() } }),

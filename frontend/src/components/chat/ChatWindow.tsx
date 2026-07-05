@@ -19,8 +19,10 @@ import type { AssistantTarget } from "@/store/assistantStore"
 
 interface Props {
   target: AssistantTarget
-  /** A one-shot prompt to auto-send once the socket opens (the "Hand to AI" handoff). */
-  seed?: { text: string; key: number } | null
+  /** A one-shot prompt to auto-send once the socket opens (Hand-to-AI, a Recipe). When
+   *  `serverId` is set the message is PINNED to that server (a name in the text can't
+   *  redirect it — e.g. migrate names the source but runs on the chosen target). */
+  seed?: { text: string; key: number; serverId?: string } | null
   /** Preloaded history (from a saved thread) to seed the conversation on mount. */
   initialMessages?: ChatMessageData[]
   /** Persist a turn (saved-thread mode on the Assistant page). */
@@ -568,12 +570,17 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     updateMission(mission.missionId, (m) => ({ ...m, pendingApproval: null }))
   }
 
-  // "Hand to AI" handoff — auto-send the seeded prompt once, after the socket is open.
+  // "Hand to AI" / Recipe seed — auto-send the seeded prompt once, after the socket is
+  // open. A PINNED seed (seed.serverId) runs on ITS chosen server, never re-derived from a
+  // server name in the text — a migrate recipe names the SOURCE in its sentence but must
+  // run on the chosen TARGET. Unpinned seeds keep the normal name-detection behaviour.
   const lastSeedKey = useRef(0)
   useEffect(() => {
     if (seed && seed.key !== lastSeedKey.current && status === "open" && seed.text.trim()) {
       lastSeedKey.current = seed.key
-      handleSend(seed.text)
+      const pinned = seed.serverId ? servers.find((s) => s.id === seed.serverId) : null
+      if (pinned) sendMessage(seed.text, pinned)
+      else handleSend(seed.text)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seed, status])
