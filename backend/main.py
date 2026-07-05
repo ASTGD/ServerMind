@@ -14,6 +14,7 @@ from app.routers import auth as auth_router
 from app.routers import backups as backups_router
 from app.routers import commands as commands_router
 from app.routers import files as files_router
+from app.routers import fleet as fleet_router
 from app.routers import hosting as hosting_router
 from app.routers import installed as installed_router
 from app.routers import missions as missions_router
@@ -105,6 +106,7 @@ app.include_router(scripts_router.router)
 app.include_router(scheduler_router.router)
 app.include_router(monitoring_router.router)
 app.include_router(missions_router.router)
+app.include_router(fleet_router.router)
 app.include_router(notifications_router.router)
 app.include_router(files_router.router)
 app.include_router(security_router.router)

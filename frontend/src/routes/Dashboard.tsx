@@ -6,6 +6,7 @@ import { listPlaybooks } from "@/api/playbooks"
 import { useAuthStore } from "@/store/authStore"
 import type { Server } from "@/types"
 import StatCard from "@/components/dashboard/StatCard"
+import FleetReport from "@/components/dashboard/FleetReport"
 import ServerHealthRow from "@/components/dashboard/ServerHealthRow"
 import QuickActions from "@/components/dashboard/QuickActions"
 import RunningTasks from "@/components/dashboard/RunningTasks"
@@ -88,6 +89,9 @@ export default function Dashboard() {
           sub="ready to run"
         />
       </div>
+
+      {/* Proactive fleet intelligence — Ally's "what needs attention" */}
+      {servers.length > 0 && <FleetReport />}
 
       {/* Main grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
