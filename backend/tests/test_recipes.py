@@ -43,6 +43,24 @@ def test_promoted_skills_are_recipes():
         assert r.summary                     # user-facing card text
 
 
+def test_recipe_catalog_is_present_and_well_formed():
+    """Lock the shipped recipe catalog + require every recipe to have the fields the
+    gallery/modal need (a missing summary or goal_template ships a broken card)."""
+    recipes = {r.slug: r for r in sk.list_recipes("linux")}
+    expected = {
+        "cyberpanel-host-website", "github-deploy", "migrate-website",
+        "harden-server", "setup-backups", "domain-ssl",
+    }
+    assert expected <= set(recipes), f"missing recipes: {expected - set(recipes)}"
+    for r in recipes.values():
+        assert r.mode == "mission", r.slug
+        assert r.summary, r.slug
+        assert r.icon, r.slug
+        assert r.goal_template, r.slug
+        # budgets are clamped to the mission range
+        assert 10 <= sk.resolve_mission_budget(r) <= 40, r.slug
+
+
 def test_reactive_skills_are_not_recipes():
     """Diagnostic/reactive runbooks must NOT appear in the browse-and-click gallery
     (docs/ALLY-RECIPES.md 'catalog rule: proactive only')."""
