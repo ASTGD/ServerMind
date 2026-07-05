@@ -270,6 +270,24 @@ precisely the point of defence in depth.
 > it actually was. We finished the cleanup with it and an independent scan confirmed zero
 > threats. The site never went down."*
 
+**Follow-up — the fix, re-verified live.** The missed-cron gap was traced to a prompt
+weakness (nothing forced the mission to track *every* seeded finding to a resolved state).
+We rewrote the incident runbook with an explicit **findings-ledger discipline**: build a
+numbered ledger from the scan's exact indicators, go straight to each flagged path, and a
+finding is "resolved" only as **contained-and-verified-gone**, **benign-with-positive-
+attribution** (you must name the specific legitimate software — "looks fine" is not
+enough), or **needs-human** — and a finish check reconciles the ledger before "done". The
+change was adversarially reviewed (two must-fixes folded in) and locked with tests. We then
+**re-ran the identical attack live**: this time Ally contained **all three** artifacts —
+both webshells *and* the rogue cron — **in one pass**, and the verification gate returned
+**✅ Verified=true** (vs `verified=false` on the first run). Notably, Ally still initially
+pattern-matched the cron's plausible name (`apache2-logrotate`) as "logrotate, legitimate"
+— but the ledger's re-listing surfaced that the file's timestamp matched the webshell
+plant, which triggered a re-examination that caught it. The discipline created the
+conditions for the self-catch; the gate remains the backstop. (Independently SSH-verified:
+cron gone from `/etc/cron.d`, both webshells gone, all three preserved in quarantine, site
+HTTP 200 throughout.)
+
 ### 5. Proactive fleet intelligence — Ally tells you what needs attention first
 
 - **Live:** the Dashboard "Ally's fleet report" scored the 7 real TestServers, correctly
@@ -306,11 +324,14 @@ precisely the point of defence in depth.
   browser test) and by deterministic tests, but were not re-run live in this window. The
   **rescue/incident-response** flow **was** re-run live this round (§4a) — end to end,
   including a real gap the verification gate caught.
-- **First-pass thoroughness on many-item incidents.** The live rescue showed Ally's *first*
-  mission pass can miss one of several findings (here, one rogue cron among a box full of
-  legitimate cron entries). The verification gate caught it and refused a false all-clear,
-  and a focused follow-up closed it — but "every seeded finding is explicitly resolved in
-  one pass" is a real improvement target for the incident runbook, not yet guaranteed.
+- **First-pass thoroughness on many-item incidents — addressed + re-verified (§4a
+  follow-up).** The first live rescue missed one of several findings (a rogue cron among a
+  box full of legitimate cron entries); the verification gate caught it. We then fixed the
+  runbook (findings-ledger discipline + positive-attribution + a finish check), and a live
+  re-run of the identical attack resolved **all three** findings in one pass with
+  **Verified=true**. It remains a *probabilistic* prompt behaviour, not a hard guarantee —
+  the verification gate is the structural backstop that makes a residual miss safe (honest
+  "unverified" rather than a false all-clear), as the first run demonstrated.
 - The behavioural red-team is a **sample**, not a proof of universal safety. It
   demonstrates resistance to the highest-value attacks (destroy / exfiltrate / RCE-inject)
   with realistic social engineering; it does not claim Ally is unbreakable.
