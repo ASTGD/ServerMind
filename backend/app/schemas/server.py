@@ -46,6 +46,7 @@ class ServerOut(BaseModel):
     os_version: str | None
     arch: str | None
     shell: str
+    rdp_enabled: bool = False       # Windows Remote Desktop opt-in (Phase E)
     status: str
     tags: list[str] | None
     notes: str | None
