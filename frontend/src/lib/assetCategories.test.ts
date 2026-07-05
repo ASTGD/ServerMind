@@ -8,15 +8,19 @@ import {
 } from "./assetCategories"
 
 describe("assetCategories registry", () => {
-  it("has the five categories; cloud is the only not-yet-addable one", () => {
+  it("has the five categories, all addable (cloud via its own flow)", () => {
     expect(ASSET_CATEGORIES.map((c) => c.id)).toEqual([
       "bare_metal", "vps", "hosting", "windows", "cloud",
     ])
     expect(ADDABLE_CATEGORIES.map((c) => c.id)).toEqual([
-      "bare_metal", "vps", "hosting", "windows",
+      "bare_metal", "vps", "hosting", "windows", "cloud",
     ])
-    // every addable category carries the transport it connects over
-    for (const c of ADDABLE_CATEGORIES) expect(c.connectionType).toBeTruthy()
+    // every addable category either connects over a transport, or opens the cloud flow
+    for (const c of ADDABLE_CATEGORIES) expect(Boolean(c.connectionType) || Boolean(c.cloudFlow)).toBe(true)
+    // cloud is the account-import flow — no direct transport
+    const cloud = categoryById("cloud")!
+    expect(cloud.cloudFlow).toBe(true)
+    expect(cloud.connectionType).toBeUndefined()
     // every category has the fields the tiles/cards read
     for (const c of ASSET_CATEGORIES) {
       expect(c.label).toBeTruthy()

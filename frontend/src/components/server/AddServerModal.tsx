@@ -7,6 +7,8 @@ import { useTranslation } from "react-i18next"
 
 interface Props {
   onClose: () => void
+  /** Picking the Cloud tile leaves this form and opens the Cloud Account flow. */
+  onPickCloud: () => void
 }
 
 const DEFAULT_FORM: ServerCreateBody = {
@@ -23,7 +25,7 @@ const DEFAULT_FORM: ServerCreateBody = {
   notes: null,
 }
 
-export default function AddServerModal({ onClose }: Props) {
+export default function AddServerModal({ onClose, onPickCloud }: Props) {
   const { t } = useTranslation()
   const qc = useQueryClient()
   const [form, setForm] = useState<ServerCreateBody>(DEFAULT_FORM)
@@ -78,6 +80,10 @@ export default function AddServerModal({ onClose }: Props) {
    *  defaults (Bare Metal + VPS both → ssh; the category just labels which it is). */
   function pickCategory(cat: AssetCategory) {
     if (!cat.available) return
+    if (cat.cloudFlow) {
+      onPickCloud() // Cloud is an account-import flow, not a direct add
+      return
+    }
     setForm((prev) => ({ ...prev, category: cat.id }))
     if (cat.connectionType) setConnectionType(cat.connectionType)
   }

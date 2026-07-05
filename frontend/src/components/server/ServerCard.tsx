@@ -13,6 +13,9 @@ export default function ServerCard({ server }: Props) {
   const [showMsg, setShowMsg] = useState(false)
   const cat = categoryForServer(server)
   const CatIcon = cat.icon
+  // Cloud-imported assets carry their provider as the first tag (e.g. "aws").
+  const provider = cat.id === "cloud" ? server.tags?.[0] : undefined
+  const otherTags = provider ? server.tags?.filter((t) => t !== provider) : server.tags
   return (
     <Link
       to={`/servers/${server.id}`}
@@ -89,6 +92,11 @@ export default function ServerCard({ server }: Props) {
         <span className="rounded bg-muted px-1.5 py-0.5 font-medium">
           {cat.label}
         </span>
+        {provider && (
+          <span className="rounded bg-primary/10 px-1.5 py-0.5 font-medium uppercase text-primary">
+            {provider}
+          </span>
+        )}
         {server.panel_type && (
           <span className="rounded bg-muted px-1.5 py-0.5 capitalize">
             {server.panel_type}
@@ -96,9 +104,9 @@ export default function ServerCard({ server }: Props) {
         )}
       </div>
 
-      {server.tags && server.tags.length > 0 && (
+      {otherTags && otherTags.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
-          {server.tags.map((tag) => (
+          {otherTags.map((tag) => (
             <span
               key={tag}
               className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"

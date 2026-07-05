@@ -19,11 +19,13 @@ export interface AssetCategory {
   label: string
   blurb: string
   icon: LucideIcon
-  /** The transport a NEW asset of this category connects over (undefined = not yet
-   *  addable, e.g. Cloud, which is a separate account-import flow — Phase C). */
+  /** The transport a NEW asset of this category connects over. Undefined for Cloud, which
+   *  is a separate account-import flow (connect → discover → import), not a direct add. */
   connectionType?: Server["connection_type"]
   /** false → shown as a dimmed "coming soon" tile, not addable yet. */
   available: boolean
+  /** true → picking the tile opens the Cloud Account flow instead of the add-asset form. */
+  cloudFlow?: boolean
 }
 
 export const ASSET_CATEGORIES: AssetCategory[] = [
@@ -31,7 +33,7 @@ export const ASSET_CATEGORIES: AssetCategory[] = [
   { id: "vps", label: "VPS", blurb: "A cloud/rented Linux server over SSH", icon: ServerIcon, connectionType: "ssh", available: true },
   { id: "hosting", label: "Hosting Panel", blurb: "cPanel, CyberPanel or Plesk", icon: LayoutPanelTop, connectionType: "hosting", available: true },
   { id: "windows", label: "Windows Server", blurb: "Managed over WinRM (RDP viewer soon)", icon: AppWindow, connectionType: "winrm", available: true },
-  { id: "cloud", label: "Cloud Account", blurb: "Import instances from AWS & more", icon: Cloud, available: false },
+  { id: "cloud", label: "Cloud Account", blurb: "Import instances from AWS & more", icon: Cloud, available: true, cloudFlow: true },
 ]
 
 export const ADDABLE_CATEGORIES = ASSET_CATEGORIES.filter((c) => c.available)

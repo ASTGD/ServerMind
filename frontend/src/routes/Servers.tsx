@@ -5,11 +5,13 @@ import { useTranslation } from "react-i18next"
 import { listServers } from "@/api/servers"
 import ServerCard from "@/components/server/ServerCard"
 import AddServerModal from "@/components/server/AddServerModal"
+import ConnectCloudModal from "@/components/server/ConnectCloudModal"
 import type { Server } from "@/types"
 
 export default function Servers() {
   const { t } = useTranslation()
   const [showAdd, setShowAdd] = useState(false)
+  const [showCloud, setShowCloud] = useState(false)
 
   const { data: servers = [], isLoading } = useQuery<Server[]>({
     queryKey: ["servers"],
@@ -58,7 +60,16 @@ export default function Servers() {
         </div>
       )}
 
-      {showAdd && <AddServerModal onClose={() => setShowAdd(false)} />}
+      {showAdd && (
+        <AddServerModal
+          onClose={() => setShowAdd(false)}
+          onPickCloud={() => {
+            setShowAdd(false)
+            setShowCloud(true)
+          }}
+        />
+      )}
+      {showCloud && <ConnectCloudModal onClose={() => setShowCloud(false)} />}
     </div>
   )
 }

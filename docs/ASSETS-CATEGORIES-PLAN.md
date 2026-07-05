@@ -17,7 +17,23 @@
 > URL-encoded `parse_qs` responses; connect + list sites, list/create DB, list/create
 > email) + the Add-Asset panel picker (CyberPanel/cPanel/Plesk/**DirectAdmin**, port 2222).
 > Mock-tested (11 cases) against the documented DA API — like cPanel/Plesk it needs one
-> live pass per panel version (CyberPanel remains the live-proven one). Phases C–E remain.
+> live pass per panel version (CyberPanel remains the live-proven one).
+>
+> **Status: Phase C shipped (2026-07-06).** The **Cloud Account** category — connect a
+> whole provider account by API key, discover its instances, import the chosen ones as
+> assets. **AWS first** (`cloud_service.py`: `_CloudAdapter` base + `AWSAdapter`, boto3
+> lazy-imported; STS verify + EC2 `describe_instances` across the configured region or all
+> enabled regions; friendly error mapping; one-bad-region resilience). Backend: migration
+> 027 (`cloud_accounts` table + `servers.cloud_account_id`/`cloud_instance_id`),
+> `/api/cloud-accounts` (connect→verify-before-save, list, delete=SET-NULL keeps assets,
+> `{id}/instances`, `{id}/import`); credential is an AES-256-GCM provider-shaped JSON blob;
+> the provider API only LISTS machines so import prefills asset rows and the user supplies
+> one SSH key/password for the batch (dedupe + plan server-cap aware). Frontend: the Cloud
+> tile now opens a `ConnectCloudModal` (connect → discover multi-select → batch SSH cred →
+> import), imported assets carry a provider badge. Mock-tested (12 cases, no live AWS);
+> **live-verified the connect + error path end-to-end** (real STS rejection surfaced as a
+> friendly message, no account created) — the discover/import happy path needs one pass on
+> a real AWS account (same caveat as the hosting adapters). Phases D–E remain.
 
 ## The idea in one line
 
