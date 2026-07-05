@@ -1,8 +1,10 @@
-# AI Model Ladder — the right-sized brain per task
+# Smart Model Ladder — the right-sized brain per task
 
-> **Status: SHIPPED (2026-07-05).** Ally uses a stronger model for high-stakes judgment,
-> the default for normal work, and a cheaper/faster model for trivial parts — highest
-> accuracy where it matters, lowest cost where it doesn't.
+> **Status: SHIPPED (2026-07-05).** "Smart Model Ladder" is the product/marketing name.
+> Ally uses a stronger model for high-stakes judgment, the default for normal work, and a
+> cheaper/faster model for trivial parts — highest accuracy where it matters, lowest cost
+> where it doesn't — and it can **decide for itself, up front**, when a request needs a
+> bigger brain.
 
 ## The idea
 
@@ -16,18 +18,30 @@ call the right-sized model:
 | **default** | `claude-sonnet-5` | Chat planning, mission steps, fleet chat, script generation |
 | **low** ⬇ | `claude-haiku-4-5-20251001` | Plain-English **explanations**, NL→cron **schedule parsing** |
 
-Two ways the ladder is applied:
+Three ways the ladder is applied:
 
 1. **Static per-call-site** — each AI call declares its tier (`verify_mission` → high,
    `explain_output` / `parse_schedule` → low). The judgment call gets the best brain; the
    trivial parse gets the cheap one.
-2. **Dynamic escalation (in missions)** — when a mission is *struggling* (the verifier
+2. **Reactive escalation (in missions)** — when a mission is *struggling* (the verifier
    bounced it back, or the last two real steps both failed), the loop hands the **next**
-   step a stronger brain, then drops back to default once it's moving again. This is the
-   "Ally realises it needs more firepower for the hard part, then returns to normal."
-   Bounded by design (`ai_service.mission_step_tier`, pure + unit-tested); missions are
-   short, so escalation can't run away. The escalated step shows a **"stronger model"**
-   badge in the mission card.
+   step a stronger brain, then drops back to default once it's moving again. Bounded by
+   design (`ai_service.mission_step_tier`, pure + unit-tested); missions are short, so
+   escalation can't run away.
+3. **Proactive self-escalation ("Ally decides up front")** — the default model plans, but
+   the planning contract has an optional `need_stronger` flag. When Ally itself judges a
+   request genuinely HARD or high-stakes (a destructive/irreversible change, a security
+   incident, a subtle diagnosis) and isn't fully confident, it sets `need_stronger: true`
+   and keeps the draft minimal; the planner then **re-plans ONCE on the high tier** before
+   anything runs. This is Ally recognising "this one's hard — let me think harder" *before*
+   acting, not just reacting to a failure. It fires for both chat plans (`plan_commands`)
+   and mission steps (`plan_mission_step`), is a single bounded hop, and only happens when
+   a stronger tier actually exists (`llm_service.has_stronger_tier()` — so a BYO/other
+   provider never pays for an identical re-plan). The system prompt stresses it's rare and
+   deliberate, never "just to be safe" on routine work.
+
+Any step or plan that ran on a stronger model — reactive or proactive — shows a small
+**"stronger model"** badge in the UI, so you can see when Ally reached for more firepower.
 
 ## How it's built (small + safe)
 

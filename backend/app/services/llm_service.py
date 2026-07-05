@@ -51,6 +51,14 @@ def model_for_tier(tier: str = "default") -> str:
     provider, _key, model, _base = _resolve()
     return _tier_model(provider, tier) or model
 
+
+def has_stronger_tier() -> bool:
+    """True when 'high' resolves to a genuinely stronger (different) model than 'default'
+    — i.e. escalating a hard request to it is worth a re-plan. False when the ladder is
+    off or the provider has no stronger tier (BYO / non-anthropic), so callers skip the
+    extra call instead of paying for an identical re-plan."""
+    return model_for_tier("high") != model_for_tier("default")
+
 # OpenAI-compatible base URLs for non-OpenAI providers reached via the openai SDK.
 _OPENAI_COMPATIBLE_BASE = {
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",

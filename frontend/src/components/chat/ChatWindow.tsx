@@ -45,6 +45,7 @@ interface PendingPlan {
   riskLevel: string
   estimatedSeconds: number
   serverName?: string | null
+  strong?: boolean
 }
 
 let _msgId = 0
@@ -119,6 +120,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             riskLevel: msg.risk_level as string ?? "low",
             estimatedSeconds: msg.estimated_duration_seconds as number ?? 30,
             serverName: (msg.server_name as string | undefined) ?? null,
+            strong: Boolean(msg.strong),
           }
           setPending(plan)
           if (!plan.requiresApproval) {
@@ -674,6 +676,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             riskLevel={pending.riskLevel}
             estimatedSeconds={pending.estimatedSeconds}
             serverName={pending.serverName}
+            strong={pending.strong}
             onApprove={handleApprove}
             onCancel={handleCancel}
           />

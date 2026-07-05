@@ -1622,9 +1622,9 @@ async def _run_mission(
                 "cmd": cmd, "description": description, "risk_level": risk,
                 "needs_approval": needs_approval,
                 "server_id": str(target.id), "server_name": target.name,
-                # Model ladder: this step was planned with a stronger brain (the mission
-                # was struggling) — the UI shows a subtle badge.
-                "strong": step_tier == "high",
+                # Smart Model Ladder: this step was planned with a stronger brain — either
+                # the loop escalated (mission struggling) or Ally asked for it up front.
+                "strong": step_tier == "high" or bool(decision.get("escalated")),
             }
             await ws.send_text(json.dumps(step_event))
             if needs_approval:
@@ -1912,6 +1912,9 @@ async def _handle_message_inner(
         "estimated_duration_seconds": plan.get("estimated_duration_seconds", 30),
         "server_id": str(server.id),
         "server_name": server.name,
+        # Smart Model Ladder: Ally judged this request hard and re-planned it on a
+        # stronger model before showing you this plan.
+        "strong": bool(plan.get("escalated")),
     }))
 
     # ── 4. Wait for approval if required ─────────────────────────────────────

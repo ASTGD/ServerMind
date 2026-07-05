@@ -5,10 +5,18 @@ heuristic in ai_service. No network, no DB.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace as N
+
 import pytest
 
 from app.config import settings
 from app.services import ai_service, llm_service
+
+
+def _srv(**kw):
+    return N(name=kw.get("name", "s1"), os_type=kw.get("os_type", "ubuntu"),
+             os_version="22.04", connection_type="ssh", shell="bash", arch="amd64",
+             panel_type=None)
 
 
 @pytest.fixture(autouse=True)
@@ -87,3 +95,61 @@ def test_synthetic_steps_are_ignored_when_judging_failures():
     # (resumed) / (verification) markers aren't real command failures.
     steps = [{"cmd": "(verification)", "exit_code": 1}, {"cmd": "(resumed)", "exit_code": 1}]
     assert ai_service.mission_step_tier(steps, 0) == "default"
+
+
+# ── proactive self-escalation (Ally asks for a stronger model up front) ───────
+
+def test_has_stronger_tier_true_on_anthropic_with_ladder_on():
+    assert llm_service.has_stronger_tier() is True
+
+
+def test_has_stronger_tier_false_when_flag_off():
+    settings.ENABLE_MODEL_LADDER = False
+    assert llm_service.has_stronger_tier() is False
+
+
+async def test_plan_commands_reruns_on_high_when_ally_flags_it(monkeypatch):
+    """need_stronger:true on the default plan → ONE re-plan on the high tier, and that
+    stronger plan (marked escalated) is what's returned."""
+    seen: list[str] = []
+
+    async def fake_complete(system, user, *, max_tokens=2048, system_volatile="", tier="default"):
+        seen.append(tier)
+        if tier == "high":
+            return '{"plan_summary": "careful plan", "commands": []}'
+        return '{"plan_summary": "quick draft", "commands": [], "need_stronger": true}'
+
+    monkeypatch.setattr(llm_service, "complete", fake_complete)
+    plan = await ai_service.plan_commands("do something risky and irreversible", _srv())
+    assert seen == ["default", "high"]              # exactly one escalation hop
+    assert plan["plan_summary"] == "careful plan"   # the stronger re-plan won
+    assert plan.get("escalated") is True
+
+
+async def test_plan_commands_does_not_escalate_without_a_stronger_tier(monkeypatch):
+    """Even if Ally flags need_stronger, no second call when there's no stronger tier
+    (ladder off / BYO provider) — we never pay for an identical re-plan."""
+    settings.ENABLE_MODEL_LADDER = False
+    seen: list[str] = []
+
+    async def fake_complete(system, user, *, max_tokens=2048, system_volatile="", tier="default"):
+        seen.append(tier)
+        return '{"plan_summary": "draft", "commands": [], "need_stronger": true}'
+
+    monkeypatch.setattr(llm_service, "complete", fake_complete)
+    plan = await ai_service.plan_commands("x", _srv())
+    assert seen == ["default"]              # no hop
+    assert plan.get("escalated") is None
+
+
+async def test_plan_commands_stays_default_when_not_flagged(monkeypatch):
+    seen: list[str] = []
+
+    async def fake_complete(system, user, *, max_tokens=2048, system_volatile="", tier="default"):
+        seen.append(tier)
+        return '{"plan_summary": "easy", "commands": []}'
+
+    monkeypatch.setattr(llm_service, "complete", fake_complete)
+    plan = await ai_service.plan_commands("show me disk usage", _srv())
+    assert seen == ["default"]
+    assert plan.get("escalated") is None

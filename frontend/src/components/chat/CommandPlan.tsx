@@ -1,4 +1,4 @@
-import { Shield, ShieldAlert, ShieldCheck, Clock, ChevronRight } from "lucide-react"
+import { Shield, ShieldAlert, ShieldCheck, Clock, ChevronRight, Brain } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useTranslation } from "react-i18next"
 import ServerTag from "./ServerTag"
@@ -14,6 +14,8 @@ interface Props {
    *  mistaken for another server (the unified socket keeps plans alive across
    *  target switches; the backend binds the approval to this server anyway). */
   serverName?: string | null
+  /** Smart Model Ladder: Ally re-planned this on a stronger model (a hard request). */
+  strong?: boolean
   onApprove: () => void
   onCancel: () => void
 }
@@ -42,6 +44,7 @@ export default function CommandPlan({
   riskLevel,
   estimatedSeconds,
   serverName,
+  strong,
   onApprove,
   onCancel,
 }: Props) {
@@ -53,7 +56,17 @@ export default function CommandPlan({
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          {serverName && <div className="mb-1"><ServerTag name={serverName} /></div>}
+          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+            {serverName && <ServerTag name={serverName} />}
+            {strong && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded bg-fuchsia-500/10 px-1.5 py-px text-[10px] font-medium text-fuchsia-600 dark:text-fuchsia-400"
+                title="Ally thought this was a hard one and used a stronger model"
+              >
+                <Brain size={10} /> stronger model
+              </span>
+            )}
+          </div>
           <p className="text-sm font-medium text-foreground">{planSummary}</p>
         </div>
         <div className="flex items-center gap-3 shrink-0 text-xs text-muted-foreground">

@@ -103,10 +103,19 @@ ALWAYS RESPOND WITH VALID JSON ONLY (no markdown, no explanation outside JSON):
   "follow_up_suggestions": ["...", "..."],
   "remember": null,
   "mission": null,
-  "use_skill": null
+  "use_skill": null,
+  "need_stronger": false
 }}
 
 ("use_skill" is ONLY for when an EXPERT PROCEDURES menu block is present — see there.)
+
+NEED A STRONGER MODEL? You run on a fast, capable default model. If — and ONLY if — THIS
+request is a genuinely HARD or HIGH-STAKES call (a destructive/irreversible change, a
+security incident, a subtle diagnosis, or a design decision where a wrong plan does real
+harm) and you are NOT fully confident your plan is right, set "need_stronger": true and
+keep this plan minimal — a stronger model will then re-plan it before anything runs. This
+is a rare, deliberate "let me think harder about this one" — most requests do NOT need it.
+Never set it just to be safe on a routine task.
 """
 
 _SKILL_MENU_BLOCK = """\
@@ -438,10 +447,17 @@ RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
     "requires_confirmation": false
   }},
   "summary": "for done/blocked: what happened / what's needed ({user_language})",
-  "remember": null
+  "remember": null,
+  "need_stronger": false
 }}
 (action=run → give "cmd"; action=transfer → give the from_/to_ fields;
  action=wait → give "seconds" only. Leave the fields you don't need out.)
+
+NEED A STRONGER MODEL? You run on a fast, capable default model. If THIS next decision is
+genuinely HARD or HIGH-STAKES (a destructive/irreversible step, a security call, a subtle
+diagnosis where a wrong move does real harm) and you're not fully confident, set
+"need_stronger": true — a stronger model will re-decide this step before it runs. Use it
+rarely and deliberately, only for the hard calls; routine steps do not need it.
 """
 
 # Volatile tail for mission steps (cache layout C3): the transcript only APPENDS, so
@@ -542,10 +558,28 @@ async def plan_mission_step(
         )
     )
     try:
-        return _parse_json(raw)
+        decision = _parse_json(raw)
     except json.JSONDecodeError as exc:
         logger.warning("mission step JSON parse error: %s\nRaw: %r", exc, raw[:300])
         raise ValueError(f"AI returned invalid JSON: {exc}") from exc
+
+    # Smart Model Ladder — proactive escalation: Ally can flag THIS decision as hard and
+    # re-plan the step on a stronger model (unless the loop already put it on high, or
+    # there's no stronger tier). One hop, bounded.
+    if tier != "high" and decision.get("need_stronger") and llm_service.has_stronger_tier():
+        logger.info("mission step: Ally requested a stronger model — re-planning on high tier")
+        try:
+            decision2 = _parse_json(_extract_json(
+                await llm_service.complete(
+                    system, "Decide the next mission step.", max_tokens=3072,
+                    system_volatile=volatile, tier="high",
+                )
+            ))
+            decision2["escalated"] = True
+            return decision2
+        except json.JSONDecodeError:
+            pass  # keep the first (valid) decision if the re-plan is malformed
+    return decision
 
 
 _VERIFY_SYSTEM = _PERSONA + """\
@@ -835,10 +869,28 @@ async def plan_commands(
         await llm_service.complete(system, user_input, max_tokens=4096, system_volatile=volatile)
     )
     try:
-        return _parse_json(raw)
+        plan = _parse_json(raw)
     except json.JSONDecodeError as exc:
         logger.warning("AI plan JSON parse error: %s\nRaw: %r", exc, raw[:500])
         raise ValueError(f"AI returned invalid JSON: {exc}") from exc
+
+    # Smart Model Ladder — proactive escalation: if Ally itself judged this a genuinely
+    # HARD / high-stakes request, re-plan it ONCE on a stronger model (one hop, only when
+    # a stronger tier actually exists). This is Ally deciding up front — before acting —
+    # that a bigger brain is warranted, not just reacting to a failure.
+    if plan.get("need_stronger") and llm_service.has_stronger_tier():
+        logger.info("chat plan: Ally requested a stronger model — re-planning on high tier")
+        try:
+            plan2 = _parse_json(_extract_json(
+                await llm_service.complete(
+                    system, user_input, max_tokens=4096, system_volatile=volatile, tier="high"
+                )
+            ))
+            plan2["escalated"] = True
+            return plan2
+        except json.JSONDecodeError:
+            pass  # keep the first (valid) plan if the stronger re-plan comes back malformed
+    return plan
 
 
 async def fleet_chat(
