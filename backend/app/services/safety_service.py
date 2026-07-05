@@ -131,6 +131,12 @@ def validate_command(cmd: str, os_family: str = "linux") -> ValidationResult:
 # would let a "verification" step delete or reconfigure data — so we bias hard
 # toward rejecting. Network reads (curl/wget to stdout or /dev/null) are allowed
 # so an HTTP "is the site up?" check works; writing a file or piping to a shell is not.
+# A "command position": the start of the line/command, or right after a shell
+# separator (; & | newline `(` `` ` `` `$(`) or a loop keyword (do/then). Used to anchor
+# tokens (eval, crontab) whose bare word legitimately appears inside a quoted grep
+# pattern or an echo label — so we flag `; eval ...` but not `grep 'eval\(base64'`.
+_CMD_POS = r"(?:^|[;&|(`\n]|\$\(|\bdo\b|\bthen\b)\s*"
+
 # Case-INSENSITIVE mutating tokens (shell verbs, SQL, redirects, pipe-to-shell).
 _MUTATION_TOKENS_I = [
     # Filesystem / ownership
@@ -148,7 +154,10 @@ _MUTATION_TOKENS_I = [
     r"(?<![\w/])passwd(?![\w/])",
     r"\b(iptables|ip6tables|nft|ufw|firewall-cmd)\b",
     r"\bmount\b", r"\bumount\b", r"\bswapon\b", r"\bswapoff\b", r"\bsetcap\b",
-    r"\bcrontab\b(?!\s+-l)",
+    # `crontab` writes (crontab -r/-e/<file>) — but `crontab -l` is a read, and the
+    # bare word "crontab" often appears in an echo label ("--- root crontab ---") or a
+    # grep pattern. Anchor to a COMMAND position so a quoted mention isn't flagged.
+    _CMD_POS + r"crontab\b(?!\s+-l)",
     # Data stores (SQL writes, dumps that write a file)
     r"\b(DROP|DELETE|INSERT|UPDATE|CREATE|ALTER|TRUNCATE|GRANT|REVOKE|REPLACE)\s",
     r"\bmysqldump\b", r"\bpg_dump\b", r"\bmysqladmin\b",
@@ -164,8 +173,12 @@ _MUTATION_TOKENS_I = [
     r"\b(vi|vim|nano|pico|emacs|ed|ex)\b", r"\bsed\b[^\n]*\s-i",
     # Executing arbitrary code via a shell: sh -c, process substitution, source, exec
     r"\b(ba|z|c|k|da)?sh\b\s+(-c\b|<)", r"<\(", r"\bsource\b", r"(^|\s|;)\.\s+\S",
-    # Shell-level mutation: redirect into a real file, pipe to a shell, background exec
-    r">\s*/(?!dev/null)", r">>", r"\|\s*(ba|z|c|k)?sh\b", r"\beval\b", r"\bnohup\b", r"\bxargs\b",
+    # Shell-level mutation: redirect into a real file, pipe to a shell, background exec.
+    # `eval` runs arbitrary code — but the literal word also appears inside webshell-
+    # signature grep patterns ('eval\(base64_decode|...') that incident-response uses as
+    # a READ-ONLY scan. Anchor `eval` to a COMMAND position so a quoted mention (search
+    # pattern / label) isn't flagged, while real `eval "$(curl ...)"` still is.
+    r">\s*/(?!dev/null)", r">>", r"\|\s*(ba|z|c|k)?sh\b", _CMD_POS + r"eval\b", r"\bnohup\b", r"\bxargs\b",
 ]
 # Case-SENSITIVE tokens — curl -O vs -o and PowerShell PascalCase cmdlets carry
 # meaning in their case, so matching case-insensitively would flag benign reads.
