@@ -12,6 +12,7 @@ from app.routers import assistant as assistant_router
 from app.routers import audit as audit_router
 from app.routers import auth as auth_router
 from app.routers import backups as backups_router
+from app.routers import cloud_accounts as cloud_accounts_router
 from app.routers import commands as commands_router
 from app.routers import files as files_router
 from app.routers import fleet as fleet_router
@@ -118,6 +119,7 @@ app.include_router(settings_router.router)
 app.include_router(hosting_router.router)
 app.include_router(installed_router.router)
 app.include_router(usage_router.router)
+app.include_router(cloud_accounts_router.router)
 app.include_router(memories_router.router)
 app.include_router(entitlements_router.router)
 app.include_router(ws_handlers.router)

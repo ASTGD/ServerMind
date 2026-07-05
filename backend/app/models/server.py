@@ -25,6 +25,9 @@ class Server(Base):
     panel_type: Mapped[str | None] = mapped_column(String(20))               # 'cyberpanel'|'cpanel'|'plesk'|null
     # User-facing "Assets" grouping (what it IS), independent of the transport above.
     category: Mapped[str | None] = mapped_column(String(20))                 # 'bare_metal'|'vps'|'hosting'|'windows'|'cloud'
+    # Set when this asset was imported from a Cloud Account (Phase C); links back + dedupes.
+    cloud_account_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("cloud_accounts.id", ondelete="SET NULL"))
+    cloud_instance_id: Mapped[str | None] = mapped_column(String(255))
     encrypted_cred: Mapped[str] = mapped_column(Text, nullable=False)
     fingerprint: Mapped[str | None] = mapped_column(Text)
     os_type: Mapped[str | None] = mapped_column(String(50))
