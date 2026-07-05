@@ -49,6 +49,34 @@ def _parse_budget(raw: str | None) -> int | None:
     except (TypeError, ValueError):
         return None
 
+
+def _truthy(raw: str | None) -> bool:
+    return (raw or "").strip().lower() in ("true", "yes", "1", "on")
+
+
+def _parse_variables(raw: str | None) -> list[dict]:
+    """Parse a recipe's ``variables`` frontmatter into structured fields.
+
+    Format: ``name:required|optional[:default], ...`` — e.g.
+    ``domain:required, title:optional:{{domain}}, email:optional:admin@{{domain}}``.
+    A default may itself reference another variable (``{{domain}}``) — resolved later at
+    submit time on the client. Unknown/blank entries are skipped, never fatal.
+    """
+    out: list[dict] = []
+    for entry in (raw or "").split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        parts = entry.split(":")
+        name = parts[0].strip()
+        if not name:
+            continue
+        required = len(parts) > 1 and parts[1].strip().lower() == "required"
+        # default may contain ':' (a URL, say) — rejoin everything after the flag.
+        default = ":".join(parts[2:]).strip() if len(parts) > 2 else ""
+        out.append({"name": name, "required": required, "default": default})
+    return out
+
 _SKILL_BLOCK = """\
 
 EXPERT PROCEDURE — "{title}" (ServerAlly's specialist playbook for this kind of task):
@@ -75,6 +103,14 @@ class Skill:
     mode: str = "knowledge"
     # Mission-mode only: the step budget this runbook needs (clamped), or None → default.
     budget: int | None = None
+    # Recipe (Ally Recipes): a goal-oriented mission skill promoted into the one-click
+    # gallery. `recipe=True` opts it in; the fields below drive the RunRecipeModal form
+    # and compose the chat message that starts the mission (see docs/ALLY-RECIPES.md).
+    recipe: bool = False
+    summary: str = ""          # user-facing one-liner for the card (title/GOAL is for Ally)
+    icon: str = ""             # icon hint for the card (e.g. "wordpress", "github")
+    variables: list[dict] = field(default_factory=list)  # [{name, required, default}]
+    goal_template: str = ""    # filled with variables → the chat message that gets sent
     path: str = field(default="", repr=False)
 
 
@@ -130,6 +166,11 @@ def load_skills() -> list[Skill]:
                         priority=int(meta.get("priority", "0") or 0),
                         mode=(meta.get("mode") or "knowledge").lower(),
                         budget=_parse_budget(meta.get("budget")),
+                        recipe=_truthy(meta.get("recipe")),
+                        summary=meta.get("summary", ""),
+                        icon=meta.get("icon", ""),
+                        variables=_parse_variables(meta.get("variables")),
+                        goal_template=meta.get("goal_template", ""),
                         path=str(path),
                     )
                 )
@@ -195,6 +236,18 @@ def get_for_os(slug: str, os_type: str | None) -> Skill | None:
     """Look a skill up by slug, honoring the OS gate (for model-requested skills)."""
     skill = get(slug)
     return skill if (skill and _os_ok(skill, os_type)) else None
+
+
+def list_recipes(os_type: str | None = None) -> list[Skill]:
+    """Goal-oriented mission skills opted into the one-click Recipes gallery, OS-gated
+    against the selected target (all when os_type is None). Only ``mode='mission'`` +
+    ``recipe=True`` + a ``goal_template`` to send — reactive/diagnostic runbooks (e.g.
+    security-incident-response) are deliberately excluded (see docs/ALLY-RECIPES.md).
+    Ordered by priority desc (load_skills already sorts)."""
+    return [
+        s for s in load_skills()
+        if s.recipe and s.mode == "mission" and s.goal_template and _os_ok(s, os_type)
+    ]
 
 
 def menu_for(os_type: str | None) -> str:

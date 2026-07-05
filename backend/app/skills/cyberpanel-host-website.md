@@ -6,6 +6,11 @@ os: linux
 priority: 8
 mode: mission
 budget: 25
+recipe: true
+summary: Get a full WordPress site live on this CyberPanel server — created, secured with SSL, and verified.
+icon: wordpress
+variables: domain:required, title:optional:{{domain}}, email:optional:admin@{{domain}}
+goal_template: Host a WordPress site at {{domain}}, title '{{title}}', admin email {{email}}
 ---
 GOAL: Put a complete, working website (WordPress by default) live on this CyberPanel
 server — created through the panel's own CLI so it shows up in CyberPanel, secured,

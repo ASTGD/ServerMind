@@ -21,6 +21,7 @@ from app.routers import missions as missions_router
 from app.routers import monitoring as monitoring_router
 from app.routers import notifications as notifications_router
 from app.routers import playbooks as playbooks_router
+from app.routers import recipes as recipes_router
 from app.routers import scheduler as scheduler_router
 from app.routers import scripts as scripts_router
 from app.routers import security as security_router
@@ -102,6 +103,7 @@ app.include_router(assistant_router.router)
 app.include_router(servers_router.router)
 app.include_router(commands_router.router)
 app.include_router(playbooks_router.router)
+app.include_router(recipes_router.router)
 app.include_router(scripts_router.router)
 app.include_router(scheduler_router.router)
 app.include_router(monitoring_router.router)

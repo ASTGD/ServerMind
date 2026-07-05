@@ -6,6 +6,11 @@ os: linux
 priority: 9
 mode: mission
 budget: 25
+recipe: true
+summary: Take a GitHub repo and make it live on this server — auto-detected, secured, and verified.
+icon: github
+variables: repo:required
+goal_template: Deploy the GitHub repo {{repo}} to this server
 ---
 GOAL: Take a GitHub repository and make it live on this server — detect what the app
 is, host it the right way for THIS server (panel-aware), secure it, verify it, and
