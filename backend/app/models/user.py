@@ -20,6 +20,12 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(String(255))
     avatar_url: Mapped[str | None] = mapped_column(String(500))
     preferred_language: Mapped[str] = mapped_column(String(10), default="en")
+    # How often Ally emails a proactive fleet-health digest: 'off' | 'weekly' | 'daily'.
+    # Deterministic (fleet_service scoring — no AI cost); reuses the notification email
+    # plumbing. Weekly by default so users hear what needs attention without opening the app.
+    digest_frequency: Mapped[str] = mapped_column(
+        String(10), default="weekly", server_default="weekly"
+    )
     # Subscription plan ('free' | 'pro'). Set manually until a billing provider is
     # chosen (docs/AI-METERING.md §8 — the billing webhook is deliberately not built).
     plan: Mapped[str] = mapped_column(String(10), default="free", server_default="free")

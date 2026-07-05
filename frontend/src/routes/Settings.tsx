@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, History, Check, Loader2, Sparkles, Brain, Trash2 } from "lucide-react"
+import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, History, Check, Loader2, Sparkles, Brain, Trash2, Mail, Send } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { listAudit } from "@/api/audit"
 import {
@@ -9,6 +9,7 @@ import {
 } from "@/api/auth"
 import { getAiSettings, updateAiSettings, testAiSettings, type AiProvider, type AiSettings } from "@/api/settings"
 import { getMyUsage } from "@/api/usage"
+import { setDigestFrequency, sendTestDigest, type DigestFrequency } from "@/api/fleet"
 import { listMyMemories, deleteMemory } from "@/api/memories"
 import { useAuthStore } from "@/store/authStore"
 import i18n from "@/i18n"
@@ -134,6 +135,26 @@ export default function Settings() {
   const forgetMutation = useMutation({
     mutationFn: deleteMemory,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["my-memories"] }),
+  })
+
+  // Fleet-health email digest
+  const [digestMsg, setDigestMsg] = useState("")
+  const digestFreqMut = useMutation({
+    mutationFn: (frequency: DigestFrequency) => setDigestFrequency(frequency),
+    onSuccess: (res) => {
+      if (user) syncUser({ ...user, digest_frequency: res.frequency })
+    },
+  })
+  const digestTestMut = useMutation({
+    mutationFn: sendTestDigest,
+    onSuccess: (r) => {
+      setDigestMsg(r.sent ? "Sent — check your inbox." : r.reason || "Nothing to send yet.")
+      setTimeout(() => setDigestMsg(""), 4000)
+    },
+    onError: (e) => {
+      setDigestMsg(errMsg(e))
+      setTimeout(() => setDigestMsg(""), 5000)
+    },
   })
   useEffect(() => {
     const d = aiQuery.data
@@ -752,6 +773,59 @@ export default function Settings() {
   // edition, where the operator configures their own provider.
   const SHOW_AI_PROVIDER_SETTINGS = false
 
+  const DIGEST_OPTIONS: { value: DigestFrequency; label: string; hint: string }[] = [
+    { value: "weekly", label: "Weekly", hint: "Mondays" },
+    { value: "daily", label: "Daily", hint: "every morning" },
+    { value: "off", label: "Off", hint: "no emails" },
+  ]
+  const digestSection = (
+    <Section
+      icon={Mail}
+      title="Fleet health digest"
+      description="Ally emails you what needs attention across your servers — so you hear about problems without opening the app."
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {DIGEST_OPTIONS.map((o) => {
+            const active = (user.digest_frequency || "weekly") === o.value
+            return (
+              <button
+                key={o.value}
+                onClick={() => !active && digestFreqMut.mutate(o.value)}
+                disabled={digestFreqMut.isPending}
+                className={`flex flex-col items-start rounded-lg border px-3.5 py-2 text-left transition-colors disabled:opacity-60 ${
+                  active
+                    ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                    : "border-border hover:bg-accent"
+                }`}
+              >
+                <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                  {active && <Check size={14} className="text-primary" />}
+                  {o.label}
+                </span>
+                <span className="text-xs text-muted-foreground">{o.hint}</span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => digestTestMut.mutate()}
+            disabled={digestTestMut.isPending}
+            className="flex items-center gap-2 rounded-md border border-border px-3.5 py-2 text-sm font-medium text-foreground hover:bg-accent disabled:opacity-50"
+          >
+            {digestTestMut.isPending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+            Send me a test now
+          </button>
+          {digestMsg && <span className="text-sm text-muted-foreground">{digestMsg}</span>}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Deterministic and free — it reads the health data ServerAlly already collects, no AI cost.
+        </p>
+      </div>
+    </Section>
+  )
+
   const aiSection = (
     <Section
       icon={Sparkles}
@@ -875,6 +949,7 @@ export default function Settings() {
         </div>
         <div className="space-y-6">
           {languageSection}
+          {digestSection}
           {passwordSection}
           {twoFactorSection}
         </div>

@@ -45,3 +45,20 @@ export async function getFleetHealth(): Promise<FleetHealth> {
   const { data } = await apiClient.get<FleetHealth>("/api/fleet/health")
   return data
 }
+
+// ── Fleet-health email digest ─────────────────────────────────────────────────
+
+export type DigestFrequency = "off" | "weekly" | "daily"
+
+/** Set how often Ally emails the fleet-health digest. */
+export async function setDigestFrequency(frequency: DigestFrequency): Promise<{ frequency: string }> {
+  const { data } = await apiClient.put("/api/fleet/digest", { frequency })
+  return data
+}
+
+/** Email the current user their digest right now. `sent=false` means there was
+ *  nothing to report (no servers yet). */
+export async function sendTestDigest(): Promise<{ sent: boolean; reason: string }> {
+  const { data } = await apiClient.post("/api/fleet/digest/test")
+  return data
+}

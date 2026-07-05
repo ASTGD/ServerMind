@@ -182,6 +182,19 @@ async def on_startup() -> None:
     )
     logger.info("Threat monitoring job registered (every 12 h)")
 
+    # Proactive fleet-health digest — a friendly email of what needs attention across
+    # the fleet. Runs daily at 08:00 UTC; the worker decides who's due (weekly users on
+    # Mondays, daily users every day). Deterministic (no AI), reuses the email plumbing.
+    from apscheduler.triggers.cron import CronTrigger
+    from app.workers import digest_worker
+    scheduler_service.get_scheduler().add_job(
+        digest_worker.send_due_digests,
+        trigger=CronTrigger(hour=8, minute=0, timezone="UTC"),
+        id="fleet_digest",
+        replace_existing=True,
+    )
+    logger.info("Fleet-health digest job registered (daily 08:00 UTC)")
+
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:

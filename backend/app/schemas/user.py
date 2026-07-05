@@ -28,6 +28,7 @@ class UserOut(UserBase):
     is_active: bool
     is_verified: bool
     totp_enabled: bool
+    digest_frequency: str = "weekly"
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -58,8 +58,10 @@ async def create_run_notification(db, run_id) -> None:
 
 # ── Email ─────────────────────────────────────────────────────────────────────
 
-def _send_email_sync(to: str, subject: str, body_text: str) -> None:
-    """Blocking SMTP send — runs in a thread pool."""
+def _send_email_sync(to: str, subject: str, body_text: str, body_html: str | None = None) -> None:
+    """Blocking SMTP send — runs in a thread pool. When ``body_html`` is given the
+    message is multipart/alternative (plain + HTML); clients that can render HTML show
+    it, the rest fall back to the plain text."""
     if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
         logger.warning("SMTP credentials not configured — skipping email to %s", to)
         return
@@ -68,7 +70,10 @@ def _send_email_sync(to: str, subject: str, body_text: str) -> None:
     msg["Subject"] = subject
     msg["From"] = settings.EMAIL_FROM
     msg["To"] = to
+    # Per RFC 2046, the LAST alternative is the most-preferred — attach plain first.
     msg.attach(MIMEText(body_text, "plain"))
+    if body_html:
+        msg.attach(MIMEText(body_html, "html"))
 
     try:
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as smtp:
@@ -82,9 +87,9 @@ def _send_email_sync(to: str, subject: str, body_text: str) -> None:
         raise
 
 
-async def send_email(to: str, subject: str, body: str) -> None:
-    """Async email notification."""
-    await asyncio.to_thread(_send_email_sync, to, subject, body)
+async def send_email(to: str, subject: str, body: str, html: str | None = None) -> None:
+    """Async email notification. Pass ``html`` for a rich HTML alternative."""
+    await asyncio.to_thread(_send_email_sync, to, subject, body, html)
 
 
 # ── Webhook / Slack ───────────────────────────────────────────────────────────

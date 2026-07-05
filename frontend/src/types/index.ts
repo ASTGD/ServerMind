@@ -7,6 +7,8 @@ export interface User {
   is_active: boolean
   is_verified: boolean
   totp_enabled: boolean
+  /** Fleet-health digest cadence: 'off' | 'weekly' | 'daily'. */
+  digest_frequency: string
   created_at: string
 }
 
