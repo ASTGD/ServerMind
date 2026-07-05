@@ -12,7 +12,7 @@ import type { MissionState, MissionStep } from "./MissionProgress"
 import BatchRunModal from "./BatchRunModal"
 import CommandPlan from "./CommandPlan"
 import { useAuthStore } from "@/store/authStore"
-import { WifiOff, Square, Sparkles, ArrowRight, X } from "lucide-react"
+import { Loader2, Square, Sparkles, ArrowRight, X } from "lucide-react"
 import { cancelCommand } from "@/api/commands"
 import type { CommandItem, GenerateScriptResult, Server } from "@/types"
 import type { AssistantTarget } from "@/store/assistantStore"
@@ -421,6 +421,34 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
+  // Auto re-attach a still-running mission after a RECONNECT. A dropped socket (backend
+  // restart, network blip, sleep) must not lose the live view of an in-flight mission —
+  // the mission itself keeps running detached (Phase 4), so we just re-subscribe to it.
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
+  const wasOpenRef = useRef(false)
+  const everOpenRef = useRef(false)
+  useEffect(() => {
+    if (status !== "open") {
+      wasOpenRef.current = false
+      return
+    }
+    if (!wasOpenRef.current && everOpenRef.current) {
+      for (const m of messagesRef.current) {
+        if (m.role === "assistant" && m.kind === "mission" && m.mission.status === "running") {
+          const mid = m.mission.missionId
+          if (mid && !mid.startsWith("local-")) {
+            send({ type: "mission_attach", mission_id: mid, language })
+            break
+          }
+        }
+      }
+    }
+    wasOpenRef.current = true
+    everOpenRef.current = true
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status])
+
   // Conversation memory: the last few visible turns, sent with each message so Ally can
   // follow the thread ("install nginx" → "now add SSL to it"). Text-only turns; the
   // backend re-validates and caps everything.
@@ -600,11 +628,12 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
 
   return (
     <div className="flex h-full flex-col">
-      {/* Connection warning */}
-      {(status === "closed" || status === "error") && (
-        <div className="flex items-center justify-center gap-2 bg-destructive/10 px-4 py-2 text-xs text-destructive">
-          <WifiOff size={12} />
-          Disconnected — please refresh the page
+      {/* Connection warning — the socket auto-reconnects, so this is a calm, transient
+          notice, never a "please refresh the page" dead end. */}
+      {status !== "open" && (
+        <div className="flex items-center justify-center gap-2 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
+          <Loader2 size={12} className="animate-spin" />
+          Reconnecting…
         </div>
       )}
 

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useCallback, useState } from "react"
 import { wsAuthQuery } from "@/api/auth"
 
-export type WSStatus = "connecting" | "open" | "closed" | "error"
+export type WSStatus = "connecting" | "open" | "reconnecting" | "closed" | "error"
 
 interface Options {
   onMessage: (data: unknown) => void
-  onOpen?: () => void
+  /** Called on every successful open. `reconnected` is true when the socket had been
+   *  open before and dropped — so the caller can re-attach live work (e.g. a mission). */
+  onOpen?: (info: { reconnected: boolean }) => void
   onClose?: () => void
 }
 
@@ -27,49 +29,96 @@ function resolveWsBase(): string {
 }
 
 const WS_BASE = resolveWsBase()
+const MAX_BACKOFF_MS = 15_000
 
+/**
+ * A resilient WebSocket. A long-lived socket WILL drop — a backend restart/redeploy, an
+ * idle proxy timeout, a laptop sleep/wake, a Wi-Fi blip. This hook AUTO-RECONNECTS with
+ * capped exponential backoff (surfacing a calm "reconnecting" status) instead of leaving
+ * the user on a dead connection that needs a manual page refresh. The conversation lives
+ * in the store and missions are durable + detached, so a reconnect restores everything.
+ */
 export function useWebSocket(path: string, options: Options) {
-  const { onMessage, onOpen, onClose } = options
   const wsRef = useRef<WebSocket | null>(null)
   const [status, setStatus] = useState<WSStatus>("connecting")
 
+  // Always call the LATEST callbacks (avoids stale closures and needless reconnects
+  // when a caller's handler identity changes between renders).
+  const cbRef = useRef(options)
+  cbRef.current = options
+
   useEffect(() => {
     let cancelled = false
-    setStatus("connecting")
+    let attempts = 0
+    let everOpen = false
+    let timer: ReturnType<typeof setTimeout> | null = null
 
-    // Fetch a single-use ticket (falls back to the token) before connecting, so
-    // the JWT doesn't ride in the WebSocket URL.
-    void (async () => {
-      const q = await wsAuthQuery()
+    function scheduleReconnect() {
       if (cancelled) return
+      setStatus(everOpen ? "reconnecting" : "connecting")
+      const delay = Math.min(MAX_BACKOFF_MS, 500 * 2 ** attempts) + Math.random() * 400
+      attempts += 1
+      timer = setTimeout(connect, delay)
+    }
+
+    async function connect() {
+      if (cancelled) return
+      setStatus(everOpen ? "reconnecting" : "connecting")
+      // A fresh single-use ticket per connection (so the JWT never rides in the URL).
+      // If the backend is down, this throws — retry with backoff rather than giving up.
+      let q: string
+      try {
+        q = await wsAuthQuery()
+      } catch {
+        scheduleReconnect()
+        return
+      }
+      if (cancelled) return
+
       const ws = new WebSocket(`${WS_BASE}${path}?${q}`)
       wsRef.current = ws
 
       ws.onopen = () => {
+        const reconnected = everOpen
+        everOpen = true
+        attempts = 0
         setStatus("open")
-        onOpen?.()
+        cbRef.current.onOpen?.({ reconnected })
       }
       ws.onmessage = (event) => {
         try {
-          onMessage(JSON.parse(event.data as string))
+          cbRef.current.onMessage(JSON.parse(event.data as string))
         } catch {
-          onMessage(event.data)
+          cbRef.current.onMessage(event.data)
         }
       }
       ws.onclose = () => {
-        setStatus("closed")
-        onClose?.()
+        cbRef.current.onClose?.()
+        scheduleReconnect()
       }
       ws.onerror = () => {
-        setStatus("error")
+        // Some browsers fire onerror without onclose — close to force the reconnect path.
+        try {
+          ws.close()
+        } catch {
+          /* noop */
+        }
       }
-    })()
+    }
+
+    connect()
 
     return () => {
       cancelled = true
-      wsRef.current?.close()
+      if (timer) clearTimeout(timer)
+      const ws = wsRef.current
+      wsRef.current = null
+      if (ws) {
+        ws.onclose = null // intentional close (unmount / path change) — don't reconnect
+        ws.close()
+      }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path])
 
   const send = useCallback((data: unknown) => {
