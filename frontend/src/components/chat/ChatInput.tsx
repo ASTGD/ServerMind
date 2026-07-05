@@ -10,9 +10,12 @@ interface Props {
   /** Enables @-mentions: type "@" to pick a server name from this list (exact name
    *  inserted — typos can't happen). Typing a name WITHOUT "@" behaves as before. */
   servers?: MentionServer[]
+  /** Overrides the default placeholder — used to reflect the current focus
+   *  ("Message Ally about TestServer3…"). */
+  placeholder?: string
 }
 
-export default function ChatInput({ onSend, disabled, loading, servers }: Props) {
+export default function ChatInput({ onSend, disabled, loading, servers, placeholder }: Props) {
   const { t } = useTranslation()
   const [value, setValue] = useState("")
   const [mention, setMention] = useState<MentionQuery | null>(null)
@@ -132,7 +135,7 @@ export default function ChatInput({ onSend, disabled, loading, servers }: Props)
         onClick={(e) => refreshMention(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
         onBlur={() => setMention(null)}
         onInput={handleInput}
-        placeholder={t("chat.placeholder")}
+        placeholder={placeholder ?? t("chat.placeholder")}
         disabled={disabled || loading}
         className="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
       />

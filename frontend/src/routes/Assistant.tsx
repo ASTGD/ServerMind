@@ -1,78 +1,72 @@
-import { useState, useMemo, useRef } from "react"
+import { useCallback } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Plus, MessageSquare, Trash2, Loader2, Sparkles } from "lucide-react"
+import { Plus, MessageSquare, Trash2, Sparkles, Layers, Server as ServerIcon } from "lucide-react"
 import { listThreads, getThread, createThread, deleteThread, appendMessage } from "@/api/assistant"
 import ChatWindow from "@/components/chat/ChatWindow"
+import { useAssistantStore } from "@/store/assistantStore"
 import type { ChatMessageData } from "@/components/chat/ChatMessage"
 
-const FLEET = { kind: "fleet" as const }
-
-/** The Assistant workspace — a full-page fleet chat with saved, revisitable threads.
- * The thread list is on the left; the active conversation reuses ChatWindow. */
+/**
+ * The Ally page — the SAME one continuous conversation as the drawer, just bigger, with
+ * the saved-thread history beside it ("one Ally, two sizes"). It renders the store-backed
+ * conversation in `persistent` mode, so opening this page and opening the drawer show the
+ * exact same messages, focus, and live work — never a second Ally. Opening a past thread
+ * loads it into the shared conversation; "New chat" clears it.
+ */
 export default function Assistant() {
   const qc = useQueryClient()
-  // `activeId` is the thread we persist to / highlight; `mountKey` keys ChatWindow so it
-  // only remounts on New chat or when a *different* thread is opened — not when the first
-  // message quietly creates a thread mid-conversation.
-  const [activeId, setActiveId] = useState<string | null>(null)
-  const [mountKey, setMountKey] = useState("new-0")
-  const activeIdRef = useRef<string | null>(null)
-  activeIdRef.current = activeId
-
-  const isNew = mountKey.startsWith("new-")
+  const target = useAssistantStore((s) => s.target)
+  const threadId = useAssistantStore((s) => s.threadId)
+  const setMessages = useAssistantStore((s) => s.setMessages)
+  const setThreadId = useAssistantStore((s) => s.setThreadId)
+  const clearConversation = useAssistantStore((s) => s.clearConversation)
 
   const { data: threads = [] } = useQuery({ queryKey: ["assistant-threads"], queryFn: listThreads })
-  const { data: activeThread, isLoading: threadLoading } = useQuery({
-    queryKey: ["assistant-thread", activeId],
-    queryFn: () => getThread(activeId!),
-    enabled: !!activeId && mountKey === activeId,
-  })
 
-  const initialMessages: ChatMessageData[] = useMemo(() => {
-    if (isNew || !activeThread) return []
-    return activeThread.messages.map((m, i) =>
+  // Auto-save the shared conversation to its thread — identical behavior to the drawer
+  // (threadId read fresh from the store so concurrent turns can't split into two threads).
+  const persistUser = useCallback(async (content: string) => {
+    try {
+      let tid = useAssistantStore.getState().threadId
+      if (!tid) {
+        const t = await createThread()
+        tid = t.id
+        useAssistantStore.getState().setThreadId(tid)
+      }
+      await appendMessage(tid, "user", content)
+      qc.invalidateQueries({ queryKey: ["assistant-threads"] })
+    } catch { /* keep chatting */ }
+  }, [qc])
+
+  const persistAnswer = useCallback(async (content: string) => {
+    try {
+      const tid = useAssistantStore.getState().threadId
+      if (!tid || !content) return
+      await appendMessage(tid, "assistant", content)
+      qc.invalidateQueries({ queryKey: ["assistant-threads"] })
+    } catch { /* keep chatting */ }
+  }, [qc])
+
+  // Open a saved thread INTO the shared conversation (continuing it appends to that thread).
+  async function openThread(id: string) {
+    if (id === useAssistantStore.getState().threadId) return
+    const t = await getThread(id)
+    const msgs: ChatMessageData[] = t.messages.map((m, i) =>
       m.role === "user"
         ? ({ id: `h${i}`, role: "user", content: m.content } as ChatMessageData)
         : ({ id: `h${i}`, role: "assistant", kind: "answer", content: m.content, suggestions: [] } as ChatMessageData),
     )
-  }, [isNew, activeThread])
-
-  function newChat() {
-    setActiveId(null)
-    setMountKey(`new-${Math.random().toString(36).slice(2)}`)
-  }
-
-  function openThread(id: string) {
-    setActiveId(id)
-    setMountKey(id)
-  }
-
-  async function persistUser(content: string) {
-    let tid = activeIdRef.current
-    if (!tid) {
-      const t = await createThread()
-      tid = t.id
-      activeIdRef.current = tid
-      setActiveId(tid) // highlights + enables persistence; mountKey stays, so no remount
-    }
-    await appendMessage(tid, "user", content)
-    qc.invalidateQueries({ queryKey: ["assistant-threads"] })
-  }
-
-  async function persistAnswer(content: string) {
-    const tid = activeIdRef.current
-    if (!tid) return
-    await appendMessage(tid, "assistant", content)
-    qc.invalidateQueries({ queryKey: ["assistant-threads"] })
+    setMessages(msgs)
+    setThreadId(id)
   }
 
   async function remove(id: string) {
     await deleteThread(id)
-    if (activeIdRef.current === id) newChat()
+    if (useAssistantStore.getState().threadId === id) clearConversation()
     qc.invalidateQueries({ queryKey: ["assistant-threads"] })
   }
 
-  const ready = isNew || !!activeThread
+  const focusLabel = target.kind === "server" ? target.server.name : "fleet-wide"
 
   return (
     <div className="flex h-[calc(100vh-6.5rem)] gap-4">
@@ -80,7 +74,7 @@ export default function Assistant() {
       <aside className="flex w-64 shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card">
         <div className="p-2">
           <button
-            onClick={newChat}
+            onClick={clearConversation}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             <Plus size={15} />
@@ -96,7 +90,7 @@ export default function Assistant() {
                 key={t.id}
                 onClick={() => openThread(t.id)}
                 className={`group flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-                  activeId === t.id
+                  threadId === t.id
                     ? "bg-accent font-medium text-accent-foreground"
                     : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
                 }`}
@@ -116,34 +110,28 @@ export default function Assistant() {
         </div>
       </aside>
 
-      {/* Conversation */}
+      {/* Conversation — the shared store conversation (same one the drawer shows) */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
         <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
             <Sparkles size={16} />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-foreground">
-              {activeThread?.title ?? "New chat"}
+            <p className="truncate text-sm font-semibold text-foreground">Ally</p>
+            <p className="flex items-center gap-1 text-xs text-muted-foreground">
+              {target.kind === "server" ? <ServerIcon size={11} /> : <Layers size={11} />}
+              {focusLabel}
             </p>
-            <p className="text-xs text-muted-foreground">Ally · fleet-wide</p>
           </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-hidden">
-          {!ready && threadLoading ? (
-            <div className="flex h-full items-center justify-center text-muted-foreground">
-              <Loader2 size={20} className="animate-spin" />
-            </div>
-          ) : (
-            <ChatWindow
-              key={mountKey}
-              target={FLEET}
-              initialMessages={initialMessages}
-              onPersistUser={persistUser}
-              onPersistAnswer={persistAnswer}
-            />
-          )}
+          <ChatWindow
+            target={target}
+            persistent
+            onPersistUser={persistUser}
+            onPersistAnswer={persistAnswer}
+          />
         </div>
       </div>
     </div>

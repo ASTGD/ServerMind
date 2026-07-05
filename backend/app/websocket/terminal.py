@@ -615,6 +615,32 @@ def _resolve_mission_offer(mission: object, servers: list[Server]) -> dict | Non
     }
 
 
+def _resolve_ask_servers(names: object, servers: list[Server]) -> list[dict]:
+    """Map the AI's candidate server NAMES → real owned servers as {id, name} chips for
+    a "which server did you mean?" clarification. Deduped, capped, real matches only (a
+    name that isn't one of the user's servers is dropped, so a click always targets a
+    server they can actually reach)."""
+    if not isinstance(names, list) or not names:
+        return []
+    by_name = {s.name.strip().lower(): s for s in servers}
+    out: list[dict] = []
+    seen: set = set()
+    for n in names:
+        key = str(n).strip().lower()
+        s = by_name.get(key)
+        if s is None:
+            s = next(
+                (sv for sv in servers if key and (key in sv.name.strip().lower() or sv.name.strip().lower() in key)),
+                None,
+            )
+        if s is not None and s.id not in seen:
+            seen.add(s.id)
+            out.append({"id": str(s.id), "name": s.name})
+        if len(out) >= 6:
+            break
+    return out
+
+
 async def _fleet_answer(
     ws: WebSocket,
     user: User,
@@ -687,6 +713,18 @@ async def _fleet_answer(
             await metering_service.record(
                 db, user_id=user.id, feature="fleet_chat", calls=calls,
             )
+
+    # "Which server do you mean?" — when the ask needs a specific server and Ally can't
+    # tell which, it clarifies with clickable candidate chips (the frontend sets focus +
+    # retries on click). Only real, reachable servers become chips.
+    ask = _resolve_ask_servers(data.get("ask_servers"), servers)
+    if ask:
+        await ws.send_text(json.dumps({
+            "type": "clarification",
+            "message": data.get("answer") or "Which server do you mean?",
+            "ask_servers": ask,
+        }))
+        return
 
     # A multi-step job → offer a mission (Stage 2: may span several servers; the
     # user starts it with one click and the mission loop takes over).
@@ -1764,6 +1802,8 @@ async def _handle_message_inner(
         await ws.send_text(json.dumps({
             "type": "clarification",
             "message": plan["clarification_needed"],
+            "server_id": str(server.id),
+            "server_name": server.name,
         }))
         return
 
@@ -1952,6 +1992,8 @@ async def _handle_message_inner(
         "status": overall_status,
         "explanation": explanation,
         "follow_up_suggestions": plan.get("follow_up_suggestions", []),
+        "server_id": str(server.id),
+        "server_name": server.name,
     }))
 
 
@@ -2066,13 +2108,17 @@ async def _chat_finished(run_id: str):
         log = (
             await db.execute(select(CommandLog).where(CommandLog.id == uuid.UUID(run_id)))
         ).scalar_one_or_none()
-    if log is None:
-        return None
+        if log is None:
+            return None
+        # Attribute the completion to its server (the chat colors the message by it).
+        srv = await db.get(Server, log.server_id) if log.server_id else None
     if log.status in _TERMINAL_RUN_STATUSES:
         return log.output, {
             "type": "execution_complete", "log_id": run_id, "status": log.status,
             "explanation": log.ai_explanation or "",
             "follow_up_suggestions": (log.ai_plan or {}).get("follow_up_suggestions", []),
+            "server_id": str(log.server_id) if log.server_id else None,
+            "server_name": srv.name if srv else None,
         }
     return None, None
 

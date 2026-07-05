@@ -47,6 +47,42 @@ function escapeRegExp(s: string): string {
 }
 
 /**
+ * Build a case-insensitive, word-boundary regex that matches any known server name,
+ * plus a name→server map. Longer names win over shorter prefixes (TestServer22 before
+ * TestServer2). Shared by the chip renderer and by {@link detectServers} so "which
+ * server is this message about?" uses exactly the same matching as what's highlighted.
+ */
+export function buildServerNameRegex(
+  servers: MentionServer[],
+): { re: RegExp | null; byName: Map<string, MentionServer> } {
+  const named = servers.filter((s) => s.name.trim())
+  if (named.length === 0) return { re: null, byName: new Map() }
+  const sorted = [...named].sort((a, b) => b.name.length - a.name.length)
+  const pattern = sorted.map((s) => escapeRegExp(s.name)).join("|")
+  return {
+    re: new RegExp(`(?<![\\p{L}\\p{N}_])(${pattern})(?![\\p{L}\\p{N}_])`, "giu"),
+    byName: new Map(named.map((s) => [s.name.toLowerCase(), s])),
+  }
+}
+
+/**
+ * The known servers whose names appear in a message, in first-seen order, de-duplicated.
+ * This is how a typed or @-mentioned name becomes a real target — same matching as the
+ * chips, so what you see highlighted is exactly what gets targeted. Word-boundaried, so
+ * `root@1.2.3.4` or a name inside another word never counts.
+ */
+export function detectServers(text: string, servers: MentionServer[]): MentionServer[] {
+  const { re, byName } = buildServerNameRegex(servers)
+  if (!re || !text) return []
+  const found = new Map<string, MentionServer>()
+  for (const m of text.matchAll(re)) {
+    const s = byName.get(m[1].toLowerCase())
+    if (s && !found.has(s.id)) found.set(s.id, s)
+  }
+  return [...found.values()]
+}
+
+/**
  * Render text with known server names highlighted as clickable chips ("show like a
  * link"). Plain-text in, spans out — never used on command/output blocks. Matching
  * is case-insensitive on word boundaries; longer names win over shorter prefixes
@@ -64,16 +100,7 @@ export function HighlightServerNames({
   /** Chip styling — bubbles on dark/primary backgrounds pass a lighter variant. */
   chipClassName?: string
 }) {
-  const { re, byName } = useMemo(() => {
-    const named = servers.filter((s) => s.name.trim())
-    if (named.length === 0) return { re: null as RegExp | null, byName: new Map<string, MentionServer>() }
-    const sorted = [...named].sort((a, b) => b.name.length - a.name.length)
-    const pattern = sorted.map((s) => escapeRegExp(s.name)).join("|")
-    return {
-      re: new RegExp(`(?<![\\p{L}\\p{N}_])(${pattern})(?![\\p{L}\\p{N}_])`, "giu"),
-      byName: new Map(named.map((s) => [s.name.toLowerCase(), s])),
-    }
-  }, [servers])
+  const { re, byName } = useMemo(() => buildServerNameRegex(servers), [servers])
 
   if (!re || !text) return <>{text}</>
   const parts = text.split(re)

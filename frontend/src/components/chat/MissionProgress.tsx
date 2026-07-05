@@ -3,6 +3,7 @@ import {
   Rocket, CheckCircle2, XCircle, Loader2, Square, ChevronDown, ChevronRight,
   AlertTriangle, Flag, Hand, ShieldCheck, ShieldAlert, Clock,
 } from "lucide-react"
+import ServerTag from "./ServerTag"
 
 export interface MissionStep {
   index: number
@@ -67,11 +68,7 @@ function StepRow({ step }: { step: MissionStep }) {
               <Clock size={9} /> wait
             </span>
           )}
-          {step.serverName && (
-            <span className="mr-1.5 rounded bg-indigo-500/10 px-1 py-px text-[10px] font-medium text-indigo-600 dark:text-indigo-400">
-              {step.serverName}
-            </span>
-          )}
+          {step.serverName && <ServerTag name={step.serverName} className="mr-1.5" />}
           <span className="text-foreground">{step.description || step.cmd}</span>
           {step.note && <span className="ml-1 text-amber-600 dark:text-amber-400">({step.note})</span>}
         </span>

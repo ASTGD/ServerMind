@@ -5,14 +5,16 @@ import { listServers } from "@/api/servers"
 import { useAssistantStore } from "@/store/assistantStore"
 import ChatInput from "./ChatInput"
 import ChatMessage, { type ChatMessageData, type Handoff, type BatchSpec } from "./ChatMessage"
+import ServerTag from "./ServerTag"
+import { detectServers } from "./serverMentions"
 import type { MissionOffer } from "./MissionCard"
 import type { MissionState, MissionStep } from "./MissionProgress"
 import BatchRunModal from "./BatchRunModal"
 import CommandPlan from "./CommandPlan"
 import { useAuthStore } from "@/store/authStore"
-import { WifiOff, Square, Sparkles, ArrowRight } from "lucide-react"
+import { WifiOff, Square, Sparkles, ArrowRight, X } from "lucide-react"
 import { cancelCommand } from "@/api/commands"
-import type { CommandItem, GenerateScriptResult } from "@/types"
+import type { CommandItem, GenerateScriptResult, Server } from "@/types"
 import type { AssistantTarget } from "@/store/assistantStore"
 
 interface Props {
@@ -52,6 +54,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   const user = useAuthStore((s) => s.user)
   const language = user?.preferred_language ?? "en"
   const openServer = useAssistantStore((s) => s.openServer)
+  const setTarget = useAssistantStore((s) => s.setTarget)
   const { data: servers = [] } = useQuery({ queryKey: ["servers"], queryFn: listServers })
   // Persistent mode (the drawer): messages live in the global store and survive target
   // switches + navigation. Otherwise (Assistant page): plain local state per thread.
@@ -69,6 +72,9 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   const bottomRef = useRef<HTMLDivElement>(null)
   // The active mission's message id — mission_* events update that message in place.
   const missionMsgIdRef = useRef<string | null>(null)
+  // The last thing the user asked — re-sent when they pick a server from a "which one?"
+  // clarification, so the pick answers the question without retyping.
+  const pendingIntentRef = useRef<string>("")
 
   const addMsg = useCallback((msg: ChatMessageData) => {
     setMessages((prev) => [...prev, msg])
@@ -168,6 +174,8 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             explanation: msg.explanation as string ?? "",
             status: msg.status as string ?? "success",
             suggestions: (msg.follow_up_suggestions as string[]) ?? [],
+            serverId: (msg.server_id as string | undefined) ?? undefined,
+            serverName: (msg.server_name as string | undefined) ?? undefined,
           })
           if (msg.explanation) onPersistAnswer?.(msg.explanation as string)
           break
@@ -189,6 +197,8 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
               ? { prompt: b.prompt, targets: b.targets.map((t) => ({ serverId: t.server_id, serverName: t.server_name })) }
               : null,
             script: scr,
+            serverId: (msg.server_id as string | undefined) ?? undefined,
+            serverName: (msg.server_name as string | undefined) ?? undefined,
           })
           onPersistAnswer?.((msg.content as string) ?? "")
           break
@@ -364,6 +374,10 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             role: "assistant",
             kind: "clarification",
             message: msg.message as string,
+            // "Which server did you mean?" — candidate chips (backend maps names→ids).
+            askServers: (msg.ask_servers as { id: string; name: string }[] | undefined) ?? undefined,
+            serverId: (msg.server_id as string | undefined) ?? undefined,
+            serverName: (msg.server_name as string | undefined) ?? undefined,
           })
           if (msg.message) onPersistAnswer?.(msg.message as string)
           break
@@ -388,25 +402,11 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     }, [addMsg, updateMission, setMessages, onPersistAnswer]),
   })
 
-  // Persistent mode: mark each target switch with a "Now talking to X" divider.
-  // Since Stage 2 there is ONE socket — nothing is torn down on a switch: a pending
-  // plan or a running mission stays alive, bound server-side to its own server
-  // (the plan card and mission steps carry that server's name).
-  const targetKey = target.kind === "server" ? `server:${target.server.id}` : "fleet"
-  const targetLabel = target.kind === "server" ? target.server.name : "all servers"
-  const prevTargetKey = useRef(targetKey)
-  useEffect(() => {
-    if (!persistent || prevTargetKey.current === targetKey) return
-    prevTargetKey.current = targetKey
-    setMessages((prev) => {
-      if (prev.length === 0) return prev
-      const last = prev[prev.length - 1]
-      if (last.role === "system" && last.kind === "divider") {
-        return [...prev.slice(0, -1), { ...last, label: `Now talking to ${targetLabel}` }]
-      }
-      return [...prev, { id: nextId(), role: "system", kind: "divider", label: `Now talking to ${targetLabel}` }]
-    })
-  }, [persistent, targetKey, targetLabel, setMessages])
+  // The conversation's current FOCUS — the server "this" / "my server" resolves to, and
+  // what the input reflects. One continuous conversation: switching focus no longer
+  // "restarts" the thread with a divider — a light indicator by the input shows it, and
+  // every message carries its own stable-colored server chip.
+  const focusServer = target.kind === "server" ? target.server : null
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -427,10 +427,22 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     return turns.slice(-8).map((t) => ({ ...t, content: t.content.slice(0, 1500) }))
   }
 
-  function handleSend(content: string) {
+  // Which server a message is about: an explicitly named server wins (and becomes the
+  // new focus); no name → the current focus; two+ names → fleet-scoped so Ally sorts it
+  // out. Same matcher as the chips, so what's highlighted is exactly what's targeted.
+  function resolveTarget(content: string): Server | null {
+    const named = detectServers(content, servers)
+    if (named.length === 1) return servers.find((s) => s.id === named[0].id) ?? null
+    if (named.length === 0) return focusServer
+    return null // two+ named → fleet-scoped
+  }
+
+  // The actual send, bound to a concrete (maybe null = fleet) server.
+  function sendMessage(content: string, server: Server | null) {
     // Snapshot history BEFORE adding the new message — it holds the previous turns only.
     const history = recentHistory()
-    addMsg({ id: nextId(), role: "user", content })
+    pendingIntentRef.current = content
+    addMsg({ id: nextId(), role: "user", content, serverId: server?.id, serverName: server?.name })
     // One socket, per-message target: name the server this message is for (none =
     // fleet scope). Attach the page context (if any) as background — the backend
     // frames it as untrusted info and never as instructions.
@@ -438,12 +450,29 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
       type: "message",
       content,
       language,
-      ...(target.kind === "server" ? { server_id: target.server.id } : {}),
+      ...(server ? { server_id: server.id } : {}),
       ...(pageContext ? { page_context: pageContext } : {}),
       ...(history.length ? { history } : {}),
     })
     setPending(null)
     onPersistUser?.(content)
+    // A message naming a different server moves the conversation's focus to it.
+    if (server && !(target.kind === "server" && target.server.id === server.id)) {
+      setTarget({ kind: "server", server })
+    }
+  }
+
+  function handleSend(content: string) {
+    sendMessage(content, resolveTarget(content))
+  }
+
+  // Ally asked "which server?" and the user clicked one → retry the intent bound to it
+  // (pass the server explicitly — React's target state isn't updated yet this tick).
+  function handlePickServer(id: string) {
+    const s = servers.find((x) => x.id === id)
+    if (!s) return
+    if (pendingIntentRef.current) sendMessage(pendingIntentRef.current, s)
+    else setTarget({ kind: "server", server: s })
   }
 
   // Fleet → server handoff: switch the assistant to that server, seeded with the action.
@@ -609,6 +638,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             onStopMission={handleStopMission}
             servers={servers}
             onServerClick={handleServerClick}
+            onPickServer={handlePickServer}
           />
         ))}
 
@@ -646,11 +676,27 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
       {/* Input — held while Ally is thinking or a mission is running (the mission
           loop owns the socket then; Stop and Approve stay available). */}
       <div className="border-t border-border p-3">
+        {/* Light, continuous focus indicator (replaces the "Now talking to X" divider):
+            which server "this" means, clearable back to the whole fleet. */}
+        {focusServer && (
+          <div className="mb-2 flex items-center gap-1.5 px-1">
+            <span className="text-[11px] text-muted-foreground">Focused on</span>
+            <ServerTag name={focusServer.name} />
+            <button
+              onClick={() => setTarget({ kind: "fleet" })}
+              title="Clear focus — talk to the whole fleet"
+              className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
         <ChatInput
           onSend={handleSend}
           disabled={status !== "open" || isLoading}
           loading={isLoading}
           servers={servers}
+          placeholder={focusServer ? `Message Ally about ${focusServer.name}…` : undefined}
         />
       </div>
 

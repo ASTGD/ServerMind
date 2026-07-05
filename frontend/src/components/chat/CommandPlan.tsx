@@ -1,6 +1,7 @@
-import { Shield, ShieldAlert, ShieldCheck, Clock, ChevronRight, Server as ServerIcon } from "lucide-react"
+import { Shield, ShieldAlert, ShieldCheck, Clock, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useTranslation } from "react-i18next"
+import ServerTag from "./ServerTag"
 import type { CommandItem } from "@/types"
 
 interface Props {
@@ -52,12 +53,7 @@ export default function CommandPlan({
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          {serverName && (
-            <span className="mb-1 inline-flex items-center gap-1 rounded bg-background/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-              <ServerIcon size={9} />
-              {serverName}
-            </span>
-          )}
+          {serverName && <div className="mb-1"><ServerTag name={serverName} /></div>}
           <p className="text-sm font-medium text-foreground">{planSummary}</p>
         </div>
         <div className="flex items-center gap-3 shrink-0 text-xs text-muted-foreground">

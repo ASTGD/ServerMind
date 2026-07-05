@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { X, Sparkles, ChevronDown, Layers, Server as ServerIcon, Check, SquarePen } from "lucide-react"
+import { useNavigate, useLocation } from "react-router-dom"
+import { X, Sparkles, ChevronDown, Layers, Server as ServerIcon, Check, SquarePen, Maximize2 } from "lucide-react"
 import { listServers } from "@/api/servers"
 import { createThread, appendMessage } from "@/api/assistant"
 import ChatWindow from "@/components/chat/ChatWindow"
@@ -19,6 +20,8 @@ export default function AssistantDrawer() {
   const hasMessages = useAssistantStore((s) => s.messages.length > 0)
   const pageCtx = useResolvedPageContext()
   const qc = useQueryClient()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [mounted, setMounted] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -81,6 +84,10 @@ export default function AssistantDrawer() {
   }, [open, close])
 
   const label = target.kind === "server" ? target.server.name : "All servers"
+
+  // On the full Ally page the page IS the conversation — don't also mount the drawer's
+  // ChatWindow (that would open a second socket on the same shared conversation).
+  if (location.pathname === "/assistant") return null
 
   return (
     <>
@@ -155,6 +162,14 @@ export default function AssistantDrawer() {
               <SquarePen size={16} />
             </button>
           )}
+          <button
+            onClick={() => { navigate("/assistant"); close() }}
+            aria-label="Open in full page"
+            title="Open in full page — same conversation, bigger"
+            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Maximize2 size={16} />
+          </button>
           <button
             onClick={close}
             aria-label="Close assistant"
