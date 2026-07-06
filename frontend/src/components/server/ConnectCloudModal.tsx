@@ -23,6 +23,7 @@ interface ProviderField {
   secret?: boolean
   optional?: boolean
   mono?: boolean
+  textarea?: boolean // multi-line (e.g. a GCP service-account JSON key)
 }
 interface ProviderDef {
   id: string
@@ -73,6 +74,41 @@ const PROVIDERS: ProviderDef[] = [
       <>
         Paste a <strong className="text-foreground">Read</strong> API token from your Hetzner project (Security → API
         Tokens).
+      </>
+    ),
+  },
+  {
+    id: "gcp",
+    label: "Google Cloud",
+    defaultUser: "",
+    fields: [{
+      key: "service_account_json",
+      label: "Service Account Key (JSON)",
+      placeholder: '{\n  "type": "service_account",\n  "project_id": "...",\n  "private_key": "-----BEGIN PRIVATE KEY-----\\n...",\n  "client_email": "...@....iam.gserviceaccount.com"\n}',
+      textarea: true,
+      mono: true,
+    }],
+    hint: (
+      <>
+        Paste a service-account key JSON with the <strong className="text-foreground">Compute Viewer</strong> role (read-only)
+        and the Compute Engine API enabled.
+      </>
+    ),
+  },
+  {
+    id: "azure",
+    label: "Microsoft Azure",
+    defaultUser: "azureuser",
+    fields: [
+      { key: "tenant_id", label: "Directory (tenant) ID", placeholder: "00000000-0000-0000-0000-000000000000", mono: true },
+      { key: "client_id", label: "Application (client) ID", placeholder: "00000000-0000-0000-0000-000000000000", mono: true },
+      { key: "client_secret", label: "Client Secret", placeholder: "Your app registration client secret", secret: true, mono: true },
+      { key: "subscription_id", label: "Subscription ID", placeholder: "00000000-0000-0000-0000-000000000000", mono: true },
+    ],
+    hint: (
+      <>
+        Use an App Registration (service principal) with a client secret, granted the{" "}
+        <strong className="text-foreground">Reader</strong> role on the subscription.
       </>
     ),
   },
@@ -224,7 +260,7 @@ export default function ConnectCloudModal({ onClose }: Props) {
                   </button>
                 ))}
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">Google Cloud &amp; Azure coming next.</p>
+              <p className="mt-1 text-xs text-muted-foreground">AWS, DigitalOcean, Hetzner, Google Cloud &amp; Azure — more on request.</p>
             </div>
 
             <div>
@@ -235,7 +271,17 @@ export default function ConnectCloudModal({ onClose }: Props) {
             {provider.fields.map((f) => (
               <div key={f.key}>
                 <label className={labelCls}>{f.label}</label>
-                {f.secret ? (
+                {f.textarea ? (
+                  <textarea
+                    required={!f.optional}
+                    value={credVals[f.key] ?? ""}
+                    onChange={(e) => setCredVals((v) => ({ ...v, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder}
+                    autoComplete="off"
+                    rows={6}
+                    className={`${inputCls} resize-none text-xs ${f.mono ? "font-mono" : ""}`}
+                  />
+                ) : f.secret ? (
                   <div className="relative">
                     <input
                       required={!f.optional}

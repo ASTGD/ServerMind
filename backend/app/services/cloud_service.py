@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass, asdict
 
 import requests
@@ -25,7 +26,7 @@ from app.services.crypto_service import decrypt
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_PROVIDERS = ("aws", "digitalocean", "hetzner")  # Phase D+; gcp/azure later
+SUPPORTED_PROVIDERS = ("aws", "digitalocean", "hetzner", "gcp", "azure")
 
 
 class CloudError(Exception):
@@ -239,10 +240,210 @@ class HetznerAdapter(_TokenAdapter):
         return out
 
 
+class GCPAdapter(_CloudAdapter):
+    """Google Compute Engine via a service-account key. Mints an OAuth token with the
+    JWT-bearer flow (sign a short assertion with the SA private key → exchange for a token —
+    no google SDK needed), then lists instances across all zones with aggregatedList."""
+
+    SCOPE = "https://www.googleapis.com/auth/compute.readonly"
+
+    def _sa(self) -> dict:
+        raw = self.cred.get("service_account_json", "")
+        if isinstance(raw, dict):
+            return raw
+        try:
+            return json.loads(raw)
+        except (ValueError, TypeError):
+            raise CloudError("The Google service-account key isn't valid JSON.")
+
+    def _token(self) -> str:
+        from jose import jwt as jose_jwt  # already a dependency (RS256 via cryptography)
+        sa = self._sa()
+        token_uri = sa.get("token_uri") or "https://oauth2.googleapis.com/token"
+        if not sa.get("client_email") or not sa.get("private_key"):
+            raise CloudError("The Google key is missing client_email or private_key.")
+        now = int(time.time())
+        try:
+            assertion = jose_jwt.encode(
+                {"iss": sa["client_email"], "scope": self.SCOPE, "aud": token_uri,
+                 "iat": now, "exp": now + 3600},
+                sa["private_key"], algorithm="RS256", headers={"kid": sa.get("private_key_id")},
+            )
+        except Exception as exc:  # noqa: BLE001 — bad/garbled private key
+            raise CloudError(f"Could not sign the Google token (check the service-account key): {exc}")
+        try:
+            r = requests.post(token_uri, data={
+                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "assertion": assertion}, timeout=20)
+        except requests.RequestException as exc:
+            raise CloudError(f"Could not reach Google: {exc}")
+        if r.status_code >= 400:
+            raise CloudError("Google rejected the service-account key — check it's valid and active.")
+        return r.json().get("access_token", "")
+
+    def _project(self) -> str:
+        return self._sa().get("project_id", "")
+
+    def _get(self, url: str, token: str, params: dict, timeout: int = 30) -> dict:
+        try:
+            r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, params=params, timeout=timeout)
+        except requests.RequestException as exc:
+            raise CloudError(f"Could not reach Google: {exc}")
+        if r.status_code in (401, 403):
+            raise CloudError("This Google key lacks permission — it needs compute.instances.list "
+                             "(the Compute Viewer role) and the Compute Engine API enabled.")
+        if r.status_code >= 400:
+            raise CloudError(f"Google API error {r.status_code}: {r.text[:200]}")
+        return r.json()
+
+    def verify(self) -> dict:
+        token, project = self._token(), self._project()
+        if not project:
+            raise CloudError("The Google service-account key has no project_id.")
+        self._get(f"https://compute.googleapis.com/compute/v1/projects/{project}/aggregated/instances",
+                  token, {"maxResults": 1})
+        return {"project": project}
+
+    @staticmethod
+    def _map(inst: dict, zone: str) -> Instance:
+        nics = inst.get("networkInterfaces") or []
+        private = nics[0].get("networkIP") if nics else None
+        public = None
+        if nics:
+            for ac in nics[0].get("accessConfigs") or []:
+                if ac.get("natIP"):
+                    public = ac["natIP"]
+                    break
+        is_win = any("windows" in (lic or "").lower()
+                     for d in (inst.get("disks") or []) for lic in (d.get("licenses") or []))
+        mt = inst.get("machineType", "") or ""
+        return Instance(
+            instance_id=str(inst.get("id", "")),
+            name=inst.get("name") or str(inst.get("id", "")),
+            public_ip=public,
+            private_ip=private,
+            os="windows" if is_win else "linux",
+            state=(inst.get("status") or "unknown").lower(),   # RUNNING → running
+            region=zone,
+            instance_type=mt.split("/")[-1] if mt else None,
+        )
+
+    def list_instances(self) -> list[Instance]:
+        token, project = self._token(), self._project()
+        url = f"https://compute.googleapis.com/compute/v1/projects/{project}/aggregated/instances"
+        out: list[Instance] = []
+        page = None
+        while True:
+            params = {"maxResults": 500}
+            if page:
+                params["pageToken"] = page
+            data = self._get(url, token, params)
+            for zone_key, block in (data.get("items") or {}).items():
+                zone = zone_key.split("/")[-1]                 # "zones/us-central1-a" → "us-central1-a"
+                for inst in block.get("instances") or []:
+                    out.append(self._map(inst, zone))
+            page = data.get("nextPageToken")
+            if not page:
+                return out
+
+
+class AzureAdapter(_CloudAdapter):
+    """Azure VMs via a service principal (client-credentials OAuth), listed in one Resource
+    Graph query that joins VMs to their network interfaces + public IPs."""
+
+    _GRAPH = (
+        "Resources | where type =~ 'microsoft.compute/virtualmachines' "
+        "| extend nicId = tostring(properties.networkProfile.networkInterfaces[0].id) "
+        "| join kind=leftouter (Resources | where type =~ 'microsoft.network/networkinterfaces' "
+        "| extend ipc = properties.ipConfigurations[0] "
+        "| project nicId = id, privateIp = tostring(ipc.properties.privateIPAddress), "
+        "pipId = tostring(ipc.properties.publicIPAddress.id)) on nicId "
+        "| join kind=leftouter (Resources | where type =~ 'microsoft.network/publicipaddresses' "
+        "| project pipId = id, publicIp = tostring(properties.ipAddress)) on pipId "
+        "| project name, location, vmId = id, "
+        "os = tostring(properties.storageProfile.osDisk.osType), "
+        "state = tostring(properties.extended.instanceView.powerState.code), privateIp, publicIp"
+    )
+
+    def _token(self) -> str:
+        tenant = self.cred.get("tenant_id", "")
+        try:
+            r = requests.post(
+                f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+                data={"grant_type": "client_credentials",
+                      "client_id": self.cred.get("client_id", ""),
+                      "client_secret": self.cred.get("client_secret", ""),
+                      "scope": "https://management.azure.com/.default"}, timeout=20)
+        except requests.RequestException as exc:
+            raise CloudError(f"Could not reach Azure: {exc}")
+        if r.status_code >= 400:
+            raise CloudError("Azure rejected these credentials — check the tenant ID, client ID and secret.")
+        return r.json().get("access_token", "")
+
+    def verify(self) -> dict:
+        token = self._token()
+        sub = self.cred.get("subscription_id", "")
+        try:
+            r = requests.get(f"https://management.azure.com/subscriptions/{sub}",
+                             headers={"Authorization": f"Bearer {token}"},
+                             params={"api-version": "2020-01-01"}, timeout=20)
+        except requests.RequestException as exc:
+            raise CloudError(f"Could not reach Azure: {exc}")
+        if r.status_code in (401, 403):
+            raise CloudError("This Azure service principal can't access the subscription — "
+                             "grant it the Reader role on the subscription.")
+        if r.status_code >= 400:
+            raise CloudError(f"Azure API error {r.status_code}: {r.text[:200]}")
+        return {"subscription": sub}
+
+    @staticmethod
+    def _map(row: dict) -> Instance:
+        state = (row.get("state") or "").split("/")[-1] or "unknown"   # PowerState/running → running
+        os = (row.get("os") or "").lower()
+        return Instance(
+            instance_id=row.get("vmId") or row.get("name") or "",
+            name=row.get("name") or "",
+            public_ip=row.get("publicIp") or None,
+            private_ip=row.get("privateIp") or None,
+            os="windows" if os == "windows" else "linux",
+            state=state.lower(),
+            region=row.get("location"),
+            instance_type=None,
+        )
+
+    def list_instances(self) -> list[Instance]:
+        token = self._token()
+        sub = self.cred.get("subscription_id", "")
+        out: list[Instance] = []
+        skip = None
+        while True:
+            body: dict = {"subscriptions": [sub], "query": self._GRAPH,
+                          "options": {"resultFormat": "objectArray"}}
+            if skip:
+                body["options"]["$skipToken"] = skip
+            try:
+                r = requests.post(
+                    "https://management.azure.com/providers/Microsoft.ResourceGraph/resources",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params={"api-version": "2022-10-01"}, json=body, timeout=30)
+            except requests.RequestException as exc:
+                raise CloudError(f"Could not reach Azure: {exc}")
+            if r.status_code >= 400:
+                raise CloudError(f"Azure API error {r.status_code}: {r.text[:200]}")
+            data = r.json()
+            for row in (data.get("data") or []):
+                out.append(self._map(row))
+            skip = data.get("$skipToken")
+            if not skip:
+                return out
+
+
 _ADAPTERS = {
     "aws": AWSAdapter,
     "digitalocean": DigitalOceanAdapter,
     "hetzner": HetznerAdapter,
+    "gcp": GCPAdapter,
+    "azure": AzureAdapter,
 }
 
 

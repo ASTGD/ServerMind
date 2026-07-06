@@ -44,7 +44,21 @@
 > user), so adding a cloud is one backend adapter + one config entry. **Live-verified** the
 > provider picker (AWS/DO/Hetzner render), DO's single-token form, and the DO reject path
 > end-to-end (real `/v2/account` 401 → friendly message, no account created). 6 new mock
-> tests (18 cloud total). GCP + Azure are Phase D part 2.
+> tests (18 cloud total).
+>
+> **Status: Phase D (part 2) shipped (2026-07-06) — the cloud category is complete (5
+> providers).** **Google Cloud** + **Microsoft Azure** added, both OAuth-token clouds (no new
+> dependency): GCP mints a JWT-bearer token signed with the service-account key (via the
+> existing `jose`) → Compute `aggregatedList` across zones (windows detected from disk
+> licenses); Azure does a service-principal client-credentials token → one **Resource Graph**
+> query joining VMs to their NICs + public IPs (power-state from the extended instanceView).
+> Friendly permission/credential errors for both. The `ConnectCloudModal` gained a multi-line
+> field type for GCP's service-account JSON. **Live-verified end-to-end:** all 5 providers
+> render; GCP shows the JSON textarea and its invalid-JSON path returns the friendly error;
+> Azure shows its 4 fields and a fake-credential connect hit **real Azure AD**, got rejected,
+> and surfaced the mapped message — no account created. 7 new mock tests (25 cloud total).
+> Live discover/import happy path per provider still needs one real account (same caveat as
+> the others). Phase E part 2 (live RDP streaming) is the only Assets piece left.
 >
 > **Status: Phase E foundation shipped (2026-07-06).** Remote Desktop as a Windows-asset
 > capability. **Security core (fully wired + tested):** `rdp_enabled` opt-in per asset

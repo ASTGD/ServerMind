@@ -163,7 +163,7 @@ def test_transport_defaults():
 
 def test_unsupported_provider_rejected():
     with pytest.raises(CloudError, match="Unsupported cloud provider"):
-        cs._adapter_for("gcp", {})
+        cs._adapter_for("linode", {})
 
 
 def test_instance_dict_roundtrip():
@@ -207,7 +207,7 @@ class FakeResp:
 
 
 def test_providers_registered():
-    assert set(cs.SUPPORTED_PROVIDERS) == {"aws", "digitalocean", "hetzner"}
+    assert {"aws", "digitalocean", "hetzner"} <= set(cs.SUPPORTED_PROVIDERS)
     assert cs._ADAPTERS["digitalocean"] is DigitalOceanAdapter
     assert cs._ADAPTERS["hetzner"] is HetznerAdapter
 
@@ -285,3 +285,95 @@ async def test_do_async_dispatch_reads_account():
     with patch("app.services.cloud_service.requests.get", return_value=FakeResp(payload)):
         out = await cs.list_instances(account)
     assert out[0].instance_id == "7" and out[0].public_ip == "9.9.9.9"
+
+
+# ── Phase D part 2: GCP + Azure (OAuth-token clouds; _token patched, REST mocked) ──
+
+from app.services.cloud_service import GCPAdapter, AzureAdapter  # noqa: E402
+
+
+def test_gcp_azure_registered():
+    assert set(cs.SUPPORTED_PROVIDERS) == {"aws", "digitalocean", "hetzner", "gcp", "azure"}
+    assert cs._ADAPTERS["gcp"] is GCPAdapter and cs._ADAPTERS["azure"] is AzureAdapter
+
+
+def test_gcp_bad_service_account_json():
+    with pytest.raises(CloudError, match="isn't valid JSON"):
+        GCPAdapter({"service_account_json": "not json {{"}).verify()
+
+
+def test_gcp_verify_and_permission_denied():
+    sa = json.dumps({"project_id": "proj-1", "client_email": "x@y.iam", "private_key": "k"})
+    with patch.object(GCPAdapter, "_token", return_value="tok"):
+        with patch("app.services.cloud_service.requests.get", return_value=FakeResp({"items": {}})):
+            assert GCPAdapter({"service_account_json": sa}).verify() == {"project": "proj-1"}
+        with patch("app.services.cloud_service.requests.get", return_value=FakeResp(status=403, text="denied")):
+            with pytest.raises(CloudError, match="compute.instances.list"):
+                GCPAdapter({"service_account_json": sa}).verify()
+
+
+def test_gcp_list_maps_zones_os_and_paginates():
+    sa = json.dumps({"project_id": "proj-1", "client_email": "x@y.iam", "private_key": "k"})
+    page1 = {
+        "items": {
+            "zones/us-central1-a": {"instances": [{
+                "id": "111", "name": "web1", "status": "RUNNING",
+                "machineType": "https://www.googleapis.com/.../machineTypes/e2-small",
+                "networkInterfaces": [{"networkIP": "10.0.0.2", "accessConfigs": [{"natIP": "34.1.2.3"}]}],
+                "disks": [{"licenses": ["https://.../debian-11"]}],
+            }]},
+            "zones/asia-east1-a": {},  # no instances key → skipped
+        },
+        "nextPageToken": "PAGE2",
+    }
+    page2 = {
+        "items": {"zones/europe-west1-b": {"instances": [{
+            "id": "222", "name": "win1", "status": "TERMINATED",
+            "machineType": "https://www.googleapis.com/.../machineTypes/n1-standard-1",
+            "networkInterfaces": [{"networkIP": "10.0.1.5", "accessConfigs": []}],
+            "disks": [{"licenses": ["https://.../windows-server-2019-dc"]}],
+        }]}},
+    }
+    with patch.object(GCPAdapter, "_token", return_value="tok"):
+        with patch("app.services.cloud_service.requests.get", side_effect=[FakeResp(page1), FakeResp(page2)]):
+            out = GCPAdapter({"service_account_json": sa}).list_instances()
+    assert [i.instance_id for i in out] == ["111", "222"]
+    web, win = out
+    assert web.os == "linux" and web.private_ip == "10.0.0.2" and web.public_ip == "34.1.2.3"
+    assert web.state == "running" and web.region == "us-central1-a" and web.instance_type == "e2-small"
+    assert win.os == "windows" and win.public_ip is None and win.state == "terminated"
+    assert win.region == "europe-west1-b" and win.instance_type == "n1-standard-1"
+
+
+def test_azure_bad_credentials():
+    with patch("app.services.cloud_service.requests.post", return_value=FakeResp(status=401, text="bad")):
+        with pytest.raises(CloudError, match="rejected these credentials"):
+            AzureAdapter({"tenant_id": "t", "client_id": "c", "client_secret": "s"})._token()
+
+
+def test_azure_verify_and_no_access():
+    cred = {"tenant_id": "t", "client_id": "c", "client_secret": "s", "subscription_id": "sub-9"}
+    with patch.object(AzureAdapter, "_token", return_value="tok"):
+        with patch("app.services.cloud_service.requests.get", return_value=FakeResp({"id": "/subscriptions/sub-9"})):
+            assert AzureAdapter(cred).verify() == {"subscription": "sub-9"}
+        with patch("app.services.cloud_service.requests.get", return_value=FakeResp(status=403, text="forbidden")):
+            with pytest.raises(CloudError, match="Reader role"):
+                AzureAdapter(cred).verify()
+
+
+def test_azure_list_maps_powerstate_and_ips():
+    cred = {"tenant_id": "t", "client_id": "c", "client_secret": "s", "subscription_id": "sub-9"}
+    graph = {"data": [
+        {"name": "vm1", "location": "eastus", "vmId": "/subscriptions/sub-9/vm1",
+         "os": "Linux", "state": "PowerState/running", "privateIp": "10.1.0.4", "publicIp": "20.1.2.3"},
+        {"name": "winvm", "location": "westus", "vmId": "/subscriptions/sub-9/winvm",
+         "os": "Windows", "state": "PowerState/deallocated", "privateIp": "10.2.0.4", "publicIp": ""},
+    ], "$skipToken": None}
+    with patch.object(AzureAdapter, "_token", return_value="tok"):
+        with patch("app.services.cloud_service.requests.post", return_value=FakeResp(graph)):
+            out = AzureAdapter(cred).list_instances()
+    assert [i.name for i in out] == ["vm1", "winvm"]
+    vm1, winvm = out
+    assert vm1.os == "linux" and vm1.state == "running" and vm1.public_ip == "20.1.2.3" and vm1.private_ip == "10.1.0.4"
+    assert vm1.region == "eastus" and vm1.instance_id == "/subscriptions/sub-9/vm1"
+    assert winvm.os == "windows" and winvm.state == "deallocated" and winvm.public_ip is None
