@@ -53,7 +53,7 @@ export default function Servers() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
           {[...Array(3)].map((_, i) => <div key={i} className="h-32 animate-pulse rounded-lg border border-border bg-card" />)}
         </div>
       ) : empty ? (
@@ -88,7 +88,7 @@ export default function Servers() {
                 return (
                   <section key="cloud">
                     <SectionHeader Icon={Icon} label="Cloud accounts" count={cloudAccounts.length} accent={cat.accent} />
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+                    <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
                       {cloudAccounts.map((a) => (
                         <CloudAccountCard key={a.id} account={a} importedCount={importedFor(a.id)} onManage={setManageAccount} />
                       ))}
@@ -102,7 +102,7 @@ export default function Servers() {
               return (
                 <section key={cat.id}>
                   <SectionHeader Icon={Icon} label={cat.label} count={list.length} accent={cat.accent} />
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+                  <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
                     {list.map((s) =>
                       cat.id === "hosting"
                         ? <HostingCard key={s.id} server={s} />
