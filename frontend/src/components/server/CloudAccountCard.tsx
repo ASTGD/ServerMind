@@ -1,6 +1,7 @@
 import { Cloud, ExternalLink, Settings2 } from "lucide-react"
 import type { CloudAccount } from "@/api/cloud"
 import { cloudBrand } from "@/lib/assetBrands"
+import BrandIcon, { providerIconSlug, hasBrandIcon } from "./BrandIcon"
 
 interface Props {
   account: CloudAccount
@@ -24,6 +25,7 @@ const CONSOLE_URL: Record<string, string> = {
  *  (discover / import / disconnect) and Open console (the provider's site, new tab). */
 export default function CloudAccountCard({ account, importedCount, onManage }: Props) {
   const brand = cloudBrand(account.provider)
+  const providerSlug = providerIconSlug(account.provider)
   const consoleUrl = CONSOLE_URL[account.provider]
   const cardClass = brand ? brand.card : "border-border bg-card"
   const tileClass = brand ? brand.tile : "bg-violet-500/10 text-violet-600 dark:text-violet-400"
@@ -32,8 +34,8 @@ export default function CloudAccountCard({ account, importedCount, onManage }: P
   return (
     <div className={`flex flex-col rounded-lg border p-4 transition-all hover:shadow-sm ${cardClass}`}>
       <div className="flex items-start gap-2">
-        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${tileClass}`} title="Cloud account">
-          <Cloud size={18} />
+        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${hasBrandIcon(providerSlug) ? "border border-border bg-background" : tileClass}`} title={brand?.name ?? "Cloud account"}>
+          {hasBrandIcon(providerSlug) ? <BrandIcon slug={providerSlug} size={24} /> : <Cloud size={18} />}
         </div>
         <div className="min-w-0">
           <p className="truncate font-medium text-foreground">{account.label}</p>

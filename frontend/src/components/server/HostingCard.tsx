@@ -2,6 +2,7 @@ import { Link } from "react-router-dom"
 import { LayoutPanelTop, Globe, ExternalLink } from "lucide-react"
 import type { Server } from "@/types"
 import { hostingBrand } from "@/lib/assetBrands"
+import BrandIcon, { hasBrandIcon } from "./BrandIcon"
 import ConnectionStatus from "./ConnectionStatus"
 
 interface Props {
@@ -30,8 +31,8 @@ export default function HostingCard({ server }: Props) {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${tileClass}`} title={panelName}>
-            <LayoutPanelTop size={18} aria-hidden />
+          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${hasBrandIcon(server.panel_type) ? "border border-border bg-background" : tileClass}`} title={panelName}>
+            {hasBrandIcon(server.panel_type) ? <BrandIcon slug={server.panel_type ?? undefined} size={24} /> : <LayoutPanelTop size={18} aria-hidden />}
           </div>
           <div className="min-w-0">
             <p className="truncate font-medium text-foreground">{server.name}</p>

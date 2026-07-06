@@ -4,6 +4,7 @@ import { Cpu, AlertTriangle, TerminalSquare, MonitorPlay } from "lucide-react"
 import type { Server } from "@/types"
 import { categoryForServer } from "@/lib/assetCategories"
 import { cloudBrand } from "@/lib/assetBrands"
+import BrandIcon, { osIconSlug, hasBrandIcon } from "./BrandIcon"
 import { useTerminalStore } from "@/store/terminalStore"
 import ConnectionStatus from "./ConnectionStatus"
 
@@ -22,6 +23,9 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
   const openSession = useTerminalStore((s) => s.openSession)
   const cat = categoryForServer(server)
   const CatIcon = cat.icon
+  // A WinRM / Windows-category box is Windows even if OS detection never ran.
+  const osSlug = osIconSlug(server.os_type) ?? (cat.id === "windows" || server.connection_type === "winrm" ? "windows" : undefined)
+  const osBrand = hasBrandIcon(osSlug)
   // Imported cloud instances carry their provider as the first tag (e.g. "aws").
   const provider = server.cloud_account_id ? server.tags?.[0] : undefined
   const providerBrand = cloudBrand(provider)
@@ -45,8 +49,8 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${cat.accent}`} title={cat.label}>
-            <CatIcon size={18} />
+          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${osBrand ? "border border-border bg-muted/40" : cat.accent}`} title={server.os_type || cat.label}>
+            {osBrand ? <BrandIcon slug={osSlug} size={26} /> : <CatIcon size={22} />}
           </div>
           <div className="min-w-0">
             <p className="truncate font-medium text-foreground">{server.name}</p>
