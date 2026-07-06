@@ -36,7 +36,7 @@ export default function AssetsRail({ servers, cloudAccounts, onFilter, onAddHost
   const totalImported = [...importedByAccount.values()].reduce((a, b) => a + b, 0)
 
   return (
-    <aside className="w-64 shrink-0 space-y-5 border-l border-border pl-5">
+    <aside className="w-80 shrink-0 space-y-5 border-l border-border pl-6">
       {/* Fleet pulse */}
       <div>
         <p className="mb-2.5 text-sm font-medium text-foreground">Fleet pulse</p>
@@ -76,7 +76,7 @@ export default function AssetsRail({ servers, cloudAccounts, onFilter, onAddHost
       {/* Cloud accounts stat widget */}
       <div className="rounded-xl border border-border p-3.5">
         <div className="mb-2.5 flex items-center justify-between">
-          <span className="flex items-center gap-1.5 text-sm font-medium text-foreground"><Cloud size={15} className="text-muted-foreground" /> Cloud accounts</span>
+          <span className="flex items-center gap-1.5 text-sm font-medium text-foreground"><Cloud size={15} className="text-violet-600 dark:text-violet-400" /> Cloud accounts</span>
           {cloudAccounts.length > 0 && <button onClick={() => onFilter("cloud")} className="text-xs text-primary hover:underline">View</button>}
         </div>
         {cloudAccounts.length > 0 ? (

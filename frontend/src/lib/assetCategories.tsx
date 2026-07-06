@@ -26,14 +26,16 @@ export interface AssetCategory {
   available: boolean
   /** true → picking the tile opens the Cloud Account flow instead of the add-asset form. */
   cloudFlow?: boolean
+  /** Tailwind classes for this category's icon tile — gives each group a distinct accent. */
+  accent: string
 }
 
 export const ASSET_CATEGORIES: AssetCategory[] = [
-  { id: "bare_metal", label: "Bare Metal", blurb: "A physical server you have SSH to", icon: HardDrive, connectionType: "ssh", available: true },
-  { id: "vps", label: "VPS", blurb: "A cloud/rented Linux server over SSH", icon: ServerIcon, connectionType: "ssh", available: true },
-  { id: "hosting", label: "Hosting Panel", blurb: "cPanel, CyberPanel or Plesk", icon: LayoutPanelTop, connectionType: "hosting", available: true },
-  { id: "windows", label: "Windows Server", blurb: "Managed over WinRM (RDP viewer soon)", icon: AppWindow, connectionType: "winrm", available: true },
-  { id: "cloud", label: "Cloud Account", blurb: "Import instances from AWS & more", icon: Cloud, available: true, cloudFlow: true },
+  { id: "bare_metal", label: "Bare Metal", blurb: "A physical server you have SSH to", icon: HardDrive, connectionType: "ssh", available: true, accent: "bg-slate-500/10 text-slate-600 dark:text-slate-300" },
+  { id: "vps", label: "VPS", blurb: "A cloud/rented Linux server over SSH", icon: ServerIcon, connectionType: "ssh", available: true, accent: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" },
+  { id: "hosting", label: "Hosting Panel", blurb: "cPanel, CyberPanel or Plesk", icon: LayoutPanelTop, connectionType: "hosting", available: true, accent: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+  { id: "windows", label: "Windows Server", blurb: "Managed over WinRM (RDP viewer soon)", icon: AppWindow, connectionType: "winrm", available: true, accent: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
+  { id: "cloud", label: "Cloud Account", blurb: "Import instances from AWS & more", icon: Cloud, available: true, cloudFlow: true, accent: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
 ]
 
 export const ADDABLE_CATEGORIES = ASSET_CATEGORIES.filter((c) => c.available)

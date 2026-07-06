@@ -43,7 +43,7 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary" title={cat.label}>
+          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${cat.accent}`} title={cat.label}>
             <CatIcon size={18} />
           </div>
           <div className="min-w-0">
@@ -103,11 +103,11 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
         </div>
       )}
 
-      {/* Quick action footer */}
-      <div className="mt-3 flex items-center justify-end border-t border-border pt-2.5">
+      {/* Launch-pad action */}
+      <div className="mt-auto flex justify-end pt-3">
         <button
           onClick={connect}
-          className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+          className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
         >
           {server.connection_type === "winrm" ? (
             <><MonitorPlay size={13} /> Open desktop</>

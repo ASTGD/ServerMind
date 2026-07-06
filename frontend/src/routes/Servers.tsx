@@ -87,7 +87,7 @@ export default function Servers() {
                 if (cloudAccounts.length === 0) return null
                 return (
                   <section key="cloud">
-                    <SectionHeader Icon={Icon} label="Cloud accounts" count={cloudAccounts.length} />
+                    <SectionHeader Icon={Icon} label="Cloud accounts" count={cloudAccounts.length} accent={cat.accent} />
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                       {cloudAccounts.map((a) => (
                         <CloudAccountCard key={a.id} account={a} importedCount={importedFor(a.id)} onManage={setManageAccount} />
@@ -101,7 +101,7 @@ export default function Servers() {
               if (!list?.length) return null
               return (
                 <section key={cat.id}>
-                  <SectionHeader Icon={Icon} label={cat.label} count={list.length} />
+                  <SectionHeader Icon={Icon} label={cat.label} count={list.length} accent={cat.accent} />
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {list.map((s) =>
                       cat.id === "hosting"
@@ -114,7 +114,7 @@ export default function Servers() {
             })}
           </div>
 
-          <div className="hidden lg:block">
+          <div className="hidden xl:block">
             <AssetsRail
               servers={servers}
               cloudAccounts={cloudAccounts}
@@ -145,12 +145,14 @@ function FilterPill({ label, count, active, onClick }: { label: string; count?: 
   )
 }
 
-function SectionHeader({ Icon, label, count }: { Icon: LucideIcon; label: string; count: number }) {
+function SectionHeader({ Icon, label, count, accent }: { Icon: LucideIcon; label: string; count: number; accent: string }) {
   return (
-    <div className="mb-3 flex items-center gap-2">
-      <Icon size={16} className="text-muted-foreground" />
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      <span className="text-xs text-muted-foreground">{count}</span>
+    <div className="mb-3 flex items-center gap-2.5">
+      <div className={`flex h-7 w-7 items-center justify-center rounded-md ${accent}`}>
+        <Icon size={15} />
+      </div>
+      <span className="text-sm font-semibold text-foreground">{label}</span>
+      <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{count}</span>
     </div>
   )
 }
