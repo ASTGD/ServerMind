@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="104" viewBox="0 0 250 52" fill="none" role="img" aria-label="ServerAlly">
+  <defs>
+    <linearGradient id="g" x1="4" y1="3" x2="36" y2="37" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366F1"/>
+      <stop offset="0.55" stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+    <linearGradient id="h" x1="20" y1="2" x2="20" y2="26" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="word" x1="54" y1="0" x2="240" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366F1"/>
+      <stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Mark -->
+  <g transform="translate(6,6)">
+    <rect x="2" y="2" width="36" height="36" rx="11" fill="url(#g)"/>
+    <rect x="2" y="2" width="36" height="36" rx="11" fill="url(#h)"/>
+    <path d="M12 11 Q12 10 13 10 L27 10 Q28 10 28 11 V19 Q28 25.5 20 31 Q12 25.5 12 19 Z" fill="#FFFFFF"/>
+    <path d="M20 13 Q20.5 17.3 24.3 18.3 Q20.5 19.3 20 23.5 Q19.5 19.3 15.7 18.3 Q20.5 17.3 20 13 Z" fill="#7C3AED"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="54" y="35" font-family="Inter, 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif" font-size="29" font-weight="700" letter-spacing="-0.5">
+    <tspan fill="#0F172A">Server</tspan><tspan fill="url(#word)">Ally</tspan>
+  </text>
+</svg>
