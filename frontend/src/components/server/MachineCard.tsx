@@ -5,6 +5,7 @@ import type { Server } from "@/types"
 import { categoryForServer } from "@/lib/assetCategories"
 import { cloudBrand } from "@/lib/assetBrands"
 import BrandIcon, { osIconSlug, hasBrandIcon } from "./BrandIcon"
+import AssetMetrics from "./AssetMetrics"
 import { useTerminalStore } from "@/store/terminalStore"
 import ConnectionStatus from "./ConnectionStatus"
 
@@ -29,7 +30,6 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
   // Imported cloud instances carry their provider as the first tag (e.g. "aws").
   const provider = server.cloud_account_id ? server.tags?.[0] : undefined
   const providerBrand = cloudBrand(provider)
-  const otherTags = provider ? server.tags?.filter((t) => t !== provider) : server.tags
 
   function connect(e: React.MouseEvent) {
     e.preventDefault()
@@ -87,8 +87,8 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
         </div>
       </div>
 
-      <div className="mt-3 min-h-0 flex-1 overflow-hidden">
-        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+      <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
           {server.os_type && (
             <span className="flex items-center gap-1">
               <Cpu size={11} />
@@ -102,13 +102,9 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
           )}
         </div>
 
-        {otherTags && otherTags.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {otherTags.map((tag) => (
-              <span key={tag} className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">{tag}</span>
-            ))}
-          </div>
-        )}
+        <div className="mt-auto pt-3">
+          <AssetMetrics server={server} />
+        </div>
       </div>
 
       {/* Launch-pad action */}

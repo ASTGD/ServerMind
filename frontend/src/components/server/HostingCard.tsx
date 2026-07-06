@@ -3,6 +3,7 @@ import { LayoutPanelTop, Globe, ExternalLink } from "lucide-react"
 import type { Server } from "@/types"
 import { hostingBrand } from "@/lib/assetBrands"
 import BrandIcon, { hasBrandIcon } from "./BrandIcon"
+import AssetMetrics from "./AssetMetrics"
 import ConnectionStatus from "./ConnectionStatus"
 
 interface Props {
@@ -42,13 +43,17 @@ export default function HostingCard({ server }: Props) {
         <ConnectionStatus status={server.status} />
       </div>
 
-      <div className="mt-3 min-h-0 flex-1 overflow-hidden">
+      <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className={`flex items-center gap-1 rounded px-1.5 py-0.5 font-medium ${badgeClass}`}>
             <Globe size={11} />
             {panelName}
           </span>
           <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">Hosting panel</span>
+        </div>
+
+        <div className="mt-auto pt-3">
+          <AssetMetrics server={server} />
         </div>
       </div>
 
