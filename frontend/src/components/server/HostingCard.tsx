@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom"
-import { LayoutPanelTop, Globe, ExternalLink } from "lucide-react"
+import { LayoutPanelTop, Globe, ExternalLink, Sparkles } from "lucide-react"
 import type { Server } from "@/types"
 import { hostingBrand } from "@/lib/assetBrands"
+import { useAssistantStore } from "@/store/assistantStore"
 import BrandIcon, { hasBrandIcon } from "./BrandIcon"
 import AssetMetrics from "./AssetMetrics"
 import ConnectionStatus from "./ConnectionStatus"
@@ -18,6 +19,7 @@ const PANEL_PORT: Record<string, number> = { cyberpanel: 8090, cpanel: 2083, ple
  *  (background/border/icon/badge/button in the panel's color) and the body is
  *  panel-flavored, with an "Open panel" action that opens the real panel in a new tab. */
 export default function HostingCard({ server }: Props) {
+  const openServer = useAssistantStore((s) => s.openServer)
   const brand = hostingBrand(server.panel_type)
   const panelName = brand?.name ?? (server.panel_type ? server.panel_type[0].toUpperCase() + server.panel_type.slice(1) : "Hosting panel")
   const panelUrl = `https://${server.host}:${PANEL_PORT[server.panel_type ?? ""] ?? 8090}`
@@ -57,13 +59,21 @@ export default function HostingCard({ server }: Props) {
         </div>
       </div>
 
-      <div className="pt-3">
+      <div className="flex items-center gap-2 pt-3">
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(panelUrl, "_blank", "noopener,noreferrer") }}
           title={`Open ${panelName} at ${panelUrl}`}
-          className={`flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-background/60 px-2.5 py-2 text-xs font-medium text-foreground transition-colors ${buttonHover}`}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-background/60 px-2.5 py-2 text-xs font-medium text-foreground transition-colors ${buttonHover}`}
         >
           <ExternalLink size={13} /> Open panel
+        </button>
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); openServer(server) }}
+          title="Ask Ally about this server"
+          aria-label="Ask Ally about this server"
+          className="flex shrink-0 items-center justify-center rounded-lg border border-border bg-background/60 px-2.5 py-2 text-primary transition-colors hover:border-primary/50 hover:bg-primary/5"
+        >
+          <Sparkles size={15} />
         </button>
       </div>
     </Link>

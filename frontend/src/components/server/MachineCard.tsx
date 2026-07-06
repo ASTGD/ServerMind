@@ -1,12 +1,13 @@
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { Cpu, AlertTriangle, TerminalSquare, MonitorPlay } from "lucide-react"
+import { Cpu, AlertTriangle, TerminalSquare, MonitorPlay, Sparkles } from "lucide-react"
 import type { Server } from "@/types"
 import { categoryForServer } from "@/lib/assetCategories"
 import { cloudBrand } from "@/lib/assetBrands"
 import BrandIcon, { osIconSlug, hasBrandIcon } from "./BrandIcon"
 import AssetMetrics from "./AssetMetrics"
 import { useTerminalStore } from "@/store/terminalStore"
+import { useAssistantStore } from "@/store/assistantStore"
 import ConnectionStatus from "./ConnectionStatus"
 
 interface Props {
@@ -22,6 +23,7 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
   const [showMsg, setShowMsg] = useState(false)
   const navigate = useNavigate()
   const openSession = useTerminalStore((s) => s.openSession)
+  const openServer = useAssistantStore((s) => s.openServer)
   const cat = categoryForServer(server)
   const CatIcon = cat.icon
   // A WinRM / Windows-category box is Windows even if OS detection never ran.
@@ -40,6 +42,12 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
       openSession(server)
       navigate("/terminal")
     }
+  }
+
+  function askAlly(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    openServer(server)
   }
 
   return (
@@ -107,17 +115,25 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
         </div>
       </div>
 
-      {/* Launch-pad action */}
-      <div className="pt-3">
+      {/* Launch-pad actions */}
+      <div className="flex items-center gap-2 pt-3">
         <button
           onClick={connect}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 py-2 text-xs font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 py-2 text-xs font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
         >
           {server.connection_type === "winrm" ? (
             <><MonitorPlay size={13} /> Open desktop</>
           ) : (
             <><TerminalSquare size={13} /> Connect</>
           )}
+        </button>
+        <button
+          onClick={askAlly}
+          title="Ask Ally about this server"
+          aria-label="Ask Ally about this server"
+          className="flex shrink-0 items-center justify-center rounded-lg border border-border px-2.5 py-2 text-primary transition-colors hover:border-primary/50 hover:bg-primary/5"
+        >
+          <Sparkles size={15} />
         </button>
       </div>
     </Link>
