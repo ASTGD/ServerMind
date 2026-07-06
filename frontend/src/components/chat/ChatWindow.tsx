@@ -68,7 +68,11 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   const setMessages = persistent ? setStoreMessages : setLocalMessages
   const [batchModal, setBatchModal] = useState<BatchSpec | null>(null)
   const [pending, setPending] = useState<PendingPlan | null>(null)
-  const [, setOutputBuffer] = useState<string>("")
+  // Accumulates streamed command output across chunks. A ref, NOT state, on purpose: its
+  // value only feeds the single "output" message. Writing it must never happen inside a
+  // React state updater — updaters run during the render phase, and a store write there
+  // updates subscribers like AssistantDrawer mid-render ("setState during render" warning).
+  const outputBufferRef = useRef<string>("")
   const [isLoading, setIsLoading] = useState(false)
   // Set when a durable (worker) run starts — enables the Stop button.
   const [runningLogId, setRunningLogId] = useState<string | null>(null)
@@ -138,27 +142,27 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
 
         case "command_start":
           // Start accumulating output
-          setOutputBuffer("")
+          outputBufferRef.current = ""
           break
 
         case "output": {
           const chunk = (msg.data as string) ?? ""
-          setOutputBuffer((prev) => {
-            const next = prev + chunk
-            setMessages((prevMsgs) => {
-              const existing = prevMsgs.find(
-                (m) => m.role === "assistant" && m.kind === "output"
+          outputBufferRef.current += chunk
+          const next = outputBufferRef.current
+          // Direct store write from the socket callback (an event, not render) — mirror the
+          // accumulated output into the single "output" message.
+          setMessages((prevMsgs) => {
+            const existing = prevMsgs.find(
+              (m) => m.role === "assistant" && m.kind === "output"
+            )
+            if (existing) {
+              return prevMsgs.map((m) =>
+                m.role === "assistant" && m.kind === "output"
+                  ? { ...m, content: next }
+                  : m
               )
-              if (existing) {
-                return prevMsgs.map((m) =>
-                  m.role === "assistant" && m.kind === "output"
-                    ? { ...m, content: next }
-                    : m
-                )
-              }
-              return [...prevMsgs, { id: nextId(), role: "assistant", kind: "output", content: next } as ChatMessageData]
-            })
-            return next
+            }
+            return [...prevMsgs, { id: nextId(), role: "assistant", kind: "output", content: next } as ChatMessageData]
           })
           break
         }
@@ -170,7 +174,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           setIsLoading(false)
           setPending(null)
           setRunningLogId(null)
-          setOutputBuffer("")
+          outputBufferRef.current = ""
           setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "output")))
           addMsg({
             id: nextId(),
