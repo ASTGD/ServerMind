@@ -54,26 +54,26 @@ export default function HostingCard({ server }: Props) {
           <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">Hosting panel</span>
         </div>
 
-        <div className="mt-auto pt-3">
+        <div className="mt-3">
           <AssetMetrics server={server} />
         </div>
       </div>
 
-      <div className="flex items-center gap-2 pt-3">
+      <div className="flex items-center justify-between border-t border-border/60 pt-3">
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(panelUrl, "_blank", "noopener,noreferrer") }}
           title={`Open ${panelName} at ${panelUrl}`}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-background/60 px-2.5 py-2 text-xs font-medium text-foreground transition-colors ${buttonHover}`}
+          className={`flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors ${buttonHover}`}
         >
-          <ExternalLink size={13} /> Open panel
+          <ExternalLink size={14} /> Open panel
         </button>
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); openServer(server) }}
           title="Ask Ally about this server"
           aria-label="Ask Ally about this server"
-          className="flex shrink-0 items-center justify-center rounded-lg border border-border bg-background/60 px-2.5 py-2 text-primary transition-colors hover:border-primary/50 hover:bg-primary/5"
+          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
         >
-          <Sparkles size={15} />
+          <Sparkles size={14} /> Ask Ally
         </button>
       </div>
     </Link>

@@ -48,20 +48,20 @@ export default function CloudAccountCard({ account, importedCount, onManage }: P
         {importedCount > 0 ? <>{importedCount} {importedCount === 1 ? "instance" : "instances"} imported</> : <>No instances imported yet</>}
       </div>
 
-      <div className="flex items-center gap-2 pt-3">
+      <div className="flex items-center justify-between border-t border-border/60 pt-3">
         <button
           onClick={() => onManage(account)}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-background/60 px-2.5 py-2 text-xs font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
+          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
         >
-          <Settings2 size={13} /> Manage
+          <Settings2 size={14} /> Manage
         </button>
         {consoleUrl && (
           <button
             onClick={() => window.open(consoleUrl, "_blank", "noopener,noreferrer")}
             title={`Open ${brand?.name ?? account.provider} console`}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-background/60 px-2.5 py-2 text-xs font-medium text-foreground transition-colors ${buttonHover}`}
+            className={`flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors ${buttonHover}`}
           >
-            <ExternalLink size={13} /> Console
+            <ExternalLink size={14} /> Console
           </button>
         )}
       </div>

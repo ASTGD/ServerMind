@@ -110,30 +110,30 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
           )}
         </div>
 
-        <div className="mt-auto pt-3">
+        <div className="mt-3">
           <AssetMetrics server={server} />
         </div>
       </div>
 
-      {/* Launch-pad actions */}
-      <div className="flex items-center gap-2 pt-3">
+      {/* Actions — minimal text + icon */}
+      <div className="flex items-center justify-between border-t border-border/60 pt-3">
         <button
           onClick={connect}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 py-2 text-xs font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
+          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
         >
           {server.connection_type === "winrm" ? (
-            <><MonitorPlay size={13} /> Open desktop</>
+            <><MonitorPlay size={14} /> Open desktop</>
           ) : (
-            <><TerminalSquare size={13} /> Connect</>
+            <><TerminalSquare size={14} /> Connect</>
           )}
         </button>
         <button
           onClick={askAlly}
           title="Ask Ally about this server"
           aria-label="Ask Ally about this server"
-          className="flex shrink-0 items-center justify-center rounded-lg border border-border px-2.5 py-2 text-primary transition-colors hover:border-primary/50 hover:bg-primary/5"
+          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
         >
-          <Sparkles size={15} />
+          <Sparkles size={14} /> Ask Ally
         </button>
       </div>
     </Link>
