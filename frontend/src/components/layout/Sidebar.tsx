@@ -6,7 +6,6 @@ import {
   Boxes,
   BookOpen,
   FileCode,
-  ScrollText,
   Users,
   Settings,
   Sparkles,
@@ -16,16 +15,14 @@ import {
 } from "lucide-react"
 import Logo from "@/components/brand/Logo"
 import UpgradeModal from "./UpgradeModal"
+import { useTerminalStore } from "@/store/terminalStore"
 
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, key: "dashboard" },
-  { to: "/assistant", icon: Sparkles, key: "assistant" },
   { to: "/servers", icon: Boxes, key: "servers" },
   { to: "/playbooks", icon: BookOpen, key: "playbooks" },
   { to: "/scripts", icon: FileCode, key: "scripts" },
-  { to: "/terminal", icon: TerminalIcon, key: "terminal" },
   { to: "/missions", icon: Rocket, key: "missions" },
-  { to: "/logs", icon: ScrollText, key: "logs" },
   { to: "/team", icon: Users, key: "team" },
   { to: "/settings", icon: Settings, key: "settings" },
 ] as const
@@ -33,6 +30,7 @@ const navItems = [
 export default function Sidebar() {
   const { t } = useTranslation()
   const [showUpgrade, setShowUpgrade] = useState(false)
+  const termCount = useTerminalStore((s) => s.sessions.length)
 
   return (
     <>
@@ -60,8 +58,46 @@ export default function Sidebar() {
           ))}
         </nav>
 
-        {/* Pinned to the bottom — a compact upgrade row, attached as a footer. */}
+        {/* Pinned to the bottom — Ally + Terminal as standalone action buttons (not
+            regular menu items), then the upgrade row, all in one bottom panel. */}
         <div className="mt-auto -mx-3 border-t border-border px-3 pt-3">
+          <div className="grid grid-cols-2 gap-2">
+            <NavLink
+              to="/assistant"
+              className={({ isActive }) =>
+                `flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 py-2.5 text-sm font-medium text-white transition-shadow hover:opacity-90 ${
+                  isActive ? "ring-2 ring-indigo-300 dark:ring-indigo-800" : ""
+                }`
+              }
+            >
+              <Sparkles size={16} />
+              {t("nav.assistant")}
+            </NavLink>
+            <NavLink
+              to="/terminal"
+              className={({ isActive }) =>
+                `relative flex items-center justify-center gap-1.5 rounded-lg border py-2.5 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "border-primary/40 bg-accent text-accent-foreground"
+                    : termCount > 0
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400"
+                    : "border-border text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                }`
+              }
+            >
+              <TerminalIcon size={16} />
+              {t("nav.terminal")}
+              {termCount > 0 && (
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                </span>
+              )}
+            </NavLink>
+          </div>
+
+          <div className="my-3 border-t border-border" />
+
           <button
             onClick={() => setShowUpgrade(true)}
             className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"

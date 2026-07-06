@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom"
-import { Sparkles, Terminal as TerminalIcon } from "lucide-react"
+import { Sparkles, Terminal as TerminalIcon, ScrollText } from "lucide-react"
 import Breadcrumbs from "./Breadcrumbs"
 import NotificationBell from "./NotificationBell"
 import UserMenu from "./UserMenu"
@@ -41,6 +41,13 @@ export default function TopBar() {
           Ask Ally
         </button>
         <div className="mx-1 h-6 w-px bg-border" />
+        <button
+          onClick={() => navigate("/logs")}
+          title="Activity Log"
+          className="relative flex items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        >
+          <ScrollText size={16} />
+        </button>
         <NotificationBell />
         <div className="mx-1 h-6 w-px bg-border" />
         <UserMenu />
