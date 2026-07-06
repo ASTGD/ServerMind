@@ -42,6 +42,7 @@ class ServerOut(BaseModel):
     connection_type: str
     panel_type: str | None
     category: str | None
+    cloud_account_id: uuid.UUID | None = None   # set when imported from a Cloud Account (provenance)
     os_type: str | None
     os_version: str | None
     arch: str | None

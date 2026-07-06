@@ -1,31 +1,52 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Plus, ServerOff } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { listServers } from "@/api/servers"
-import ServerCard from "@/components/server/ServerCard"
+import { listCloudAccounts, type CloudAccount } from "@/api/cloud"
+import { ASSET_CATEGORIES, categoryForServer } from "@/lib/assetCategories"
+import MachineCard from "@/components/server/MachineCard"
+import HostingCard from "@/components/server/HostingCard"
+import CloudAccountCard from "@/components/server/CloudAccountCard"
+import AssetsRail from "@/components/server/AssetsRail"
 import AddServerModal from "@/components/server/AddServerModal"
 import ConnectCloudModal from "@/components/server/ConnectCloudModal"
+import RdpDesktopModal from "@/components/server/RdpDesktopModal"
+import CloudAccountModal from "@/components/server/CloudAccountModal"
 import type { Server } from "@/types"
 
 export default function Servers() {
   const { t } = useTranslation()
   const [showAdd, setShowAdd] = useState(false)
   const [showCloud, setShowCloud] = useState(false)
+  const [desktopServer, setDesktopServer] = useState<Server | null>(null)
+  const [manageAccount, setManageAccount] = useState<CloudAccount | null>(null)
+  const [filter, setFilter] = useState<string>("all")
 
-  const { data: servers = [], isLoading } = useQuery<Server[]>({
-    queryKey: ["servers"],
-    queryFn: listServers,
-  })
+  const { data: servers = [], isLoading } = useQuery<Server[]>({ queryKey: ["servers"], queryFn: listServers })
+  const { data: cloudAccounts = [] } = useQuery<CloudAccount[]>({ queryKey: ["cloud-accounts"], queryFn: listCloudAccounts })
+
+  // Group assets by category (imported cloud instances land in vps/windows; hosting has its own).
+  const byCat: Record<string, Server[]> = {}
+  for (const s of servers) (byCat[categoryForServer(s).id] ??= []).push(s)
+  const importedFor = (id: string) => servers.filter((s) => s.cloud_account_id === id).length
+
+  // Filter pills: only categories that have something (cloud counts its accounts).
+  const pills = ASSET_CATEGORIES.map((c) => ({
+    id: c.id,
+    label: c.label,
+    count: c.id === "cloud" ? cloudAccounts.length : (byCat[c.id]?.length ?? 0),
+  })).filter((p) => p.count > 0)
+
+  const empty = servers.length === 0 && cloudAccounts.length === 0
+  const visible = (id: string) => filter === "all" || filter === id
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-foreground">{t("nav.servers")}</h1>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
+        <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
           <Plus size={15} />
           {t("servers.add")}
         </button>
@@ -33,43 +54,103 @@ export default function Servers() {
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-28 animate-pulse rounded-lg border border-border bg-card" />
-          ))}
+          {[...Array(3)].map((_, i) => <div key={i} className="h-32 animate-pulse rounded-lg border border-border bg-card" />)}
         </div>
-      ) : servers.length === 0 ? (
+      ) : empty ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20 text-center">
           <ServerOff size={36} className="mb-4 text-muted-foreground/50" />
-          <p className="font-medium text-foreground">No servers yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Add your first server to start managing it with AI.
-          </p>
-          <button
-            onClick={() => setShowAdd(true)}
-            className="mt-5 flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus size={14} />
-            {t("servers.add")}
+          <p className="font-medium text-foreground">No assets yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">Add your first server, hosting panel, or cloud account to manage it with AI.</p>
+          <button onClick={() => setShowAdd(true)} className="mt-5 flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+            <Plus size={14} /> {t("servers.add")}
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {servers.map((server) => (
-            <ServerCard key={server.id} server={server} />
-          ))}
+        <div className="flex gap-6">
+          <div className="min-w-0 flex-1 space-y-7">
+            {/* Filter pills */}
+            {pills.length > 1 && (
+              <div className="flex flex-wrap gap-2">
+                <FilterPill label="All" active={filter === "all"} onClick={() => setFilter("all")} />
+                {pills.map((p) => (
+                  <FilterPill key={p.id} label={p.label} count={p.count} active={filter === p.id} onClick={() => setFilter(p.id)} />
+                ))}
+              </div>
+            )}
+
+            {/* Sections in category order */}
+            {ASSET_CATEGORIES.map((cat) => {
+              if (!visible(cat.id)) return null
+              const Icon = cat.icon
+
+              if (cat.id === "cloud") {
+                if (cloudAccounts.length === 0) return null
+                return (
+                  <section key="cloud">
+                    <SectionHeader Icon={Icon} label="Cloud accounts" count={cloudAccounts.length} />
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                      {cloudAccounts.map((a) => (
+                        <CloudAccountCard key={a.id} account={a} importedCount={importedFor(a.id)} onManage={setManageAccount} />
+                      ))}
+                    </div>
+                  </section>
+                )
+              }
+
+              const list = byCat[cat.id]
+              if (!list?.length) return null
+              return (
+                <section key={cat.id}>
+                  <SectionHeader Icon={Icon} label={cat.label} count={list.length} />
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {list.map((s) =>
+                      cat.id === "hosting"
+                        ? <HostingCard key={s.id} server={s} />
+                        : <MachineCard key={s.id} server={s} onOpenDesktop={setDesktopServer} />,
+                    )}
+                  </div>
+                </section>
+              )
+            })}
+          </div>
+
+          <div className="hidden lg:block">
+            <AssetsRail
+              servers={servers}
+              cloudAccounts={cloudAccounts}
+              onFilter={setFilter}
+              onAddHosting={() => setShowAdd(true)}
+              onConnectCloud={() => setShowCloud(true)}
+            />
+          </div>
         </div>
       )}
 
-      {showAdd && (
-        <AddServerModal
-          onClose={() => setShowAdd(false)}
-          onPickCloud={() => {
-            setShowAdd(false)
-            setShowCloud(true)
-          }}
-        />
-      )}
+      {showAdd && <AddServerModal onClose={() => setShowAdd(false)} onPickCloud={() => { setShowAdd(false); setShowCloud(true) }} />}
       {showCloud && <ConnectCloudModal onClose={() => setShowCloud(false)} />}
+      {desktopServer && <RdpDesktopModal server={desktopServer} onClose={() => setDesktopServer(null)} />}
+      {manageAccount && <CloudAccountModal account={manageAccount} onClose={() => setManageAccount(null)} />}
+    </div>
+  )
+}
+
+function FilterPill({ label, count, active, onClick }: { label: string; count?: number; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-full px-3 py-1 text-sm transition-colors ${active ? "bg-primary text-primary-foreground" : "border border-border text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+    >
+      {label}{count !== undefined && <span className={active ? "ml-1.5 opacity-80" : "ml-1.5 text-muted-foreground"}>{count}</span>}
+    </button>
+  )
+}
+
+function SectionHeader({ Icon, label, count }: { Icon: LucideIcon; label: string; count: number }) {
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <Icon size={16} className="text-muted-foreground" />
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      <span className="text-xs text-muted-foreground">{count}</span>
     </div>
   )
 }

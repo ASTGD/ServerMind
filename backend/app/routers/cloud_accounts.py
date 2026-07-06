@@ -199,6 +199,9 @@ async def import_instances(
             limited += 1
             continue
         t = cloud_service.transport_defaults(inst.os)
+        # Imported instances ARE machines — categorize by their OS so they land in the
+        # Windows/VPS asset groups (their cloud origin is carried by cloud_account_id +
+        # the provider tag, shown as a provenance badge — not a separate "cloud" bucket).
         db.add(Server(
             user_id=current_user.id,
             name=inst.name or inst.instance_id,
@@ -207,7 +210,7 @@ async def import_instances(
             username=body.username,
             auth_type=body.auth_type,
             connection_type=t["connection_type"],
-            category="cloud",
+            category="windows" if t["connection_type"] == "winrm" else "vps",
             cloud_account_id=account.id,
             cloud_instance_id=inst.instance_id,
             encrypted_cred=encrypted,
