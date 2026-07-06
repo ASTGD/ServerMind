@@ -1,6 +1,6 @@
 # Assets & Categories — the premium plan (design + roadmap, 2026-07-05)
 
-> **Supersedes and expands [SERVER-CATEGORIES.md](SERVER-CATEGORIES.md).** That doc scoped
+> **Supersedes and expands [SERVER-CATEGORIES.md](archive/SERVER-CATEGORIES.md).** That doc scoped
 > the rename + a 4-way category picker; this one is the full design for a **category-first
 > "Assets" model with a proper, tailored UI per category**, plus the two real sub-products
 > that surfaced (cloud-account import, RDP viewer). Implemented gradually.

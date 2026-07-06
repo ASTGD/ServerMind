@@ -1288,9 +1288,7 @@ VITE_APP_TAGLINE=Your AI companion to manage, automate, and secure any server �
 
 ### Integrations
 - [ ] GitHub: deploy from repo to server
-- [ ] DigitalOcean API: import droplets
-- [ ] Hetzner API: import cloud servers
-- [ ] AWS EC2: import instances
+- [x] **AWS EC2 / DigitalOcean / Hetzner / Google Cloud / Azure — import instances** — SHIPPED as Assets **Cloud Accounts** (Phase C + D): connect a provider account by API key, discover its instances, import the ones you pick as assets. All 5 providers live. See [docs/ASSETS-CATEGORIES-PLAN.md](docs/ASSETS-CATEGORIES-PLAN.md). (2026-07-06)
 - [ ] Cloudflare API: manage DNS from ServerAlly
 - [ ] Slack bot: alerts + commands from Slack
 - [ ] Telegram bot: mobile management
@@ -1371,11 +1369,11 @@ i18n: add Bengali translations for chat UI
 | 2026-06-23 | Built Dashboard, Activity Log (+ `/api/activity`), Settings pages | Replaced Phase-1 placeholders with real, data-driven pages |
 | 2026-06-23 | Local dev: backend :8888, frontend :5190, Vite proxy → 127.0.0.1 | 8000/8080/5173 taken by other local projects; IPv4 avoids the localhost→::1 miss (see OPS.md) |
 | 2026-06-28 | Offer a self-hosted, licensed edition (not only SaaS) | Privacy — credentials never leave the customer's box — is a strong differentiator for a credentials-handling tool; near-zero infra cost/liability; app already Docker-packaged. Target agencies/MSPs. See docs/SELF-HOSTED-LICENSING.md |
-| 2026-06-29 | Multi-provider AI via `llm_service` (bring-your-own-key) | Decouple from a single vendor; customers use Claude/OpenAI/Gemini/OpenAI-compatible with their own key — foundation for the self-hosted edition. `anthropic` stays the default (backward-compatible). See docs/UPDATE-20-MULTI-PROVIDER-AI.md |
-| 2026-06-29 | Hosted "ServerAlly AI" subscription via a standalone gateway (`gateway/`) | Customers without an AI key can use our AI for a subscription — broader reach + recurring revenue. OpenAI-compatible proxy: validates the subscription token, forwards to our upstream key, meters monthly usage. Billing-webhook + token metering are follow-ups. See docs/UPDATE-20-MULTI-PROVIDER-AI.md |
-| 2026-06-29 | Per-playbook OS guard (Tier 1) — infer supported OS from the script; grey-out/refuse incompatible servers | Stop cryptic cross-OS failures (apt on AlmaLinux); be honest about which OS each playbook supports. Inferred from package manager (apt→Debian/Ubuntu, dnf→RHEL); never blocks on unknown OS. Tier 2 = make popular playbooks multi-distro. See docs/UPDATE-21-OS-GUARD.md |
-| 2026-06-29 | Multi-distro web stacks (Tier 2) — WordPress/LAMP/LEMP run on Debian/Ubuntu + RHEL via a shared `_DISTRO` layer | Fix within-family failures (mysql-server on Debian, php8.2 on Ubuntu) + extend to RHEL. MariaDB everywhere, unversioned PHP (runtime-detected fpm service/socket), apt\|dnf, ufw\|firewalld, SELinux. `supported_os` now includes almalinux/rocky/centos so Tier 1 allows them. RHEL path needs a live smoke test. See docs/UPDATE-22-MULTI-DISTRO.md |
-| 2026-06-29 | Per-server "Installed" tab — records (re-derived access cards) + live read-only scan | Recover post-install info after the run window is closed; show what's actually on the box. Latest successful run per (playbook, URL) with `access_info` resolved, plus an SSH probe (OS/web/db/runtimes/containers/panels/ports). Secret-named install inputs are encrypted at rest (AES-256-GCM via `secret_vars`; migration 017 backfills) and masked in the view — all credentials encrypted at rest. See docs/UPDATE-23-INSTALLED.md |
+| 2026-06-29 | Multi-provider AI via `llm_service` (bring-your-own-key) | Decouple from a single vendor; customers use Claude/OpenAI/Gemini/OpenAI-compatible with their own key — foundation for the self-hosted edition. `anthropic` stays the default (backward-compatible). See docs/archive/UPDATE-20-MULTI-PROVIDER-AI.md |
+| 2026-06-29 | Hosted "ServerAlly AI" subscription via a standalone gateway (`gateway/`) | Customers without an AI key can use our AI for a subscription — broader reach + recurring revenue. OpenAI-compatible proxy: validates the subscription token, forwards to our upstream key, meters monthly usage. Billing-webhook + token metering are follow-ups. See docs/archive/UPDATE-20-MULTI-PROVIDER-AI.md |
+| 2026-06-29 | Per-playbook OS guard (Tier 1) — infer supported OS from the script; grey-out/refuse incompatible servers | Stop cryptic cross-OS failures (apt on AlmaLinux); be honest about which OS each playbook supports. Inferred from package manager (apt→Debian/Ubuntu, dnf→RHEL); never blocks on unknown OS. Tier 2 = make popular playbooks multi-distro. See docs/archive/UPDATE-21-OS-GUARD.md |
+| 2026-06-29 | Multi-distro web stacks (Tier 2) — WordPress/LAMP/LEMP run on Debian/Ubuntu + RHEL via a shared `_DISTRO` layer | Fix within-family failures (mysql-server on Debian, php8.2 on Ubuntu) + extend to RHEL. MariaDB everywhere, unversioned PHP (runtime-detected fpm service/socket), apt\|dnf, ufw\|firewalld, SELinux. `supported_os` now includes almalinux/rocky/centos so Tier 1 allows them. RHEL path needs a live smoke test. See docs/archive/UPDATE-22-MULTI-DISTRO.md |
+| 2026-06-29 | Per-server "Installed" tab — records (re-derived access cards) + live read-only scan | Recover post-install info after the run window is closed; show what's actually on the box. Latest successful run per (playbook, URL) with `access_info` resolved, plus an SSH probe (OS/web/db/runtimes/containers/panels/ports). Secret-named install inputs are encrypted at rest (AES-256-GCM via `secret_vars`; migration 017 backfills) and masked in the view — all credentials encrypted at rest. See docs/archive/UPDATE-23-INSTALLED.md |
 | 2026-06-29 | **Renamed ServerMind → ServerAlly** + new tagline | "ServerMind" was already taken by ≥2 same-category products (servermind.io control plane; servermind.dev — a near-identical AI VPS assistant) plus a hardware reseller, with every major TLD gone → brand collision + SEO/trademark risk. Rebranded all user-facing strings, docs, env, and the AI gateway/subscription naming; **kept infra identifiers** (DB name/user `servermind`, container names, the `servermind` AI-provider key) to avoid breakage. New tagline: "Your AI companion to manage, automate, and secure any server — without the expertise." Domain targets: `serverallyhq.com` / `serverally.ai` (bare `serverally.com` is taken). |
 | 2026-07-02 | AI persona named **Ally**; **Free + Pro** plans locked; AI packaging = **one subscription, AI included (quota) + optional BYO-key escape valve** (never a second bill) | Ally = the ServerAlly brand as a companion. Resolves the "pay twice for AI?" question: software and AI-fuel are one purchase; hosted AI is bundled with a monthly "actions" quota, own-key is an optional toggle. Free = feel the magic on 1–2 servers + ~30 AI actions/mo (no automation/fleet/team); Pro = unlimited servers + full Ally (fleet/batch/memory/proactive) + automation (scheduler/backups/alerts) + team. BYO-key UI demoted from Settings for cloud (`SHOW_AI_PROVIDER_SETTINGS=false`; self-hosted keeps it). **No billing/entitlement code yet** — full spec in [docs/PRICING-FREE-VS-PRO.md](docs/PRICING-FREE-VS-PRO.md). |
 | 2026-07-02 | **"Ally Brain" prompt roadmap** — shipped Phase 1 (shared `_PERSONA` across chat/fleet/explain/script prompts) + Phase 2 (conversation memory: client sends last 8 chat turns → `_history_block` in the system prompt) | Prompts had no persona ("ServerAlly AI") and chat was stateless — follow-ups like "now add SSL to it" lost all context. Client-sent history works with saved threads and the multi-provider single-turn `llm_service.complete`; sanitized in the ws layer + double-capped in ai_service (8 turns × 1500 chars). Server-derived text always enters prompts as data-not-instructions (same pattern as `page_context`). Remaining phases: 3 = server profile context (installed/metrics/security/recent commands — data already in DB), 4 = fleet health numbers in fleet chat, 5 = prompt golden tests. |
@@ -1458,7 +1456,17 @@ open http://localhost:8000/docs
 
 ---
 
-## 📌 CURRENT STATUS → ALL PHASES COMPLETE 🎉
+## 📌 CURRENT STATUS
+
+**For the live "what's shipped / what's pending / what needs the user" status, see
+[docs/CONTINUE-HERE.md](docs/CONTINUE-HERE.md) — that doc is kept current every session.**
+This section only records the *initial* build milestone; the Decisions Log above is the
+full, dated history of everything shipped since (Ally missions/skills/recipes/memory,
+proactive fleet intelligence + threat monitoring, the Assets/Categories model with 5 cloud
+providers, RDP foundation, and more).
+
+<details>
+<summary>Historical — initial-build status note, 2026-06-23 (superseded by CONTINUE-HERE.md)</summary>
 
 Every build phase (0–13, incl. 2B) is done. ServerAlly is feature-complete:
 auth, Linux SSH + Windows WinRM + hosting-panel management, AI chat/terminal,
@@ -1479,6 +1487,8 @@ deployment story (see DEPLOY.md).
 - **Docker-based playbooks** self-install Docker via an `ensure_docker` preamble (idempotent).
 - **Control-panel playbooks** added (free: CyberPanel/HestiaCP/aaPanel/CloudPanel; premium: cPanel/Plesk/DirectAdmin) behind a pre-flight guard — see the Script Library. **Need live validation on a fresh VPS** (official installers; CyberPanel's is piped-answer/version-sensitive).
 - **Local dev** moved to backend :8888 / frontend :5190, Vite proxy on 127.0.0.1 (see OPS.md).
+
+</details>
 
 When starting new work, read this entire file first and keep the phase
 checklists + Decisions Log up to date. Never deviate from the tech stack without

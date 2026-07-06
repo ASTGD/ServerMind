@@ -3,9 +3,11 @@
 > **v2 (2026-07-03) — DECIDED & ENFORCEMENT BUILT.** This revises v1's feature-gating
 > matrix. The new model: **every feature is available on every plan; plans differ in
 > exactly two numbers — servers and Ally actions.** The two gates are implemented and
-> sit dormant behind `ENFORCE_PLAN_LIMITS` (default off; cloud flips it on). Billing
-> (checkout + webhooks) remains deliberately unbuilt until a payment provider is
-> chosen — `users.plan` is set manually meanwhile.
+> sit dormant behind `ENFORCE_PLAN_LIMITS` (default off; cloud flips it on). **Update
+> (2026-07-03): the billing-provider question below was resolved by going through
+> FireVPS's existing WHMCS instead of Stripe/Paddle/Lemon Squeezy** — see
+> [WHMCS-INTEGRATION.md](WHMCS-INTEGRATION.md). `users.plan` now moves via the WHMCS
+> entitlement API; the exact price/allowance numbers in this doc are still open (§11).
 
 ---
 

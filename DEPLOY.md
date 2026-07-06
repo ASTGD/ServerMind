@@ -74,7 +74,7 @@ DATABASE_URL=postgresql+asyncpg://...   # Supabase
 REDIS_URL=rediss://...                  # Upstash
 
 ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-sonnet-4-20250514
+ANTHROPIC_MODEL=claude-sonnet-5   # optional — the Smart Model Ladder resolves this default itself if unset
 
 ALLOWED_ORIGINS=["https://app.example.com"]   # JSON array; include every public origin
 
@@ -178,6 +178,12 @@ are reported, tagged with `APP_ENV` and `APP_VERSION`.
 ---
 
 ## 8. Smoke tests
+
+> **Status: not yet run against a real deployed stack** (as of 2026-07-06). Everything
+> below has been individually live-verified in dev against the real TestServer fleet —
+> see `docs/CONTINUE-HERE.md` and `docs/ALLY-CAPABILITIES-TESTED.md` — but not as one
+> end-to-end pass against an actual production deployment of this exact Docker stack.
+> Run this checklist the first time `DEPLOY.md` is used for a real deploy.
 
 After deploy, verify each platform path:
 

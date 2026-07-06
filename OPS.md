@@ -53,7 +53,7 @@ celery -A app.celery_app worker --loglevel=info
 ```bash
 docker compose --profile worker up -d --build worker
 ```
-See `docs/UPDATE-15-EXECUTION.md`.
+See `docs/archive/UPDATE-15-EXECUTION.md`.
 
 ---
 

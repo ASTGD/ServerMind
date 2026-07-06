@@ -1,7 +1,9 @@
 # AI Metering & Subscription Token Model
 
-> **Status: Bricks 1 + 2 SHIPPED (2026-07-03). Brick 3 (billing webhook) HALTED** until
-> a payment provider is chosen — `users.plan` is set manually meanwhile, and the quota
+> **Status: Bricks 1 + 2 SHIPPED (2026-07-03). Brick 3 shipped 2026-07-03 as WHMCS
+> integration, not a direct Stripe/Paddle/Lemon Squeezy webhook** — see
+> [WHMCS-INTEGRATION.md](WHMCS-INTEGRATION.md). The provider-TBD language below is
+> historical; `users.plan` now moves via the WHMCS entitlement API, and the quota
 > wall only blocks when `ENFORCE_PLAN_LIMITS=true` (default off; cloud will turn it on).
 > This document is the contract for how ServerAlly turns one Anthropic API key
 > (wholesale, pay-per-token) into per-customer monthly allowances (retail, flat

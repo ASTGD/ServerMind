@@ -1,5 +1,10 @@
 # ServerAlly — Manual QA / Dogfooding Checklist
 
+> **Status: no completed run recorded** (as of 2026-07-06) — this is the checklist
+> template, not a results report. If you're looking for what HAS been proven, see
+> `docs/ALLY-CAPABILITIES-TESTED.md` (an automated/live "shakedown" of Ally's own
+> behavior) — that's a different, narrower pass than this human-driven UI walkthrough.
+>
 > Use the app like a brand-new, non-technical customer. For anything that doesn't
 > match **Expect**, note: the item number, what you saw, what you expected. That
 > list becomes the priority queue.
