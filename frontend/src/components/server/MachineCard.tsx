@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom"
 import { Cpu, AlertTriangle, TerminalSquare, MonitorPlay } from "lucide-react"
 import type { Server } from "@/types"
 import { categoryForServer } from "@/lib/assetCategories"
+import { cloudBrand } from "@/lib/assetBrands"
 import { useTerminalStore } from "@/store/terminalStore"
 import ConnectionStatus from "./ConnectionStatus"
 
@@ -23,6 +24,7 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
   const CatIcon = cat.icon
   // Imported cloud instances carry their provider as the first tag (e.g. "aws").
   const provider = server.cloud_account_id ? server.tags?.[0] : undefined
+  const providerBrand = cloudBrand(provider)
   const otherTags = provider ? server.tags?.filter((t) => t !== provider) : server.tags
 
   function connect(e: React.MouseEvent) {
@@ -91,7 +93,7 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
         )}
         <span className="rounded bg-muted px-1.5 py-0.5 font-medium">{cat.label}</span>
         {provider && (
-          <span className="rounded bg-primary/10 px-1.5 py-0.5 font-medium uppercase text-primary">{provider}</span>
+          <span className={`rounded px-1.5 py-0.5 font-medium ${providerBrand ? providerBrand.badge : "bg-primary/10 uppercase text-primary"}`}>{providerBrand?.name ?? provider}</span>
         )}
       </div>
 
