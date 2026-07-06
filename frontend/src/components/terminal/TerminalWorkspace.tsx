@@ -32,6 +32,7 @@ type Mode = "focus" | "split"
 export default function TerminalWorkspace() {
   const { sessions, activeId, setActive, closeSession, openSession, setStatus, touch } = useTerminalStore()
   const openAlly = useAssistantStore((s) => s.openServer)
+  const assistantOpen = useAssistantStore((s) => s.open)
   const location = useLocation()
   const visible = location.pathname === "/terminal"
 
@@ -91,7 +92,7 @@ export default function TerminalWorkspace() {
     : undefined
 
   return (
-    <div className={`fixed bottom-0 left-0 right-0 top-14 z-20 flex flex-col bg-[#0d0d0d] md:left-60 ${visible ? "" : "hidden"}`}>
+    <div className={`fixed bottom-0 left-0 top-14 z-20 flex flex-col bg-[#0d0d0d] transition-[right] duration-300 md:left-60 ${assistantOpen ? "right-0 md:right-[28rem]" : "right-0"} ${visible ? "" : "hidden"}`}>
       {/* Tab bar — macOS terminal window chrome (deep-indigo titlebar, distinct from the
           near-black terminal body so it clearly reads as a window bar). */}
       <div className="flex shrink-0 items-center gap-1 border-b border-black bg-gradient-to-b from-[#1e1b4b] to-[#15132a] px-3 py-2">
