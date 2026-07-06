@@ -45,7 +45,7 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
   return (
     <Link
       to={`/servers/${server.id}`}
-      className="flex flex-col rounded-lg border border-border bg-card p-4 transition-all hover:border-primary/50 hover:shadow-sm"
+      className="flex aspect-square flex-col rounded-2xl border border-border bg-card p-4 transition-all hover:border-primary/50 hover:shadow-sm"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
@@ -87,33 +87,35 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-        {server.os_type && (
-          <span className="flex items-center gap-1">
-            <Cpu size={11} />
-            {server.os_type}{server.os_version ? ` ${server.os_version}` : ""}
-            {server.arch ? ` · ${server.arch}` : ""}
-          </span>
-        )}
-        <span className="rounded bg-muted px-1.5 py-0.5 font-medium">{cat.label}</span>
-        {provider && (
-          <span className={`rounded px-1.5 py-0.5 font-medium ${providerBrand ? providerBrand.badge : "bg-primary/10 uppercase text-primary"}`}>{providerBrand?.name ?? provider}</span>
+      <div className="mt-3 min-h-0 flex-1 overflow-hidden">
+        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+          {server.os_type && (
+            <span className="flex items-center gap-1">
+              <Cpu size={11} />
+              {server.os_type}{server.os_version ? ` ${server.os_version}` : ""}
+              {server.arch ? ` · ${server.arch}` : ""}
+            </span>
+          )}
+          <span className="rounded bg-muted px-1.5 py-0.5 font-medium">{cat.label}</span>
+          {provider && (
+            <span className={`rounded px-1.5 py-0.5 font-medium ${providerBrand ? providerBrand.badge : "bg-primary/10 uppercase text-primary"}`}>{providerBrand?.name ?? provider}</span>
+          )}
+        </div>
+
+        {otherTags && otherTags.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {otherTags.map((tag) => (
+              <span key={tag} className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">{tag}</span>
+            ))}
+          </div>
         )}
       </div>
 
-      {otherTags && otherTags.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {otherTags.map((tag) => (
-            <span key={tag} className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">{tag}</span>
-          ))}
-        </div>
-      )}
-
       {/* Launch-pad action */}
-      <div className="mt-auto flex justify-end pt-3">
+      <div className="pt-3">
         <button
           onClick={connect}
-          className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 py-2 text-xs font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-primary"
         >
           {server.connection_type === "winrm" ? (
             <><MonitorPlay size={13} /> Open desktop</>

@@ -27,7 +27,7 @@ export default function HostingCard({ server }: Props) {
   return (
     <Link
       to={`/servers/${server.id}`}
-      className={`flex flex-col rounded-lg border p-4 transition-all hover:shadow-sm ${cardClass}`}
+      className={`flex aspect-square flex-col rounded-2xl border p-4 transition-all hover:shadow-sm ${cardClass}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
@@ -42,19 +42,21 @@ export default function HostingCard({ server }: Props) {
         <ConnectionStatus status={server.status} />
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-        <span className={`flex items-center gap-1 rounded px-1.5 py-0.5 font-medium ${badgeClass}`}>
-          <Globe size={11} />
-          {panelName}
-        </span>
-        <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">Hosting panel</span>
+      <div className="mt-3 min-h-0 flex-1 overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className={`flex items-center gap-1 rounded px-1.5 py-0.5 font-medium ${badgeClass}`}>
+            <Globe size={11} />
+            {panelName}
+          </span>
+          <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">Hosting panel</span>
+        </div>
       </div>
 
-      <div className="mt-auto flex justify-end pt-3">
+      <div className="pt-3">
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(panelUrl, "_blank", "noopener,noreferrer") }}
           title={`Open ${panelName} at ${panelUrl}`}
-          className={`flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors ${buttonHover}`}
+          className={`flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-background/60 px-2.5 py-2 text-xs font-medium text-foreground transition-colors ${buttonHover}`}
         >
           <ExternalLink size={13} /> Open panel
         </button>
