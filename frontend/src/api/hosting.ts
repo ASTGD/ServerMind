@@ -70,8 +70,10 @@ export async function issueSsl(serverId: string, domain: string): Promise<Action
   return res.data
 }
 
-export async function listDatabases(serverId: string): Promise<HostingDatabase[]> {
-  const res = await apiClient.get<HostingDatabase[]>(`${base(serverId)}/databases`)
+export async function listDatabases(serverId: string, domain?: string): Promise<HostingDatabase[]> {
+  const res = await apiClient.get<HostingDatabase[]>(`${base(serverId)}/databases`, {
+    params: domain ? { domain } : {},
+  })
   return res.data
 }
 

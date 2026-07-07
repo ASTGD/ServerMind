@@ -88,10 +88,10 @@ async def issue_ssl(server_id: str, domain: str, db: DBDep, current_user: Curren
 # ── Databases ───────────────────────────────────────────────────────────────
 
 @router.get("/databases", response_model=list[Database])
-async def list_databases(server_id: str, db: DBDep, current_user: CurrentUser):
+async def list_databases(server_id: str, db: DBDep, current_user: CurrentUser, domain: str | None = Query(default=None)):
     server = await _hosting_server(server_id, current_user, db)
     try:
-        return await hosting_service.list_databases(server)
+        return await hosting_service.list_databases(server, domain)
     except HostingError as exc:
         raise _wrap(exc)
 

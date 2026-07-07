@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useParams } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
@@ -49,6 +49,7 @@ function FieldModal({
   onSubmit,
   isPending,
   error,
+  initialValues,
 }: {
   title: string
   fields: { key: string; label: string; placeholder?: string; type?: string; required?: boolean }[]
@@ -56,8 +57,9 @@ function FieldModal({
   onSubmit: (values: Record<string, string>) => void
   isPending: boolean
   error?: string
+  initialValues?: Record<string, string>
 }) {
-  const [values, setValues] = useState<Record<string, string>>({})
+  const [values, setValues] = useState<Record<string, string>>(initialValues ?? {})
   const valid = fields.every((f) => !f.required || (values[f.key] ?? "").trim())
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -101,16 +103,22 @@ export default function Hosting() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<Tab>("websites")
   const [modal, setModal] = useState<"website" | "database" | "email" | null>(null)
+  // Some panels (CyberPanel) scope databases per-website — a domain must be picked
+  // or the list always reads empty even when databases exist.
+  const [dbDomain, setDbDomain] = useState<string | null>(null)
 
   const websitesQ = useQuery({
     queryKey: ["hosting-websites", serverId],
     queryFn: () => listWebsites(serverId!),
-    enabled: !!serverId && tab === "websites",
+    enabled: !!serverId && (tab === "websites" || tab === "databases"),
     retry: false,
   })
+  useEffect(() => {
+    if (!dbDomain && websitesQ.data && websitesQ.data.length > 0) setDbDomain(websitesQ.data[0].domain)
+  }, [websitesQ.data, dbDomain])
   const databasesQ = useQuery({
-    queryKey: ["hosting-databases", serverId],
-    queryFn: () => listDatabases(serverId!),
+    queryKey: ["hosting-databases", serverId, dbDomain],
+    queryFn: () => listDatabases(serverId!, dbDomain ?? undefined),
     enabled: !!serverId && tab === "databases",
     retry: false,
   })
@@ -139,7 +147,11 @@ export default function Hosting() {
     mutationFn: (v: Record<string, string>) => createDatabase(serverId!, {
       domain: v.domain || null, db_name: v.db_name, db_user: v.db_user || null, db_password: v.db_password || null,
     }),
-    onSuccess: () => { setModal(null); refetchKey("hosting-databases") },
+    onSuccess: (_result, variables) => {
+      setModal(null)
+      if (variables.domain) setDbDomain(variables.domain) // view the site the new DB belongs to
+      refetchKey("hosting-databases")
+    },
   })
   const createEmailMut = useMutation({
     mutationFn: (v: Record<string, string>) => createEmail(serverId!, { user: v.user, domain: v.domain, password: v.password }),
@@ -230,20 +242,38 @@ export default function Hosting() {
       )}
 
       {/* Databases */}
-      {tab === "databases" && databasesQ.data && (
-        databasesQ.data.length === 0 ? (
-          <EmptyState icon={DatabaseIcon} text="No databases found" />
-        ) : (
-          <div className="space-y-2">
-            {databasesQ.data.map((d: HostingDatabase, i: number) => (
-              <div key={(d.db_name ?? "") + i} className="rounded-xl border border-border bg-card p-4 flex items-center gap-2.5">
-                <DatabaseIcon className="h-4 w-4 text-violet-400 shrink-0" />
-                <span className="text-sm text-foreground font-medium">{d.db_name}</span>
-                {d.size != null && <span className="text-xs text-muted-foreground ml-auto">{d.size}</span>}
+      {tab === "databases" && (
+        <div className="space-y-3">
+          {websitesQ.data && websitesQ.data.length > 0 && (
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              Website
+              <select
+                value={dbDomain ?? ""}
+                onChange={(e) => setDbDomain(e.target.value)}
+                className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                {websitesQ.data.map((w: Website) => (
+                  <option key={w.domain} value={w.domain}>{w.domain}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {databasesQ.data && (
+            databasesQ.data.length === 0 ? (
+              <EmptyState icon={DatabaseIcon} text="No databases found" />
+            ) : (
+              <div className="space-y-2">
+                {databasesQ.data.map((d: HostingDatabase, i: number) => (
+                  <div key={(d.db_name ?? "") + i} className="rounded-xl border border-border bg-card p-4 flex items-center gap-2.5">
+                    <DatabaseIcon className="h-4 w-4 text-violet-400 shrink-0" />
+                    <span className="text-sm text-foreground font-medium">{d.db_name}</span>
+                    {d.size != null && <span className="text-xs text-muted-foreground ml-auto">{d.size}</span>}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )
+            )
+          )}
+        </div>
       )}
 
       {/* Email */}
@@ -285,6 +315,7 @@ export default function Hosting() {
             { key: "db_user", label: "DB user", placeholder: "myapp_user" },
             { key: "db_password", label: "DB password", type: "password" },
           ]}
+          initialValues={{ domain: dbDomain ?? "" }}
           isPending={createDbMut.isPending}
           error={createDbMut.isError ? errMsg(createDbMut.error) : undefined}
           onClose={() => setModal(null)}

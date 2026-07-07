@@ -94,17 +94,25 @@ def _parse_status(raw: str, ok_key: str) -> dict:
 
 
 def _parse_json_list(raw: str) -> list:
-    """listWebsitesJson / listDatabasesJson print a JSON array (possibly amid other
-    lines). Return the first array found, else []."""
+    """listWebsitesJson / listDatabasesJson print a JSON array — usually bare
+    (``[...]``), but listDatabasesJson has been observed printing it DOUBLE-encoded
+    as a JSON string (``"[...]"``, quotes escaped) when a domain has databases.
+    Try both forms; return the first array found, else []."""
     for line in raw.strip().splitlines():
         line = line.strip()
-        if line.startswith("["):
+        if not line or line[0] not in "[\"":
+            continue
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(data, str):
             try:
-                data = json.loads(line)
-                if isinstance(data, list):
-                    return data
+                data = json.loads(data)
             except ValueError:
                 continue
+        if isinstance(data, list):
+            return data
     return []
 
 

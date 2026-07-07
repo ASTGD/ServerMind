@@ -384,10 +384,12 @@ async def issue_ssl(server: Server, domain: str) -> dict:
     return await _run(_adapter(server).issue_ssl, domain)
 
 
-async def list_databases(server: Server) -> list[dict]:
+async def list_databases(server: Server, domain: str | None = None) -> list[dict]:
     if _cli_server(server):
+        # CyberPanel's listDatabasesJson is scoped per-website — it errors without
+        # --databaseWebsite, so a missing domain must not silently read as "no databases".
         from app.services import cyberpanel_cli
-        return await cyberpanel_cli.list_databases(server)
+        return await cyberpanel_cli.list_databases(server, domain)
     return await _run(_adapter(server).list_databases)
 
 
