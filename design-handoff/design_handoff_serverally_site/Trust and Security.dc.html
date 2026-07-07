@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+  <style>
+    html { scroll-behavior: smooth; }
+    html, body { margin: 0; padding: 0; background: #FFFFFF; color: #0F172A; font-family: "Geist", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+    *, *::before, *::after { box-sizing: border-box; }
+    a { color: #5048E5; }
+    a:hover { color: #4338CA; }
+    @keyframes allyBlobA { 0% { transform: translate(0, 0) scale(1); } 50% { transform: translate(60px, -40px) scale(1.12); } 100% { transform: translate(0, 0) scale(1); } }
+    @keyframes allyBlobB { 0% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-70px, 30px) scale(0.94); } 100% { transform: translate(0, 0) scale(1); } }
+    @keyframes jRise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</helmet>
+
+<div style="background: #FFFFFF; color: #0F172A; overflow-x: clip;">
+
+  <dc-import name="SiteNav" active="trust" hint-size="100%,55px" style="position: sticky; top: 0; z-index: 90;"></dc-import>
+
+  <!-- ============ 1 · HERO ============ -->
+  <section data-screen-label="01 Trust hero" style="position: relative; padding: clamp(60px, 8vw, 104px) 0 clamp(48px, 6vw, 80px); overflow: hidden;">
+    <div style="position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;">
+      <div style="position: absolute; left: 8%; top: 14%; width: 44vw; height: 44vw; max-width: 600px; max-height: 600px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, rgba(109, 94, 243, 0.22), rgba(109, 94, 243, 0) 65%); filter: blur(64px); animation: allyBlobA 17s ease-in-out infinite;"></div>
+      <div style="position: absolute; right: 4%; top: 32%; width: 38vw; height: 38vw; max-width: 520px; max-height: 520px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, rgba(168, 85, 247, 0.18), rgba(168, 85, 247, 0) 65%); filter: blur(66px); animation: allyBlobB 21s ease-in-out infinite;"></div>
+      <div style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(255, 255, 255, 0) 45%, rgba(255, 255, 255, 0.95) 100%);"></div>
+    </div>
+    <div style="position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); display: flex; flex-direction: column; align-items: center; text-align: center;">
+      <p style="font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #6D5EF3; margin: 0 0 14px; animation: jRise 700ms ease both;">Trust &amp; Security</p>
+      <h1 style="font-size: clamp(2.1rem, 5vw, 3.7rem); font-weight: 700; letter-spacing: -0.035em; line-height: 1.07; margin: 0; max-width: 20ch; animation: jRise 700ms ease 80ms both;">Security and privacy, <span style="background: linear-gradient(100deg, #6D5EF3, #8B5CF6 55%, #A855F7); -webkit-background-clip: text; background-clip: text; color: transparent;">built in from day one</span></h1>
+      <p style="font-size: clamp(16px, 1.6vw, 19px); line-height: 1.6; color: #64748B; margin: 18px 0 0; max-width: 52ch; animation: jRise 700ms ease 160ms both;">Ally holds the keys to people's servers. We treat that like the responsibility it is.</p>
+      <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 30px; animation: jRise 700ms ease 240ms both;">
+        <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 550; color: #334155; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 9999px; padding: 8px 15px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5048E5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>Encrypted credentials</span>
+        <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 550; color: #334155; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 9999px; padding: 8px 15px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5048E5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"></path><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"></path><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"></path><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"></path></svg>Asks before risky steps</span>
+        <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 550; color: #334155; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 9999px; padding: 8px 15px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5048E5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>Reversible actions</span>
+        <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 550; color: #334155; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 9999px; padding: 8px 15px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.801 10A10 10 0 1 1 17 3.335"></path><path d="m9 11 3 3L22 4"></path></svg>Read-only verification</span>
+      </div>
+      <p style="font-size: 12.5px; color: #94A3B8; margin: 16px 0 0; animation: jRise 700ms ease 300ms both;">Real mechanisms in the product today — not compliance badges we don't hold yet.</p>
+    </div>
+  </section>
+
+  <!-- ============ 2 · HOW ALLY KEEPS SERVERS SAFE ============ -->
+  <section data-scene="1" data-screen-label="02 Server safety" style="background: #F8FAFC; border-top: 1px solid #E2E8F0; border-bottom: 1px solid #E2E8F0; padding: clamp(64px, 8vw, 112px) 0;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px);">
+      <h2 style="font-size: clamp(1.8rem, 3.4vw, 2.7rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.12; margin: 0; max-width: 22ch; animation: jRise 700ms ease both; animation-play-state: var(--ps, running);">How Ally keeps your servers safe</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: clamp(20px, 3vw, 32px); margin-top: clamp(32px, 4vw, 48px); align-items: start;">
+
+        <div style="background: #0F172A; border: 1px solid #1E293B; border-radius: 18px; overflow: hidden; animation: jRise 700ms ease 120ms both; animation-play-state: var(--ps, running);">
+          <div style="padding: 20px 22px 14px;">
+            <p style="margin: 0; font-size: 16px; font-weight: 650; color: #F8FAFC;">Some commands are never allowed. Period.</p>
+            <p style="margin: 6px 0 0; font-size: 13.5px; line-height: 1.6; color: #94A3B8;">A hard blocklist Ally can't be talked out of — on Linux and Windows alike.</p>
+          </div>
+          <div style="padding: 4px 14px 18px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: 9px;"><code style="font-size: 12.5px; color: #FCA5A5;">rm -rf /</code><span style="font-size: 10px; font-weight: 700; letter-spacing: 0.05em; color: #FFFFFF; background: #DC2626; border-radius: 9999px; padding: 2px 9px; font-family: 'Geist', Inter, sans-serif;">BLOCKED</span></div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: 9px;"><code style="font-size: 12.5px; color: #FCA5A5;">mkfs.ext4 /dev/sda</code><span style="font-size: 10px; font-weight: 700; letter-spacing: 0.05em; color: #FFFFFF; background: #DC2626; border-radius: 9999px; padding: 2px 9px; font-family: 'Geist', Inter, sans-serif;">BLOCKED</span></div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: 9px;"><code style="font-size: 12.5px; color: #FCA5A5;">dd of=/dev/sda</code><span style="font-size: 10px; font-weight: 700; letter-spacing: 0.05em; color: #FFFFFF; background: #DC2626; border-radius: 9999px; padding: 2px 9px; font-family: 'Geist', Inter, sans-serif;">BLOCKED</span></div>
+            <div style="height: 1px; background: #1E293B; margin: 8px 10px;"></div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: 9px;"><code style="font-size: 12.5px; color: #FCA5A5;">format C:</code><span style="font-size: 10px; font-weight: 700; letter-spacing: 0.05em; color: #FFFFFF; background: #DC2626; border-radius: 9999px; padding: 2px 9px; font-family: 'Geist', Inter, sans-serif;">BLOCKED</span></div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: 9px;"><code style="font-size: 12.5px; color: #FCA5A5;">Remove-Item C:\ -Recurse -Force</code><span style="font-size: 10px; font-weight: 700; letter-spacing: 0.05em; color: #FFFFFF; background: #DC2626; border-radius: 9999px; padding: 2px 9px; font-family: 'Geist', Inter, sans-serif;">BLOCKED</span></div>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: 9px;"><code style="font-size: 12.5px; color: #FCA5A5;">vssadmin delete shadows /all</code><span style="font-size: 10px; font-weight: 700; letter-spacing: 0.05em; color: #FFFFFF; background: #DC2626; border-radius: 9999px; padding: 2px 9px; font-family: 'Geist', Inter, sans-serif;">BLOCKED</span></div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 22px; animation: jRise 700ms ease 220ms both; animation-play-state: var(--ps, running);">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 11px; background: #EEF2FF; color: #5048E5; flex-shrink: 0;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"></path><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"></path><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"></path><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"></path></svg></span>
+              <p style="margin: 0; font-size: 15.5px; font-weight: 650;">Risky steps always ask first</p>
+            </div>
+            <p style="margin: 10px 0 0; font-size: 14px; line-height: 1.6; color: #64748B;">Firewall changes, deletions, restarts that could cut access — Ally stops, explains the step in plain English, and waits for your approval.</p>
+          </div>
+          <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 22px; animation: jRise 700ms ease 320ms both; animation-play-state: var(--ps, running);">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 11px; background: #EEF2FF; color: #5048E5; flex-shrink: 0;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg></span>
+              <p style="margin: 0; font-size: 15.5px; font-weight: 650;">Reversible beats destructive</p>
+            </div>
+            <p style="margin: 10px 0 0; font-size: 14px; line-height: 1.6; color: #64748B;">Suspicious files are quarantined, not deleted. Restores start with a backup. If something must change, Ally prefers the version you can undo.</p>
+          </div>
+          <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 22px; animation: jRise 700ms ease 420ms both; animation-play-state: var(--ps, running);">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 11px; background: #F0FDF4; color: #16A34A; flex-shrink: 0;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.801 10A10 10 0 1 1 17 3.335"></path><path d="m9 11 3 3L22 4"></path></svg></span>
+              <p style="margin: 0; font-size: 15.5px; font-weight: 650;">"Done" means independently verified</p>
+            </div>
+            <p style="margin: 10px 0 0; font-size: 14px; line-height: 1.6; color: #64748B;">Before a mission can finish, a separate read-only check re-inspects the server and confirms the goal is actually met. No proof, no "done".</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3 · CREDENTIALS ============ -->
+  <section data-scene="1" data-screen-label="03 Credentials" style="padding: clamp(64px, 8vw, 112px) 0;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px);">
+      <h2 style="font-size: clamp(1.8rem, 3.4vw, 2.7rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.12; margin: 0; max-width: 22ch; animation: jRise 700ms ease both; animation-play-state: var(--ps, running);">How your credentials are protected</h2>
+      <p style="font-size: clamp(15px, 1.5vw, 17px); line-height: 1.65; color: #64748B; margin: 16px 0 0; max-width: 58ch; animation: jRise 700ms ease 80ms both; animation-play-state: var(--ps, running);">You hand Ally a server login once. From that moment, it's treated like radioactive material.</p>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 14px; margin-top: clamp(30px, 4vw, 44px);">
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 22px; animation: jRise 700ms ease 150ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 11px; background: #EEF2FF; color: #5048E5;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></span>
+          <p style="margin: 12px 0 4px; font-size: 15px; font-weight: 650;">Encrypted at rest</p>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.6; color: #64748B;">AES-256-GCM — the same class of encryption banks use — before anything touches a disk.</p>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 22px; animation: jRise 700ms ease 230ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 11px; background: #EEF2FF; color: #5048E5;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path><path d="m2 2 20 20"></path></svg></span>
+          <p style="margin: 12px 0 4px; font-size: 15px; font-weight: 650;">Never logged, never shown</p>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.6; color: #64748B;">Secrets are kept out of logs and never returned by any API response after you save them — to you or anyone else.</p>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 22px; animation: jRise 700ms ease 310ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 11px; background: #EEF2FF; color: #5048E5;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"></path><path d="M14 13.12c0 2.38 0 6.38-1 8.88"></path><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"></path><path d="M2 12a10 10 0 0 1 18-6"></path><path d="M2 16h.01"></path><path d="M21.8 16c.2-2 .131-5.354 0-6"></path><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"></path><path d="M8.65 22c.21-.66.45-1.32.57-2"></path><path d="M9 6.8a6 6 0 0 1 9 5.2v2"></path></svg></span>
+          <p style="margin: 12px 0 4px; font-size: 15px; font-weight: 650;">Server identity checked</p>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.6; color: #64748B;">SSH host fingerprints are verified on every reconnect — if a server suddenly isn't the machine it claims to be, Ally won't talk to it.</p>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 22px; animation: jRise 700ms ease 390ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 11px; background: #EEF2FF; color: #5048E5;"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6v6l4 2"></path><circle cx="12" cy="12" r="10"></circle></svg></span>
+          <p style="margin: 12px 0 4px; font-size: 15px; font-weight: 650;">Rate-limited by design</p>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.6; color: #64748B;">Command rate limits cap how fast anything can happen on your server — even in the worst case, there is no runaway.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 4 · PROVEN ============ -->
+  <section data-scene="1" data-screen-label="04 Proven" style="background: #0F172A; padding: clamp(64px, 8vw, 104px) 0;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); display: flex; flex-direction: column; align-items: center; text-align: center;">
+      <h2 style="font-size: clamp(1.8rem, 3.4vw, 2.7rem); font-weight: 700; letter-spacing: -0.03em; color: #F8FAFC; margin: 0; max-width: 22ch; animation: jRise 700ms ease both; animation-play-state: var(--ps, running);">Proven, not just promised.</h2>
+      <p style="font-size: clamp(15px, 1.5vw, 17px); line-height: 1.65; color: #94A3B8; margin: 16px 0 0; max-width: 56ch; animation: jRise 700ms ease 100ms both; animation-play-state: var(--ps, running);">We ran a live red-team campaign against Ally on real servers — ordering it to wipe disks, planting malware, hiding hostile instructions in files it would read. The evidence is public on the How It Works page.</p>
+      <a href="How It Works.dc.html#shakedown" style="display: inline-flex; align-items: center; gap: 9px; margin-top: 28px; background: rgba(255, 255, 255, 0.08); border: 1px solid #334155; color: #E2E8F0; text-decoration: none; font-size: 14.5px; font-weight: 600; padding: 12px 24px; border-radius: 9999px; transition: background 250ms, border-color 250ms; animation: jRise 700ms ease 200ms both; animation-play-state: var(--ps, running);" style-hover="background: rgba(255, 255, 255, 0.14); border-color: #475569; color: #FFFFFF;">
+        See the evidence
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+      </a>
+    </div>
+  </section>
+
+  <!-- ============ 5 · WHO CAN DO WHAT ============ -->
+  <section data-scene="1" data-screen-label="05 Roles" style="background: #F8FAFC; border-bottom: 1px solid #E2E8F0; padding: clamp(64px, 8vw, 112px) 0;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px);">
+      <h2 style="font-size: clamp(1.8rem, 3.4vw, 2.7rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.12; margin: 0; animation: jRise 700ms ease both; animation-play-state: var(--ps, running);">Who can do what</h2>
+      <p style="font-size: clamp(15px, 1.5vw, 17px); line-height: 1.65; color: #64748B; margin: 16px 0 0; max-width: 56ch; animation: jRise 700ms ease 80ms both; animation-play-state: var(--ps, running);">Access is granted per person, per server — a teammate can be admin on one box and viewer on another.</p>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 14px; margin-top: clamp(30px, 4vw, 44px);">
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 24px; animation: jRise 700ms ease 150ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 11px; background: #F1F5F9; color: #475569;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg></span>
+          <p style="margin: 14px 0 4px; font-size: 16px; font-weight: 650;">Viewer</p>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.6; color: #64748B;">Can see servers, missions, and reports. <strong style="color: #0F172A;">Can never run a command</strong> — the execution path requires operator or above, so even a misconfigured viewer can't act.</p>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 24px; animation: jRise 700ms ease 250ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 11px; background: #EEF2FF; color: #5048E5;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m14.622 17.897-10.68-2.913"></path><path d="M18.376 2.622a1 1 0 1 1 3.002 3.002L17.36 9.643a.5.5 0 0 0 0 .707l.944.944a2.41 2.41 0 0 1 0 3.408l-.944.944a.5.5 0 0 1-.707 0L8.354 7.348a.5.5 0 0 1 0-.707l.944-.944a2.41 2.41 0 0 1 3.408 0l.944.944a.5.5 0 0 0 .707 0z"></path><path d="M9 8c-1.804 2.71-3.97 3.46-6.583 3.948a.507.507 0 0 0-.302.819l7.32 8.883a1 1 0 0 0 1.185.204C12.735 20.405 16 16.792 16 15"></path></svg></span>
+          <p style="margin: 14px 0 4px; font-size: 16px; font-weight: 650;">Operator</p>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.6; color: #64748B;">Can chat with Ally, run missions, and approve steps on the servers they've been given — day-to-day hands, within bounds.</p>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 24px; animation: jRise 700ms ease 350ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 11px; background: linear-gradient(135deg, #6D5EF3, #A855F7); color: #FFFFFF;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"></path><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"></circle></svg></span>
+          <p style="margin: 14px 0 4px; font-size: 16px; font-weight: 650;">Admin</p>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.6; color: #64748B;">Full control — adds servers, manages credentials, invites people, and decides who holds which role where.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 6 · YOUR DATA (TBD) + 7 · DISCLOSURE ============ -->
+  <section data-scene="1" data-screen-label="06 Your data" style="padding: clamp(64px, 8vw, 104px) 0;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 18px; align-items: stretch;">
+      <div style="border: 2px dashed #C7D2FE; border-radius: 18px; padding: clamp(24px, 3vw, 32px); background: #FDFDFF; animation: jRise 700ms ease both; animation-play-state: var(--ps, running);">
+        <h2 style="font-size: clamp(1.3rem, 2.2vw, 1.6rem); font-weight: 700; letter-spacing: -0.02em; margin: 0;">Your data</h2>
+        <p style="margin: 12px 0 0; font-size: 14px; line-height: 1.65; color: #64748B;"><code style="font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; background: #EEF2FF; color: #4338CA; border-radius: 6px; padding: 2px 8px;">[TBD — insert real data retention / training-data / sub-processor policy here before launch]</code></p>
+        <p style="margin: 14px 0 0; font-size: 13px; line-height: 1.6; color: #94A3B8;">This section intentionally makes no claims yet — it ships only with the real, reviewed policy.</p>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 18px; padding: clamp(24px, 3vw, 32px); background: #FFFFFF; animation: jRise 700ms ease 120ms both; animation-play-state: var(--ps, running);">
+        <h2 style="font-size: clamp(1.3rem, 2.2vw, 1.6rem); font-weight: 700; letter-spacing: -0.02em; margin: 0;">Responsible disclosure</h2>
+        <p style="margin: 12px 0 0; font-size: 14px; line-height: 1.65; color: #64748B;">Found a security issue? Tell us privately first — we read every report and respond fast.</p>
+        <a href="mailto:security@serverally.ai" style="display: inline-flex; align-items: center; gap: 8px; margin-top: 16px; font-family: ui-monospace, Menlo, monospace; font-size: 13.5px; font-weight: 600; color: #5048E5; background: #EEF2FF; border-radius: 10px; padding: 10px 16px; text-decoration: none;" style-hover="color: #4338CA;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg>
+          security@serverally.ai
+        </a>
+        <p style="margin: 12px 0 0; font-size: 12px; color: #94A3B8;">Placeholder address — confirm before launch.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FOOTER ============ -->
+  <footer data-screen-label="Footer" style="border-top: 1px solid #E2E8F0; padding: 36px 0; background: #FFFFFF;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px;">
+      <img src="marketing-brief/assets/logo/serverally-logo.svg" alt="ServerAlly" style="height: 26px; display: block;">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 20px;">
+        <a href="Home.dc.html" style="font-size: 13px; color: #64748B; text-decoration: none;" style-hover="color: #5048E5;">Home</a>
+        <a href="How It Works.dc.html" style="font-size: 13px; color: #64748B; text-decoration: none;" style-hover="color: #5048E5;">How It Works</a>
+        <a href="Pricing.dc.html" style="font-size: 13px; color: #64748B; text-decoration: none;" style-hover="color: #5048E5;">Pricing</a>
+        <a href="Trust and Security.dc.html" style="font-size: 13px; color: #64748B; text-decoration: none;" style-hover="color: #5048E5;">Trust &amp; Security</a>
+      </div>
+      <p style="margin: 0; font-size: 12.5px; color: #94A3B8;">© 2026 ServerAlly · Pre-launch</p>
+    </div>
+  </footer>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    w: (typeof window !== 'undefined' && window.innerWidth) || 1280
+  };
+
+  componentDidMount() {
+    this._onResize = () => {
+      const w = window.innerWidth;
+      if (w !== this.state.w) this.setState({ w });
+    };
+    window.addEventListener('resize', this._onResize);
+
+    this._reduced = false;
+    try {
+      this._reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch (e) {}
+
+    this._setup = () => {
+      const scenes = document.querySelectorAll('[data-scene]');
+      if (this._reduced) {
+        document.querySelectorAll('*').forEach((n) => {
+          if (n.style && n.style.animation) n.style.animation = 'none';
+        });
+        return;
+      }
+      if (this._io) this._io.disconnect();
+      this._io = new IntersectionObserver((entries) => {
+        entries.forEach((en) => {
+          if (!en.target.isConnected) return;
+          en.target.style.setProperty('--ps', en.isIntersecting ? 'running' : 'paused');
+        });
+      }, { threshold: 0.12 });
+      scenes.forEach((sc) => this._io.observe(sc));
+    };
+    this._t1 = setTimeout(this._setup, 300);
+    this._t2 = setTimeout(this._setup, 1500);
+    this._iv = setInterval(this._setup, 3000);
+  }
+
+  componentDidUpdate() {
+    if (this._setup && !this._reduced) this._setup();
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('resize', this._onResize);
+    if (this._io) this._io.disconnect();
+    clearTimeout(this._t1);
+    clearTimeout(this._t2);
+    clearInterval(this._iv);
+  }
+
+  renderVals() {
+    return { isMd: this.state.w >= 768 };
+  }
+}
+
+</script>
+</body>
+</html>

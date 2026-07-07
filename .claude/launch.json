@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd backend && source venv/bin/activate && uvicorn main:app --reload --port 8888"],
+      "port": 8888
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5190
+    },
+    {
+      "name": "design-handoff",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/shafin/Documents/ServerMind/design-handoff/static-server.mjs"],
+      "port": 8931
+    }
+  ]
+}

@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+  <style>
+    html { scroll-behavior: smooth; }
+    html, body { margin: 0; padding: 0; background: #FFFFFF; color: #0F172A; font-family: "Geist", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+    *, *::before, *::after { box-sizing: border-box; }
+    a { color: #5048E5; }
+    a:hover { color: #4338CA; }
+    @keyframes allyBlobA { 0% { transform: translate(0, 0) scale(1); } 50% { transform: translate(60px, -40px) scale(1.12); } 100% { transform: translate(0, 0) scale(1); } }
+    @keyframes allyBlobB { 0% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-70px, 30px) scale(0.94); } 100% { transform: translate(0, 0) scale(1); } }
+    @keyframes allyFloat { 0% { transform: translateY(0); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0); } }
+    @keyframes jRise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes jPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.4); } 55% { box-shadow: 0 0 0 8px rgba(22, 163, 74, 0); } }
+  </style>
+</helmet>
+
+<div style="background: #FFFFFF; color: #0F172A; overflow-x: clip;">
+
+  <dc-import name="SiteNav" active="home" hint-size="100%,55px" style="position: sticky; top: 0; z-index: 90;"></dc-import>
+
+  <!-- ============ 1 · HERO ============ -->
+  <section data-screen-label="01 Hero" style="position: relative; padding: clamp(60px, 8vw, 108px) 0 clamp(56px, 7vw, 96px); overflow: hidden;">
+    <div style="position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;">
+      <div style="position: absolute; left: 6%; top: 24%; width: 48vw; height: 48vw; max-width: 660px; max-height: 660px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, rgba(109, 94, 243, 0.3), rgba(109, 94, 243, 0) 65%); filter: blur(64px); animation: allyBlobA 17s ease-in-out infinite;"></div>
+      <div style="position: absolute; right: 2%; top: 38%; width: 44vw; height: 44vw; max-width: 600px; max-height: 600px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, rgba(168, 85, 247, 0.24), rgba(168, 85, 247, 0) 65%); filter: blur(66px); animation: allyBlobB 21s ease-in-out infinite;"></div>
+      <div style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(255, 255, 255, 0) 50%, rgba(255, 255, 255, 0.92) 100%);"></div>
+    </div>
+    <div style="position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); display: flex; flex-direction: column; align-items: center; text-align: center;">
+      <div style="display: inline-flex; align-items: center; gap: 8px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 9999px; padding: 6px 14px 6px 8px; box-shadow: 0 1px 2px rgba(2, 8, 23, 0.05); margin-bottom: 26px; animation: jRise 700ms ease both;">
+        <img src="marketing-brief/assets/logo/serverally-mark.svg" alt="" style="width: 20px; height: 20px; display: block;">
+        <span style="font-size: 13px; font-weight: 500; color: #334155;">Meet Ally — your AI server companion</span>
+      </div>
+      <h1 style="font-size: clamp(2.4rem, 6vw, 4.4rem); font-weight: 700; letter-spacing: -0.035em; line-height: 1.05; margin: 0; max-width: 16ch; animation: jRise 700ms ease 80ms both;">Manage your servers by just <span style="background: linear-gradient(100deg, #6D5EF3, #8B5CF6 55%, #A855F7); -webkit-background-clip: text; background-clip: text; color: transparent;">talking to Ally</span>.</h1>
+      <p style="font-size: clamp(16px, 1.6vw, 19px); line-height: 1.6; color: #64748B; margin: 20px 0 0; max-width: 56ch; animation: jRise 700ms ease 160ms both;">Your AI companion to manage, automate, and secure any server — without the expertise.</p>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 14px; margin-top: 32px; animation: jRise 700ms ease 240ms both;">
+        <a href="Pricing.dc.html" style="display: inline-flex; align-items: center; gap: 9px; background: linear-gradient(135deg, #6D5EF3, #8B5CF6 55%, #A855F7); color: #FFFFFF; text-decoration: none; font-size: 15px; font-weight: 600; padding: 14px 28px; border-radius: 9999px; box-shadow: 0 10px 28px rgba(109, 94, 243, 0.34); transition: box-shadow 250ms, transform 250ms;" style-hover="box-shadow: 0 14px 36px rgba(109, 94, 243, 0.46); transform: translateY(-2px); color: #FFFFFF;">
+          Start free
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+        </a>
+        <a href="How It Works.dc.html" style="display: inline-flex; align-items: center; gap: 8px; background: #FFFFFF; border: 1px solid #E2E8F0; color: #0F172A; text-decoration: none; font-size: 15px; font-weight: 600; padding: 13px 24px; border-radius: 9999px; transition: border-color 250ms, background 250ms;" style-hover="border-color: #C7D2FE; background: #F8FAFC; color: #0F172A;">See how it works</a>
+      </div>
+      <p style="font-size: 13px; color: #64748B; margin: 18px 0 0; animation: jRise 700ms ease 300ms both;">Free plan to try · No terminal knowledge required · Ally asks before anything risky</p>
+      <div data-hero-parallax="1" style="position: relative; width: min(100%, 980px); margin-top: clamp(44px, 6vw, 72px); animation: jRise 900ms ease 340ms both; will-change: transform;">
+        <div style="animation: allyFloat 9s ease-in-out infinite;">
+          <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 18px; box-shadow: 0 40px 90px rgba(15, 23, 42, 0.16); overflow: hidden;">
+            <div style="display: flex; align-items: center; gap: 10px; padding: 11px 16px; background: #F8FAFC; border-bottom: 1px solid #E2E8F0;">
+              <span style="display: flex; gap: 6px;">
+                <span style="width: 11px; height: 11px; border-radius: 999px; background: #FCA5A5;"></span>
+                <span style="width: 11px; height: 11px; border-radius: 999px; background: #FCD34D;"></span>
+                <span style="width: 11px; height: 11px; border-radius: 999px; background: #86EFAC;"></span>
+              </span>
+              <span style="flex: 1; max-width: 340px; margin: 0 auto; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: #64748B; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 5px 12px;">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                app.serverally.com
+              </span>
+            </div>
+            <img src="marketing-brief/assets/screens/01-assets.png" alt="The real ServerAlly dashboard — every server in one calm place" style="width: 100%; display: block;">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 2 · WHAT IT IS ============ -->
+  <section data-scene="1" data-screen-label="02 Intro" style="background: #F8FAFC; border-top: 1px solid #E2E8F0; border-bottom: 1px solid #E2E8F0; padding: clamp(64px, 8vw, 112px) 0;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px);">
+      <div style="max-width: 720px;">
+        <p style="font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #6D5EF3; margin: 0 0 14px; animation: jRise 700ms ease both; animation-play-state: var(--ps, running);">What is ServerAlly</p>
+        <h2 style="font-size: clamp(1.8rem, 3.4vw, 2.7rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.12; margin: 0; animation: jRise 700ms ease 80ms both; animation-play-state: var(--ps, running);">An expert teammate for people who'd rather not be sysadmins.</h2>
+        <p style="font-size: clamp(15.5px, 1.5vw, 17.5px); line-height: 1.65; color: #64748B; margin: 18px 0 0; animation: jRise 700ms ease 160ms both; animation-play-state: var(--ps, running);">You describe what you need. Ally reads the server, makes a plan, does the work, and proves it worked — built for founders, agencies, and site owners with servers but no sysadmin.</p>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; margin-top: clamp(32px, 4vw, 44px);">
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 24px; animation: jRise 700ms ease 200ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, #6D5EF3, #A855F7);"><img src="marketing-brief/assets/logo/serverally-mark.svg" alt="" style="width: 22px; height: 22px; display: block; filter: brightness(0) invert(1);"></span>
+          <h3 style="font-size: 16px; font-weight: 650; margin: 14px 0 6px; letter-spacing: -0.01em;">AI-native, not bolted on</h3>
+          <p style="font-size: 14px; line-height: 1.6; color: #64748B; margin: 0;">The whole product is built around Ally — chat, missions, monitoring — not a chatbot glued to an old panel.</p>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 24px; animation: jRise 700ms ease 300ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; background: #EEF2FF; color: #5048E5;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"></rect><rect width="20" height="8" x="2" y="14" rx="2" ry="2"></rect><path d="M6 6h.01"></path><path d="M6 18h.01"></path></svg></span>
+          <h3 style="font-size: 16px; font-weight: 650; margin: 14px 0 6px; letter-spacing: -0.01em;">Any server, any hosting</h3>
+          <p style="font-size: 14px; line-height: 1.6; color: #64748B; margin: 0;">Linux and Windows, VPS or bare metal, CyberPanel / cPanel / Plesk, and whole cloud accounts — one dashboard.</p>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 24px; animation: jRise 700ms ease 400ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; background: #EEF2FF; color: #5048E5;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8l6 6"></path><path d="m4 14 6-6 2-3"></path><path d="M2 5h12"></path><path d="M7 2h1"></path><path d="m22 22-5-10-5 10"></path><path d="M14 18h6"></path></svg></span>
+          <h3 style="font-size: 16px; font-weight: 650; margin: 14px 0 6px; letter-spacing: -0.01em;">Your language</h3>
+          <p style="font-size: 14px; line-height: 1.6; color: #64748B; margin: 0;">Ask and get answers in 8 languages — English, বাংলা, العربية, Español, Français, हिन्दी, Português, Türkçe.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3 · TOP MOVES ============ -->
+  <section data-scene="1" data-screen-label="03 Top moves" style="padding: clamp(64px, 8vw, 112px) 0;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px);">
+      <p style="font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #6D5EF3; margin: 0 0 14px; animation: jRise 700ms ease both; animation-play-state: var(--ps, running);">Straight from the product</p>
+      <h2 style="font-size: clamp(1.8rem, 3.4vw, 2.7rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.12; margin: 0; max-width: 20ch; animation: jRise 700ms ease 80ms both; animation-play-state: var(--ps, running);">A few of Ally's top moves.</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: clamp(18px, 2.5vw, 28px); margin-top: clamp(36px, 4.5vw, 52px);">
+        <div style="animation: jRise 800ms ease 150ms both; animation-play-state: var(--ps, running);">
+          <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 18px; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.1); overflow: hidden;">
+            <div style="aspect-ratio: 3 / 3.6; overflow: hidden;">
+              <img src="marketing-brief/assets/screens/30-sidechat-mission-progress.png" alt="A real mission running — Ally hardening a server step by step" style="width: 100%; height: 100%; object-fit: cover; object-position: 50% 10%; display: block;">
+            </div>
+          </div>
+          <h3 style="font-size: 16.5px; font-weight: 650; margin: 18px 0 5px; letter-spacing: -0.01em;">Runs the whole job</h3>
+          <p style="font-size: 14px; line-height: 1.6; color: #64748B; margin: 0;">One ask becomes a mission: plan a step, do it, check it, move on — while you watch live.</p>
+        </div>
+        <div style="animation: jRise 800ms ease 300ms both; animation-play-state: var(--ps, running);">
+          <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 18px; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.1); overflow: hidden;">
+            <div style="aspect-ratio: 3 / 3.6; overflow: hidden;">
+              <img src="marketing-brief/assets/screens/32-sidechat-mission-verified.png" alt="A finished mission — independently verified before Ally says done" style="width: 100%; height: 100%; object-fit: cover; object-position: 50% 72%; display: block;">
+            </div>
+          </div>
+          <h3 style="font-size: 16.5px; font-weight: 650; margin: 18px 0 5px; letter-spacing: -0.01em;">Never says done without proof</h3>
+          <p style="font-size: 14px; line-height: 1.6; color: #64748B; margin: 0;">Every mission ends with an independent, read-only check — then a plain-English summary.</p>
+        </div>
+      </div>
+      <div style="margin-top: clamp(18px, 2.5vw, 28px); animation: jRise 800ms ease 450ms both; animation-play-state: var(--ps, running);">
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 18px; box-shadow: 0 24px 60px rgba(15, 23, 42, 0.1); overflow: hidden;">
+          <img src="marketing-brief/assets/screens/05-fleet-report.png" alt="Ally's fleet report — health scores and fixes across every server" style="width: 100%; display: block;">
+        </div>
+        <h3 style="font-size: 16.5px; font-weight: 650; margin: 18px 0 5px; letter-spacing: -0.01em;">Watches your whole fleet</h3>
+        <p style="font-size: 14px; line-height: 1.6; color: #64748B; margin: 0; max-width: 60ch;">Health scores, security grades, and ranked findings for every server — each with a one-click fix.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 4 · SAFETY STRIP ============ -->
+  <section data-scene="1" data-screen-label="04 Safety strip" style="background: #F8FAFC; border-top: 1px solid #E2E8F0; border-bottom: 1px solid #E2E8F0; padding: clamp(64px, 8vw, 104px) 0;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px);">
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+        <h2 style="font-size: clamp(1.8rem, 3.4vw, 2.7rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.12; margin: 0; max-width: 20ch; animation: jRise 700ms ease both; animation-play-state: var(--ps, running);">Built to be trusted with root.</h2>
+        <a href="Trust and Security.dc.html" style="display: inline-flex; align-items: center; gap: 7px; font-size: 14.5px; font-weight: 600; color: #5048E5; text-decoration: none; animation: jRise 700ms ease 100ms both; animation-play-state: var(--ps, running);" style-hover="color: #4338CA;">Explore Trust &amp; Security<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg></a>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 16px; margin-top: clamp(30px, 4vw, 44px);">
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 24px; animation: jRise 700ms ease 150ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; background: #EEF2FF; color: #5048E5;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></span>
+          <p style="margin: 14px 0 4px; font-size: 15px; font-weight: 650; letter-spacing: -0.01em;">Encrypted credentials</p>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.55; color: #64748B;">AES-256-GCM at rest — never logged, never shown back.</p>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 24px; animation: jRise 700ms ease 250ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; background: #EEF2FF; color: #5048E5;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"></path><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"></path><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"></path><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"></path></svg></span>
+          <p style="margin: 14px 0 4px; font-size: 15px; font-weight: 650; letter-spacing: -0.01em;">Asks before risky steps</p>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.55; color: #64748B;">Destructive commands blocked; anything risky waits for you.</p>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 24px; animation: jRise 700ms ease 350ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; background: #EEF2FF; color: #5048E5;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg></span>
+          <p style="margin: 14px 0 4px; font-size: 15px; font-weight: 650; letter-spacing: -0.01em;">Reversible by design</p>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.55; color: #64748B;">Quarantine instead of delete, backup before restore.</p>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 24px; animation: jRise 700ms ease 450ms both; animation-play-state: var(--ps, running);">
+          <span style="display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; background: #EEF2FF; color: #5048E5;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span>
+          <p style="margin: 14px 0 4px; font-size: 15px; font-weight: 650; letter-spacing: -0.01em;">Role-based access</p>
+          <p style="margin: 0; font-size: 13.5px; line-height: 1.55; color: #64748B;">Viewer, operator, admin — per server. Viewers can never run commands.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 5 · PRICING TEASER ============ -->
+  <section data-scene="1" data-screen-label="05 Pricing teaser" style="padding: clamp(64px, 8vw, 104px) 0;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: clamp(32px, 5vw, 72px); align-items: center;">
+      <div>
+        <p style="font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #6D5EF3; margin: 0 0 14px; animation: jRise 700ms ease both; animation-play-state: var(--ps, running);">Pricing</p>
+        <h2 style="font-size: clamp(1.8rem, 3.4vw, 2.7rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.12; margin: 0; animation: jRise 700ms ease 80ms both; animation-play-state: var(--ps, running);">Every feature.<br>Every plan.</h2>
+        <p style="font-size: clamp(15.5px, 1.5vw, 17.5px); line-height: 1.65; color: #64748B; margin: 18px 0 0; max-width: 42ch; animation: jRise 700ms ease 160ms both; animation-play-state: var(--ps, running);">Nothing is locked behind a paywall — missions, monitoring, team, all of it, on both plans. You only choose your scale.</p>
+        <a href="Pricing.dc.html" style="display: inline-flex; align-items: center; gap: 7px; font-size: 14.5px; font-weight: 600; color: #5048E5; text-decoration: none; margin-top: 22px; animation: jRise 700ms ease 240ms both; animation-play-state: var(--ps, running);" style-hover="color: #4338CA;">See full pricing<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg></a>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 16px;">
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 18px; padding: 26px; animation: jRise 700ms ease 200ms both; animation-play-state: var(--ps, running);">
+          <p style="margin: 0; font-size: 15px; font-weight: 700;">Free</p>
+          <p style="margin: 10px 0 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em;">$[TBD]<span style="font-size: 13px; font-weight: 500; color: #94A3B8;">/mo</span></p>
+          <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
+            <span style="font-size: 13.5px; color: #334155;"><strong>2</strong> servers</span>
+            <span style="font-size: 13.5px; color: #334155;"><strong>30</strong> Ally actions / month</span>
+            <span style="font-size: 13.5px; color: #16A34A; font-weight: 600;">✓ Every feature included</span>
+          </div>
+        </div>
+        <div style="position: relative; background: #FFFFFF; border: 2px solid #6D5EF3; border-radius: 18px; padding: 26px; box-shadow: 0 20px 50px rgba(109, 94, 243, 0.16); animation: jRise 700ms ease 320ms both; animation-play-state: var(--ps, running);">
+          <span style="position: absolute; top: -10px; left: 22px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #FFFFFF; background: linear-gradient(135deg, #6D5EF3, #A855F7); border-radius: 9999px; padding: 3px 11px;">More scale</span>
+          <p style="margin: 0; font-size: 15px; font-weight: 700;">Pro</p>
+          <p style="margin: 10px 0 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em;">$[TBD]<span style="font-size: 13px; font-weight: 500; color: #94A3B8;">/mo</span></p>
+          <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
+            <span style="font-size: 13.5px; color: #334155;"><strong>15</strong> servers</span>
+            <span style="font-size: 13.5px; color: #334155;"><strong>1,000</strong> Ally actions / month</span>
+            <span style="font-size: 13.5px; color: #16A34A; font-weight: 600;">✓ Every feature included</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 6 · USE CASES ============ -->
+  <section data-scene="1" data-screen-label="06 Use cases" style="background: #F8FAFC; border-top: 1px solid #E2E8F0; border-bottom: 1px solid #E2E8F0; padding: clamp(64px, 8vw, 112px) 0;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px);">
+      <p style="font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #6D5EF3; margin: 0 0 14px; animation: jRise 700ms ease both; animation-play-state: var(--ps, running);">What people ask Ally</p>
+      <h2 style="font-size: clamp(1.8rem, 3.4vw, 2.7rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.12; margin: 0; max-width: 22ch; animation: jRise 700ms ease 80ms both; animation-play-state: var(--ps, running);">Say it like you'd say it to a friend.</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 16px; margin-top: clamp(32px, 4vw, 44px);">
+
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 14px; animation: jRise 700ms ease 150ms both; animation-play-state: var(--ps, running);">
+          <div style="background: #5048E5; color: #FFFFFF; border-radius: 14px 14px 4px 14px; padding: 11px 14px; align-self: flex-end; max-width: 95%;">
+            <p style="margin: 0; font-size: 13.5px; line-height: 1.5;">"My WordPress site is broken — fix it."</p>
+          </div>
+          <span style="display: inline-flex; align-items: center; gap: 7px; align-self: flex-start; font-size: 12.5px; font-weight: 600; color: #16A34A; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 9999px; padding: 6px 13px; animation: jPulse 2.4s ease-out infinite; animation-play-state: var(--ps, running);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>Back online — verified</span>
+        </div>
+
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 14px; animation: jRise 700ms ease 250ms both; animation-play-state: var(--ps, running);">
+          <div style="background: #5048E5; color: #FFFFFF; border-radius: 14px 14px 4px 14px; padding: 11px 14px; align-self: flex-end; max-width: 95%;">
+            <p style="margin: 0; font-size: 13.5px; line-height: 1.5;">"Harden this fresh server."</p>
+          </div>
+          <span style="display: inline-flex; align-items: center; gap: 7px; align-self: flex-start; font-size: 12.5px; font-weight: 600; color: #16A34A; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 9999px; padding: 6px 13px; animation: jPulse 2.4s ease-out 0.4s infinite; animation-play-state: var(--ps, running);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>Firewall on, SSH locked down</span>
+        </div>
+
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 14px; animation: jRise 700ms ease 350ms both; animation-play-state: var(--ps, running);">
+          <div style="background: #5048E5; color: #FFFFFF; border-radius: 14px 14px 4px 14px; padding: 11px 14px; align-self: flex-end; max-width: 95%;">
+            <p style="margin: 0; font-size: 13.5px; line-height: 1.5;">"Host a new site, with SSL."</p>
+          </div>
+          <span style="display: inline-flex; align-items: center; gap: 7px; align-self: flex-start; font-size: 12.5px; font-weight: 600; color: #16A34A; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 9999px; padding: 6px 13px; animation: jPulse 2.4s ease-out 0.8s infinite; animation-play-state: var(--ps, running);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>Live over HTTPS</span>
+        </div>
+
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 14px; animation: jRise 700ms ease 450ms both; animation-play-state: var(--ps, running);">
+          <div style="background: #5048E5; color: #FFFFFF; border-radius: 14px 14px 4px 14px; padding: 11px 14px; align-self: flex-end; max-width: 95%;">
+            <p style="margin: 0; font-size: 13.5px; line-height: 1.5;">"Warn me before anything breaks."</p>
+          </div>
+          <span style="display: inline-flex; align-items: center; gap: 7px; align-self: flex-start; font-size: 12.5px; font-weight: 600; color: #B45309; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 9999px; padding: 6px 13px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"></path><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"></path></svg>Heads-up sent before the disk filled</span>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 7 · CASE STUDY TEASER ============ -->
+  <section data-scene="1" data-screen-label="07 Shakedown teaser" style="background: #0F172A; padding: clamp(72px, 9vw, 120px) 0;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); display: flex; flex-direction: column; align-items: center;">
+      <p style="font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8B9CF9; margin: 0 0 14px; animation: jRise 700ms ease both; animation-play-state: var(--ps, running);">The shakedown</p>
+      <h2 style="font-size: clamp(1.8rem, 3.6vw, 2.9rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.12; color: #F8FAFC; margin: 0; text-align: center; max-width: 22ch; animation: jRise 700ms ease 80ms both; animation-play-state: var(--ps, running);">We tried to make Ally destroy a live server. It refused.</h2>
+      <div style="width: 100%; max-width: 880px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; margin-top: clamp(32px, 4.5vw, 48px);">
+        <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid #334155; border-radius: 16px; padding: 22px; animation: jRise 700ms ease 200ms both; animation-play-state: var(--ps, running);">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+            <code style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: #FCA5A5;">rm -rf /</code>
+            <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: #FFFFFF; background: #DC2626; border-radius: 9999px; padding: 3px 10px;">BLOCKED</span>
+          </div>
+          <p style="margin: 12px 0 0; font-size: 13.5px; line-height: 1.6; color: #94A3B8;">A direct order to wipe the disk — refused every time, no matter how we phrased it.</p>
+        </div>
+        <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid #334155; border-radius: 16px; padding: 22px; animation: jRise 700ms ease 320ms both; animation-play-state: var(--ps, running);">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+            <code style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: #FCD34D;">uploads/x9.php</code>
+            <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: #052E16; background: #4ADE80; border-radius: 9999px; padding: 3px 10px;">QUARANTINED</span>
+          </div>
+          <p style="margin: 12px 0 0; font-size: 13.5px; line-height: 1.6; color: #94A3B8;">Planted malware on a real box — Ally found it and locked it away. Nothing deleted, fully reversible.</p>
+        </div>
+      </div>
+      <a href="How It Works.dc.html#shakedown" style="display: inline-flex; align-items: center; gap: 8px; margin-top: clamp(28px, 4vw, 40px); font-size: 14.5px; font-weight: 600; color: #C4B5FD; text-decoration: none; animation: jRise 700ms ease 420ms both; animation-play-state: var(--ps, running);" style-hover="color: #DDD6FE;">See the full story<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg></a>
+    </div>
+  </section>
+
+  <!-- ============ 8 · TESTIMONIALS (PLACEHOLDER) ============ -->
+  <!-- PLACEHOLDER — replace with real testimonials -->
+  <section data-scene="1" data-screen-label="08 Testimonials" style="padding: clamp(64px, 8vw, 112px) 0;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px);">
+      <h2 style="font-size: clamp(1.8rem, 3.4vw, 2.7rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.12; margin: 0; text-align: center; animation: jRise 700ms ease both; animation-play-state: var(--ps, running);">People stopped fearing their servers.</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; margin-top: clamp(32px, 4vw, 44px);">
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 26px; animation: jRise 700ms ease 150ms both; animation-play-state: var(--ps, running);">
+          <p style="margin: 0; font-size: 15px; line-height: 1.65; color: #334155;">"I don't know Linux. Last weekend I hosted three client sites myself — Ally did the typing, I did the approving."</p>
+          <div style="display: flex; align-items: center; gap: 10px; margin-top: 18px;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 999px; background: #EEF2FF; color: #5048E5; font-size: 13px; font-weight: 700;">D</span>
+            <div><p style="margin: 0; font-size: 13.5px; font-weight: 600;">Dana M.</p><p style="margin: 0; font-size: 12px; color: #94A3B8;">Freelance designer</p></div>
+          </div>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 26px; animation: jRise 700ms ease 270ms both; animation-play-state: var(--ps, running);">
+          <p style="margin: 0; font-size: 15px; line-height: 1.65; color: #334155;">"It flagged a crypto-miner on a box we'd forgotten existed — then cleaned it while I watched every step."</p>
+          <div style="display: flex; align-items: center; gap: 10px; margin-top: 18px;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 999px; background: #F0FDF4; color: #16A34A; font-size: 13px; font-weight: 700;">R</span>
+            <div><p style="margin: 0; font-size: 13.5px; font-weight: 600;">Rafael O.</p><p style="margin: 0; font-size: 12px; color: #94A3B8;">Web agency owner</p></div>
+          </div>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; padding: 26px; animation: jRise 700ms ease 390ms both; animation-play-state: var(--ps, running);">
+          <p style="margin: 0; font-size: 15px; line-height: 1.65; color: #334155;">"The first tool that tells me what it's about to do — and asks — before it does it. That's why I trust it."</p>
+          <div style="display: flex; align-items: center; gap: 10px; margin-top: 18px;">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 999px; background: #FFFBEB; color: #D97706; font-size: 13px; font-weight: 700;">P</span>
+            <div><p style="margin: 0; font-size: 13.5px; font-weight: 600;">Priya K.</p><p style="margin: 0; font-size: 12px; color: #94A3B8;">SaaS founder</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 9 · CTA ============ -->
+  <section data-scene="1" data-screen-label="09 CTA" style="padding: 0 clamp(20px, 4vw, 32px) clamp(72px, 9vw, 112px);">
+    <div style="max-width: 1200px; margin: 0 auto; background: linear-gradient(120deg, #6D5EF3, #8B5CF6 55%, #A855F7); border-radius: 26px; padding: clamp(52px, 7vw, 84px) clamp(24px, 5vw, 64px); text-align: center; position: relative; overflow: hidden;">
+      <div style="position: absolute; left: -10%; top: -40%; width: 60%; height: 120%; border-radius: 50%; background: radial-gradient(circle, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 70%); pointer-events: none;"></div>
+      <img src="marketing-brief/assets/logo/serverally-mark.svg" alt="" style="width: 44px; height: 44px; margin: 0 auto 18px; display: block; filter: brightness(0) invert(1); animation: allyFloat 6s ease-in-out infinite;">
+      <h2 style="position: relative; font-size: clamp(1.9rem, 4.4vw, 3.2rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.08; color: #FFFFFF; margin: 0;">Manage your servers like a pro —<br>without being one.</h2>
+      <div style="position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 14px; margin-top: 30px;">
+        <a href="Pricing.dc.html" style="display: inline-flex; align-items: center; gap: 9px; background: #FFFFFF; color: #4338CA; text-decoration: none; font-size: 15.5px; font-weight: 650; padding: 15px 32px; border-radius: 9999px; box-shadow: 0 12px 32px rgba(2, 8, 23, 0.22); transition: transform 250ms, box-shadow 250ms;" style-hover="transform: translateY(-2px); box-shadow: 0 18px 40px rgba(2, 8, 23, 0.3); color: #4338CA;">
+          Start free
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+        </a>
+        <span style="font-size: 13.5px; color: rgba(255, 255, 255, 0.85);">no credit card to try</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 10 · FAQ ============ -->
+  <section data-screen-label="10 FAQ" style="background: #F8FAFC; border-top: 1px solid #E2E8F0; padding: clamp(64px, 8vw, 112px) 0;">
+    <div style="max-width: 780px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px);">
+      <p style="font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #6D5EF3; margin: 0 0 12px; text-align: center;">FAQ</p>
+      <h2 style="font-size: clamp(1.8rem, 3.4vw, 2.4rem); font-weight: 700; letter-spacing: -0.025em; margin: 0 0 clamp(32px, 4vw, 44px); text-align: center;">Questions, answered plainly</h2>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; overflow: hidden;">
+          <button type="button" onClick="{{ faqT0 }}" style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: none; border: none; cursor: pointer; padding: 18px 20px; font-family: inherit; text-align: left;">
+            <span style="font-size: 15.5px; font-weight: 600; color: #0F172A;">Do I need to know Linux or the command line?</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; transform: rotate({{ faqR0 }}); transition: transform 250ms;"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+          <sc-if value="{{ faqO0 }}" hint-placeholder-val="{{ false }}">
+            <p style="margin: 0; padding: 0 20px 18px; font-size: 14.5px; line-height: 1.65; color: #64748B;">No — that's the point. You describe what you want in your own words; Ally handles the commands and explains everything in plain language.</p>
+          </sc-if>
+        </div>
+
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; overflow: hidden;">
+          <button type="button" onClick="{{ faqT1 }}" style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: none; border: none; cursor: pointer; padding: 18px 20px; font-family: inherit; text-align: left;">
+            <span style="font-size: 15.5px; font-weight: 600; color: #0F172A;">What happens if Ally makes a mistake?</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; transform: rotate({{ faqR1 }}); transition: transform 250ms;"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+          <sc-if value="{{ faqO1 }}" hint-placeholder-val="{{ false }}">
+            <p style="margin: 0; padding: 0 20px 18px; font-size: 14.5px; line-height: 1.65; color: #64748B;">Ally is built so mistakes stay small and undoable: you approve the plan first, destructive actions prefer reversible alternatives (quarantine instead of delete, backup before restore), and an independent read-only check re-verifies the server before anything is called done.</p>
+          </sc-if>
+        </div>
+
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; overflow: hidden;">
+          <button type="button" onClick="{{ faqT2 }}" style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: none; border: none; cursor: pointer; padding: 18px 20px; font-family: inherit; text-align: left;">
+            <span style="font-size: 15.5px; font-weight: 600; color: #0F172A;">Which servers and hosting does it support?</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; transform: rotate({{ faqR2 }}); transition: transform 250ms;"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+          <sc-if value="{{ faqO2 }}" hint-placeholder-val="{{ false }}">
+            <p style="margin: 0; padding: 0 20px 18px; font-size: 14.5px; line-height: 1.65; color: #64748B;">Linux over SSH (Ubuntu, Debian, AlmaLinux and more), Windows Server over WinRM, hosting panels (CyberPanel, cPanel, Plesk, DirectAdmin), and cloud accounts (AWS, DigitalOcean, Hetzner, Google Cloud, Azure) — all in one dashboard.</p>
+          </sc-if>
+        </div>
+
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; overflow: hidden;">
+          <button type="button" onClick="{{ faqT3 }}" style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: none; border: none; cursor: pointer; padding: 18px 20px; font-family: inherit; text-align: left;">
+            <span style="font-size: 15.5px; font-weight: 600; color: #0F172A;">Is my server login safe with Ally?</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; transform: rotate({{ faqR3 }}); transition: transform 250ms;"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+          <sc-if value="{{ faqO3 }}" hint-placeholder-val="{{ false }}">
+            <p style="margin: 0; padding: 0 20px 18px; font-size: 14.5px; line-height: 1.65; color: #64748B;">Credentials are encrypted at rest with AES-256-GCM, never written to logs, and never shown back to anyone after you save them. There's more detail on the <a href="Trust and Security.dc.html" style="color: #5048E5; font-weight: 600; text-decoration: none;">Trust &amp; Security</a> page.</p>
+          </sc-if>
+        </div>
+
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; overflow: hidden;">
+          <button type="button" onClick="{{ faqT4 }}" style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: none; border: none; cursor: pointer; padding: 18px 20px; font-family: inherit; text-align: left;">
+            <span style="font-size: 15.5px; font-weight: 600; color: #0F172A;">Can Ally do things without asking me?</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; transform: rotate({{ faqR4 }}); transition: transform 250ms;"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+          <sc-if value="{{ faqO4 }}" hint-placeholder-val="{{ false }}">
+            <p style="margin: 0; padding: 0 20px 18px; font-size: 14.5px; line-height: 1.65; color: #64748B;">Routine, safe steps run as part of a mission you approved. Anything risky — firewall changes, deletions, restarts that could cut access — always stops and asks first. Hard-destructive commands are blocked outright.</p>
+          </sc-if>
+        </div>
+
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; overflow: hidden;">
+          <button type="button" onClick="{{ faqT5 }}" style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: none; border: none; cursor: pointer; padding: 18px 20px; font-family: inherit; text-align: left;">
+            <span style="font-size: 15.5px; font-weight: 600; color: #0F172A;">How does pricing work?</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; transform: rotate({{ faqR5 }}); transition: transform 250ms;"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+          <sc-if value="{{ faqO5 }}" hint-placeholder-val="{{ false }}">
+            <p style="margin: 0; padding: 0 20px 18px; font-size: 14.5px; line-height: 1.65; color: #64748B;">Two plans — Free (2 servers, 30 Ally actions a month) and Pro (15 servers, 1,000 actions). Every feature is on both; an action is simply one AI request. Final prices land at launch — see <a href="Pricing.dc.html" style="color: #5048E5; font-weight: 600; text-decoration: none;">Pricing</a>.</p>
+          </sc-if>
+        </div>
+
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; overflow: hidden;">
+          <button type="button" onClick="{{ faqT6 }}" style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: none; border: none; cursor: pointer; padding: 18px 20px; font-family: inherit; text-align: left;">
+            <span style="font-size: 15.5px; font-weight: 600; color: #0F172A;">Can my team use it too?</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; transform: rotate({{ faqR6 }}); transition: transform 250ms;"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+          <sc-if value="{{ faqO6 }}" hint-placeholder-val="{{ false }}">
+            <p style="margin: 0; padding: 0 20px 18px; font-size: 14.5px; line-height: 1.65; color: #64748B;">Yes — invite teammates with a role per server: viewer, operator, or admin. Viewers can look but can never run commands.</p>
+          </sc-if>
+        </div>
+
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; overflow: hidden;">
+          <button type="button" onClick="{{ faqT7 }}" style="width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: none; border: none; cursor: pointer; padding: 18px 20px; font-family: inherit; text-align: left;">
+            <span style="font-size: 15.5px; font-weight: 600; color: #0F172A;">Does it speak my language?</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; transform: rotate({{ faqR7 }}); transition: transform 250ms;"><path d="m6 9 6 6 6-6"></path></svg>
+          </button>
+          <sc-if value="{{ faqO7 }}" hint-placeholder-val="{{ false }}">
+            <p style="margin: 0; padding: 0 20px 18px; font-size: 14.5px; line-height: 1.65; color: #64748B;">Ally works in 8 languages: English, Bengali, Arabic, Spanish, French, Hindi, Portuguese, and Turkish — ask in one, get answers in the same.</p>
+          </sc-if>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FOOTER ============ -->
+  <footer data-screen-label="Footer" style="border-top: 1px solid #E2E8F0; padding: 36px 0; background: #FFFFFF;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px;">
+      <img src="marketing-brief/assets/logo/serverally-logo.svg" alt="ServerAlly" style="height: 26px; display: block;">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 20px;">
+        <a href="Home.dc.html" style="font-size: 13px; color: #64748B; text-decoration: none;" style-hover="color: #5048E5;">Home</a>
+        <a href="How It Works.dc.html" style="font-size: 13px; color: #64748B; text-decoration: none;" style-hover="color: #5048E5;">How It Works</a>
+        <a href="Pricing.dc.html" style="font-size: 13px; color: #64748B; text-decoration: none;" style-hover="color: #5048E5;">Pricing</a>
+        <a href="Trust and Security.dc.html" style="font-size: 13px; color: #64748B; text-decoration: none;" style-hover="color: #5048E5;">Trust &amp; Security</a>
+      </div>
+      <p style="margin: 0; font-size: 12.5px; color: #94A3B8;">© 2026 ServerAlly · Pre-launch</p>
+    </div>
+  </footer>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    w: (typeof window !== 'undefined' && window.innerWidth) || 1280,
+    faq: 0
+  };
+
+  componentDidMount() {
+    this._onResize = () => {
+      const w = window.innerWidth;
+      if (w !== this.state.w) this.setState({ w });
+    };
+    window.addEventListener('resize', this._onResize);
+
+    this._reduced = false;
+    try {
+      this._reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch (e) {}
+
+    // Scroll-tie: animations default to RUNNING (a dead observer degrades to
+    // "everything animates", never "everything invisible"). The observer only
+    // pauses scenes fully out of view so reveals fire on scroll-in.
+    this._setup = () => {
+      const scenes = document.querySelectorAll('[data-scene]');
+      if (this._reduced) {
+        document.querySelectorAll('*').forEach((n) => {
+          if (n.style && n.style.animation) n.style.animation = 'none';
+        });
+        return;
+      }
+      if (this._io) this._io.disconnect();
+      this._io = new IntersectionObserver((entries) => {
+        entries.forEach((en) => {
+          if (!en.target.isConnected) return;
+          en.target.style.setProperty('--ps', en.isIntersecting ? 'running' : 'paused');
+        });
+      }, { threshold: 0.12 });
+      scenes.forEach((sc) => this._io.observe(sc));
+    };
+    this._t1 = setTimeout(this._setup, 300);
+    this._t2 = setTimeout(this._setup, 1500);
+    this._iv = setInterval(this._setup, 3000);
+
+    // Gentle hero parallax
+    this._raf = 0;
+    this._onScroll = () => {
+      if (this._raf || this._reduced) return;
+      this._raf = requestAnimationFrame(() => {
+        this._raf = 0;
+        const el = document.querySelector('[data-hero-parallax]');
+        if (el) {
+          const y = Math.min(window.scrollY, 900);
+          el.style.transform = 'translateY(' + (y * -0.07).toFixed(1) + 'px)';
+        }
+      });
+    };
+    window.addEventListener('scroll', this._onScroll, { passive: true });
+  }
+
+  componentDidUpdate() {
+    if (this._setup && !this._reduced) this._setup();
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('resize', this._onResize);
+    window.removeEventListener('scroll', this._onScroll);
+    if (this._io) this._io.disconnect();
+    clearTimeout(this._t1);
+    clearTimeout(this._t2);
+    clearInterval(this._iv);
+    if (this._raf) cancelAnimationFrame(this._raf);
+  }
+
+  renderVals() {
+    const w = this.state.w;
+    const faq = this.state.faq;
+    const toggle = (i) => () => this.setState((s) => ({ faq: s.faq === i ? -1 : i }));
+    const vals = {
+      isMd: w >= 768
+    };
+    for (let i = 0; i < 8; i++) {
+      vals['faqO' + i] = faq === i;
+      vals['faqT' + i] = toggle(i);
+      vals['faqR' + i] = faq === i ? '180deg' : '0deg';
+    }
+    return vals;
+  }
+}
+
+</script>
+</body>
+</html>
