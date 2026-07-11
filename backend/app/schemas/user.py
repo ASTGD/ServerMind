@@ -20,6 +20,7 @@ class UserUpdate(BaseModel):
     name: str | None = None
     avatar_url: str | None = None
     preferred_language: str | None = None
+    ally_mode: str | None = None
 
 
 class UserOut(UserBase):
@@ -29,6 +30,7 @@ class UserOut(UserBase):
     is_verified: bool
     totp_enabled: bool
     digest_frequency: str = "weekly"
+    ally_mode: str = "normal"
     created_at: datetime
 
     model_config = {"from_attributes": True}

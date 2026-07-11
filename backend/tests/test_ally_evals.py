@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services import safety_service, skill_service
+from app.services import ai_service, safety_service, skill_service
 from tests import ally_eval_corpus as corpus
 
 
@@ -216,3 +216,119 @@ def test_mission_skills_declare_sane_budgets():
             assert skill_service.MISSION_BUDGET_MIN <= s.budget <= skill_service.MISSION_BUDGET_MAX, \
                 f"{s.slug} budget {s.budget} out of range"
             assert s.mode == "mission", f"{s.slug} declares a budget but isn't a mission skill"
+
+
+# ── Capability contract (proactivity Track A) ─────────────────────────────────
+# Regression guards for the hallucination found live (2026-07-08, the TS4→TS3
+# file-move conversation, Issues-ss/AllyChatIssue): per-server chat told the user
+# "I don't have SSH access details for TestServer3", suggested scp/rsync between
+# the user's own managed servers, and said "I can only act on one server" — all
+# false; the mission engine's transfer step exists and ServerAlly holds the
+# credentials. The model hallucinated because _CHAT_SYSTEM never told it. These
+# tests pin the contract into the prompt so a future edit can't drop it.
+
+def _chat_prompt_lower() -> str:
+    """The chat system prompt, lowercased and whitespace-collapsed so a re-wrap
+    of the markdown can't hide a phrase we assert on."""
+    return " ".join(ai_service._CHAT_SYSTEM.lower().split())
+
+
+def test_chat_prompt_knows_missions_span_servers():
+    """Chat must know a mission can act on ALL connected servers and transfer files
+    between them — the fix for 'I can only act on this one server'."""
+    p = _chat_prompt_lower()
+    assert "transfer a file between two servers" in p
+    assert "holds every connected server's credentials" in p
+    # A cross-server job routes to a mission offer, not a refusal.
+    assert "offer a mission" in p
+
+
+def test_chat_prompt_forbids_the_ssh_credential_hallucination():
+    """Chat must never ask the user for SSH keys / suggest scp/rsync between their
+    own managed servers / tell them to move the file themselves."""
+    p = _chat_prompt_lower()
+    assert "never ask the user for ssh keys" in p
+    assert "scp/rsync" in p
+    assert "never say you can only act on this one server" in p
+
+
+def test_chat_prompt_mission_block_covers_cross_server_jobs():
+    """The MISSION trigger must name the cross-server case explicitly (copy/move a
+    file between servers) so the model offers a mission instead of improvising."""
+    p = _chat_prompt_lower()
+    assert "another connected server" in p
+    assert "copy/move a file between servers" in p
+    assert "naming every server involved" in p
+
+
+# ── Autonomy modes (proactivity Track D) ──────────────────────────────────────
+
+def test_mode_normalization():
+    """A stored/arbitrary mode string coerces to a known mode; junk → normal."""
+    assert ai_service.normalize_mode("proactive") == "proactive"
+    assert ai_service.normalize_mode("CAREFUL") == "careful"
+    assert ai_service.normalize_mode("  normal ") == "normal"
+    assert ai_service.normalize_mode(None) == "normal"
+    assert ai_service.normalize_mode("") == "normal"
+    assert ai_service.normalize_mode("yolo") == "normal"
+
+
+def test_every_mode_has_a_distinct_posture_block():
+    """Each mode injects its own posture paragraph — a missing one would silently make
+    the mode a no-op."""
+    blocks = {m: ai_service._mode_block(m) for m in ai_service.ALLY_MODES}
+    for m, b in blocks.items():
+        assert b.strip(), f"mode {m} has an empty posture block"
+    # The three postures are genuinely different text.
+    assert len(set(blocks.values())) == len(ai_service.ALLY_MODES)
+
+
+def test_careful_posture_asks_before_changes_proactive_acts():
+    """The two extremes must read differently: careful confirms before changes,
+    proactive keeps momentum."""
+    careful = ai_service._mode_block("careful").lower()
+    proactive = ai_service._mode_block("proactive").lower()
+    assert "confirm before" in careful or "ask" in careful
+    assert "momentum" in proactive or "handle it" in proactive
+
+
+# ── One Ally, one brain (Phase 2) ─────────────────────────────────────────────
+# The user's locked vision: one Ally that always knows the whole fleet, resolves the
+# target server itself, and never makes the user think "which server am I on". These
+# pin the identity + the removed "go open a server yourself" seam into both prompts.
+
+def _fleet_prompt_lower() -> str:
+    return " ".join(ai_service._FLEET_SYSTEM.lower().split())
+
+
+def test_both_prompts_are_one_fleet_assistant():
+    """Chat AND fleet must present ONE assistant for the whole fleet — not a per-server
+    helper (chat) vs a separate overview (fleet)."""
+    assert "one assistant for their whole fleet" in _chat_prompt_lower()
+    assert "one assistant for their whole fleet" in _fleet_prompt_lower()
+
+
+def test_per_server_chat_can_answer_fleet_questions():
+    """While focused on one server, Ally still knows the rest — 'which server needs
+    attention?' is answerable here, not deflected."""
+    p = _chat_prompt_lower()
+    assert "whole fleet" in p and "answer from what you know about the other servers" in p
+
+
+def test_fleet_acts_not_deflects():
+    """The old seam ('tell the user to open that server') is gone — fleet Ally ACTS on
+    the resolved server itself; opening a server is no longer the user's job."""
+    p = _fleet_prompt_lower()
+    assert "tell the user to open" not in p and "open that server" not in p
+    assert "your job now" in p
+
+
+def test_memory_hygiene_user_wins_and_no_temp_facts():
+    """Memory hygiene (folds old Track E): a stale note never overrides the user's
+    current request or triggers a re-ask, and temporary one-time rules aren't stored as
+    durable facts — the two failure modes from the screenshot conversation."""
+    mem = " ".join(ai_service._MEMORIES_BLOCK.lower().split())
+    assert "the user wins" in mem
+    assert "never re-ask" in mem
+    chat = _chat_prompt_lower()
+    assert "do not store a temporary" in chat and "durable fact" in chat

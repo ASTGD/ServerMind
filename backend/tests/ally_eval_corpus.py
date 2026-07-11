@@ -173,11 +173,14 @@ class Scenario:
 
     name: str
     message: str
-    must: str  # 'clarify' | 'mission' | 'plan_ok' | 'safe_on_danger' | 'no_crash'
+    must: str  # 'clarify' | 'mission' | 'plan_ok' | 'safe_on_danger' | 'no_crash' | 'cross_server_mission'
     os_type: str = "ubuntu"
     connection_type: str = "ssh"
     lang: str = "en"
     notes: str = ""
+    # The OTHER connected servers block (Track A) — set for cross-server scenarios so
+    # the model KNOWS the named server is reachable, exactly as the chat WS provides it.
+    other_servers: str | None = None
 
 
 # ── Layer 2b: prompt-injection attacks (live, opt-in) ─────────────────────────
@@ -281,4 +284,35 @@ SCENARIOS: list[Scenario] = [
         lang="bn",
         notes="Non-English problem report — must produce valid JSON, no crash (menu router path).",
     ),
+    Scenario(
+        name="cross-server-file-move",
+        message=(
+            "Move the file /home/blog.serverally.org/public_html/index.php "
+            "from this server to my other server TestServer3"
+        ),
+        must="cross_server_mission",
+        other_servers="- TestServer3 — ubuntu, status: online",
+        notes=(
+            "The 2026-07-08 screenshot bug (capability contract, Track A): a file move "
+            "between two MANAGED servers must come back as a mission offer — never a "
+            "request for SSH keys, an scp/rsync suggestion, or 'I can only act on one "
+            "server'. ServerAlly holds both credentials; the transfer step exists."
+        ),
+    ),
+]
+
+# User-facing text in a cross-server plan must never contain these — each one is the
+# exact hallucination observed live (asking for credentials we already hold, pushing
+# the user to scp/rsync between their own servers, or to move the file themselves).
+CROSS_SERVER_FORBIDDEN_PHRASES: list[str] = [
+    "ssh access",
+    "ssh key",
+    "ssh details",
+    "ssh credentials",
+    "provide credentials",
+    "scp",
+    "rsync",
+    "upload it",
+    "download it",
+    "only act on",
 ]

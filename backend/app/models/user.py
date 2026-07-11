@@ -26,6 +26,12 @@ class User(Base):
     digest_frequency: Mapped[str] = mapped_column(
         String(10), default="weekly", server_default="weekly"
     )
+    # How much Ally decides on its own: 'proactive' | 'normal' | 'careful' (Track D).
+    # Shapes how Ally ASKS and how much it assumes/auto-approves; NEVER relaxes the hard
+    # safety rails (blocklist, verify gate, injection defence, destructive-step confirm).
+    ally_mode: Mapped[str] = mapped_column(
+        String(10), default="normal", server_default="normal"
+    )
     # Subscription plan ('free' | 'pro'). Set manually until a billing provider is
     # chosen (docs/AI-METERING.md §8 — the billing webhook is deliberately not built).
     plan: Mapped[str] = mapped_column(String(10), default="free", server_default="free")

@@ -20,7 +20,7 @@ from app.models.playbook import Playbook, PlaybookRun, UserScript
 from app.models.server import Server
 from app.models.user import User
 from app.services import ai_context_service, ai_service, connection_manager, safety_service
-from app.services import file_service, live_look_service, memory_service, metering_service, skill_service
+from app.services import file_service, live_look_service, memory_service, metering_service, scout_service, skill_service
 from app.services import mission_service
 from app.websocket import mission_runner
 from app.services import ssh_service, team_service, terminal_session_service
@@ -629,6 +629,29 @@ def _resolve_mission_offer(mission: object, servers: list[Server]) -> dict | Non
         "server_id": str(match.id) if match else None,
         "server_name": match.name if match else None,
     }
+
+
+def _clean_options(options: object) -> list[str]:
+    """Sanitize AI-supplied clarification options into short, tappable answer strings
+    (proactivity Track C). Keeps at most 4, drops blanks/dupes, caps length — so a
+    malformed or runaway list can never bloat the frame or the UI."""
+    if not isinstance(options, list):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for o in options:
+        text = str(o).strip()
+        if not text:
+            continue
+        text = text[:120]
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+        if len(out) >= 4:
+            break
+    return out
 
 
 def _resolve_ask_servers(names: object, servers: list[Server]) -> list[dict]:
@@ -1268,6 +1291,9 @@ async def _run_mission(
         return None
     roster_by_id = {str(s.id): s for s in roster}
     home_id = str(home_server.id) if home_server is not None else None
+    # Track D: the user's autonomy mode shapes how much Ally assumes and the approval
+    # floor (careful → confirm any mutating step). Never lowers the safety floor.
+    ally_mode = ai_service.normalize_mode(getattr(user, "ally_mode", None))
 
     # Quota gate — a mission costs 1 action (§4 of the missions doc); billed to the
     # home server owner's pool, or the acting user's own pool for fleet missions.
@@ -1387,6 +1413,7 @@ async def _run_mission(
                     decision = await ai_service.plan_mission_step(
                         goal, roster, steps, budget - executor_steps, skill,
                         user_language, home_id=home_id, tier=step_tier,
+                        ally_mode=ally_mode,
                     )
                     break
                 except Exception as exc:  # noqa: BLE001
@@ -1478,6 +1505,8 @@ async def _run_mission(
                 await ws.send_text(json.dumps({
                     "type": "mission_blocked",
                     "reason": reason,
+                    # Track C: enumerable answers ride along as tappable options.
+                    "options": _clean_options(decision.get("options")),
                     "steps_used": len(steps),
                 }))
                 return None
@@ -1627,8 +1656,15 @@ async def _run_mission(
                 }))
                 continue  # the block is in the transcript; Ally adapts next iteration
 
-            # 3) Risky steps pause for the user, even mid-mission.
+            # 3) Risky steps pause for the user, even mid-mission. The base floor
+            # (safety-confirm / explicitly-flagged / high-risk) holds in EVERY mode —
+            # the autonomy mode (Track D) can only ADD approvals, never remove them.
+            # Careful mode pauses for ANY step that changes the server (not read-only);
+            # proactive/normal differ in how much the PROMPT lets Ally assume up front,
+            # which shows up as fewer steps flagged risky, not a lower engine floor.
             needs_approval = safety.status == "confirm" or bool(step.get("requires_confirmation")) or risk == "high"
+            if ally_mode == "careful" and not safety_service.is_read_only_command(cmd):
+                needs_approval = True
             step_event = {
                 "type": "mission_step",
                 "index": index, "budget": budget,
@@ -1808,14 +1844,45 @@ async def _handle_message_inner(
     # context failure must never block the chat itself.
     server_profile = None
     memories = None
+    other_servers = None
+    other_roster: list[Server] = []
+    ally_mode = None
     try:
         async with AsyncSessionLocal() as db:
             server_profile = await ai_context_service.build_server_profile(db, server)
             memories = await memory_service.block_for_server(
                 db, server.id, acting_user_id or server.user_id
             )
+            actor = await db.get(User, uuid.UUID(str(acting_user_id or server.user_id)))
+            # Track A — capability contract: the OTHER servers a mission could act on
+            # (and transfer files to/from). Phase 2 — the whole fleet is in Ally's memory
+            # even while focused on one server: each other server carries its one-line
+            # health so "which of my servers needs attention?" works here too.
+            if actor is not None:
+                ally_mode = getattr(actor, "ally_mode", None)  # Track D: autonomy posture
+                roster = await _mission_roster(actor, None)
+                other_roster = [s for s in roster if str(s.id) != str(server.id)]
+                if other_roster:
+                    health = await ai_context_service.build_fleet_health(db, other_roster)
+                    lines = []
+                    for s in other_roster:
+                        base = f"- {s.name} — {s.os_type or 'unknown'}, status: {s.status or 'unknown'}"
+                        h = health.get(str(s.id))
+                        lines.append(f"{base}\n  {h}" if h else base)
+                    other_servers = "\n".join(lines)
     except Exception as exc:  # noqa: BLE001
         logger.warning("chat context build failed for %s: %s", server.id, exc)
+
+    # Proactivity Track B — pre-mission Scout: for a file / cross-server request, take a
+    # fast read-only look at the servers involved NOW, so Ally answers with the file it
+    # found (and a real destination) instead of a chain of "what's the path?" questions.
+    # Best-effort (~1-2s during "thinking"); SSH Linux only.
+    scout = None
+    try:
+        if scout_service.should_scout(user_input, bool(other_roster)):
+            scout = await scout_service.scout(server, user_input, other_roster)
+    except Exception as exc:  # noqa: BLE001 — the scout must never block chat
+        logger.info("scout skipped for %s: %s", server.id, exc)
 
     # Ally Context C1 — Live Look: for a problem report (or a matched diagnostic skill),
     # take a fast read-only snapshot NOW so Ally answers from real, current facts.
@@ -1831,7 +1898,8 @@ async def _handle_message_inner(
             # Phase B: keyword matching missed → offer the one-line skill menu so the
             # model itself can pick (works in any language / phrasing).
             skill_menu=skill_service.menu_for(server.os_type) if skill is None else None,
-            live_snapshot=live_snapshot,
+            live_snapshot=live_snapshot, other_servers=other_servers, scout=scout,
+            ally_mode=ally_mode,
         )
     except Exception as exc:
         await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
@@ -1851,7 +1919,8 @@ async def _handle_message_inner(
                 plan = await ai_service.plan_commands(
                     user_input, server, user_language, page_context, history,
                     server_profile=server_profile, memories=memories, skill=picked,
-                    live_snapshot=live_snapshot,
+                    live_snapshot=live_snapshot, other_servers=other_servers, scout=scout,
+                    ally_mode=ally_mode,
                 )
             except Exception as exc:  # noqa: BLE001
                 await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
@@ -1868,11 +1937,14 @@ async def _handle_message_inner(
                 server_id=server.id,
             )
 
-    # If AI needs clarification, return early
+    # If AI needs clarification, return early. Track C: enumerable answers ride along
+    # as tappable "options" so the user picks instead of typing (and Ally is nudged to
+    # ask ONE bundled question, not a chain).
     if plan.get("clarification_needed"):
         await ws.send_text(json.dumps({
             "type": "clarification",
             "message": plan["clarification_needed"],
+            "options": _clean_options(plan.get("clarification_options")),
             "server_id": str(server.id),
             "server_name": server.name,
         }))

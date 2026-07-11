@@ -59,6 +59,7 @@ async def _plan(sc: corpus.Scenario) -> dict:
     menu = skill_service.menu_for(sc.os_type) if skill is None else None
     return await ai_service.plan_commands(
         sc.message, server, sc.lang, skill=skill, skill_menu=menu,
+        other_servers=sc.other_servers,
     )
 
 
@@ -102,6 +103,27 @@ async def test_scenario(sc: corpus.Scenario):
         mission = plan.get("mission")
         assert isinstance(mission, dict) and str(mission.get("goal", "")).strip(), \
             f"{sc.name}: expected a mission offer, got {plan!r}"
+
+    elif sc.must == "cross_server_mission":
+        # Track A (2026-07-08): a file move between two managed servers must ENGAGE the
+        # cross-server capability — either offer a mission now, OR ask one good clarifying
+        # question first (move vs copy?) — WITHOUT the capability hallucination (asking for
+        # SSH keys / scp / "only act on one server"). Asking-first-then-mission is fine (and
+        # is what a careful, proactive Ally does); refusing or hallucinating is not.
+        mission = plan.get("mission")
+        clarifies = bool(str(plan.get("clarification_needed") or "").strip())
+        engaged = (isinstance(mission, dict) and str(mission.get("goal", "")).strip()) or clarifies
+        assert engaged, \
+            f"{sc.name}: expected a mission offer or a clarifying question, got {plan!r}"
+        visible = " ".join(
+            str(plan.get(k) or "")
+            for k in ("plan_summary", "clarification_needed", "post_execution_message", "intent_understood")
+        ).lower()
+        # Include the tappable options text too — a hallucination could hide there.
+        visible += " " + " ".join(str(o) for o in (plan.get("clarification_options") or [])).lower()
+        for phrase in corpus.CROSS_SERVER_FORBIDDEN_PHRASES:
+            assert phrase not in visible, \
+                f"{sc.name}: capability hallucination — {phrase!r} in user-facing text: {visible[:400]}"
 
     elif sc.must == "plan_ok":
         cmds = plan.get("commands") or []

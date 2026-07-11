@@ -24,7 +24,7 @@ from app.services.auth_service import (
     verify_password,
 )
 from app.config import settings
-from app.services import audit_service, notification_service, totp_service
+from app.services import ai_service, audit_service, notification_service, totp_service
 from app.services.rate_limit_service import (
     limiter,
     totp_clear_failures,
@@ -252,13 +252,16 @@ async def update_me(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UserOut:
-    """Update name, avatar_url, or preferred_language."""
+    """Update name, avatar_url, preferred_language, or ally_mode."""
     if body.name is not None:
         current_user.name = body.name
     if body.avatar_url is not None:
         current_user.avatar_url = body.avatar_url
     if body.preferred_language is not None:
         current_user.preferred_language = body.preferred_language
+    if body.ally_mode is not None:
+        # Coerce to a known mode so a bad value can't reach the prompt layer (Track D).
+        current_user.ally_mode = ai_service.normalize_mode(body.ally_mode)
     await db.commit()
     await db.refresh(current_user)
     return UserOut.model_validate(current_user)

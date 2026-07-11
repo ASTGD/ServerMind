@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace as N
 
-from app.websocket.terminal import _resolve_ask_servers
+from app.websocket.terminal import _clean_options, _resolve_ask_servers
 
 
 def _srv(id, name):
@@ -46,3 +46,30 @@ def test_empty_or_bad_input_yields_nothing():
     assert _resolve_ask_servers(None, SERVERS) == []
     assert _resolve_ask_servers([], SERVERS) == []
     assert _resolve_ask_servers("TestServer1", SERVERS) == []  # not a list
+
+
+# ── _clean_options (proactivity Track C) ──────────────────────────────────────
+# Tappable answer chips for a clarifying question. Sanitized so a malformed / runaway
+# AI list can never bloat the WS frame or the UI.
+
+def test_options_keep_order_and_strip():
+    assert _clean_options(["  Overwrite  ", "Keep both"]) == ["Overwrite", "Keep both"]
+
+
+def test_options_drop_blanks_and_dupes():
+    assert _clean_options(["Yes", "", "  ", "yes", "No"]) == ["Yes", "No"]
+
+
+def test_options_cap_at_four():
+    assert _clean_options([f"opt{i}" for i in range(9)]) == ["opt0", "opt1", "opt2", "opt3"]
+
+
+def test_options_cap_length():
+    long = "x" * 500
+    assert _clean_options([long])[0] == "x" * 120
+
+
+def test_options_bad_input_yields_empty():
+    assert _clean_options(None) == []
+    assert _clean_options("Overwrite") == []  # not a list
+    assert _clean_options([]) == []
