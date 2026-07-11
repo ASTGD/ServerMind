@@ -80,3 +80,8 @@ id_ed25519
 
 # Gateway local DB files
 gateway/*.db
+
+# Scratch — local debugging screenshots + stray agent memory (kept on disk, not in git)
+Issues-ss/
+Screenshots for Claude/
+/memory/
