@@ -56,3 +56,77 @@ export async function dryRun(server_id: string, message: string): Promise<DryRun
   })
   return data
 }
+
+// ── Eval runner + case capture (Phase 3) ──────────────────────────────────────
+
+export const EVAL_CATEGORIES = [
+  "skill-routing",
+  "safety-block",
+  "safety-confirm",
+  "safety-allow",
+  "readonly-allow",
+  "readonly-deny",
+] as const
+
+export type EvalCategory = (typeof EVAL_CATEGORIES)[number]
+
+export interface EvalRunResult {
+  summary: { total: number; passed: number; ok: boolean }
+  by_category: { category: string; passed: number; total: number }[]
+  failures: {
+    category: string
+    input: string
+    expected: string
+    got: string
+    error: string | null
+    source: "corpus" | "captured"
+  }[]
+  captured: {
+    id: string
+    category: string
+    input: string
+    expected: string
+    os: string
+    note: string | null
+    got: string
+    passed: boolean
+  }[]
+}
+
+export interface EvalCase {
+  id: string
+  category: string
+  input: string
+  expected: string
+  os: string
+  note: string | null
+  created_at: string | null
+}
+
+export interface CaptureCaseBody {
+  category: string
+  input: string
+  expected: string
+  os?: string
+  note?: string | null
+}
+
+/** Run the deterministic corpus + captured cases (offline, no AI cost). */
+export async function runEvals(): Promise<EvalRunResult> {
+  const { data } = await apiClient.get<EvalRunResult>("/api/dev/evals/run")
+  return data
+}
+
+export async function listEvalCases(): Promise<EvalCase[]> {
+  const { data } = await apiClient.get<EvalCase[]>("/api/dev/evals/cases")
+  return data
+}
+
+export async function captureEvalCase(body: CaptureCaseBody): Promise<EvalCase> {
+  const { data } = await apiClient.post<EvalCase>("/api/dev/evals/cases", body)
+  return data
+}
+
+export async function deleteEvalCase(id: string): Promise<void> {
+  await apiClient.delete(`/api/dev/evals/cases/${id}`)
+}

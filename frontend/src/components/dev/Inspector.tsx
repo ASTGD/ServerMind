@@ -1,9 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { Navigate } from "react-router-dom"
 import { useQuery, useMutation } from "@tanstack/react-query"
 import type { AxiosError } from "axios"
 import {
-  FlaskConical,
   Play,
   Loader2,
   ChevronDown,
@@ -14,10 +12,10 @@ import {
   AlertTriangle,
   Zap,
   RotateCcw,
+  BookmarkPlus,
 } from "lucide-react"
 import { listServers } from "@/api/servers"
-import { dryRun, type DryRunTrace } from "@/api/dev"
-import { useAuthStore } from "@/store/authStore"
+import { dryRun, captureEvalCase, type DryRunTrace } from "@/api/dev"
 
 function errMsg(e: unknown): string {
   const detail = (e as AxiosError<{ detail?: unknown }>)?.response?.data?.detail
@@ -26,7 +24,6 @@ function errMsg(e: unknown): string {
   return (e as Error)?.message || "Something went wrong"
 }
 
-/** A copy-to-clipboard button that flips to a check for a moment. */
 function CopyButton({ text }: { text: string }) {
   const [done, setDone] = useState(false)
   return (
@@ -47,7 +44,6 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-/** A collapsible panel with a monospace body (prompt / raw output). */
 function Panel({
   title,
   subtitle,
@@ -107,9 +103,7 @@ function Chip({ on, label }: { on: boolean; label: string }) {
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${
-        on
-          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-          : "bg-muted text-muted-foreground"
+        on ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"
       }`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${on ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
@@ -118,12 +112,37 @@ function Chip({ on, label }: { on: boolean; label: string }) {
   )
 }
 
+/** Capture the current dry-run as a skill-routing eval case (message → the skill that
+ * matched). The flywheel: pin correct routing, or capture a mis-route then fix the trigger. */
+function CaptureButton({ trace }: { trace: DryRunTrace }) {
+  const capture = useMutation({
+    mutationFn: () =>
+      captureEvalCase({
+        category: "skill-routing",
+        input: trace.input.message,
+        expected: trace.context.skill || "None",
+        os: trace.input.server.os_type || "linux",
+        note: "captured from the Prompt Inspector",
+      }),
+  })
+  return (
+    <button
+      onClick={() => capture.mutate()}
+      disabled={capture.isPending || capture.isSuccess}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-60"
+      title="Save this as a skill-routing eval case"
+    >
+      {capture.isSuccess ? <Check size={13} className="text-emerald-500" /> : <BookmarkPlus size={13} />}
+      {capture.isSuccess ? "Captured → Evals tab" : capture.isPending ? "Capturing…" : "Capture as eval case"}
+    </button>
+  )
+}
+
 function Results({ trace }: { trace: DryRunTrace }) {
   const { meta, context, prompt, output } = trace
   const parsed = JSON.stringify(output.parsed, null, 2)
   return (
     <div className="space-y-4">
-      {/* Meta strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
         <Stat label="Model" value={meta.models[0]?.replace("claude-", "") || "—"} />
         <Stat label="Input tok" value={meta.input_tokens.toLocaleString()} />
@@ -133,7 +152,6 @@ function Results({ trace }: { trace: DryRunTrace }) {
         <Stat label="Cost" value={`$${meta.cost_usd.toFixed(4)}`} tone="accent" />
       </div>
 
-      {/* Flags */}
       {(meta.escalated || meta.retried_trimmed || context.use_skill_requested) && (
         <div className="flex flex-wrap gap-2">
           {meta.escalated && (
@@ -154,13 +172,15 @@ function Results({ trace }: { trace: DryRunTrace }) {
         </div>
       )}
 
-      {/* Context assembled */}
       <section className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-3 flex items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-foreground">Context assembled</span>
           <span className="text-xs text-muted-foreground">
             skill: <b className="text-foreground">{context.skill || "generalist"}</b> · mode:{" "}
             <b className="text-foreground">{trace.input.ally_mode || "normal"}</b>
+          </span>
+          <span className="ml-auto">
+            <CaptureButton trace={trace} />
           </span>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -173,27 +193,15 @@ function Results({ trace }: { trace: DryRunTrace }) {
         </div>
       </section>
 
-      {/* The prompt Ally received + what it produced */}
-      <Panel
-        title="System prompt"
-        subtitle="stable prefix — persona, rules, server identity, skill"
-        body={prompt.system}
-      />
-      <Panel
-        title="Volatile tail"
-        subtitle="per-message — snapshot, scout, profile, memories, history"
-        body={prompt.volatile}
-        defaultOpen
-        tone="muted"
-      />
+      <Panel title="System prompt" subtitle="stable prefix — persona, rules, server identity, skill" body={prompt.system} />
+      <Panel title="Volatile tail" subtitle="per-message — snapshot, scout, profile, memories, history" body={prompt.volatile} defaultOpen tone="muted" />
       <Panel title="Raw model output" body={output.raw} tone="muted" />
       <Panel title="Parsed plan" subtitle="what the chat pipeline would act on" body={parsed} defaultOpen />
     </div>
   )
 }
 
-export default function DevInspector() {
-  const isAdmin = useAuthStore((s) => s.user?.is_admin)
+export default function Inspector() {
   const [serverId, setServerId] = useState("")
   const [message, setMessage] = useState("")
 
@@ -204,26 +212,15 @@ export default function DevInspector() {
     if (!serverId && servers.length) setServerId(servers[0].id)
   }, [servers, serverId])
 
-  // Guard: only admins reach the Dev Door (the backend 403s /api/dev/* regardless).
-  if (isAdmin === false) return <Navigate to="/dashboard" replace />
-
   const canRun = Boolean(serverId && message.trim()) && !run.isPending
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div>
-        <div className="flex items-center gap-2">
-          <FlaskConical size={22} className="text-primary" />
-          <h1 className="text-xl font-semibold text-foreground">Prompt Inspector</h1>
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">Dev Door</span>
-        </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Dry-run a message the way Ally would — see the exact prompt, the raw model output, and the cost.
-          Nothing runs on the server.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <p className="text-sm text-muted-foreground">
+        Dry-run a message the way Ally would — see the exact prompt, the raw model output, and the cost.
+        Nothing runs on the server.
+      </p>
 
-      {/* Form */}
       <section className="rounded-xl border border-border bg-card p-5">
         <div className="space-y-4">
           <div>

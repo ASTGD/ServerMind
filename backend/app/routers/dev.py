@@ -40,3 +40,73 @@ async def dry_run(
             status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
         )
     return await dev_service.dry_run(access.server, body.message, acting_user=admin)
+
+
+# ── Eval runner + case capture (Phase 3 — the flywheel) ───────────────────────
+
+
+class CaptureCaseRequest(BaseModel):
+    category: str = Field(min_length=1, max_length=40)
+    input: str = Field(min_length=1, max_length=2000)
+    expected: str = Field(min_length=1, max_length=120)
+    os: str = "linux"
+    note: str | None = Field(default=None, max_length=1000)
+
+
+def _case_out(row) -> dict:
+    return {
+        "id": str(row.id),
+        "category": row.category,
+        "input": row.input,
+        "expected": row.expected,
+        "os": row.os,
+        "note": row.note,
+        "created_at": row.created_at.isoformat() if getattr(row, "created_at", None) else None,
+    }
+
+
+@router.get("/evals/run")
+async def evals_run(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Run the deterministic corpus + captured cases (offline, no API, no cost)."""
+    return await dev_service.run_evals(db)
+
+
+@router.get("/evals/cases")
+async def evals_list(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    return [_case_out(r) for r in await dev_service.list_captured(db)]
+
+
+@router.post("/evals/cases", status_code=status.HTTP_201_CREATED)
+async def evals_capture(
+    body: CaptureCaseRequest,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    try:
+        row = await dev_service.capture_case(
+            db,
+            category=body.category,
+            input=body.input,
+            expected=body.expected,
+            os=body.os,
+            note=body.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    return _case_out(row)
+
+
+@router.delete("/evals/cases/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def evals_delete(
+    case_id: uuid.UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    if not await dev_service.delete_captured(db, case_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")

@@ -20,7 +20,7 @@ import Missions from "@/routes/Missions"
 import Team from "@/routes/Team"
 import AcceptInvite from "@/routes/AcceptInvite"
 import Settings from "@/routes/Settings"
-import DevInspector from "@/routes/DevInspector"
+import Dev from "@/routes/Dev"
 import Auth from "@/routes/Auth"
 import VerifyEmail from "@/routes/VerifyEmail"
 import Claim from "@/routes/Claim"
@@ -70,7 +70,7 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           {/* Admin-only Dev Door (docs/EVAL-DRIVEN-DEV.md) — the page itself guards on
               is_admin; the backend /api/dev/* routes 403 a non-admin regardless. */}
-          <Route path="dev" element={<DevInspector />} />
+          <Route path="dev" element={<Dev />} />
         </Route>
       </Routes>
     </BrowserRouter>
