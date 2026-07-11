@@ -11,6 +11,7 @@ import type { MissionOffer } from "./MissionCard"
 import type { MissionState, MissionStep } from "./MissionProgress"
 import BatchRunModal from "./BatchRunModal"
 import CommandPlan from "./CommandPlan"
+import type { Artifact } from "./ArtifactPanel"
 import { useAuthStore } from "@/store/authStore"
 import { Loader2, Square, Sparkles, ArrowRight, X, Rocket } from "lucide-react"
 import { cancelCommand } from "@/api/commands"
@@ -187,6 +188,11 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
               m.role === "assistant" && m.kind === "output" && !m.done ? { ...m, done: true } : m,
             ),
           )
+          // Track B Phase 2: render any Ally-emitted artifacts (table/chart) as Workspace
+          // panels. They route to the Workspace via isWorkMsg; the chat keeps the prose.
+          for (const artifact of (msg.artifacts as Artifact[] | undefined) ?? []) {
+            addMsg({ id: nextId(), role: "assistant", kind: "artifact", artifact })
+          }
           addMsg({
             id: nextId(),
             role: "assistant",
@@ -676,7 +682,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   // (workspace=false) — work stays inline there and can be expanded to this page.
   const isWorkMsg = (m: ChatMessageData) =>
     m.role === "assistant" &&
-    (m.kind === "mission" || m.kind === "mission_offer" || m.kind === "output")
+    (m.kind === "mission" || m.kind === "mission_offer" || m.kind === "output" || m.kind === "artifact")
   const workMsgs = messages.filter(isWorkMsg)
   const chatMsgs = workspace ? messages.filter((m) => !isWorkMsg(m)) : messages
 

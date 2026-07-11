@@ -2133,6 +2133,11 @@ async def _handle_message_inner(
     except Exception:
         explanation = plan.get("post_execution_message", "Commands completed.")
 
+    # Track B Phase 2: Ally may append artifact block(s) (a table/chart) for the Workspace.
+    # Split them out of the chat text so the conversation stays clean and the panels render
+    # beside it. Robust: no/invalid blocks → empty list, text unchanged.
+    explanation, artifacts = ai_service.split_artifacts(explanation)
+
     # ── 7. Save to DB ─────────────────────────────────────────────────────────
     log = await _save_log(
         server, user_input, user_language, plan, raw_output, overall_status,
@@ -2144,6 +2149,7 @@ async def _handle_message_inner(
         "log_id": str(log.id),
         "status": overall_status,
         "explanation": explanation,
+        "artifacts": artifacts,
         "follow_up_suggestions": plan.get("follow_up_suggestions", []),
         "server_id": str(server.id),
         "server_name": server.name,

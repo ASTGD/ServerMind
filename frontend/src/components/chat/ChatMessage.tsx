@@ -5,6 +5,7 @@ import MissionCard, { type MissionOffer } from "./MissionCard"
 import MissionProgress, { type MissionState } from "./MissionProgress"
 import { HighlightServerNames, type MentionServer } from "./serverMentions"
 import Markdown from "./Markdown"
+import ArtifactPanel, { type Artifact } from "./ArtifactPanel"
 import ServerTag from "./ServerTag"
 import type { GenerateScriptResult } from "@/types"
 
@@ -31,6 +32,7 @@ export type ChatMessageData =
   | { id: string; role: "assistant"; kind: "thinking" }
   | ({ id: string; role: "assistant"; kind: "clarification"; message: string; askServers?: { id: string; name: string }[]; options?: string[] } & MsgServer)
   | { id: string; role: "assistant"; kind: "output"; content: string; done?: boolean }
+  | { id: string; role: "assistant"; kind: "artifact"; artifact: Artifact }
   | ({ id: string; role: "assistant"; kind: "complete"; explanation: string; status: string; suggestions: string[] } & MsgServer)
   | ({ id: string; role: "assistant"; kind: "answer"; content: string; suggestions: string[]; handoff?: Handoff | null; batch?: BatchSpec | null; script?: GenerateScriptResult | null } & MsgServer)
   | { id: string; role: "assistant"; kind: "blocked"; reason: string }
@@ -152,6 +154,10 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch,
         </pre>
       </div>
     )
+  }
+  // A table or chart Ally chose to show — rendered as a Workspace panel (Track B Phase 2).
+  if (message.kind === "artifact") {
+    return <ArtifactPanel artifact={message.artifact} />
   }
   // Ally is thinking — a quiet transient line (replaced by the real reply).
   if (message.kind === "thinking") {
