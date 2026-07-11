@@ -30,6 +30,9 @@ interface AssistantState {
   threadId: string | null
   openFleet: () => void
   openServer: (server: Server, seedText?: string) => void
+  /** Open the Ally window and send a message on the CURRENT target (from the sidebar
+   *  composer). Unpinned — a server name typed in the text still targets that server. */
+  askAlly: (text: string) => void
   /** Open Ally on a server (or fleet) and resume the given interrupted mission. */
   resumeMission: (target: AssistantTarget, missionId: string) => void
   clearResume: () => void
@@ -60,6 +63,7 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   messages: [],
   threadId: null,
   openFleet: () => set({ open: true, target: { kind: "fleet" }, seed: null }),
+  askAlly: (text) => set({ open: true, seed: { text, key: Date.now() } }),
   openServer: (server, seedText) =>
     set({
       open: true,

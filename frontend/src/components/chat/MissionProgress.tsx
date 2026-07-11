@@ -56,6 +56,8 @@ export interface MissionState {
   verification?: string
   /** Set while a risky step waits for the user's OK (in-card approval). */
   pendingApproval?: MissionApproval | null
+  /** Tappable answers when a mission blocks on a question (proactivity Track C). */
+  options?: string[]
 }
 
 function StepRow({ step }: { step: MissionStep }) {
@@ -145,11 +147,14 @@ export default function MissionProgress({
   mission,
   onStop,
   onApprove,
+  onOption,
 }: {
   mission: MissionState
   onStop: () => void
   /** Approve the step in `mission.pendingApproval` (routed by mission id). */
   onApprove?: () => void
+  /** A blocked mission's tappable answer was picked — send it as the next message. */
+  onOption?: (text: string) => void
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const [big, setBig] = useState(false)
@@ -304,6 +309,21 @@ export default function MissionProgress({
                 <span className="mt-1 flex items-start gap-1 font-medium">
                   <ShieldAlert size={12} className="mt-px shrink-0" />
                   Couldn't fully confirm: {mission.verification || "please double-check this yourself."}
+                </span>
+              )}
+              {/* Track C: a blocked mission that asked a question — tap an answer to
+                  reply (free text still works by typing). */}
+              {mission.status === "blocked" && mission.options && mission.options.length > 0 && (
+                <span className="mt-2 flex flex-wrap gap-1.5">
+                  {mission.options.map((o, i) => (
+                    <button
+                      key={i}
+                      onClick={() => onOption?.(o)}
+                      className="rounded-full border border-amber-500/40 bg-amber-500/5 px-2.5 py-1 text-[11px] font-medium text-amber-700 transition-colors hover:bg-amber-500/15 dark:text-amber-300"
+                    >
+                      {o}
+                    </button>
+                  ))}
                 </span>
               )}
             </span>

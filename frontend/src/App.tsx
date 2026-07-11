@@ -5,7 +5,6 @@ import Dashboard from "@/routes/Dashboard"
 import Servers from "@/routes/Servers"
 import ServerDetail from "@/routes/ServerDetail"
 import ServerOverview from "@/routes/ServerOverview"
-import Assistant from "@/routes/Assistant"
 import Playbooks from "@/routes/Playbooks"
 import PlaybookDetail from "@/routes/PlaybookDetail"
 import ScriptGenerator from "@/routes/ScriptGenerator"
@@ -43,7 +42,9 @@ export default function App() {
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="assistant" element={<Assistant />} />
+          {/* Ally is now ONE window (opened from the sidebar icon, rendered by Layout),
+              not a page — old /assistant links fall back to the dashboard. */}
+          <Route path="assistant" element={<Navigate to="/dashboard" replace />} />
           {/* The terminal workspace is rendered by Layout (persistent); this route just
               exists so navigation + the sidebar active state work. */}
           <Route path="terminal" element={<div />} />

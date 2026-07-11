@@ -12,7 +12,7 @@ import type { MissionState, MissionStep } from "./MissionProgress"
 import BatchRunModal from "./BatchRunModal"
 import CommandPlan from "./CommandPlan"
 import { useAuthStore } from "@/store/authStore"
-import { Loader2, Square, Sparkles, ArrowRight, X } from "lucide-react"
+import { Loader2, Square, Sparkles, ArrowRight, X, Rocket } from "lucide-react"
 import { cancelCommand } from "@/api/commands"
 import type { CommandItem, GenerateScriptResult, Server } from "@/types"
 import type { AssistantTarget } from "@/store/assistantStore"
@@ -38,6 +38,11 @@ interface Props {
    *  store instead of component state, so switching target or navigating never loses
    *  the thread. A "Now talking to X" divider marks each target switch. */
   persistent?: boolean
+  /** Split view (the Ally page): chat on the left, a WORKSPACE pane on the right where
+   *  Ally's live work (missions) shows once any is running — the user talks on the left
+   *  and watches work on the right. The narrow drawer leaves this off (work stays inline
+   *  and can be expanded to the full page). */
+  workspace?: boolean
 }
 
 interface PendingPlan {
@@ -53,7 +58,7 @@ interface PendingPlan {
 let _msgId = 0
 function nextId() { return String(++_msgId) }
 
-export default function ChatWindow({ target, seed, initialMessages, onPersistUser, onPersistAnswer, pageContext, templates, pageLabel, persistent }: Props) {
+export default function ChatWindow({ target, seed, initialMessages, onPersistUser, onPersistAnswer, pageContext, templates, pageLabel, persistent, workspace }: Props) {
   const user = useAuthStore((s) => s.user)
   const language = user?.preferred_language ?? "en"
   const openServer = useAssistantStore((s) => s.openServer)
@@ -214,9 +219,21 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
         }
 
         // ── Ally Missions (docs/ALLY-MISSIONS.md) ────────────────────────────
-        case "mission_offer":
+        case "mission_offer": {
           setIsLoading(false)
           setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "thinking")))
+          const offerMsg = (msg.message as string) ?? ""
+          // Chat shows Ally's plain-language "here's what I'll do" text (readable, saved
+          // to the thread); the actionable CARD goes to the Workspace (routing below), so
+          // the conversation stays clean and the work lives on the right.
+          if (offerMsg) {
+            addMsg({
+              id: nextId(), role: "assistant", kind: "answer", content: offerMsg, suggestions: [],
+              serverId: (msg.server_id as string | undefined) ?? undefined,
+              serverName: (msg.server_name as string | undefined) ?? undefined,
+            })
+            onPersistAnswer?.(offerMsg)
+          }
           addMsg({
             id: nextId(),
             role: "assistant",
@@ -224,14 +241,18 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             offer: {
               goal: (msg.goal as string) ?? "",
               skill: (msg.skill as string | null) ?? null,
-              message: (msg.message as string) ?? "",
+              message: offerMsg,
               serverId: (msg.server_id as string | null | undefined) ?? null,
               serverName: (msg.server_name as string | null | undefined) ?? null,
             },
           })
           break
+        }
 
         case "mission_started": {
+          // The offer became a running mission — clear its offer card so it doesn't sit
+          // beside the live one in the Workspace.
+          setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "mission_offer" && m.offer.started)))
           // Pass 2: each mission is its own workspace card. The chat input stays
           // usable — missions run detached and stream in concurrently.
           const key = (msg.mission_id as string | undefined) ?? `local-${nextId()}`
@@ -252,11 +273,12 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             const id = nextId()
             missionMsgIdsRef.current.set(key, id)
             addMsg({ id, role: "assistant", kind: "mission", mission: fresh })
-            // A short narration line — the card is the workspace; the chat stays free.
+            // A short narration line — the work runs in the workspace (or its card in the
+            // drawer); the chat stays free to keep talking.
             if (!msg.attached) {
               addMsg({
                 id: nextId(), role: "system", kind: "divider",
-                label: `Mission ${msg.resumed ? "resumed" : "started"}${fresh.serverName ? ` on ${fresh.serverName}` : ""} — follow it in the card; you can keep chatting`,
+                label: `Mission ${msg.resumed ? "resumed" : "started"}${fresh.serverName ? ` on ${fresh.serverName}` : ""} — follow it in the workspace; you can keep chatting`,
               })
             }
           }
@@ -339,6 +361,8 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
               : status === "blocked" ? ((msg.reason as string) ?? "I can't continue from here.")
               : status === "failed" ? ((msg.reason as string) ?? "The mission failed.")
               : m.summary,
+            // Track C: a blocked mission may offer tappable answers to its question.
+            options: status === "blocked" ? ((msg.options as string[] | undefined) ?? undefined) : m.options,
             // Verification gate: verified true = goal proven; false = finished but the
             // goal couldn't be confirmed (shown honestly, not as a green success).
             verified:
@@ -390,6 +414,8 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             message: msg.message as string,
             // "Which server did you mean?" — candidate chips (backend maps names→ids).
             askServers: (msg.ask_servers as { id: string; name: string }[] | undefined) ?? undefined,
+            // Track C: tappable answer options for an ordinary clarifying question.
+            options: (msg.options as string[] | undefined) ?? undefined,
             serverId: (msg.server_id as string | undefined) ?? undefined,
             serverName: (msg.server_name as string | undefined) ?? undefined,
           })
@@ -637,20 +663,117 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     }
   }
 
-  return (
-    <div className="flex h-full flex-col">
-      {/* Connection warning — the socket auto-reconnects, so this is a calm, transient
-          notice, never a "please refresh the page" dead end. */}
-      {status !== "open" && (
-        <div className="flex items-center justify-center gap-2 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
-          <Loader2 size={12} className="animate-spin" />
-          Reconnecting…
+  // Talk vs work (Phase 5): the Ally page is ALWAYS Chat + Workspace, paired. The chat
+  // (left) is pure conversation — Ally's readable text + short status lines. All WORK (a
+  // mission's offer card and its live steps) lives in the Workspace (right); until Ally
+  // starts something it shows a calm idle hint. The narrow drawer never splits
+  // (workspace=false) — work stays inline there and can be expanded to this page.
+  const isWorkMsg = (m: ChatMessageData) =>
+    m.role === "assistant" && (m.kind === "mission" || m.kind === "mission_offer")
+  const workMsgs = messages.filter(isWorkMsg)
+  const chatMsgs = workspace ? messages.filter((m) => !isWorkMsg(m)) : messages
+
+  const reconnectBanner = status !== "open" && (
+    <div className="flex items-center justify-center gap-2 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
+      <Loader2 size={12} className="animate-spin" />
+      Reconnecting…
+    </div>
+  )
+
+  const renderMessage = (msg: ChatMessageData) => (
+    <ChatMessage
+      key={msg.id}
+      message={msg}
+      onSuggestion={handleSend}
+      onHandoff={handleHandoff}
+      onBatch={handleBatch}
+      onStartMission={handleStartMission}
+      onStopMission={handleStopMission}
+      onApproveMission={handleApproveMission}
+      servers={servers}
+      onServerClick={handleServerClick}
+      onPickServer={handlePickServer}
+    />
+  )
+
+  const runningBar = runningLogId && (
+    <div className="flex items-center justify-between gap-2 border-t border-border bg-amber-500/5 px-4 py-2">
+      <span className="text-xs text-muted-foreground">Running on the server…</span>
+      <button
+        onClick={handleStopRun}
+        className="flex items-center gap-1.5 rounded-lg bg-red-500/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-500"
+      >
+        <Square className="h-3 w-3" />
+        Stop
+      </button>
+    </div>
+  )
+
+  const inputBar = (
+    <div className="border-t border-border p-3">
+      {/* Light, continuous focus indicator (replaces the "Now talking to X" divider):
+          which server "this" means, clearable back to the whole fleet. */}
+      {focusServer && (
+        <div className="mb-2 flex items-center gap-1.5 px-1">
+          <span className="text-[11px] text-muted-foreground">Focused on</span>
+          <ServerTag name={focusServer.name} />
+          <button
+            onClick={() => setTarget({ kind: "fleet" })}
+            title="Clear focus — talk to the whole fleet"
+            className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <X size={12} />
+          </button>
         </div>
       )}
+      <ChatInput
+        onSend={handleSend}
+        disabled={status !== "open" || isLoading}
+        loading={isLoading}
+        servers={servers}
+        placeholder={focusServer ? `Message Ally about ${focusServer.name}…` : undefined}
+      />
+    </div>
+  )
 
+  // The workspace pane — Ally's live work, comfortable reading width. Holds the mission
+  // offer card (with Start) and the live steps (each carries its own Approve / Stop).
+  // Always present in workspace mode; a calm idle hint until work begins.
+  const workspacePane = (
+    <div className="flex w-full min-w-[340px] flex-1 flex-col border-l border-border">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <Rocket size={15} className="text-primary" />
+        <span className="text-sm font-semibold text-foreground">Workspace</span>
+        {workMsgs.length > 0 && (
+          <span className="text-xs text-muted-foreground">
+            {workMsgs.length} {workMsgs.length === 1 ? "task" : "tasks"}
+          </span>
+        )}
+      </div>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        {workMsgs.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent">
+              <Rocket size={20} className="text-muted-foreground" />
+            </div>
+            <p className="text-sm font-medium text-foreground">Live work shows here</p>
+            <p className="max-w-[240px] text-xs text-muted-foreground">
+              When Ally runs a mission, you'll watch each step here — and approve anything risky.
+            </p>
+          </div>
+        ) : (
+          workMsgs.map(renderMessage)
+        )}
+      </div>
+    </div>
+  )
+
+  const chatColumn = (
+    <div className="flex h-full min-w-0 flex-1 flex-col">
+      {reconnectBanner}
       {/* Messages */}
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
-        {messages.length === 0 && (
+        {chatMsgs.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
             <div>
               <p className="text-sm font-medium text-foreground">
@@ -691,21 +814,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           </div>
         )}
 
-        {messages.map((msg) => (
-          <ChatMessage
-            key={msg.id}
-            message={msg}
-            onSuggestion={handleSend}
-            onHandoff={handleHandoff}
-            onBatch={handleBatch}
-            onStartMission={handleStartMission}
-            onStopMission={handleStopMission}
-            onApproveMission={handleApproveMission}
-            servers={servers}
-            onServerClick={handleServerClick}
-            onPickServer={handlePickServer}
-          />
-        ))}
+        {chatMsgs.map(renderMessage)}
 
         {/* Pending plan */}
         {pending && (
@@ -726,47 +835,25 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
       </div>
 
       {/* Stop a running execution (durable worker path) */}
-      {runningLogId && (
-        <div className="flex items-center justify-between gap-2 border-t border-border bg-amber-500/5 px-4 py-2">
-          <span className="text-xs text-muted-foreground">Running on the server…</span>
-          <button
-            onClick={handleStopRun}
-            className="flex items-center gap-1.5 rounded-lg bg-red-500/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-500"
-          >
-            <Square className="h-3 w-3" />
-            Stop
-          </button>
-        </div>
-      )}
+      {runningBar}
 
       {/* Input — held only while Ally is thinking about a chat turn. Missions run
-          detached in their cards (Pass 2): you can keep chatting while they work. */}
-      <div className="border-t border-border p-3">
-        {/* Light, continuous focus indicator (replaces the "Now talking to X" divider):
-            which server "this" means, clearable back to the whole fleet. */}
-        {focusServer && (
-          <div className="mb-2 flex items-center gap-1.5 px-1">
-            <span className="text-[11px] text-muted-foreground">Focused on</span>
-            <ServerTag name={focusServer.name} />
-            <button
-              onClick={() => setTarget({ kind: "fleet" })}
-              title="Clear focus — talk to the whole fleet"
-              className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <X size={12} />
-            </button>
-          </div>
-        )}
-        <ChatInput
-          onSend={handleSend}
-          disabled={status !== "open" || isLoading}
-          loading={isLoading}
-          servers={servers}
-          placeholder={focusServer ? `Message Ally about ${focusServer.name}…` : undefined}
-        />
-      </div>
-
-      {batchModal && <BatchRunModal batch={batchModal} onClose={() => setBatchModal(null)} />}
+          detached (Pass 2 / Phase 3 workspace): you can keep chatting while they work. */}
+      {inputBar}
     </div>
+  )
+
+  return (
+    <>
+      {workspace ? (
+        <div className="flex h-full">
+          {chatColumn}
+          {workspacePane}
+        </div>
+      ) : (
+        chatColumn
+      )}
+      {batchModal && <BatchRunModal batch={batchModal} onClose={() => setBatchModal(null)} />}
+    </>
   )
 }

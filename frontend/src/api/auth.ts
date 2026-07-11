@@ -50,6 +50,7 @@ export interface ProfileUpdateBody {
   name?: string | null
   avatar_url?: string | null
   preferred_language?: string
+  ally_mode?: string
 }
 
 /** Update the authenticated user's profile (name, avatar, language). */

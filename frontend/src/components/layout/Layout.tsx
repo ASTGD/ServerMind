@@ -10,8 +10,8 @@ import { useAssistantStore } from "@/store/assistantStore"
 /** Root application shell — sidebar + topbar + page outlet + the global AI assistant
  *  and terminal workspace (both live here so they persist across all navigation). */
 export default function Layout() {
-  const assistantOpen = useAssistantStore((s) => s.open)
   const toggleAssistant = useAssistantStore((s) => s.toggle)
+  const closeAssistant = useAssistantStore((s) => s.close)
   const navigate = useNavigate()
   const location = useLocation()
   const pathRef = useRef(location.pathname)
@@ -33,17 +33,21 @@ export default function Layout() {
     return () => window.removeEventListener("keydown", onKey)
   }, [toggleAssistant, navigate])
 
+  // Navigating to another page MINIMIZES the Ally window back to its dock icon — the
+  // conversation + any running mission stay alive, so re-opening restores everything.
+  const didMount = useRef(false)
+  useEffect(() => {
+    if (!didMount.current) { didMount.current = true; return }
+    closeAssistant()
+  }, [location.pathname, closeAssistant])
+
   return (
     <div className="flex h-full bg-background">
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <TopBar />
         <VerifyBanner />
-        <main
-          className={`flex-1 overflow-auto p-6 transition-[padding] duration-300 ${
-            assistantOpen ? "md:pr-[28rem]" : ""
-          }`}
-        >
+        <main className="flex-1 overflow-auto p-6">
           <Outlet />
         </main>
       </div>

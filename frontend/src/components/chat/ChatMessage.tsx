@@ -1,9 +1,10 @@
 import { cn } from "@/lib/utils"
-import { Bot, User, AlertTriangle, CheckCircle2, XCircle, Server as ServerIcon, ArrowRight, Layers } from "lucide-react"
+import { Sparkles, AlertTriangle, CheckCircle2, XCircle, Server as ServerIcon, ArrowRight, Layers } from "lucide-react"
 import ScriptCard from "./ScriptCard"
 import MissionCard, { type MissionOffer } from "./MissionCard"
 import MissionProgress, { type MissionState } from "./MissionProgress"
 import { HighlightServerNames, type MentionServer } from "./serverMentions"
+import Markdown from "./Markdown"
 import ServerTag from "./ServerTag"
 import type { GenerateScriptResult } from "@/types"
 
@@ -28,7 +29,7 @@ export interface MsgServer {
 export type ChatMessageData =
   | ({ id: string; role: "user"; content: string } & MsgServer)
   | { id: string; role: "assistant"; kind: "thinking" }
-  | ({ id: string; role: "assistant"; kind: "clarification"; message: string; askServers?: { id: string; name: string }[] } & MsgServer)
+  | ({ id: string; role: "assistant"; kind: "clarification"; message: string; askServers?: { id: string; name: string }[]; options?: string[] } & MsgServer)
   | { id: string; role: "assistant"; kind: "output"; content: string; done?: boolean }
   | ({ id: string; role: "assistant"; kind: "complete"; explanation: string; status: string; suggestions: string[] } & MsgServer)
   | ({ id: string; role: "assistant"; kind: "answer"; content: string; suggestions: string[]; handoff?: Handoff | null; batch?: BatchSpec | null; script?: GenerateScriptResult | null } & MsgServer)
@@ -58,21 +59,42 @@ interface Props {
   onPickServer?: (id: string) => void
 }
 
+/** Small pill button used for follow-up suggestions and tappable answer options. */
+function Chips({ items, onPick }: { items: string[]; onPick?: (t: string) => void }) {
+  if (!items.length) return null
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map((s, i) => (
+        <button
+          key={i}
+          onClick={() => onPick?.(s)}
+          className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+        >
+          {s}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * One line in the conversation, styled like a document (Claude / ChatGPT) rather than
+ * chat bubbles: Ally's replies are plain flowing text under a small "Ally" header; the
+ * user's messages are a soft right-aligned block; results are a quiet status line, not a
+ * big colored box. Structured work (mission cards, command output) keeps its own card.
+ */
 export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch, onStartMission, onStopMission, onApproveMission, servers, onServerClick, onPickServer }: Props) {
-  const isUser = message.role === "user"
   const names = servers ?? []
-  // The resource this message is about → a stable-colored chip above the bubble. Only
-  // for server-scoped lines; fleet-wide chatter stays unadorned.
-  const tag = "serverName" in message && message.serverName
-    ? <div className={cn("flex", isUser && "justify-end")}><ServerTag name={message.serverName} /></div>
-    : null
-  /** Plain text with server names chipped — never applied to command/output blocks. */
-  const withNames = (text: string, chipClassName?: string) =>
+  /** Plain text with server names chipped — for USER messages (users don't write markdown). */
+  const withNames = (text: string) =>
     names.length ? (
-      <HighlightServerNames text={text} servers={names} onServerClick={onServerClick} chipClassName={chipClassName} />
+      <HighlightServerNames text={text} servers={names} onServerClick={onServerClick} />
     ) : (
       text
     )
+  /** Ally's prose → rich, readable markdown (headings, bold, lists…) with server chips
+   *  preserved. Color is inherited so a status line keeps its tint. */
+  const allyText = (text: string) => <Markdown text={text} servers={names} onServerClick={onServerClick} />
 
   // Target-switch divider — a centered label, no avatar, no bubble.
   if (message.role === "system" && message.kind === "divider") {
@@ -85,194 +107,193 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch,
     )
   }
 
-  return (
-    <div className={cn("flex gap-3", isUser && "flex-row-reverse")}>
-      {/* Avatar */}
-      <div className={cn(
-        "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
-        isUser ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
-      )}>
-        {isUser ? <User size={13} /> : <Bot size={13} />}
+  // ── USER — a soft, understated block on the right (not a bright bubble) ──────────
+  if (message.role === "user") {
+    return (
+      <div className="flex flex-col items-end gap-1">
+        {message.serverName && <ServerTag name={message.serverName} />}
+        <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl rounded-tr-sm border border-border bg-muted px-3.5 py-2 text-[15px] leading-relaxed text-foreground">
+          {withNames(message.content)}
+        </div>
       </div>
+    )
+  }
 
-      {/* Bubble */}
-      <div className={cn("max-w-[80%] space-y-1", isUser && "items-end")}>
-        {tag}
-        {message.role === "user" && (
-          <div className="rounded-2xl rounded-tr-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
-            {withNames(message.content, "rounded bg-white/20 px-1 py-px font-medium underline decoration-white/60")}
-          </div>
+  // ── ASSISTANT — structured work stands alone (its own card, no "Ally" header) ────
+  if (message.kind === "mission_offer") {
+    return <MissionCard offer={message.offer} onStart={(o) => onStartMission?.(o)} />
+  }
+  if (message.kind === "mission") {
+    return (
+      <MissionProgress
+        mission={message.mission}
+        onStop={() => onStopMission?.(message.mission)}
+        onApprove={() => onApproveMission?.(message.mission)}
+        onOption={(text) => onSuggestion?.(text)}
+      />
+    )
+  }
+  if (message.kind === "output") {
+    return (
+      <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-[#0d0d0d] p-3 font-mono text-xs text-green-400">
+        {message.content}
+      </pre>
+    )
+  }
+  // Ally is thinking — a quiet transient line (replaced by the real reply).
+  if (message.kind === "thinking") {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span className="flex gap-0.5">
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.3s]" />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.15s]" />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" />
+        </span>
+        Thinking…
+      </div>
+    )
+  }
+
+  // ── ASSISTANT conversation — document style: an "Ally" header + flowing text ─────
+  const allyHeader = (
+    <div className="flex items-center gap-2">
+      <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
+        <Sparkles size={13} />
+      </div>
+      <span className="text-[13px] font-medium text-foreground">Ally</span>
+      {"serverName" in message && message.serverName && <ServerTag name={message.serverName} />}
+    </div>
+  )
+
+  let body: React.ReactNode = null
+
+  if (message.kind === "answer") {
+    body = (
+      <div className="space-y-2.5">
+        {allyText(message.content)}
+        {message.script && <ScriptCard script={message.script} />}
+        {message.handoff && (
+          <button
+            onClick={() => onHandoff?.(message.handoff!)}
+            className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+          >
+            <ServerIcon size={13} />
+            Run on {message.handoff.serverName}
+            <ArrowRight size={13} />
+          </button>
         )}
-
-        {message.role === "assistant" && message.kind === "thinking" && (
-          <div className="flex items-center gap-2 rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2 text-sm text-muted-foreground">
-            <span className="flex gap-0.5">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.3s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.15s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" />
-            </span>
-            Thinking…
-          </div>
-        )}
-
-        {message.role === "assistant" && message.kind === "clarification" && (
-          <div className="space-y-2">
-            <div className="rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2 text-sm text-foreground">
-              {withNames(message.message)}
-            </div>
-            {/* Ally asked "which server?" — one click picks it (sets focus + retries). */}
-            {message.askServers && message.askServers.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {message.askServers.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => onPickServer?.(s.id)}
-                    className="transition-transform hover:scale-[1.03]"
-                    title={`Continue on ${s.name}`}
-                  >
-                    <ServerTag name={s.name} />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {message.role === "assistant" && message.kind === "output" && (
-          <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-[#0d0d0d] p-3 font-mono text-xs text-green-400">
-            {message.content}
-          </pre>
-        )}
-
-        {message.role === "assistant" && message.kind === "complete" && (
-          <div className="space-y-2">
-            <div className={cn(
-              "flex items-start gap-2 rounded-2xl rounded-tl-sm px-3.5 py-2 text-sm",
-              message.status === "success"
-                ? "bg-green-500/10 text-green-700 dark:text-green-400"
-                : message.status === "failed"
-                  ? "bg-destructive/10 text-destructive"
-                  : "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400",
-            )}>
-              {message.status === "success"
-                ? <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
-                : message.status === "failed"
-                  ? <XCircle size={14} className="mt-0.5 shrink-0" />
-                  : <AlertTriangle size={14} className="mt-0.5 shrink-0" />}
-              <span>{withNames(message.explanation)}</span>
-            </div>
-            {message.suggestions.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {message.suggestions.map((s, i) => (
-                  <button
-                    key={i}
-                    onClick={() => onSuggestion?.(s)}
-                    className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {message.role === "assistant" && message.kind === "answer" && (
-          <div className="space-y-2">
-            <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2 text-sm text-foreground">
-              {withNames(message.content)}
-            </div>
-            {message.script && <ScriptCard script={message.script} />}
-            {message.handoff && (
-              <button
-                onClick={() => onHandoff?.(message.handoff!)}
-                className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
-              >
-                <ServerIcon size={13} />
-                Run on {message.handoff.serverName}
-                <ArrowRight size={13} />
-              </button>
-            )}
-            {message.batch && message.batch.targets.length > 0 && (
-              <div className="rounded-xl border border-indigo-500/25 bg-indigo-500/5 p-3">
-                <p className="mb-2 text-xs font-medium text-foreground">
-                  Run on {message.batch.targets.length} servers
-                </p>
-                <div className="mb-2.5 flex flex-wrap gap-1">
-                  {message.batch.targets.map((t) => (
-                    <span
-                      key={t.serverId}
-                      className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] text-muted-foreground"
-                    >
-                      {t.serverName}
-                    </span>
-                  ))}
-                </div>
-                <button
-                  onClick={() => onBatch?.(message.batch!)}
-                  className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+        {message.batch && message.batch.targets.length > 0 && (
+          <div className="rounded-xl border border-indigo-500/25 bg-indigo-500/5 p-3">
+            <p className="mb-2 text-xs font-medium text-foreground">
+              Run on {message.batch.targets.length} servers
+            </p>
+            <div className="mb-2.5 flex flex-wrap gap-1">
+              {message.batch.targets.map((t) => (
+                <span
+                  key={t.serverId}
+                  className="rounded-full border border-border bg-background px-2 py-0.5 text-[11px] text-muted-foreground"
                 >
-                  <Layers size={13} />
-                  Run on all
-                  <ArrowRight size={13} />
-                </button>
-              </div>
-            )}
-            {message.suggestions.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {message.suggestions.map((s, i) => (
-                  <button
-                    key={i}
-                    onClick={() => onSuggestion?.(s)}
-                    className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {message.role === "assistant" && message.kind === "blocked" && (
-          <div className="flex items-start gap-2 rounded-2xl rounded-tl-sm bg-destructive/10 px-3.5 py-2 text-sm text-destructive">
-            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-            <div>
-              <p className="font-medium">Command blocked</p>
-              <p className="text-xs opacity-80">{message.reason}</p>
+                  {t.serverName}
+                </span>
+              ))}
             </div>
+            <button
+              onClick={() => onBatch?.(message.batch!)}
+              className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+            >
+              <Layers size={13} />
+              Run on all
+              <ArrowRight size={13} />
+            </button>
           </div>
         )}
-
-        {/* Ally Missions — offer + live progress (docs/ALLY-MISSIONS.md) */}
-        {message.role === "assistant" && message.kind === "mission_offer" && (
-          <MissionCard offer={message.offer} onStart={(o) => onStartMission?.(o)} />
-        )}
-        {message.role === "assistant" && message.kind === "mission" && (
-          <MissionProgress
-            mission={message.mission}
-            onStop={() => onStopMission?.(message.mission)}
-            onApprove={() => onApproveMission?.(message.mission)}
-          />
-        )}
-
-        {/* Out of Ally actions this month (the quota wall — docs/AI-METERING.md) */}
-        {message.role === "assistant" && message.kind === "quota" && (
-          <div className="flex items-start gap-2 rounded-2xl rounded-tl-sm border border-amber-500/25 bg-amber-500/10 px-3.5 py-2 text-sm text-amber-700 dark:text-amber-400">
-            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-            <div>
-              <p className="font-medium">Out of Ally actions</p>
-              <p className="text-xs opacity-90">{message.message}</p>
-            </div>
+        <Chips items={message.suggestions} onPick={onSuggestion} />
+      </div>
+    )
+  } else if (message.kind === "complete") {
+    const Icon = message.status === "success" ? CheckCircle2 : message.status === "failed" ? XCircle : AlertTriangle
+    const tone =
+      message.status === "success"
+        ? "text-green-600 dark:text-green-400"
+        : message.status === "failed"
+          ? "text-destructive"
+          : "text-amber-600 dark:text-amber-400"
+    body = (
+      <div className="space-y-2.5">
+        <div className="flex items-start gap-2">
+          <Icon size={17} className={cn("mt-0.5 shrink-0", tone)} />
+          <div className="min-w-0 flex-1">{allyText(message.explanation)}</div>
+        </div>
+        <Chips items={message.suggestions} onPick={onSuggestion} />
+      </div>
+    )
+  } else if (message.kind === "clarification") {
+    body = (
+      <div className="space-y-2.5">
+        {allyText(message.message)}
+        {/* Ally asked "which server?" — one click picks it (sets focus + retries). */}
+        {message.askServers && message.askServers.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {message.askServers.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => onPickServer?.(s.id)}
+                className="transition-transform hover:scale-[1.03]"
+                title={`Continue on ${s.name}`}
+              >
+                <ServerTag name={s.name} />
+              </button>
+            ))}
           </div>
         )}
-
-        {message.role === "assistant" && message.kind === "error" && (
-          <div className="rounded-2xl rounded-tl-sm bg-destructive/10 px-3.5 py-2 text-sm text-destructive">
-            {message.message}
+        {/* Track C: tappable answer options — clicking sends that text as the reply. */}
+        {message.options && message.options.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {message.options.map((o, i) => (
+              <button
+                key={i}
+                onClick={() => onSuggestion?.(o)}
+                className="rounded-full border border-primary/40 bg-primary/5 px-3 py-1 text-xs text-foreground transition-colors hover:border-primary hover:bg-primary/10"
+              >
+                {o}
+              </button>
+            ))}
           </div>
         )}
       </div>
+    )
+  } else if (message.kind === "blocked") {
+    body = (
+      <div className="flex items-start gap-2 border-l-2 border-destructive bg-destructive/5 py-1.5 pl-3 text-sm text-destructive">
+        <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+        <div>
+          <p className="font-medium">Command blocked</p>
+          <p className="text-xs opacity-80">{message.reason}</p>
+        </div>
+      </div>
+    )
+  } else if (message.kind === "quota") {
+    body = (
+      <div className="flex items-start gap-2 border-l-2 border-amber-500 bg-amber-500/5 py-1.5 pl-3 text-sm text-amber-700 dark:text-amber-400">
+        <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+        <div>
+          <p className="font-medium">Out of Ally actions</p>
+          <p className="text-xs opacity-90">{message.message}</p>
+        </div>
+      </div>
+    )
+  } else if (message.kind === "error") {
+    body = (
+      <div className="border-l-2 border-destructive bg-destructive/5 py-1.5 pl-3 text-sm text-destructive">
+        {message.message}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {allyHeader}
+      {body}
     </div>
   )
 }

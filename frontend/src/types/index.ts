@@ -9,6 +9,8 @@ export interface User {
   totp_enabled: boolean
   /** Fleet-health digest cadence: 'off' | 'weekly' | 'daily'. */
   digest_frequency: string
+  /** Ally autonomy mode: 'proactive' | 'normal' | 'careful'. */
+  ally_mode: string
   created_at: string
 }
 

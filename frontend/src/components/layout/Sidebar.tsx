@@ -11,11 +11,12 @@ import {
   Sparkles,
   ArrowRight,
   Rocket,
-  Terminal as TerminalIcon,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react"
 import Logo from "@/components/brand/Logo"
 import UpgradeModal from "./UpgradeModal"
-import { useTerminalStore } from "@/store/terminalStore"
+import { useAssistantStore } from "@/store/assistantStore"
 
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, key: "dashboard" },
@@ -30,7 +31,14 @@ const navItems = [
 export default function Sidebar() {
   const { t } = useTranslation()
   const [showUpgrade, setShowUpgrade] = useState(false)
-  const termCount = useTerminalStore((s) => s.sessions.length)
+  const assistantOpen = useAssistantStore((s) => s.open)
+  const toggleAssistant = useAssistantStore((s) => s.toggle)
+  // Live status on the Ally button: a mission is running (or paused for your OK).
+  const missionActive = useAssistantStore((s) =>
+    s.messages.some(
+      (m) => m.role === "assistant" && m.kind === "mission" && (m.mission.status === "running" || m.mission.status === "blocked"),
+    ),
+  )
 
   return (
     <>
@@ -61,40 +69,55 @@ export default function Sidebar() {
         {/* Pinned to the bottom — Ally + Terminal as standalone action buttons (not
             regular menu items), then the upgrade row, all in one bottom panel. */}
         <div className="mt-auto -mx-3 border-t border-border px-3 pt-3">
-          <div className="grid grid-cols-2 gap-2">
-            <NavLink
-              to="/assistant"
-              className={({ isActive }) =>
-                `flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 py-2.5 text-sm font-medium text-white transition-shadow hover:opacity-90 ${
-                  isActive ? "ring-2 ring-indigo-300 dark:ring-indigo-800" : ""
-                }`
-              }
+          {assistantOpen ? (
+            /* The Ally window is open — the composer lives inside it, so here we show the
+               round Ally icon with "Ally ⌄" and a "click to minimise" hint. Same rounded-pill
+               shape as the composer, so opening/closing just swaps the pill's contents. */
+            <button
+              onClick={toggleAssistant}
+              title="Minimize Ally"
+              className="flex w-full items-center gap-2.5 rounded-full border border-border bg-accent/40 py-1.5 pl-1.5 pr-3 text-left transition-colors hover:bg-accent"
             >
-              <Sparkles size={16} />
-              {t("nav.assistant")}
-            </NavLink>
-            <NavLink
-              to="/terminal"
-              className={({ isActive }) =>
-                `relative flex items-center justify-center gap-1.5 rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                  isActive
-                    ? "border-primary/40 bg-accent text-accent-foreground"
-                    : termCount > 0
-                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400"
-                    : "border-border text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                }`
-              }
-            >
-              <TerminalIcon size={16} />
-              {t("nav.terminal")}
-              {termCount > 0 && (
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
+                <Sparkles size={16} />
+                {missionActive && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full border-2 border-card bg-emerald-500" />
+                  </span>
+                )}
+              </span>
+              <span className="min-w-0 flex-1 leading-tight">
+                <span className="flex items-center gap-1 text-sm font-medium text-foreground">
+                  Ally
+                  <ChevronDown size={14} className="text-muted-foreground" />
                 </span>
-              )}
-            </NavLink>
-          </div>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {missionActive ? "Working on a mission…" : "click to minimise"}
+                </span>
+              </span>
+            </button>
+          ) : (
+            /* Ally launcher — a plain button (not a text box); click opens the floating
+               window (where you type). A live dot on the icon means a mission is running. */
+            <button
+              onClick={toggleAssistant}
+              title="Open Ally"
+              className="flex w-full items-center gap-2.5 rounded-full border border-border bg-background py-1.5 pl-1.5 pr-3 text-left transition-colors hover:border-primary/40 hover:bg-accent"
+            >
+              <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
+                <Sparkles size={16} />
+                {missionActive && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-500" />
+                  </span>
+                )}
+              </span>
+              <span className="flex-1 text-sm font-medium text-foreground">Ask Ally</span>
+              <ChevronUp size={15} className="shrink-0 text-muted-foreground" />
+            </button>
+          )}
 
           <div className="my-3 border-t border-border" />
 

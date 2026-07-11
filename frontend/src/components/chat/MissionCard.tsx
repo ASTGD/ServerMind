@@ -35,7 +35,6 @@ export default function MissionCard({
         )}
       </div>
       <div className="space-y-2.5 px-3 py-2.5">
-        {offer.message && <p className="text-sm text-foreground">{offer.message}</p>}
         <p className="rounded-lg bg-background px-2.5 py-1.5 text-xs text-muted-foreground">
           Goal: <span className="text-foreground">{offer.goal}</span>
         </p>

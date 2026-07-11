@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, History, Check, Loader2, Sparkles, Brain, Trash2, Mail, Send } from "lucide-react"
+import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, History, Check, Loader2, Sparkles, Brain, Trash2, Mail, Send, Gauge } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 import { listAudit } from "@/api/audit"
 import {
@@ -193,6 +193,12 @@ export default function Settings() {
       setProfileMsg("Saved")
       setTimeout(() => setProfileMsg(""), 2500)
     },
+  })
+
+  // Ally autonomy mode (proactivity Track D)
+  const allyModeMut = useMutation({
+    mutationFn: (mode: string) => updateProfile({ ally_mode: mode }),
+    onSuccess: (u) => syncUser(u),
   })
 
   const langMut = useMutation({
@@ -778,6 +784,43 @@ export default function Settings() {
     { value: "daily", label: "Daily", hint: "every morning" },
     { value: "off", label: "Off", hint: "no emails" },
   ]
+
+  const ALLY_MODE_OPTIONS: { value: string; label: string; hint: string }[] = [
+    { value: "proactive", label: "Proactive", hint: "Makes sensible calls and acts, backing up first" },
+    { value: "normal", label: "Normal", hint: "Looks first, asks once when unsure" },
+    { value: "careful", label: "Careful", hint: "Asks before anything that changes a server" },
+  ]
+  const allyModeSection = (
+    <Section
+      icon={Gauge}
+      title="How Ally works"
+      description="How much Ally decides on its own. This never changes the safety checks — dangerous commands are always blocked and truly destructive steps always ask first."
+    >
+      <div className="flex flex-col gap-2">
+        {ALLY_MODE_OPTIONS.map((o) => {
+          const active = (user.ally_mode || "normal") === o.value
+          return (
+            <button
+              key={o.value}
+              onClick={() => !active && allyModeMut.mutate(o.value)}
+              disabled={allyModeMut.isPending}
+              className={`flex items-start gap-3 rounded-lg border px-3.5 py-2.5 text-left transition-colors disabled:opacity-60 ${
+                active ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border hover:bg-accent"
+              }`}
+            >
+              <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${active ? "border-primary bg-primary text-primary-foreground" : "border-border"}`}>
+                {active && <Check size={11} />}
+              </span>
+              <span>
+                <span className="block text-sm font-medium text-foreground">{o.label}</span>
+                <span className="block text-xs text-muted-foreground">{o.hint}</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </Section>
+  )
   const digestSection = (
     <Section
       icon={Mail}
@@ -942,6 +985,7 @@ export default function Settings() {
       <div className="grid items-start gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           {profileSection}
+          {allyModeSection}
           {accountSection}
           {usageSection}
           {memorySection}
