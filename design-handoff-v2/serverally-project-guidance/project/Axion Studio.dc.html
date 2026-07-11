@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    html { scroll-behavior: smooth; }
+    html, body { margin: 0; padding: 0; background: #EFEFEF; color: #111827; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+    *, *::before, *::after { box-sizing: border-box; }
+    @keyframes axFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes axSheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  </style>
+</helmet>
+
+<div style="--accent: {{ accent }}; --accent-hover: {{ accentHover }};">
+
+  <!-- ============ SECTION 1: HERO ============ -->
+  <section data-screen-label="Hero" style="position: relative; min-height: 100vh; display: flex; flex-direction: column; background: #EFEFEF; overflow: hidden;">
+
+    <x-import component-from-global-scope="hero-shader" from="./hero-shader.js" glow="{{ shaderGlow }}" motion="{{ shaderMotion }}" grain="{{ shaderGrain }}" style="position: absolute; inset: 0; z-index: 10; pointer-events: none;" hint-size="100%,100%"></x-import>
+
+    <header style="position: relative; z-index: 20; width: 100%; max-width: 1440px; margin: 0 auto; padding: clamp(8px, 0.85vw, 12px);">
+      <nav style="background: #ffffff; border-radius: 9999px; padding: 5px; display: flex; align-items: center; justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 24px;">
+          <div style="width: clamp(36px, 2.8vw, 40px); height: clamp(36px, 2.8vw, 40px); border-radius: 9999px; background: #111827; color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: clamp(10px, 0.8vw, 11px); font-weight: 700; letter-spacing: -0.025em; flex-shrink: 0;">AX</div>
+          <sc-if value="{{ isMd }}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; align-items: center; gap: 24px;">
+              <a href="#projects" style="font-size: 14px; color: #111827; text-decoration: none; transition: color 300ms; cursor: pointer;" style-hover="color: #6b7280;">Projects</a>
+              <a href="#about" style="font-size: 14px; color: #111827; text-decoration: none; transition: color 300ms; cursor: pointer;" style-hover="color: #6b7280;">Studio</a>
+              <a style="font-size: 14px; color: #111827; text-decoration: none; transition: color 300ms; cursor: pointer;" style-hover="color: #6b7280;">Journal</a>
+              <a style="font-size: 14px; color: #111827; text-decoration: none; transition: color 300ms; cursor: pointer;" style-hover="color: #6b7280;">Connect</a>
+            </div>
+          </sc-if>
+        </div>
+        <sc-if value="{{ isMd }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; align-items: center; gap: 16px;">
+            <sc-if value="{{ isLg }}" hint-placeholder-val="{{ true }}">
+              <span style="font-size: 13px; color: #4b5563;">Taking on projects for Q1 2026</span>
+            </sc-if>
+            <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #4b5563;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              {{ londonTime }} in London
+            </span>
+            <button type="button" style="display: flex; align-items: center; gap: 10px; background: #111827; color: #ffffff; border: none; cursor: pointer; border-radius: 9999px; padding: 8px 8px 8px 20px; font-size: 13px; font-weight: 500; font-family: inherit;" style-hover="--roll: -50%; --rot: -45deg;">
+              <span style="display: block; overflow: hidden; height: 20px;">
+                <span style="display: flex; flex-direction: column; transform: translateY(var(--roll, 0%)); transition: transform 500ms cubic-bezier(0.25, 0.1, 0.25, 1);">
+                  <span style="display: block; height: 20px; line-height: 20px; white-space: nowrap;">Book a strategy call</span>
+                  <span style="display: block; height: 20px; line-height: 20px; white-space: nowrap;">Book a strategy call</span>
+                </span>
+              </span>
+              <span style="width: 24px; height: 24px; border-radius: 9999px; background: #ffffff; color: #111827; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transform: rotate(var(--rot, 0deg)); transition: transform 500ms cubic-bezier(0.25, 0.1, 0.25, 1);">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+              </span>
+            </button>
+          </div>
+        </sc-if>
+        <sc-if value="{{ isMobileNav }}" hint-placeholder-val="{{ false }}">
+          <button type="button" onClick="{{ openMenu }}" style="display: flex; align-items: center; gap: 8px; background: #111827; color: #ffffff; border: none; border-radius: 9999px; padding: 10px 16px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit;">
+            Menu
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h16"></path></svg>
+          </button>
+        </sc-if>
+      </nav>
+    </header>
+
+    <div style="flex: 1;"></div>
+
+    <div style="position: relative; z-index: 20; width: 100%; max-width: 1440px; margin: 0 auto; padding: 0 clamp(20px, 3.5vw, 48px) clamp(56px, 5.5vw, 80px);">
+      <p style="font-size: clamp(13px, 1vw, 14px); letter-spacing: 0.025em; color: #111827; margin: 0 0 clamp(20px, 2.2vw, 32px);">Axion Studio</p>
+      <h1 style="font-size: clamp(1.75rem, 5vw, 4.2rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: #111827; margin: 0;">We craft digital experiences<sc-if value="{{ isSm }}" hint-placeholder-val="{{ true }}"><br></sc-if> for brands ready to dominate<sc-if value="{{ isSm }}" hint-placeholder-val="{{ true }}"><br></sc-if> their category online.</h1>
+      <div style="margin-top: clamp(32px, 3.3vw, 48px); display: flex; flex-wrap: wrap; align-items: center; gap: clamp(16px, 1.4vw, 20px);">
+        <button type="button" style="display: flex; align-items: center; gap: 12px; background: var(--accent, #F26522); color: #ffffff; border: none; cursor: pointer; border-radius: 9999px; padding: 8px 8px 8px clamp(20px, 1.7vw, 24px); font-size: clamp(13px, 1vw, 14px); font-weight: 500; font-family: inherit; transition: background 300ms;" style-hover="--roll: -50%; --rot: -45deg; background: var(--accent-hover, #e05a1a);">
+          <span style="display: block; overflow: hidden; height: 20px;">
+            <span style="display: flex; flex-direction: column; transform: translateY(var(--roll, 0%)); transition: transform 500ms cubic-bezier(0.25, 0.1, 0.25, 1);">
+              <span style="display: block; height: 20px; line-height: 20px; white-space: nowrap;">Start a project</span>
+              <span style="display: block; height: 20px; line-height: 20px; white-space: nowrap;">Start a project</span>
+            </span>
+          </span>
+          <span style="width: clamp(28px, 2.2vw, 32px); height: clamp(28px, 2.2vw, 32px); border-radius: 9999px; background: #ffffff; color: var(--accent, #F26522); display: flex; align-items: center; justify-content: center; flex-shrink: 0; transform: rotate(var(--rot, 0deg)); transition: transform 500ms cubic-bezier(0.25, 0.1, 0.25, 1);">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+          </span>
+        </button>
+        <div style="display: flex; align-items: center; gap: 10px; background: #ffffff; border-radius: 4px; padding: 8px 12px 8px 10px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); transition: box-shadow 300ms; cursor: default;" style-hover="box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="width: clamp(20px, 1.7vw, 24px); height: clamp(20px, 1.7vw, 24px); fill: #E8704E; flex-shrink: 0;"><path d="m19.6 66.5 19.7-11 .3-1-.3-.5h-1l-3.3-.2-11.2-.3L14 53l-9.5-.5-2.4-.5L0 49l.2-1.5 2-1.3 2.9.2 6.3.5 9.5.6 6.9.4L38 49.1h1.6l.2-.7-.5-.4-.4-.4L29 41l-10.6-7-5.6-4.1-3-2-1.5-2-.6-4.2 2.7-3 3.7.3.9.2 3.7 2.9 8 6.1L37 36l1.5 1.2.6-.4.1-.3-.7-1.1L33 25l-6-10.4-2.7-4.3-.7-2.6c-.3-1-.4-2-.4-3l3-4.2L28 0l4.2.6L33.8 2l2.6 6 4.1 9.3L47 29.9l2 3.8 1 3.4.3 1h.7v-.5l.5-7.2 1-8.7 1-11.2.3-3.2 1.6-3.8 3-2L61 2.6l2 2.9-.3 1.8-1.1 7.7L59 27.1l-1.5 8.2h.9l1-1.1 4.1-5.4 6.9-8.6 3-3.5L77 13l2.3-1.8h4.3l3.1 4.7-1.4 4.9-4.4 5.6-3.7 4.7-5.3 7.1-3.2 5.7.3.4h.7l12-2.6 6.4-1.1 7.6-1.3 3.5 1.6.4 1.6-1.4 3.4-8.2 2-9.6 2-14.3 3.3-.2.1.2.3 6.4.6 2.8.2h6.8l12.6 1 3.3 2 1.9 2.7-.3 2-5.1 2.6-6.8-1.6-16-3.8-5.4-1.3h-.8v.4l4.6 4.5 8.3 7.5L89 80.1l.5 2.4-1.3 2-1.4-.2-9.2-7-3.6-3-8-6.8h-.5v.7l1.8 2.7 9.8 14.7.5 4.5-.7 1.4-2.6 1-2.7-.6-5.8-8-6-9-4.7-8.2-.5.4-2.9 30.2-1.3 1.5-3 1.2-2.5-2-1.4-3 1.4-6.2 1.6-8 1.3-6.4 1.2-7.9.7-2.6v-.2H49L43 72l-9 12.3-7.2 7.6-1.7.7-3-1.5.3-2.8L24 86l10-12.8 6-7.9 4-4.6-.1-.5h-.3L17.2 77.4l-4.7.6-2-2 .2-3 1-1 8-5.5Z"></path></svg>
+          <span style="font-size: clamp(13px, 1vw, 14px); font-weight: 500; color: #111827;">Certified Partner</span>
+          <span style="font-size: clamp(10px, 0.8vw, 11px); background: #111827; color: #ffffff; padding: 2px 8px; border-radius: 4px;">Featured</span>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="position: fixed; inset: 0; z-index: 50;">
+        <div onClick="{{ closeMenu }}" style="position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); animation: axFadeIn 400ms ease both;"></div>
+        <div style="position: absolute; left: 12px; right: 12px; bottom: 12px; background: #ffffff; border-radius: 16px; padding: 20px; animation: axSheetUp 500ms cubic-bezier(0.32, 0.72, 0, 1) both;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px;">
+            <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #4b5563; border: 1px solid #e5e7eb; border-radius: 9999px; padding: 6px 12px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              {{ londonTime }} in London
+            </span>
+            <button type="button" onClick="{{ closeMenu }}" style="display: flex; align-items: center; gap: 8px; background: #111827; color: #ffffff; border: none; border-radius: 9999px; padding: 10px 16px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit;">
+              Close
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </button>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 18px; margin-bottom: 32px;">
+            <a href="#projects" onClick="{{ closeMenu }}" style="font-size: clamp(28px, 4.4vw, 32px); font-weight: 500; color: #111827; text-decoration: none;">Projects</a>
+            <a href="#about" onClick="{{ closeMenu }}" style="font-size: clamp(28px, 4.4vw, 32px); font-weight: 500; color: #111827; text-decoration: none;">Studio</a>
+            <a onClick="{{ closeMenu }}" style="font-size: clamp(28px, 4.4vw, 32px); font-weight: 500; color: #111827; text-decoration: none; cursor: pointer;">Journal</a>
+            <a onClick="{{ closeMenu }}" style="font-size: clamp(28px, 4.4vw, 32px); font-weight: 500; color: #111827; text-decoration: none; cursor: pointer;">Connect</a>
+          </div>
+          <button type="button" onClick="{{ closeMenu }}" style="display: flex; align-items: center; justify-content: space-between; width: 100%; background: var(--accent, #F26522); color: #ffffff; border: none; cursor: pointer; border-radius: 9999px; padding: 8px 8px 8px 20px; font-size: 14px; font-weight: 500; font-family: inherit;" style-hover="--rot: -45deg;">
+            Start a project
+            <span style="width: 32px; height: 32px; border-radius: 9999px; background: #ffffff; color: var(--accent, #F26522); display: flex; align-items: center; justify-content: center; flex-shrink: 0; transform: rotate(var(--rot, 0deg)); transition: transform 500ms cubic-bezier(0.25, 0.1, 0.25, 1);">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+            </span>
+          </button>
+        </div>
+      </div>
+    </sc-if>
+  </section>
+
+  <!-- ============ SECTION 2: ABOUT ============ -->
+  <section id="about" data-screen-label="About" style="background: #ffffff; padding: clamp(64px, 8.9vw, 128px) 0 clamp(48px, 6.7vw, 96px); overflow: hidden;">
+    <div style="max-width: 1440px; margin: 0 auto;">
+      <div style="padding: 0 clamp(20px, 3.5vw, 48px); display: flex; align-items: center; gap: 12px; margin-bottom: clamp(24px, 2.2vw, 32px);">
+        <span style="width: clamp(24px, 1.95vw, 28px); height: clamp(24px, 1.95vw, 28px); border-radius: 9999px; background: #111827; color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: clamp(11px, 0.85vw, 12px); font-weight: 600; flex-shrink: 0;">1</span>
+        <span style="font-size: clamp(12px, 0.9vw, 13px); font-weight: 500; color: #111827; border: 1px solid #e5e7eb; border-radius: 9999px; padding: clamp(4px, 0.42vw, 6px) clamp(12px, 1.1vw, 16px);">Introducing Axion</span>
+      </div>
+      <h2 style="padding: 0 clamp(20px, 3.5vw, 48px); font-size: clamp(1.5rem, 4vw, 3.2rem); font-weight: 500; line-height: 1.12; letter-spacing: -0.02em; color: #111827; margin: 0 0 clamp(48px, 7.8vw, 112px);">Strategy-led creatives, delivering<sc-if value="{{ isSm }}" hint-placeholder-val="{{ true }}"><br></sc-if> results in digital and beyond.</h2>
+
+      <sc-if value="{{ isLg }}" hint-placeholder-val="{{ true }}">
+        <div style="display: grid; grid-template-columns: 26% 1fr 48%; align-items: end; gap: clamp(24px, 2.2vw, 32px); padding: 0 clamp(20px, 3.5vw, 48px);">
+          <img src="https://images.higgs.ai/?default=1&amp;output=webp&amp;url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260516_090123_74be96d4-9c1b-40cf-932a-96f4f4babed3.png&amp;w=1280&amp;q=85" alt="Axion Studio — abstract brand artwork" style="width: 100%; aspect-ratio: 438 / 346; object-fit: cover; border-radius: 16px; align-self: end; display: block;">
+          <div style="align-self: start; display: flex; justify-content: flex-end;">
+            <div>
+              <p style="font-size: clamp(16px, 1.25vw, 18px); line-height: 1.65; font-weight: 500; color: #111827; margin: 0; white-space: nowrap;">Through research, creative thinking and iteration<br>we help growing brands realize their<br>digital full potential.</p>
+              <div style="margin-top: 24px;">
+                <button type="button" style="display: flex; align-items: center; gap: 12px; background: var(--accent, #F26522); color: #ffffff; border: none; cursor: pointer; border-radius: 9999px; padding: 8px 8px 8px 24px; font-size: 14px; font-weight: 500; font-family: inherit; transition: background 300ms;" style-hover="--roll: -50%; --rot: -45deg; background: var(--accent-hover, #e05a1a);">
+                  <span style="display: block; overflow: hidden; height: 20px;">
+                    <span style="display: flex; flex-direction: column; transform: translateY(var(--roll, 0%)); transition: transform 500ms cubic-bezier(0.25, 0.1, 0.25, 1);">
+                      <span style="display: block; height: 20px; line-height: 20px; white-space: nowrap;">About our studio</span>
+                      <span style="display: block; height: 20px; line-height: 20px; white-space: nowrap;">About our studio</span>
+                    </span>
+                  </span>
+                  <span style="width: 32px; height: 32px; border-radius: 9999px; background: #ffffff; color: var(--accent, #F26522); display: flex; align-items: center; justify-content: center; flex-shrink: 0; transform: rotate(var(--rot, 0deg)); transition: transform 500ms cubic-bezier(0.25, 0.1, 0.25, 1);">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <img src="https://images.higgs.ai/?default=1&amp;output=webp&amp;url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260516_090133_c157d30b-a99a-4477-bec1-a446149ec3f2.png&amp;w=1280&amp;q=85" alt="Axion Studio — featured project visual" style="width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 16px; align-self: end; display: block;">
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isCompact }}" hint-placeholder-val="{{ false }}">
+        <div style="padding: 0 clamp(20px, 3.5vw, 48px); display: flex; flex-direction: column; gap: 36px;">
+          <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 22px;">
+            <p style="font-size: clamp(15px, 2.7vw, 17px); line-height: 1.6; font-weight: 500; color: #111827; margin: 0; max-width: 34em;">Through research, creative thinking and iteration we help growing brands realize their digital full potential.</p>
+            <button type="button" style="display: flex; align-items: center; gap: 12px; background: var(--accent, #F26522); color: #ffffff; border: none; cursor: pointer; border-radius: 9999px; padding: 8px 8px 8px 20px; font-size: 13px; font-weight: 500; font-family: inherit; transition: background 300ms;" style-hover="--roll: -50%; --rot: -45deg; background: var(--accent-hover, #e05a1a);">
+              <span style="display: block; overflow: hidden; height: 20px;">
+                <span style="display: flex; flex-direction: column; transform: translateY(var(--roll, 0%)); transition: transform 500ms cubic-bezier(0.25, 0.1, 0.25, 1);">
+                  <span style="display: block; height: 20px; line-height: 20px; white-space: nowrap;">About our studio</span>
+                  <span style="display: block; height: 20px; line-height: 20px; white-space: nowrap;">About our studio</span>
+                </span>
+              </span>
+              <span style="width: 28px; height: 28px; border-radius: 9999px; background: #ffffff; color: var(--accent, #F26522); display: flex; align-items: center; justify-content: center; flex-shrink: 0; transform: rotate(var(--rot, 0deg)); transition: transform 500ms cubic-bezier(0.25, 0.1, 0.25, 1);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+              </span>
+            </button>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: clamp(16px, 3vw, 20px);">
+            <img src="https://images.higgs.ai/?default=1&amp;output=webp&amp;url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260516_090123_74be96d4-9c1b-40cf-932a-96f4f4babed3.png&amp;w=1280&amp;q=85" alt="Axion Studio — abstract brand artwork" style="flex: 1 1 240px; min-width: 0; width: 100%; aspect-ratio: 438 / 346; object-fit: cover; border-radius: 14px; display: block;">
+            <img src="https://images.higgs.ai/?default=1&amp;output=webp&amp;url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260516_090133_c157d30b-a99a-4477-bec1-a446149ec3f2.png&amp;w=1280&amp;q=85" alt="Axion Studio — featured project visual" style="flex: 1.25 1 300px; min-width: 0; width: 100%; aspect-ratio: 900 / 600; object-fit: cover; border-radius: 14px; display: block;">
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </section>
+
+  <!-- ============ SECTION 3: CASE STUDIES ============ -->
+  <section id="projects" data-screen-label="Case studies" style="background: #F5F5F5; padding: clamp(64px, 7.8vw, 112px) 0;">
+    <div style="max-width: 1440px; margin: 0 auto;">
+      <div style="padding: 0 clamp(20px, 3.5vw, 48px); display: flex; align-items: center; gap: 12px; margin-bottom: clamp(24px, 2.2vw, 32px);">
+        <span style="width: clamp(24px, 1.95vw, 28px); height: clamp(24px, 1.95vw, 28px); border-radius: 9999px; background: #111827; color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: clamp(11px, 0.85vw, 12px); font-weight: 600; flex-shrink: 0;">2</span>
+        <span style="font-size: clamp(12px, 0.9vw, 13px); font-weight: 500; color: #111827; border: 1px solid #d1d5db; border-radius: 9999px; padding: clamp(4px, 0.42vw, 6px) clamp(12px, 1.1vw, 16px);">Featured client work</span>
+      </div>
+      <h2 style="padding: 0 clamp(20px, 3.5vw, 48px); font-size: clamp(1.75rem, 5vw, 4.2rem); font-weight: 500; line-height: 1.08; letter-spacing: -0.03em; color: #111827; margin: 0 0 clamp(40px, 4.4vw, 64px);">Our projects</h2>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); align-items: start; gap: clamp(20px, 1.9vw, 28px); padding: 0 clamp(20px, 3.5vw, 48px);">
+
+        <div>
+          <div style="position: relative; aspect-ratio: 329 / 246; border-radius: 16px; overflow: hidden; background: #1a1d2e; cursor: pointer;" style-hover="--w: 148px; --o: 1; --r: 0deg;">
+            <video src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260516_122702_390f5305-8719-41d5-ae80-d23ab3796c28.mp4" autoplay="true" muted="true" loop="true" playsinline="true" preload="auto" style="width: 100%; height: 100%; object-fit: cover; display: block;"></video>
+            <div style="position: absolute; bottom: 16px; left: 16px; height: 36px; width: var(--w, 36px); border-radius: 9999px; background: #ffffff; overflow: hidden; transition: width 300ms ease-in-out;">
+              <span style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 13px; font-weight: 500; color: #111827; white-space: nowrap; opacity: var(--o, 0); transition: opacity 300ms ease-in-out 100ms;">Learn more</span>
+              <span style="position: absolute; right: 11px; top: 50%; margin-top: -7px; width: 14px; height: 14px; color: #111827; transform: rotate(var(--r, -45deg)); transition: transform 300ms ease-in-out; display: flex;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+              </span>
+            </div>
+          </div>
+          <p style="font-size: clamp(13px, 1vw, 14px); color: #4b5563; margin: 16px 0 0; line-height: 1.625;">Winner of Site of the Month 2025 - an interactive 3D showcase driving record engagement</p>
+          <h3 style="font-size: clamp(14px, 1.05vw, 15px); font-weight: 600; color: #111827; margin: 4px 0 0;">Narrativ</h3>
+        </div>
+
+        <div>
+          <div style="position: relative; aspect-ratio: 1 / 1; border-radius: 16px; overflow: hidden; background: #6b6b6b; cursor: pointer;" style-hover="--w: 168px; --o: 1; --r: 0deg;">
+            <video src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260516_123323_f909c2b8-ff6c-4edf-882b-8ebcdbe389b5.mp4" autoplay="true" muted="true" loop="true" playsinline="true" preload="auto" style="width: 100%; height: 100%; object-fit: cover; display: block;"></video>
+            <div style="position: absolute; bottom: 16px; left: 16px; height: 36px; width: var(--w, 36px); border-radius: 9999px; background: #111827; overflow: hidden; transition: width 300ms ease-in-out;">
+              <span style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 13px; font-weight: 500; color: #ffffff; white-space: nowrap; opacity: var(--o, 0); transition: opacity 300ms ease-in-out 100ms;">View case study</span>
+              <span style="position: absolute; right: 11px; top: 50%; margin-top: -7px; width: 14px; height: 14px; color: #ffffff; transform: rotate(var(--r, -45deg)); transition: transform 300ms ease-in-out; display: flex;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+              </span>
+            </div>
+          </div>
+          <p style="font-size: clamp(13px, 1vw, 14px); color: #4b5563; margin: 16px 0 0; line-height: 1.625;">Transforming a dated platform into a conversion-focused brand experience</p>
+          <h3 style="font-size: clamp(14px, 1.05vw, 15px); font-weight: 600; color: #111827; margin: 4px 0 0;">Luminar</h3>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#3B6FE0&quot;,&quot;options&quot;:[&quot;#F26522&quot;,&quot;#3B6FE0&quot;,&quot;#12A594&quot;,&quot;#E23D5B&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Brand&quot;},&quot;motion&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0,&quot;max&quot;:2,&quot;step&quot;:0.1,&quot;unit&quot;:&quot;×&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Hero shader&quot;},&quot;grain&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Hero shader&quot;}}">
+class Component extends DCLogic {
+  state = {
+    w: (typeof window !== 'undefined' && window.innerWidth) || 1280,
+    menuOpen: false,
+    time: ''
+  };
+
+  componentDidMount() {
+    this._onResize = () => {
+      const w = window.innerWidth;
+      if (w !== this.state.w) this.setState({ w });
+    };
+    window.addEventListener('resize', this._onResize);
+
+    this._fmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/London',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    this._tick = () => {
+      const t = this._fmt.format(new Date());
+      if (t !== this.state.time) this.setState({ time: t });
+    };
+    this._tick();
+    this._timer = setInterval(this._tick, 1000);
+
+    // Ensure the looping case-study videos actually autoplay
+    this._kickVideos = () => {
+      document.querySelectorAll('video').forEach((v) => {
+        v.muted = true;
+        v.loop = true;
+        v.playsInline = true;
+        const p = v.play();
+        if (p && p.catch) p.catch(() => {});
+      });
+    };
+    this._vt1 = setTimeout(this._kickVideos, 250);
+    this._vt2 = setTimeout(this._kickVideos, 1600);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('resize', this._onResize);
+    clearInterval(this._timer);
+    clearTimeout(this._vt1);
+    clearTimeout(this._vt2);
+  }
+
+  _darken(hex, f) {
+    let s = String(hex || '').replace('#', '');
+    if (s.length === 3) s = s[0] + s[0] + s[1] + s[1] + s[2] + s[2];
+    const n = parseInt(s, 16);
+    if (isNaN(n) || s.length !== 6) return '#e05a1a';
+    const ch = (v) => {
+      v = Math.max(0, Math.min(255, Math.round(v * f)));
+      return (v < 16 ? '0' : '') + v.toString(16);
+    };
+    return '#' + ch((n >> 16) & 255) + ch((n >> 8) & 255) + ch(n & 255);
+  }
+
+  renderVals() {
+    const w = this.state.w;
+    const isSm = w >= 640;
+    const isMd = w >= 768;
+    const isLg = w >= 1024;
+
+    const accent = this.props.accent ?? '#F26522';
+    const isDefault = String(accent).toLowerCase() === '#f26522';
+    const motion = this.props.motion ?? 1;
+    const grain = (this.props.grain ?? true) ? 1 : 0;
+
+    return {
+      isSm,
+      isMd,
+      isLg,
+      isMobileNav: !isMd,
+      isCompact: !isLg,
+      menuOpen: this.state.menuOpen && !isMd,
+      londonTime: this.state.time,
+      openMenu: () => this.setState({ menuOpen: true }),
+      closeMenu: () => this.setState({ menuOpen: false }),
+      accent,
+      accentHover: isDefault ? '#e05a1a' : this._darken(accent, 0.88),
+      shaderGlow: isDefault ? '#ff5f03' : accent,
+      shaderMotion: motion,
+      shaderGrain: grain
+    };
+  }
+}
+
+</script>
+</body>
+</html>

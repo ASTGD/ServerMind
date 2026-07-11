@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ServerAlly Dashboard — redesign concept</title>
+<style>
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --border: 214.3 31.8% 91.4%;
+    --primary: 243 75% 59%;
+    --primary-foreground: 210 40% 98%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --success: 142 71% 40%;
+    --success-bg: 142 71% 95%;
+    --warning: 38 92% 45%;
+    --warning-bg: 38 92% 95%;
+    --destructive: 0 84.2% 60.2%;
+    --radius: 0.5rem;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    padding: 32px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  h3 { font-size: 14px; font-weight: 600; margin: 0; }
+  .muted { color: hsl(var(--muted-foreground)); }
+  .header-row { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:24px; }
+  .status-line { display:flex; align-items:center; gap:8px; font-size:14px; color:hsl(var(--muted-foreground)); }
+  .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; display:inline-block; }
+  .dot-success { background: hsl(var(--success)); }
+  .dot-warning { background: hsl(var(--warning)); }
+  .btn-primary {
+    background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
+    border: none; border-radius: var(--radius); padding: 0 16px; height:36px;
+    font-size:14px; font-weight:500; display:flex; align-items:center; gap:6px; cursor:pointer;
+  }
+  .kpi-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:24px; }
+  .kpi { background: hsl(var(--muted)); border-radius: var(--radius); padding:16px; }
+  .kpi .label { font-size:13px; color:hsl(var(--muted-foreground)); margin:0; }
+  .kpi .value { font-size:24px; font-weight:600; margin:4px 0 0; }
+  .grid-main { display:grid; grid-template-columns: 2fr 1fr; gap:20px; }
+  .card { background: hsl(var(--card)); border:1px solid hsl(var(--border)); border-radius:12px; }
+  .fleet-list { border:1px solid hsl(var(--border)); border-radius:12px; overflow:hidden; }
+  .fleet-row { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid hsl(var(--border)); text-decoration:none; color:inherit; }
+  .fleet-row:last-child { border-bottom:none; }
+  .fleet-row:hover { background: hsl(var(--muted)); }
+  .fleet-name-col { width:150px; flex-shrink:0; }
+  .fleet-name-col p { margin:0; font-size:14px; }
+  .fleet-name-col .sub { font-size:12px; color:hsl(var(--muted-foreground)); margin-top:2px; }
+  .grade-badge { width:26px; height:22px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; }
+  .grade-a, .grade-b { background: hsl(var(--success-bg)); color: hsl(var(--success)); }
+  .grade-c { background: hsl(var(--warning-bg)); color: hsl(var(--warning)); }
+  .grade-d, .grade-f { background: hsl(0 84% 95%); color: hsl(var(--destructive)); }
+  .comp-divider { border-top:1px solid hsl(var(--border)); margin:10px 0 8px; padding-top:8px; font-size:11px; font-weight:600; color:hsl(var(--muted-foreground)); text-transform:uppercase; letter-spacing:0.03em; }
+  .main-stack { display:flex; flex-direction:column; gap:20px; }
+  .status-tag { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; border-radius:4px; padding:3px 7px; flex-shrink:0; white-space:nowrap; }
+  .status-tag.accent { background: hsl(var(--primary) / 0.1); color: hsl(var(--primary)); }
+  .status-tag.danger { background: hsl(var(--destructive) / 0.1); color: hsl(var(--destructive)); }
+  .status-tag.neutral { background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); }
+  .bars { flex:1; display:flex; gap:16px; }
+  .bar-wrap { flex:1; min-width:0; }
+  .bar-label { display:flex; justify-content:space-between; font-size:11px; color:hsl(var(--muted-foreground)); margin-bottom:3px; }
+  .bar-track { height:5px; border-radius:3px; background:hsl(var(--muted)); overflow:hidden; }
+  .bar-fill { height:100%; border-radius:3px; }
+  .fill-success { background:hsl(var(--success)); }
+  .fill-warning { background:hsl(var(--warning)); }
+  .sidebar-stack { display:flex; flex-direction:column; gap:16px; }
+  .sidebar-card { padding:16px 20px; }
+  .report-row { display:flex; align-items:center; gap:10px; padding:6px 4px; border-radius:var(--radius); text-decoration:none; color:inherit; margin-top:4px; }
+  .report-row:hover { background:hsl(var(--muted)); }
+  .icon-box { width:30px; height:30px; border-radius:var(--radius); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:14px; font-weight:600; }
+  .icon-box.warning { background:hsl(var(--warning-bg)); color:hsl(var(--warning)); }
+  .view-all { display:block; margin-top:8px; padding-top:8px; border-top:1px solid hsl(var(--border)); font-size:12px; color:hsl(var(--primary)); text-decoration:none; text-align:center; }
+  .qa-row { display:flex; align-items:center; padding:6px 4px; border-radius:var(--radius); text-decoration:none; color:inherit; font-size:13px; margin-top:2px; }
+  .qa-row:hover { background:hsl(var(--muted)); }
+  .comp-row { display:flex; align-items:center; gap:8px; font-size:12px; color:hsl(var(--muted-foreground)); padding:4px 0; }
+  .comp-row .name { flex:1; }
+  .running-row { display:flex; align-items:center; gap:8px; font-size:13px; }
+  .pulse { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+  .note { max-width:1080px; margin:0 auto 20px; font-size:13px; color:hsl(var(--muted-foreground)); border-left:3px solid hsl(var(--primary)); padding-left:12px; }
+</style>
+</head>
+<body>
+<div class="note">Static concept mockup — open this file directly in a browser. Colors use your actual index.css token values, plus the new success/warning tokens proposed for the redesign.</div>
+<div class="wrap">
+
+  <div class="header-row">
+    <div>
+      <h1>Welcome back, Shafin</h1>
+      <div class="status-line"><span class="dot dot-warning"></span>7 of 8 servers healthy &middot; 1 needs attention</div>
+    </div>
+    <button class="btn-primary">+ Add a server</button>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi"><p class="label">Servers online</p><p class="value">7 <span style="font-size:14px;font-weight:400;" class="muted">of 8</span></p></div>
+    <div class="kpi"><p class="label">Needs attention</p><p class="value" style="color:hsl(var(--warning));">1</p></div>
+    <div class="kpi"><p class="label">Playbooks ready</p><p class="value">42</p></div>
+  </div>
+
+  <div class="grid-main">
+    <div class="main-stack">
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <h2>Your fleet</h2>
+        <a href="#" class="muted" style="font-size:13px;text-decoration:none;">View all</a>
+      </div>
+      <div class="fleet-list">
+        <a href="#" class="fleet-row">
+          <span class="dot dot-warning"></span>
+          <span class="grade-badge grade-c" title="Security &amp; health grade">C</span>
+          <div class="fleet-name-col"><p>TestServer4</p><div class="sub">Hosting account</div></div>
+          <div class="bars">
+            <div class="bar-wrap"><div class="bar-label"><span>CPU</span><span>45%</span></div><div class="bar-track"><div class="bar-fill fill-success" style="width:45%;"></div></div></div>
+            <div class="bar-wrap"><div class="bar-label"><span>RAM</span><span>58%</span></div><div class="bar-track"><div class="bar-fill fill-success" style="width:58%;"></div></div></div>
+            <div class="bar-wrap"><div class="bar-label"><span>Disk</span><span>87%</span></div><div class="bar-track"><div class="bar-fill fill-warning" style="width:87%;"></div></div></div>
+          </div>
+        </a>
+        <a href="#" class="fleet-row">
+          <span class="dot dot-success"></span>
+          <span class="grade-badge grade-a" title="Security &amp; health grade">A</span>
+          <div class="fleet-name-col"><p>TestServer1</p><div class="sub">VPS &middot; Ubuntu</div></div>
+          <div class="bars">
+            <div class="bar-wrap"><div class="bar-label"><span>CPU</span><span>34%</span></div><div class="bar-track"><div class="bar-fill fill-success" style="width:34%;"></div></div></div>
+            <div class="bar-wrap"><div class="bar-label"><span>RAM</span><span>29%</span></div><div class="bar-track"><div class="bar-fill fill-success" style="width:29%;"></div></div></div>
+            <div class="bar-wrap"><div class="bar-label"><span>Disk</span><span>40%</span></div><div class="bar-track"><div class="bar-fill fill-success" style="width:40%;"></div></div></div>
+          </div>
+        </a>
+        <a href="#" class="fleet-row">
+          <span class="dot dot-success"></span>
+          <span class="grade-badge grade-a" title="Security &amp; health grade">A</span>
+          <div class="fleet-name-col"><p>Client Site (IIS)</p><div class="sub">Windows Server</div></div>
+          <div class="bars">
+            <div class="bar-wrap"><div class="bar-label"><span>CPU</span><span>22%</span></div><div class="bar-track"><div class="bar-fill fill-success" style="width:22%;"></div></div></div>
+            <div class="bar-wrap"><div class="bar-label"><span>RAM</span><span>61%</span></div><div class="bar-track"><div class="bar-fill fill-success" style="width:61%;"></div></div></div>
+            <div class="bar-wrap"><div class="bar-label"><span>Disk</span><span>35%</span></div><div class="bar-track"><div class="bar-fill fill-success" style="width:35%;"></div></div></div>
+          </div>
+        </a>
+        <a href="#" class="fleet-row">
+          <span class="dot dot-success"></span>
+          <span class="grade-badge grade-b" title="Security &amp; health grade">B</span>
+          <div class="fleet-name-col"><p>Shop Backend</p><div class="sub">Cloud server &middot; AWS</div></div>
+          <div class="bars">
+            <div class="bar-wrap"><div class="bar-label"><span>CPU</span><span>18%</span></div><div class="bar-track"><div class="bar-fill fill-success" style="width:18%;"></div></div></div>
+            <div class="bar-wrap"><div class="bar-label"><span>RAM</span><span>29%</span></div><div class="bar-track"><div class="bar-fill fill-success" style="width:29%;"></div></div></div>
+            <div class="bar-wrap"><div class="bar-label"><span>Disk</span><span>33%</span></div><div class="bar-track"><div class="bar-fill fill-success" style="width:33%;"></div></div></div>
+          </div>
+        </a>
+      </div>
+    </div>
+
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <h2>Recent activity</h2>
+        <a href="/logs" class="muted" style="font-size:13px;text-decoration:none;">View all</a>
+      </div>
+      <div class="fleet-list">
+        <a href="#" class="fleet-row">
+          <span class="status-tag accent">Needs OK</span>
+          <div style="flex:1;min-width:0;">
+            <p style="margin:0;font-size:13px;">Ally is waiting for your approval mid-mission</p>
+            <p style="margin:2px 0 0;font-size:12px;" class="muted">TestServer3</p>
+          </div>
+          <span class="muted" style="font-size:12px;flex-shrink:0;">3m ago</span>
+        </a>
+        <a href="#" class="fleet-row">
+          <span class="status-tag danger">Blocked</span>
+          <div style="flex:1;min-width:0;">
+            <p style="margin:0;font-size:13px;">Ally blocked a risky command before running it</p>
+            <p style="margin:2px 0 0;font-size:12px;" class="muted">TestServer1</p>
+          </div>
+          <span class="muted" style="font-size:12px;flex-shrink:0;">26m ago</span>
+        </a>
+        <a href="#" class="fleet-row">
+          <span class="status-tag danger">Failed</span>
+          <div style="flex:1;min-width:0;">
+            <p style="margin:0;font-size:13px;">Scheduled backup run failed</p>
+            <p style="margin:2px 0 0;font-size:12px;" class="muted">Shop Backend</p>
+          </div>
+          <span class="muted" style="font-size:12px;flex-shrink:0;">1h ago</span>
+        </a>
+        <a href="#" class="fleet-row">
+          <span class="status-tag danger">Failed</span>
+          <div style="flex:1;min-width:0;">
+            <p style="margin:0;font-size:13px;">SSL setup didn't finish &mdash; domain isn't pointed here yet</p>
+            <p style="margin:2px 0 0;font-size:12px;" class="muted">TestServer4</p>
+          </div>
+          <span class="muted" style="font-size:12px;flex-shrink:0;">3h ago</span>
+        </a>
+        <a href="#" class="fleet-row">
+          <span class="status-tag neutral">High risk</span>
+          <div style="flex:1;min-width:0;">
+            <p style="margin:0;font-size:13px;">Ran a firewall rule change (you approved it)</p>
+            <p style="margin:2px 0 0;font-size:12px;" class="muted">TestServer1</p>
+          </div>
+          <span class="muted" style="font-size:12px;flex-shrink:0;">5h ago</span>
+        </a>
+      </div>
+    </div>
+    </div>
+
+    <div class="sidebar-stack">
+      <div class="card sidebar-card">
+        <h3>Ally's fleet report</h3>
+        <a href="#" class="report-row">
+          <span class="icon-box warning">!</span>
+          <span style="font-size:13px;flex:1;">TestServer4 is at 87% disk</span>
+          <span class="muted">&rsaquo;</span>
+        </a>
+        <a href="#" class="report-row">
+          <span class="icon-box warning">!</span>
+          <span style="font-size:13px;flex:1;">2 servers have no backup</span>
+          <span class="muted">&rsaquo;</span>
+        </a>
+        <a href="#" class="view-all">View all 3 findings</a>
+      </div>
+
+      <div class="card sidebar-card">
+        <h3 style="margin-bottom:8px;">Running now</h3>
+        <div class="running-row">
+          <span class="dot dot-success pulse"></span>
+          <span style="flex:1;">Installing WordPress <span class="muted">&middot; Shop Backend</span></span>
+          <span class="muted" style="font-size:12px;">2m</span>
+        </div>
+      </div>
+
+      <div class="card sidebar-card">
+        <h3 style="margin-bottom:4px;">Quick actions</h3>
+        <a href="#" class="qa-row"><span style="flex:1;">Browse recipes</span><span class="muted">&rsaquo;</span></a>
+        <a href="#" class="qa-row"><span style="flex:1;">Invite your team</span><span class="muted">&rsaquo;</span></a>
+      </div>
+
+      <div class="card sidebar-card">
+        <h3 style="margin-bottom:8px;">Fleet composition</h3>
+        <div class="comp-row"><span class="name">VPS &amp; bare metal</span><span>4</span></div>
+        <div class="comp-row"><span class="name">Windows</span><span>1</span></div>
+        <div class="comp-row"><span class="name">Hosting accounts</span><span>2</span></div>
+        <div class="comp-row"><span class="name">Cloud servers</span><span>1</span></div>
+        <div class="comp-divider">By security grade</div>
+        <div class="comp-row"><span class="name">Grade A</span><span>4</span></div>
+        <div class="comp-row"><span class="name">Grade B</span><span>2</span></div>
+        <div class="comp-row"><span class="name">Grade C</span><span>1</span></div>
+        <div class="comp-row"><span class="name">Grade D or below</span><span>1</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

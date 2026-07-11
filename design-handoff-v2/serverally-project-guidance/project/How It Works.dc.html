@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+  <style>
+    html { scroll-behavior: smooth; }
+    html, body { margin: 0; padding: 0; background: #FFFFFF; color: #0F172A; font-family: "Geist", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+    *, *::before, *::after { box-sizing: border-box; }
+    a { color: #5048E5; }
+    a:hover { color: #4338CA; }
+    @keyframes jRise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes allyFloat { 0% { transform: translateY(0); } 50% { transform: translateY(-9px); } 100% { transform: translateY(0); } }
+  </style>
+</helmet>
+
+<div style="background: #FFFFFF; color: #0F172A; overflow-x: clip; min-height: 100vh; display: flex; flex-direction: column;">
+
+  <dc-import name="SiteNav" active="how" hint-size="100%,55px" style="position: sticky; top: 0; z-index: 90;"></dc-import>
+
+  <section data-screen-label="How It Works placeholder" style="flex: 1; display: flex; align-items: center; justify-content: center; padding: clamp(72px, 10vw, 128px) clamp(20px, 4vw, 32px);">
+    <div style="max-width: 620px; text-align: center; display: flex; flex-direction: column; align-items: center;">
+      <img src="marketing-brief/assets/logo/serverally-mark.svg" alt="" style="width: 52px; height: 52px; display: block; animation: allyFloat 6s ease-in-out infinite;">
+      <p style="font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #6D5EF3; margin: 26px 0 12px; animation: jRise 700ms ease both;">How It Works</p>
+      <h1 style="font-size: clamp(1.9rem, 4.4vw, 3rem); font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; margin: 0; animation: jRise 700ms ease 80ms both;">The full walkthrough lands here next.</h1>
+      <p style="font-size: clamp(15px, 1.5vw, 17px); line-height: 1.65; color: #64748B; margin: 16px 0 0; max-width: 46ch; animation: jRise 700ms ease 160ms both;">This page is being built right now — the whole story of one real request: chat → plan → mission → verified, plus the complete shakedown evidence.</p>
+      <a href="Home.dc.html" style="display: inline-flex; align-items: center; gap: 8px; margin-top: 26px; font-size: 14.5px; font-weight: 600; color: #5048E5; text-decoration: none; animation: jRise 700ms ease 240ms both;" style-hover="color: #4338CA;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg>
+        Back to Home
+      </a>
+      <div id="shakedown" style="width: 100%; margin-top: clamp(40px, 6vw, 64px); border: 2px dashed #C7D2FE; border-radius: 18px; padding: 26px; background: #FDFDFF; scroll-margin-top: 96px; animation: jRise 700ms ease 300ms both;">
+        <p style="margin: 0; font-size: 14px; font-weight: 650; color: #4338CA;">The shakedown story will live right here</p>
+        <p style="margin: 8px 0 0; font-size: 13.5px; line-height: 1.6; color: #64748B;">The full red-team test, step by step. Until it arrives, the short version is on the <a href="Home.dc.html" style="color: #5048E5; font-weight: 600; text-decoration: none;">Home page</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer data-screen-label="Footer" style="border-top: 1px solid #E2E8F0; padding: 36px 0; background: #FFFFFF;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 32px); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px;">
+      <img src="marketing-brief/assets/logo/serverally-logo.svg" alt="ServerAlly" style="height: 26px; display: block;">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 20px;">
+        <a href="Home.dc.html" style="font-size: 13px; color: #64748B; text-decoration: none;" style-hover="color: #5048E5;">Home</a>
+        <a href="How It Works.dc.html" style="font-size: 13px; color: #64748B; text-decoration: none;" style-hover="color: #5048E5;">How It Works</a>
+        <a href="Pricing.dc.html" style="font-size: 13px; color: #64748B; text-decoration: none;" style-hover="color: #5048E5;">Pricing</a>
+        <a href="Trust and Security.dc.html" style="font-size: 13px; color: #64748B; text-decoration: none;" style-hover="color: #5048E5;">Trust &amp; Security</a>
+      </div>
+      <p style="margin: 0; font-size: 12.5px; color: #94A3B8;">© 2026 ServerAlly · Pre-launch</p>
+    </div>
+  </footer>
+
+</div>
+
+</x-dc>
+</body>
+</html>
