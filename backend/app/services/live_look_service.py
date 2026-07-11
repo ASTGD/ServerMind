@@ -66,6 +66,32 @@ done
 """.strip()
 
 
+def _drop_empty_sections(text: str) -> str:
+    """Remove any '### HEADER' block whose probe returned nothing. On a heavy server the
+    bundle can time out partway, leaving e.g. an empty '### DISK' — and an empty section
+    reads to the model as an authoritative "the command found nothing", which makes Ally
+    wrongly ask the user to run what a probe just failed to capture. Dropping it lets the
+    doer rule take over (Ally runs the command itself)."""
+    lines = text.split("\n")
+    out: list[str] = []
+    i, n = 0, len(lines)
+    while i < n:
+        if lines[i].startswith("###"):
+            j = i + 1
+            body: list[str] = []
+            while j < n and not lines[j].startswith("###"):
+                body.append(lines[j])
+                j += 1
+            if any(b.strip() for b in body):
+                out.append(lines[i])
+                out.extend(body)
+            i = j
+        else:
+            out.append(lines[i])
+            i += 1
+    return "\n".join(out).strip()
+
+
 def should_look(user_input: str, skill_matched: bool) -> bool:
     """True when a fresh look is worthwhile: a diagnostic skill matched, or the message
     reads like a problem report."""
@@ -90,7 +116,7 @@ async def snapshot(server: Server) -> str | None:
     except Exception as exc:  # noqa: BLE001 — Live Look must never break the chat
         logger.info("live look skipped for %s: %s", server.id, exc)
         return None
-    text = (out or "").strip()
+    text = _drop_empty_sections((out or "").strip())
     if not text:
         return None
     if len(text) > _MAX_CHARS:

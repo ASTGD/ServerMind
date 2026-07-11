@@ -261,6 +261,26 @@ def test_chat_prompt_mission_block_covers_cross_server_jobs():
     assert "naming every server involved" in p
 
 
+def test_chat_prompt_is_a_doer_not_an_advisor():
+    """Ally must RUN commands itself, never tell the user to run one and paste the output
+    back. Pins out the over-hands-off failure (2026-07-11: asked "run df -h and share it"
+    instead of just running it) — the user's core "Ally is a doer, not an advisor" ask."""
+    p = _chat_prompt_lower()
+    assert "doer, not an advisor" in p
+    # Forbid the advisory "you run it and paste it back" pattern...
+    assert "share the output" in p
+    # ...and explicitly license running read-only commands without asking.
+    assert "read-only commands are always safe" in p
+
+
+def test_normal_mode_makes_ally_do_the_looking():
+    """The DEFAULT (normal) posture must say 'look' means ALLY runs the read-only checks,
+    not the user — so the doer behaviour holds even in the balanced mode."""
+    m = " ".join(ai_service._MODE_POSTURE["normal"].lower().split())
+    assert "look" in m and "yourself" in m
+    assert "report back" in m  # "don't ask the user to run a command and report back"
+
+
 # ── Autonomy modes (proactivity Track D) ──────────────────────────────────────
 
 def test_mode_normalization():
