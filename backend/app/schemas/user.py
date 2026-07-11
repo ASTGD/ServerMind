@@ -28,6 +28,7 @@ class UserOut(UserBase):
     avatar_url: str | None
     is_active: bool
     is_verified: bool
+    is_admin: bool = False
     totp_enabled: bool
     digest_frequency: str = "weekly"
     ally_mode: str = "normal"

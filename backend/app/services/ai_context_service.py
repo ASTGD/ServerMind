@@ -229,3 +229,100 @@ async def build_fleet_health(db: AsyncSession, servers: list[Server]) -> dict[st
         if parts:
             health[str(sid)] = "; ".join(parts)
     return health
+
+
+# ── Full chat-context assembly (shared by the live WS handler + the Dev Door) ──────
+#
+# The exact context Ally sees before planning a chat message: the server profile,
+# what Ally remembers, the autonomy mode, the OTHER reachable servers (with health),
+# a read-only file scout, a live snapshot, and the skill menu. Extracted here so the
+# WebSocket chat path and the dev dry-run build byte-identical prompts — the Dev Door's
+# whole point is "see exactly what Ally sees". Best-effort throughout (a context failure
+# degrades to None, exactly as the inline version did — it never blocks the chat).
+
+from dataclasses import dataclass
+
+
+@dataclass
+class ChatContext:
+    """Everything plan_commands takes as per-message context (each block optional)."""
+
+    server_profile: str | None = None
+    memories: str | None = None
+    ally_mode: str | None = None
+    other_servers: str | None = None
+    scout: str | None = None
+    live_snapshot: str | None = None
+    skill_menu: str | None = None
+
+
+async def build_chat_context(
+    server: Server,
+    user_input: str,
+    *,
+    acting_user_id: str | None = None,
+    skill=None,  # skill_service.Skill | None
+    want_scout: bool = True,
+    want_live: bool = True,
+) -> ChatContext:
+    """Assemble the per-message chat context for ``server`` / ``user_input``.
+
+    Mirrors the assembly that used to live inline in websocket/terminal.py so both the
+    live chat and the Dev Door dry-run produce the same prompt. ``want_scout`` /
+    ``want_live`` let a caller skip the two SSH probes. Owns its own DB sessions.
+    """
+    import uuid
+
+    from app.database import AsyncSessionLocal
+    from app.models.user import User
+    from app.services import (
+        live_look_service,
+        memory_service,
+        scout_service,
+        skill_service,
+        team_service,
+    )
+
+    ctx = ChatContext(
+        skill_menu=skill_service.menu_for(server.os_type) if skill is None else None,
+    )
+    owner_id = acting_user_id or server.user_id
+    other_roster: list[Server] = []
+
+    # DB-derived context (profile, memories, mode, other-server health). One session.
+    try:
+        async with AsyncSessionLocal() as db:
+            ctx.server_profile = await build_server_profile(db, server)
+            ctx.memories = await memory_service.block_for_server(db, server.id, owner_id)
+            actor = await db.get(User, uuid.UUID(str(owner_id)))
+            if actor is not None:
+                ctx.ally_mode = getattr(actor, "ally_mode", None)  # Track D autonomy
+                roster = await team_service.mission_roster(db, actor, None)
+                other_roster = [s for s in roster if str(s.id) != str(server.id)]
+                if other_roster:
+                    health = await build_fleet_health(db, other_roster)
+                    lines = []
+                    for s in other_roster:
+                        base = f"- {s.name} — {s.os_type or 'unknown'}, status: {s.status or 'unknown'}"
+                        h = health.get(str(s.id))
+                        lines.append(f"{base}\n  {h}" if h else base)
+                    ctx.other_servers = "\n".join(lines)
+    except Exception as exc:  # noqa: BLE001 — context must never block chat
+        logger.warning("chat context build failed for %s: %s", server.id, exc)
+
+    # Track B pre-mission Scout — read-only file recon for a file / cross-server request.
+    if want_scout:
+        try:
+            if scout_service.should_scout(user_input, bool(other_roster)):
+                ctx.scout = await scout_service.scout(server, user_input, other_roster)
+        except Exception as exc:  # noqa: BLE001 — the scout must never block chat
+            logger.info("scout skipped for %s: %s", server.id, exc)
+
+    # Ally Context C1 Live Look — a fast read-only snapshot for a problem report.
+    if want_live and live_look_service.should_look(user_input, skill is not None):
+        try:
+            ctx.live_snapshot = await live_look_service.snapshot(server)
+        except Exception as exc:  # noqa: BLE001 — best-effort
+            logger.info("live look skipped for %s: %s", server.id, exc)
+
+    return ctx

@@ -14,6 +14,7 @@ from app.routers import auth as auth_router
 from app.routers import backups as backups_router
 from app.routers import cloud_accounts as cloud_accounts_router
 from app.routers import commands as commands_router
+from app.routers import dev as dev_router
 from app.routers import files as files_router
 from app.routers import fleet as fleet_router
 from app.routers import hosting as hosting_router
@@ -104,6 +105,7 @@ app.include_router(audit_router.router)
 app.include_router(assistant_router.router)
 app.include_router(servers_router.router)
 app.include_router(commands_router.router)
+app.include_router(dev_router.router)
 app.include_router(playbooks_router.router)
 app.include_router(recipes_router.router)
 app.include_router(scripts_router.router)

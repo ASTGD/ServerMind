@@ -72,6 +72,18 @@ async def require_verified(current_user: User = Depends(get_current_user)) -> Us
     return current_user
 
 
+async def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Require an internal-staff account. 403s for everyone else. Guards the Dev Door
+    (docs/EVAL-DRIVEN-DEV.md) — the Prompt Inspector, dry-run, and eval endpoints must
+    never be reachable by a customer, even one with a valid token."""
+    if not getattr(current_user, "is_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user
+
+
 async def get_current_user_optional(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: AsyncSession = Depends(get_db),

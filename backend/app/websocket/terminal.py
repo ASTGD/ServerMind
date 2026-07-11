@@ -1068,21 +1068,10 @@ class _MissionHub:
 
 
 async def _mission_roster(user: User, home_server: Server | None) -> list[Server]:
-    """The servers this mission may act on: every server the user can EXECUTE on
-    (Rule 7 — viewer overrides apply) with a shell connection (no hosting panels).
-    The home server leads; the list is capped to keep the prompt bounded."""
-    roster: list[Server] = []
+    """The servers this mission may act on — thin session-owning wrapper over the
+    canonical team_service.mission_roster (shared with build_chat_context)."""
     async with AsyncSessionLocal() as db:
-        candidates = await team_service.accessible_servers(db, user)
-        for s in candidates:
-            if s.connection_type == "hosting":
-                continue
-            access = await team_service.get_access(db, user, str(s.id))
-            if access is not None and access.can_execute:
-                roster.append(access.server)
-    if home_server is not None:
-        roster = [home_server] + [s for s in roster if str(s.id) != str(home_server.id)]
-    return roster[:_MISSION_ROSTER_MAX]
+        return await team_service.mission_roster(db, user, home_server, _MISSION_ROSTER_MAX)
 
 
 def _step_target(step: dict, roster_by_id: dict[str, Server], home: Server | None) -> Server | None:
@@ -1838,68 +1827,22 @@ async def _handle_message_inner(
     # ── 1. AI planning ────────────────────────────────────────────────────────
     await ws.send_text(json.dumps({"type": "thinking"}))
 
-    # Ally Brain Phase 3 — attach what ServerAlly already knows about this server
-    # (metrics, security grade, installs, recent activity), and Phase 5 — what Ally
-    # remembers (server notes + the acting user's preferences). Best-effort: a
-    # context failure must never block the chat itself.
-    server_profile = None
-    memories = None
-    other_servers = None
-    other_roster: list[Server] = []
-    ally_mode = None
-    try:
-        async with AsyncSessionLocal() as db:
-            server_profile = await ai_context_service.build_server_profile(db, server)
-            memories = await memory_service.block_for_server(
-                db, server.id, acting_user_id or server.user_id
-            )
-            actor = await db.get(User, uuid.UUID(str(acting_user_id or server.user_id)))
-            # Track A — capability contract: the OTHER servers a mission could act on
-            # (and transfer files to/from). Phase 2 — the whole fleet is in Ally's memory
-            # even while focused on one server: each other server carries its one-line
-            # health so "which of my servers needs attention?" works here too.
-            if actor is not None:
-                ally_mode = getattr(actor, "ally_mode", None)  # Track D: autonomy posture
-                roster = await _mission_roster(actor, None)
-                other_roster = [s for s in roster if str(s.id) != str(server.id)]
-                if other_roster:
-                    health = await ai_context_service.build_fleet_health(db, other_roster)
-                    lines = []
-                    for s in other_roster:
-                        base = f"- {s.name} — {s.os_type or 'unknown'}, status: {s.status or 'unknown'}"
-                        h = health.get(str(s.id))
-                        lines.append(f"{base}\n  {h}" if h else base)
-                    other_servers = "\n".join(lines)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("chat context build failed for %s: %s", server.id, exc)
-
-    # Proactivity Track B — pre-mission Scout: for a file / cross-server request, take a
-    # fast read-only look at the servers involved NOW, so Ally answers with the file it
-    # found (and a real destination) instead of a chain of "what's the path?" questions.
-    # Best-effort (~1-2s during "thinking"); SSH Linux only.
-    scout = None
-    try:
-        if scout_service.should_scout(user_input, bool(other_roster)):
-            scout = await scout_service.scout(server, user_input, other_roster)
-    except Exception as exc:  # noqa: BLE001 — the scout must never block chat
-        logger.info("scout skipped for %s: %s", server.id, exc)
-
-    # Ally Context C1 — Live Look: for a problem report (or a matched diagnostic skill),
-    # take a fast read-only snapshot NOW so Ally answers from real, current facts.
-    # Best-effort (~1-2s during "thinking"); a failure just means no snapshot.
-    live_snapshot = None
-    if live_look_service.should_look(user_input, skill is not None):
-        live_snapshot = await live_look_service.snapshot(server)
+    # Ally Brain — assemble the full per-message context (server profile, memories,
+    # autonomy mode, other reachable servers with health, read-only scout, live snapshot,
+    # skill menu). Shared with the Dev Door dry-run via ai_context_service so both build
+    # byte-identical prompts. Best-effort throughout — a failed piece degrades to None and
+    # never blocks the chat (Phase 3/5, Track A/B, Context C1 all live inside it now).
+    ctx = await ai_context_service.build_chat_context(
+        server, user_input, acting_user_id=acting_user_id, skill=skill
+    )
 
     try:
         plan = await ai_service.plan_commands(
             user_input, server, user_language, page_context, history,
-            server_profile=server_profile, memories=memories, skill=skill,
-            # Phase B: keyword matching missed → offer the one-line skill menu so the
-            # model itself can pick (works in any language / phrasing).
-            skill_menu=skill_service.menu_for(server.os_type) if skill is None else None,
-            live_snapshot=live_snapshot, other_servers=other_servers, scout=scout,
-            ally_mode=ally_mode,
+            server_profile=ctx.server_profile, memories=ctx.memories, skill=skill,
+            skill_menu=ctx.skill_menu,
+            live_snapshot=ctx.live_snapshot, other_servers=ctx.other_servers, scout=ctx.scout,
+            ally_mode=ctx.ally_mode,
         )
     except Exception as exc:
         await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
@@ -1918,9 +1861,9 @@ async def _handle_message_inner(
             try:
                 plan = await ai_service.plan_commands(
                     user_input, server, user_language, page_context, history,
-                    server_profile=server_profile, memories=memories, skill=picked,
-                    live_snapshot=live_snapshot, other_servers=other_servers, scout=scout,
-                    ally_mode=ally_mode,
+                    server_profile=ctx.server_profile, memories=ctx.memories, skill=picked,
+                    live_snapshot=ctx.live_snapshot, other_servers=ctx.other_servers, scout=ctx.scout,
+                    ally_mode=ctx.ally_mode,
                 )
             except Exception as exc:  # noqa: BLE001
                 await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))

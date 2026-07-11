@@ -35,6 +35,10 @@ class User(Base):
     # Subscription plan ('free' | 'pro'). Set manually until a billing provider is
     # chosen (docs/AI-METERING.md §8 — the billing webhook is deliberately not built).
     plan: Mapped[str] = mapped_column(String(10), default="free", server_default="free")
+    # Internal staff flag — gates the admin-only Dev Door (Prompt Inspector / eval
+    # runner). NEVER granted through signup or billing; set by hand on a trusted
+    # account. Guards every /api/dev endpoint. See docs/EVAL-DRIVEN-DEV.md.
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     totp_secret: Mapped[str | None] = mapped_column(String(255))

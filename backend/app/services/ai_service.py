@@ -1080,12 +1080,18 @@ async def plan_commands(
     other_servers: str | None = None,
     scout: str | None = None,
     ally_mode: str | None = None,
+    trace: dict | None = None,
 ) -> dict:
     """Ask Claude to produce a command plan for the user's request. ``skill`` (Ally
     Skills Phase A) injects the matched expert procedure — our own authored content,
     the one block Ally is meant to follow. ``skill_menu`` (Phase B) lists the library
     one-per-line so the model itself can request a skill via "use_skill" when keyword
-    matching missed (any language / phrasing)."""
+    matching missed (any language / phrasing).
+
+    ``trace`` (Dev Door, docs/EVAL-DRIVEN-DEV.md): when a dict is passed, it is filled
+    with the exact ``system`` prompt, ``volatile`` tail, ``user_input``, and ``raw``
+    model output — so an admin can see precisely what Ally saw and produced. No-op when
+    None (the production path is byte-identical)."""
     # Prompt-cache layout (Ally Context C3): STABLE prefix first — identical across
     # consecutive turns of a conversation (persona, rules, server identity, skill/menu)
     # — then everything per-message in the VOLATILE tail. See llm_service.complete.
@@ -1119,10 +1125,14 @@ async def plan_commands(
     volatile += _page_context_block(page_context)
     volatile += _history_block(history)
 
+    if trace is not None:
+        trace.update({"system": system, "volatile": volatile, "user_input": user_input})
+
+    raw_text = await llm_service.complete(system, user_input, max_tokens=4096, system_volatile=volatile)
+    if trace is not None:
+        trace["raw"] = raw_text
     try:
-        plan = _parse_json(_extract_json(
-            await llm_service.complete(system, user_input, max_tokens=4096, system_volatile=volatile)
-        ))
+        plan = _parse_json(_extract_json(raw_text))
     except json.JSONDecodeError:
         # complete() already retried transient empties; if the answer is STILL non-JSON, the
         # likeliest remaining cause is an over-large context on a heavy turn. Retry ONCE with
@@ -1134,10 +1144,11 @@ async def plan_commands(
             + _scout_block(scout)
             + _server_profile_block(server_profile)
         )
+        raw_text = await llm_service.complete(system, user_input, max_tokens=4096, system_volatile=volatile_trim)
+        if trace is not None:
+            trace.update({"raw": raw_text, "volatile": volatile_trim, "retried_trimmed": True})
         try:
-            plan = _parse_json(_extract_json(
-                await llm_service.complete(system, user_input, max_tokens=4096, system_volatile=volatile_trim)
-            ))
+            plan = _parse_json(_extract_json(raw_text))
         except json.JSONDecodeError as exc:
             logger.warning("AI plan JSON parse error after trimmed retry: %s", exc)
             raise ValueError(f"AI returned invalid JSON: {exc}") from exc
@@ -1149,12 +1160,13 @@ async def plan_commands(
     if plan.get("need_stronger") and llm_service.has_stronger_tier():
         logger.info("chat plan: Ally requested a stronger model — re-planning on high tier")
         try:
-            plan2 = _parse_json(_extract_json(
-                await llm_service.complete(
-                    system, user_input, max_tokens=4096, system_volatile=volatile, tier="high"
-                )
-            ))
+            raw_high = await llm_service.complete(
+                system, user_input, max_tokens=4096, system_volatile=volatile, tier="high"
+            )
+            plan2 = _parse_json(_extract_json(raw_high))
             plan2["escalated"] = True
+            if trace is not None:
+                trace.update({"raw": raw_high, "escalated": True, "tier": "high"})
             return plan2
         except json.JSONDecodeError:
             pass  # keep the first (valid) plan if the stronger re-plan comes back malformed

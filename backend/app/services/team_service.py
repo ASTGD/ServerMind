@@ -135,6 +135,34 @@ async def accessible_servers(db: AsyncSession, user: User) -> list[Server]:
     return result
 
 
+# Cap on how many servers a mission / cross-server chat context carries — keeps the
+# prompt bounded. (Lived in websocket/terminal.py as _MISSION_ROSTER_MAX; canonical here
+# so build_chat_context can share it without importing the WS layer.)
+MISSION_ROSTER_MAX = 15
+
+
+async def mission_roster(
+    db: AsyncSession,
+    user: User,
+    home_server: Server | None = None,
+    cap: int = MISSION_ROSTER_MAX,
+) -> list[Server]:
+    """The servers a mission (or a chat's cross-server context) may act on: every server
+    the user can EXECUTE on (Rule 7 — viewer overrides apply) with a shell connection
+    (hosting panels excluded). ``home_server`` leads the list; it is capped to keep the
+    prompt bounded."""
+    roster: list[Server] = []
+    for s in await accessible_servers(db, user):
+        if s.connection_type == "hosting":
+            continue
+        access = await get_access(db, user, str(s.id))
+        if access is not None and access.can_execute:
+            roster.append(access.server)
+    if home_server is not None:
+        roster = [home_server] + [s for s in roster if str(s.id) != str(home_server.id)]
+    return roster[:cap]
+
+
 # ── Team management ────────────────────────────────────────────────────────────
 
 async def list_members(db: AsyncSession, owner: User) -> list[TeamMember]:
