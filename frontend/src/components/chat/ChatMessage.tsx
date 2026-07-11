@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils"
-import { Sparkles, AlertTriangle, CheckCircle2, XCircle, Server as ServerIcon, ArrowRight, Layers } from "lucide-react"
+import { Sparkles, AlertTriangle, CheckCircle2, XCircle, Server as ServerIcon, ArrowRight, Layers, Loader2 } from "lucide-react"
 import ScriptCard from "./ScriptCard"
 import MissionCard, { type MissionOffer } from "./MissionCard"
 import MissionProgress, { type MissionState } from "./MissionProgress"
@@ -134,10 +134,23 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch,
     )
   }
   if (message.kind === "output") {
+    // The live command run — Ally's actual work. Shown in the Workspace (routed there),
+    // streaming while it runs and kept as a finished record (done) afterwards.
+    const done = message.done
     return (
-      <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-[#0d0d0d] p-3 font-mono text-xs text-green-400">
-        {message.content}
-      </pre>
+      <div className="overflow-hidden rounded-lg border border-border">
+        <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+          {done ? (
+            <CheckCircle2 size={13} className="text-emerald-500" />
+          ) : (
+            <Loader2 size={13} className="animate-spin text-primary" />
+          )}
+          <span>{done ? "Command output" : "Running on the server…"}</span>
+        </div>
+        <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap break-all bg-[#0d0d0d] p-3 font-mono text-xs text-green-400">
+          {message.content || (done ? "(no output)" : "…")}
+        </pre>
+      </div>
     )
   }
   // Ally is thinking — a quiet transient line (replaced by the real reply).

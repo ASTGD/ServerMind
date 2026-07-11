@@ -158,11 +158,11 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           // accumulated output into the single "output" message.
           setMessages((prevMsgs) => {
             const existing = prevMsgs.find(
-              (m) => m.role === "assistant" && m.kind === "output"
+              (m) => m.role === "assistant" && m.kind === "output" && !m.done
             )
             if (existing) {
               return prevMsgs.map((m) =>
-                m.role === "assistant" && m.kind === "output"
+                m.role === "assistant" && m.kind === "output" && !m.done
                   ? { ...m, content: next }
                   : m
               )
@@ -180,7 +180,13 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
           setPending(null)
           setRunningLogId(null)
           outputBufferRef.current = ""
-          setMessages((prev) => prev.filter((m) => !(m.role === "assistant" && m.kind === "output")))
+          // Keep the live output as a finished record in the Workspace (mark it done)
+          // rather than deleting it — the Workspace is Ally's work log, not just missions.
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.role === "assistant" && m.kind === "output" && !m.done ? { ...m, done: true } : m,
+            ),
+          )
           addMsg({
             id: nextId(),
             role: "assistant",
@@ -669,7 +675,8 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   // starts something it shows a calm idle hint. The narrow drawer never splits
   // (workspace=false) — work stays inline there and can be expanded to this page.
   const isWorkMsg = (m: ChatMessageData) =>
-    m.role === "assistant" && (m.kind === "mission" || m.kind === "mission_offer")
+    m.role === "assistant" &&
+    (m.kind === "mission" || m.kind === "mission_offer" || m.kind === "output")
   const workMsgs = messages.filter(isWorkMsg)
   const chatMsgs = workspace ? messages.filter((m) => !isWorkMsg(m)) : messages
 
@@ -757,8 +764,8 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
               <Rocket size={20} className="text-muted-foreground" />
             </div>
             <p className="text-sm font-medium text-foreground">Live work shows here</p>
-            <p className="max-w-[240px] text-xs text-muted-foreground">
-              When Ally runs a mission, you'll watch each step here — and approve anything risky.
+            <p className="max-w-[250px] text-xs text-muted-foreground">
+              When Ally runs commands or a mission, you'll watch the live work here — and approve anything risky.
             </p>
           </div>
         ) : (
