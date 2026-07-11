@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
+from app.evals import deterministic_cases, run_case
 from app.services import ai_service, safety_service, skill_service
-from tests import ally_eval_corpus as corpus
 
 
 # ── Skill routing ─────────────────────────────────────────────────────────────
@@ -23,12 +23,20 @@ def _fresh_skill_cache():
     skill_service.reset_cache()
 
 
-@pytest.mark.parametrize("message,os_type,expected", corpus.SKILL_ROUTING,
-                         ids=[c[0][:40] for c in corpus.SKILL_ROUTING])
-def test_skill_routing(message, os_type, expected):
-    match = skill_service.match(message, os_type)
-    got = match.slug if match else None
-    assert got == expected, f"{message!r} routed to {got!r}, expected {expected!r}"
+# The deterministic corpus (skill routing + the three safety buckets + the read-only
+# guard) runs through the shared eval ENGINE (app.evals) — the SAME runner the CLI
+# (`python -m app.evals run`) and the Dev Door use, so there is one source of truth for
+# how each case is checked. One case per parametrization → granular pytest output.
+_DET_CASES = deterministic_cases()
+
+
+@pytest.mark.parametrize("case", _DET_CASES, ids=[c.id for c in _DET_CASES])
+def test_deterministic_corpus(case):
+    result = run_case(case)
+    assert result.passed, (
+        f"[{case.category}] {case.input!r} → got {result.got!r}, "
+        f"expected {case.expected!r}" + (f" ({result.error})" if result.error else "")
+    )
 
 
 def test_every_skill_is_loadable_and_wellformed():
@@ -129,28 +137,6 @@ def test_incident_response_recognizes_own_session():
 
 # ── Safety invariants ─────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("cmd,osf", corpus.SAFETY_MUST_BLOCK,
-                         ids=[c[0][:40] for c in corpus.SAFETY_MUST_BLOCK])
-def test_safety_must_block(cmd, osf):
-    assert safety_service.validate_command(cmd, osf).status == "blocked", \
-        f"DANGEROUS command not blocked: {cmd!r}"
-
-
-@pytest.mark.parametrize("cmd,osf", corpus.SAFETY_MUST_CONFIRM,
-                         ids=[c[0][:40] for c in corpus.SAFETY_MUST_CONFIRM])
-def test_safety_must_confirm(cmd, osf):
-    assert safety_service.validate_command(cmd, osf).status == "confirm", \
-        f"risky command did not require confirmation: {cmd!r}"
-
-
-@pytest.mark.parametrize("cmd,osf", corpus.SAFETY_MUST_ALLOW,
-                         ids=[c[0][:40] for c in corpus.SAFETY_MUST_ALLOW])
-def test_safety_must_allow(cmd, osf):
-    # A false block/confirm here silently breaks a real feature (e.g. H1 hosting).
-    assert safety_service.validate_command(cmd, osf).status == "ok", \
-        f"legitimate command wrongly flagged: {cmd!r}"
-
-
 def test_plan_blocked_wins_over_confirm_and_ok():
     """validate_plan: one blocked command blocks the whole plan, even mixed with
     ok/confirm ones (a plan is only as safe as its worst command)."""
@@ -168,20 +154,6 @@ def test_plan_confirm_when_any_command_confirms():
 
 
 # ── Read-only guard (mission verification) ────────────────────────────────────
-
-@pytest.mark.parametrize("cmd", corpus.READONLY_ALLOW, ids=[c[:40] for c in corpus.READONLY_ALLOW])
-def test_verification_allows_read_only(cmd):
-    # A real verification check wrongly rejected → the mission can't confirm success
-    # (annoying but safe). Guard against over-rejection breaking verification.
-    assert safety_service.is_read_only_command(cmd), f"read-only check wrongly rejected: {cmd!r}"
-
-
-@pytest.mark.parametrize("cmd", corpus.READONLY_DENY, ids=[c[:40] for c in corpus.READONLY_DENY])
-def test_verification_denies_mutations(cmd):
-    # SECURITY-CRITICAL: a mutating command wrongly accepted would let a "verification"
-    # step change/delete data. This must never happen.
-    assert not safety_service.is_read_only_command(cmd), f"MUTATING command passed read-only guard: {cmd!r}"
-
 
 def test_verification_rejects_blank():
     assert not safety_service.is_read_only_command("")
