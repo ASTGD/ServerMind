@@ -152,6 +152,7 @@ export interface ActivityData {
   period_start: string
   summary: { cost_usd: number; actions: number; calls: number }
   by_feature: { feature: string; cost_usd: number; calls: number }[]
+  daily: { day: string; cost_usd: number; calls: number }[]
   recent: ActivityCall[]
 }
 

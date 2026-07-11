@@ -61,5 +61,6 @@ async def test_activity_empty_shape():
     out = await dev_service.activity(_ActSession())
     assert out["summary"] == {"cost_usd": 0.0, "actions": 0, "calls": 0}
     assert out["by_feature"] == []
+    assert out["daily"] == []
     assert out["recent"] == []
     assert isinstance(out["period_start"], str)

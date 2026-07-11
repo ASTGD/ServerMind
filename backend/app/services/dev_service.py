@@ -290,6 +290,25 @@ async def activity(db: AsyncSession, limit: int = 60) -> dict:
         )
     ).all()
 
+    # Cost trend — one point per day this period (the Dev Door charts it, Phase 5).
+    day = func.date_trunc("day", AiUsage.created_at)
+    daily_rows = (
+        await db.execute(
+            select(day, func.coalesce(func.sum(AiUsage.cost_usd), 0), func.count())
+            .where(AiUsage.created_at >= period)
+            .group_by(day)
+            .order_by(day)
+        )
+    ).all()
+    daily = [
+        {
+            "day": (d.date().isoformat() if hasattr(d, "date") else str(d)),
+            "cost_usd": float(c or 0),
+            "calls": int(n or 0),
+        }
+        for (d, c, n) in daily_rows
+    ]
+
     return {
         "period_start": period.isoformat(),
         "summary": {
@@ -301,5 +320,6 @@ async def activity(db: AsyncSession, limit: int = 60) -> dict:
             {"feature": f, "cost_usd": float(c or 0), "calls": int(n or 0)}
             for (f, c, n) in by_feature
         ],
+        "daily": daily,
         "recent": recent,
     }

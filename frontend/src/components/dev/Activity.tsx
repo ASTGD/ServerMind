@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { formatDistanceToNow } from "date-fns"
 import { Loader2, RefreshCw, AlertTriangle } from "lucide-react"
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts"
 import { getActivity, type ActivityData } from "@/api/dev"
 
 function Kpi({ label, value }: { label: string; value: string }) {
@@ -118,6 +119,43 @@ export default function Activity() {
             <Kpi label="Actions" value={data.summary.actions.toLocaleString()} />
             <Kpi label="Model calls" value={data.summary.calls.toLocaleString()} />
           </div>
+
+          {data.daily.length > 1 && (
+            <section className="rounded-xl border border-border bg-card p-4">
+              <div className="mb-3 text-sm font-medium text-foreground">Cost per day (this month)</div>
+              <div className="h-40 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={data.daily} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
+                    <XAxis
+                      dataKey="day"
+                      tickFormatter={(d: string) => d.slice(5)}
+                      tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tickFormatter={(v: number) => `$${v.toFixed(0)}`}
+                      tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={44}
+                    />
+                    <Tooltip
+                      formatter={(v: number) => [money(Number(v)), "cost"]}
+                      labelFormatter={(d: string) => d}
+                      contentStyle={{
+                        background: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: 8,
+                        fontSize: 12,
+                      }}
+                    />
+                    <Bar dataKey="cost_usd" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+          )}
 
           {data.by_feature.length > 0 && (
             <section className="rounded-xl border border-border bg-card p-4">

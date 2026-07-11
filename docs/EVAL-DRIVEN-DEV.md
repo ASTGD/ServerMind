@@ -1,7 +1,16 @@
 # Eval-Driven Development & the Dev Door — Engineering Plan
 
-**Status:** proposed · **Author:** AI-engineering pass, 2026-07-11
+**Status:** ✅ SHIPPED (Phases 0–5), 2026-07-12 · **Author:** AI-engineering pass, 2026-07-11
 **Builds on:** [ALLY-EVALS.md](ALLY-EVALS.md) (the existing regression harness).
+
+> **Shipped:** the admin-only Dev Door at `/dev` with three tabs — **Prompt Inspector**
+> (dry-run a message, see the exact prompt/output/cost, never executes), **Evals** (run the
+> corpus + captured cases offline; capture a bug as a red test in one click), and **Activity**
+> (the AI ledger: cost, model ladder, recent calls). Backed by the `app/evals` engine
+> (corpus = data, one runner) shared by pytest, the CLI (`python -m app.evals run`), and the
+> UI; an LLM `judge()` for soft-quality evals; and a CI eval gate. `is_admin` gates every
+> `/api/dev/*` route; dry-run plans but never executes. **Deferred (stretch):** A/B prompt
+> variants, and auto-drafting eval cases from ledger failure patterns.
 
 ## 1. The goal, in one line
 

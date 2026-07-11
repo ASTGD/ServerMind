@@ -22,6 +22,11 @@ jobs:
         run: pip install -r requirements.txt -r requirements-dev.txt
       - name: Run tests
         run: pytest
+      - name: Ally evals (deterministic gate)
+        # docs/EVAL-DRIVEN-DEV.md — the offline eval suite (skill routing, safety
+        # blocklist, read-only guard) as an explicit, readable gate. No API, no DB.
+        # Exits non-zero on any regression, printing the per-category pass-rate.
+        run: python -m app.evals run
 
   frontend:
     name: Frontend typecheck + build
