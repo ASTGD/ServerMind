@@ -6,6 +6,20 @@ import { login, register } from "@/api/auth"
 import { useAuthStore } from "@/store/authStore"
 import i18n from "@/i18n/index"
 
+/** Normalize a FastAPI error `detail` into one readable line — it's a plain string
+ *  for our own HTTPExceptions, but an array of {msg, loc, ...} objects for pydantic's
+ *  automatic 422 validation errors (e.g. a rejected email format). */
+function detailToMessage(detail: unknown): string | null {
+  if (typeof detail === "string") return detail
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((d) => (d && typeof d === "object" && "msg" in d ? String((d as { msg?: unknown }).msg) : null))
+      .filter((m): m is string => !!m)
+    if (msgs.length) return msgs.join("; ")
+  }
+  return null
+}
+
 const LANGUAGES = [
   { code: "en", label: "English" },
   { code: "bn", label: "বাংলা" },
@@ -49,7 +63,7 @@ export default function Auth() {
       setAuth(result.user, result.access_token, result.refresh_token)
       navigate("/dashboard", { replace: true })
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
       if (mode === "login" && detail === "TOTP code required") {
         // 2FA challenge — reveal the code field (only show an error if a code was tried).
         setTotpRequired(true)
@@ -60,7 +74,7 @@ export default function Auth() {
           setError("")
         }
       } else {
-        setError(detail ?? (err instanceof Error ? err.message : t("common.error")))
+        setError(detailToMessage(detail) ?? (err instanceof Error ? err.message : t("common.error")))
       }
     } finally {
       setLoading(false)

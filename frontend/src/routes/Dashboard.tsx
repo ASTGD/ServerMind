@@ -1,26 +1,20 @@
+import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import { Server as ServerIcon, Activity, AlertTriangle, BookOpen, Plus, ServerOff } from "lucide-react"
+import { Server as ServerIcon, ShieldCheck, AlertTriangle, BookOpen, Plus, ServerOff } from "lucide-react"
 import { listServers } from "@/api/servers"
 import { listPlaybooks } from "@/api/playbooks"
-import { useAuthStore } from "@/store/authStore"
+import { getFleetHealth } from "@/api/fleet"
 import type { Server } from "@/types"
 import StatCard from "@/components/dashboard/StatCard"
-import FleetReport from "@/components/dashboard/FleetReport"
-import ServerHealthRow from "@/components/dashboard/ServerHealthRow"
+import FleetHealthPanel from "@/components/dashboard/FleetHealthPanel"
+import FleetComposition from "@/components/dashboard/FleetComposition"
 import QuickActions from "@/components/dashboard/QuickActions"
 import RunningTasks from "@/components/dashboard/RunningTasks"
-
-const CONN_LABELS: Record<string, string> = {
-  ssh: "Linux / SSH",
-  winrm: "Windows / WinRM",
-  hosting: "Hosting panel",
-}
+import RecentActivity from "@/components/dashboard/RecentActivity"
+import BillingPreview from "@/components/dashboard/BillingPreview"
 
 export default function Dashboard() {
-  const user = useAuthStore((s) => s.user)
-  const firstName = user?.name?.split(" ")[0] ?? "there"
-
   const { data: servers = [], isLoading } = useQuery<Server[]>({
     queryKey: ["servers"],
     queryFn: listServers,
@@ -29,140 +23,101 @@ export default function Dashboard() {
     queryKey: ["playbooks", "all"],
     queryFn: () => listPlaybooks(),
   })
+  const { data: fleetHealth } = useQuery({
+    queryKey: ["fleet-health"],
+    queryFn: getFleetHealth,
+    enabled: servers.length > 0,
+    refetchInterval: 30_000,
+  })
 
   const online = servers.filter((s) => s.status === "online").length
   const attention = servers.filter((s) => s.status !== "online").length
 
-  const byConn = servers.reduce<Record<string, number>>((acc, s) => {
-    acc[s.connection_type] = (acc[s.connection_type] ?? 0) + 1
-    return acc
-  }, {})
+  const avgScore = useMemo(() => {
+    if (!fleetHealth || fleetHealth.servers.length === 0) return null
+    const sum = fleetHealth.servers.reduce((acc, s) => acc + s.score, 0)
+    return Math.round(sum / fleetHealth.servers.length)
+  }, [fleetHealth])
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Welcome back, {firstName}</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">Here's how your fleet is doing today.</p>
+          <h1 className="text-xl font-semibold text-foreground">Dashboard</h1>
+          {servers.length > 0 && (
+            <p className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
+              <span className={`h-2 w-2 rounded-full ${attention ? "bg-amber-500" : "bg-green-500"}`} />
+              {online} of {servers.length} servers healthy
+              {attention > 0 && `, ${attention} need${attention === 1 ? "s" : ""} attention`}
+            </p>
+          )}
         </div>
         <Link
           to="/servers"
-          className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
           <Plus size={15} />
-          Add Server
+          Add server
         </Link>
       </div>
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard
-          icon={ServerIcon}
-          label="Total servers"
-          value={servers.length}
-          to="/servers"
-          loading={isLoading}
-        />
-        <StatCard
-          icon={Activity}
-          label="Online"
-          value={online}
-          tone="green"
-          sub={servers.length ? `${Math.round((online / servers.length) * 100)}% of fleet` : undefined}
-          loading={isLoading}
-        />
-        <StatCard
-          icon={AlertTriangle}
-          label="Needs attention"
-          value={attention}
-          tone={attention ? "amber" : "default"}
-          to="/servers"
-          loading={isLoading}
-        />
-        <StatCard
-          icon={BookOpen}
-          label="Playbooks"
-          value={playbooks.length}
-          tone="blue"
-          to="/playbooks"
-          sub="ready to run"
-        />
-      </div>
+      {isLoading ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-[70px] animate-pulse rounded-lg border border-border bg-card" />
+          ))}
+        </div>
+      ) : servers.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
+          <ServerOff size={32} className="mb-3 text-muted-foreground/50" />
+          <p className="font-medium text-foreground">No servers yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">Add your first server to start managing it with AI.</p>
+          <Link
+            to="/servers"
+            className="mt-4 flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <Plus size={14} />
+            Add server
+          </Link>
+        </div>
+      ) : (
+        <>
+          {/* Running now — slim, auto-hides when nothing is running */}
+          <RunningTasks />
 
-      {/* Proactive fleet intelligence — Ally's "what needs attention" */}
-      {servers.length > 0 && <FleetReport />}
-
-      {/* Main grid */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Fleet */}
-        <div className="space-y-3 lg:col-span-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-foreground">Your fleet</h2>
-            <Link to="/servers" className="text-xs text-muted-foreground hover:text-foreground">
-              View all
-            </Link>
+          {/* KPI strip */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard icon={ServerIcon} label="Servers" value={servers.length} to="/servers" />
+            <StatCard
+              icon={ShieldCheck}
+              label="Health score"
+              value={avgScore ?? "—"}
+              tone={avgScore == null ? "default" : avgScore >= 85 ? "green" : avgScore >= 60 ? "amber" : "red"}
+            />
+            <StatCard
+              icon={AlertTriangle}
+              label="Alerts"
+              value={attention}
+              tone={attention ? "amber" : "default"}
+              to="/servers"
+            />
+            <StatCard icon={BookOpen} label="Playbooks" value={playbooks.length} to="/playbooks" />
           </div>
 
-          {isLoading ? (
-            <div className="space-y-3">
-              {[...Array(3)].map((_, i) => (
-                <div key={i} className="h-20 animate-pulse rounded-lg border border-border bg-card" />
-              ))}
-            </div>
-          ) : servers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
-              <ServerOff size={32} className="mb-3 text-muted-foreground/50" />
-              <p className="font-medium text-foreground">No servers yet</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Add your first server to start managing it with AI.
-              </p>
-              <Link
-                to="/servers"
-                className="mt-4 flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-              >
-                <Plus size={14} />
-                Add Server
-              </Link>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {servers.map((s) => (
-                <ServerHealthRow key={s.id} server={s} />
-              ))}
-            </div>
-          )}
-        </div>
+          {/* Bento grid */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
+            <FleetHealthPanel health={fleetHealth} servers={servers} />
+            <RecentActivity servers={servers} />
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
+            <FleetComposition servers={servers} />
+            <QuickActions />
+          </div>
 
-        {/* Sidebar column */}
-        <div className="space-y-6">
-          {/* Running now — compact card, top of the rail, hidden when nothing runs */}
-          <RunningTasks />
-          <QuickActions />
-
-          {servers.length > 0 && (
-            <div className="rounded-xl border border-border bg-card p-5">
-              <h2 className="text-sm font-semibold text-foreground">Fleet breakdown</h2>
-              <div className="mt-4 space-y-3">
-                {Object.entries(byConn).map(([conn, count]) => {
-                  const pct = Math.round((count / servers.length) * 100)
-                  return (
-                    <div key={conn}>
-                      <div className="mb-1 flex justify-between text-xs">
-                        <span className="text-foreground">{CONN_LABELS[conn] ?? conn}</span>
-                        <span className="tabular-nums text-muted-foreground">{count}</span>
-                      </div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                        <div className="h-full rounded-full bg-primary/70" style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+          <BillingPreview />
+        </>
+      )}
     </div>
   )
 }

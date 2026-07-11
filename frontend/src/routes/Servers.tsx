@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next"
 import { listServers } from "@/api/servers"
 import { listCloudAccounts, type CloudAccount } from "@/api/cloud"
 import { ASSET_CATEGORIES, categoryForServer } from "@/lib/assetCategories"
+import { useAssistantStore } from "@/store/assistantStore"
 import MachineCard from "@/components/server/MachineCard"
 import HostingCard from "@/components/server/HostingCard"
 import CloudAccountCard from "@/components/server/CloudAccountCard"
@@ -26,6 +27,16 @@ export default function Servers() {
 
   const { data: servers = [], isLoading } = useQuery<Server[]>({ queryKey: ["servers"], queryFn: listServers })
   const { data: cloudAccounts = [] } = useQuery<CloudAccount[]>({ queryKey: ["cloud-accounts"], queryFn: listCloudAccounts })
+  // The Ally drawer overlays (fixed position) rather than shrinking this column's actual
+  // box, so the "fits 3 not 4" cap has to be driven by JS state, not a CSS breakpoint alone.
+  const drawerOpen = useAssistantStore((s) => s.open)
+  // 1600px is where 4 columns first measures out bigger than the old 220px card floor
+  // (this column's real width, net of the nav + the 320px asset rail, is viewport-647px;
+  // 4 cards + 3 gaps needs >=928px of that, i.e. a >=1575px viewport — 1600 clears it with
+  // margin). Below that, 3 columns already beats the old floor from 1024px up.
+  const gridCols = drawerOpen
+    ? "grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+    : "grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 min-[1600px]:grid-cols-4"
 
   // Group assets by category (imported cloud instances land in vps/windows; hosting has its own).
   const byCat: Record<string, Server[]> = {}
@@ -53,8 +64,8 @@ export default function Servers() {
       </div>
 
       {isLoading ? (
-        <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
-          {[...Array(3)].map((_, i) => <div key={i} className="h-32 animate-pulse rounded-lg border border-border bg-card" />)}
+        <div className={gridCols}>
+          {[...Array(4)].map((_, i) => <div key={i} className="aspect-square animate-pulse rounded-2xl border border-border bg-card" />)}
         </div>
       ) : empty ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20 text-center">
@@ -66,64 +77,66 @@ export default function Servers() {
           </button>
         </div>
       ) : (
-        <div className="flex gap-6">
-          <div className="min-w-0 flex-1 space-y-7">
-            {/* Filter pills */}
-            {pills.length > 1 && (
-              <div className="flex flex-wrap gap-2">
-                <FilterPill label="All" active={filter === "all"} onClick={() => setFilter("all")} />
-                {pills.map((p) => (
-                  <FilterPill key={p.id} label={p.label} count={p.count} active={filter === p.id} onClick={() => setFilter(p.id)} />
-                ))}
-              </div>
-            )}
+        <>
+          {/* Filter pills — hoisted above the two-column split so both columns start flush */}
+          {pills.length > 1 && (
+            <div className="flex flex-wrap gap-2">
+              <FilterPill label="All" active={filter === "all"} onClick={() => setFilter("all")} />
+              {pills.map((p) => (
+                <FilterPill key={p.id} label={p.label} count={p.count} active={filter === p.id} onClick={() => setFilter(p.id)} />
+              ))}
+            </div>
+          )}
 
-            {/* Sections in category order */}
-            {ASSET_CATEGORIES.map((cat) => {
-              if (!visible(cat.id)) return null
-              const Icon = cat.icon
+          <div className="flex gap-6">
+            <div className="min-w-0 flex-1 space-y-7">
+              {/* Sections in category order */}
+              {ASSET_CATEGORIES.map((cat) => {
+                if (!visible(cat.id)) return null
+                const Icon = cat.icon
 
-              if (cat.id === "cloud") {
-                if (cloudAccounts.length === 0) return null
+                if (cat.id === "cloud") {
+                  if (cloudAccounts.length === 0) return null
+                  return (
+                    <section key="cloud">
+                      <SectionHeader Icon={Icon} label="Cloud accounts" count={cloudAccounts.length} accent={cat.accent} />
+                      <div className={gridCols}>
+                        {cloudAccounts.map((a) => (
+                          <CloudAccountCard key={a.id} account={a} importedCount={importedFor(a.id)} onManage={setManageAccount} />
+                        ))}
+                      </div>
+                    </section>
+                  )
+                }
+
+                const list = byCat[cat.id]
+                if (!list?.length) return null
                 return (
-                  <section key="cloud">
-                    <SectionHeader Icon={Icon} label="Cloud accounts" count={cloudAccounts.length} accent={cat.accent} />
-                    <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
-                      {cloudAccounts.map((a) => (
-                        <CloudAccountCard key={a.id} account={a} importedCount={importedFor(a.id)} onManage={setManageAccount} />
-                      ))}
+                  <section key={cat.id}>
+                    <SectionHeader Icon={Icon} label={cat.label} count={list.length} accent={cat.accent} />
+                    <div className={gridCols}>
+                      {list.map((s) =>
+                        cat.id === "hosting"
+                          ? <HostingCard key={s.id} server={s} />
+                          : <MachineCard key={s.id} server={s} onOpenDesktop={setDesktopServer} />,
+                      )}
                     </div>
                   </section>
                 )
-              }
+              })}
+            </div>
 
-              const list = byCat[cat.id]
-              if (!list?.length) return null
-              return (
-                <section key={cat.id}>
-                  <SectionHeader Icon={Icon} label={cat.label} count={list.length} accent={cat.accent} />
-                  <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
-                    {list.map((s) =>
-                      cat.id === "hosting"
-                        ? <HostingCard key={s.id} server={s} />
-                        : <MachineCard key={s.id} server={s} onOpenDesktop={setDesktopServer} />,
-                    )}
-                  </div>
-                </section>
-              )
-            })}
+            <div className="hidden xl:block">
+              <AssetsRail
+                servers={servers}
+                cloudAccounts={cloudAccounts}
+                onFilter={setFilter}
+                onAddHosting={() => setShowAdd(true)}
+                onConnectCloud={() => setShowCloud(true)}
+              />
+            </div>
           </div>
-
-          <div className="hidden xl:block">
-            <AssetsRail
-              servers={servers}
-              cloudAccounts={cloudAccounts}
-              onFilter={setFilter}
-              onAddHosting={() => setShowAdd(true)}
-              onConnectCloud={() => setShowCloud(true)}
-            />
-          </div>
-        </div>
+        </>
       )}
 
       {showAdd && <AddServerModal onClose={() => setShowAdd(false)} onPickCloud={() => { setShowAdd(false); setShowCloud(true) }} />}

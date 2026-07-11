@@ -32,16 +32,16 @@ export default function HostingCard({ server }: Props) {
       to={`/servers/${server.id}`}
       className={`flex aspect-square flex-col rounded-2xl border p-4 transition-all hover:shadow-sm ${cardClass}`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${hasBrandIcon(server.panel_type) ? "border border-border bg-background" : tileClass}`} title={panelName}>
-            {hasBrandIcon(server.panel_type) ? <BrandIcon slug={server.panel_type ?? undefined} size={24} /> : <LayoutPanelTop size={18} aria-hidden />}
-          </div>
-          <div className="min-w-0">
-            <p className="truncate font-medium text-foreground">{server.name}</p>
-            <p className="truncate text-xs text-muted-foreground">{server.host}</p>
-          </div>
+      <div className="flex items-center gap-2.5">
+        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${hasBrandIcon(server.panel_type) ? "border border-border bg-background" : tileClass}`} title={panelName}>
+          {hasBrandIcon(server.panel_type) ? <BrandIcon slug={server.panel_type ?? undefined} size={24} /> : <LayoutPanelTop size={18} aria-hidden />}
         </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium text-foreground">{server.name}</p>
+          <p className="truncate text-xs text-muted-foreground">{server.host}</p>
+        </div>
+      </div>
+      <div className="mt-2 flex items-center justify-end">
         <ConnectionStatus status={server.status} />
       </div>
 

@@ -31,7 +31,7 @@ export default function RunningTasks() {
 
   return (
     <>
-      <div className="rounded-xl border border-border bg-card p-5">
+      <div className="rounded-xl border border-border bg-card p-4">
         <div className="flex items-center gap-2">
           <Loader2 size={14} className="animate-spin text-primary" />
           <h2 className="text-sm font-semibold text-foreground">
