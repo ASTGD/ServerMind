@@ -6,6 +6,8 @@ export interface User {
   preferred_language: string
   is_active: boolean
   is_verified: boolean
+  /** Internal staff — unlocks the admin-only Dev Door (/dev). Never set via signup. */
+  is_admin?: boolean
   totp_enabled: boolean
   /** Fleet-health digest cadence: 'off' | 'weekly' | 'daily'. */
   digest_frequency: string

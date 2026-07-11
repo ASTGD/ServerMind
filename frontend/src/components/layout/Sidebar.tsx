@@ -13,10 +13,12 @@ import {
   Rocket,
   ChevronDown,
   ChevronUp,
+  FlaskConical,
 } from "lucide-react"
 import Logo from "@/components/brand/Logo"
 import UpgradeModal from "./UpgradeModal"
 import { useAssistantStore } from "@/store/assistantStore"
+import { useAuthStore } from "@/store/authStore"
 
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, key: "dashboard" },
@@ -31,6 +33,7 @@ const navItems = [
 export default function Sidebar() {
   const { t } = useTranslation()
   const [showUpgrade, setShowUpgrade] = useState(false)
+  const isAdmin = useAuthStore((s) => s.user?.is_admin)
   const assistantOpen = useAssistantStore((s) => s.open)
   const toggleAssistant = useAssistantStore((s) => s.toggle)
   // Live status on the Ally button: a mission is running (or paused for your OK).
@@ -64,6 +67,22 @@ export default function Sidebar() {
               {t(`nav.${key}`)}
             </NavLink>
           ))}
+          {/* Admin-only Dev Door — hidden for customers (backend 403s them regardless). */}
+          {isAdmin && (
+            <NavLink
+              to="/dev"
+              className={({ isActive }) =>
+                `flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] transition-colors ${
+                  isActive
+                    ? "bg-accent font-medium text-accent-foreground"
+                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                }`
+              }
+            >
+              <FlaskConical size={19} className="shrink-0" />
+              Dev
+            </NavLink>
+          )}
         </nav>
 
         {/* Pinned to the bottom — Ally + Terminal as standalone action buttons (not
