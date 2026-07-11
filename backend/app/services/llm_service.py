@@ -13,12 +13,33 @@ protocol the other providers expose. SDKs are imported lazily, so the default
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from app.config import settings
 from app.services import metering_service
 
 logger = logging.getLogger(__name__)
+
+# Reliability: a provider occasionally returns an EMPTY completion or a transient error
+# (overload / rate-limit / timeout / connection blip). A single one of those must never
+# surface "AI error" to the user, so complete() retries with a short backoff. Client
+# errors (4xx except 429) are NOT retried — they won't get better.
+_MAX_ATTEMPTS = 3
+_BACKOFF = (0.4, 1.2)  # seconds to wait before attempt 2, then attempt 3
+_RETRYABLE_NAMES = (
+    "ratelimit", "apiconnection", "apitimeout", "internalserver",
+    "overloaded", "serviceunavailable", "timeout", "connection",
+)
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """A transient provider error worth retrying (vs a client error like 400/401/404)."""
+    name = type(exc).__name__.lower()
+    if any(k in name for k in _RETRYABLE_NAMES):
+        return True
+    code = getattr(exc, "status_code", None)
+    return isinstance(code, int) and (code == 429 or code >= 500)
 
 # Sensible default model per provider when no model is configured.
 _DEFAULT_MODELS = {
@@ -146,10 +167,35 @@ async def complete(
             "No AI API key configured — set AI_API_KEY (or ANTHROPIC_API_KEY) and AI_PROVIDER."
         )
     model = _tier_model(provider, tier) or model
-    if provider == "anthropic":
-        return await _anthropic_complete(key, model, system, system_volatile, user, max_tokens)
-    # openai / gemini / openai_compatible / others → the OpenAI-protocol client.
-    return await _openai_complete(key, model, base_url, system, system_volatile, user, max_tokens)
+
+    async def _once() -> str:
+        if provider == "anthropic":
+            return await _anthropic_complete(key, model, system, system_volatile, user, max_tokens)
+        # openai / gemini / openai_compatible / others → the OpenAI-protocol client.
+        return await _openai_complete(key, model, base_url, system, system_volatile, user, max_tokens)
+
+    # Retry an EMPTY response or a transient error with a short backoff — a single provider
+    # hiccup should never reach the caller (and then the user) as "AI error".
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            text = await _once()
+            if text.strip():
+                return text
+            logger.warning("llm_service: empty completion (attempt %d/%d) — retrying", attempt + 1, _MAX_ATTEMPTS)
+        except Exception as exc:  # noqa: BLE001 — retry transient errors, re-raise the rest
+            if not _is_retryable(exc):
+                raise
+            last_exc = exc
+            logger.warning(
+                "llm_service: transient %s (attempt %d/%d): %s",
+                type(exc).__name__, attempt + 1, _MAX_ATTEMPTS, exc,
+            )
+        if attempt + 1 < _MAX_ATTEMPTS:
+            await asyncio.sleep(_BACKOFF[min(attempt, len(_BACKOFF) - 1)])
+    if last_exc is not None:
+        raise last_exc
+    return ""  # every attempt returned empty — the caller's JSON parse handles it
 
 
 async def _anthropic_complete(

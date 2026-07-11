@@ -1119,22 +1119,27 @@ async def plan_commands(
     volatile += _page_context_block(page_context)
     volatile += _history_block(history)
 
-    raw = _extract_json(
-        await llm_service.complete(system, user_input, max_tokens=4096, system_volatile=volatile)
-    )
     try:
-        plan = _parse_json(raw)
-    except json.JSONDecodeError:
-        # Providers occasionally return an empty / non-JSON completion (a transient hiccup).
-        # A single bad response must never surface "AI error" to the user — retry ONCE.
-        logger.warning("AI plan parse failed (%r) — retrying once", raw[:120])
-        raw = _extract_json(
+        plan = _parse_json(_extract_json(
             await llm_service.complete(system, user_input, max_tokens=4096, system_volatile=volatile)
+        ))
+    except json.JSONDecodeError:
+        # complete() already retried transient empties; if the answer is STILL non-JSON, the
+        # likeliest remaining cause is an over-large context on a heavy turn. Retry ONCE with
+        # a TRIMMED tail — keep the small, high-value blocks (fresh snapshot, scout, profile),
+        # drop the big optional ones (fleet list, memories, page context, history).
+        logger.warning("AI plan parse failed — retrying with trimmed context")
+        volatile_trim = (
+            _live_snapshot_block(live_snapshot)
+            + _scout_block(scout)
+            + _server_profile_block(server_profile)
         )
         try:
-            plan = _parse_json(raw)
+            plan = _parse_json(_extract_json(
+                await llm_service.complete(system, user_input, max_tokens=4096, system_volatile=volatile_trim)
+            ))
         except json.JSONDecodeError as exc:
-            logger.warning("AI plan JSON parse error after retry: %s\nRaw: %r", exc, raw[:500])
+            logger.warning("AI plan JSON parse error after trimmed retry: %s", exc)
             raise ValueError(f"AI returned invalid JSON: {exc}") from exc
 
     # Smart Model Ladder — proactive escalation: if Ally itself judged this a genuinely
