@@ -110,3 +110,16 @@ async def evals_delete(
 ) -> None:
     if not await dev_service.delete_captured(db, case_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+
+
+# ── Observability (Phase 4) ───────────────────────────────────────────────────
+
+
+@router.get("/activity")
+async def activity(
+    limit: int = 60,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Recent AI calls (the ledger) + this period's cost/actions summary."""
+    return await dev_service.activity(db, limit=min(max(limit, 1), 200))

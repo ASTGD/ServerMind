@@ -12,11 +12,12 @@ from __future__ import annotations
 import logging
 import re
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.evals import Case, deterministic_cases, run
 from app.evals.model import DETERMINISTIC_CATEGORIES
+from app.models.ai_usage import AiUsage
 from app.models.dev_eval_case import DevEvalCase
 from app.models.server import Server
 from app.models.user import User
@@ -233,3 +234,72 @@ async def delete_captured(db: AsyncSession, case_id) -> bool:
     await db.delete(row)
     await db.commit()
     return True
+
+
+# ── Observability (Phase 4) — the AI ledger, admin view ───────────────────────
+
+async def activity(db: AsyncSession, limit: int = 60) -> dict:
+    """Recent AI calls (the ai_usage ledger) + this period's cost/actions summary — so an
+    admin can see what Ally is doing and what it costs. Counts + labels only (the ledger
+    never stores prompt/response content — no secrets by construction)."""
+    period = metering_service.period_start()
+
+    rows = (
+        await db.execute(
+            select(AiUsage, User.email, Server.name)
+            .join(User, User.id == AiUsage.user_id, isouter=True)
+            .join(Server, Server.id == AiUsage.server_id, isouter=True)
+            .order_by(AiUsage.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    recent = [
+        {
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+            "feature": u.feature,
+            "model": u.model,
+            "skill": u.skill,
+            "input_tokens": u.input_tokens,
+            "output_tokens": u.output_tokens,
+            "cache_read_tokens": u.cache_read_tokens,
+            "cost_usd": float(u.cost_usd or 0),
+            "actions": u.actions,
+            "status": u.status,
+            "user": email,
+            "server": server_name,
+        }
+        for (u, email, server_name) in rows
+    ]
+
+    totals = (
+        await db.execute(
+            select(
+                func.coalesce(func.sum(AiUsage.cost_usd), 0),
+                func.coalesce(func.sum(AiUsage.actions), 0),
+                func.count(),
+            ).where(AiUsage.created_at >= period)
+        )
+    ).one()
+
+    by_feature = (
+        await db.execute(
+            select(AiUsage.feature, func.coalesce(func.sum(AiUsage.cost_usd), 0), func.count())
+            .where(AiUsage.created_at >= period)
+            .group_by(AiUsage.feature)
+            .order_by(func.sum(AiUsage.cost_usd).desc())
+        )
+    ).all()
+
+    return {
+        "period_start": period.isoformat(),
+        "summary": {
+            "cost_usd": float(totals[0] or 0),
+            "actions": int(totals[1] or 0),
+            "calls": int(totals[2] or 0),
+        },
+        "by_feature": [
+            {"feature": f, "cost_usd": float(c or 0), "calls": int(n or 0)}
+            for (f, c, n) in by_feature
+        ],
+        "recent": recent,
+    }

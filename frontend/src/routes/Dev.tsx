@@ -1,15 +1,17 @@
 import { useState } from "react"
 import { Navigate } from "react-router-dom"
-import { FlaskConical, Terminal, ListChecks } from "lucide-react"
+import { FlaskConical, Terminal, ListChecks, Activity as ActivityIcon } from "lucide-react"
 import Inspector from "@/components/dev/Inspector"
 import EvalRunner from "@/components/dev/EvalRunner"
+import Activity from "@/components/dev/Activity"
 import { useAuthStore } from "@/store/authStore"
 
-type Tab = "inspector" | "evals"
+type Tab = "inspector" | "evals" | "activity"
 
 const TABS: { key: Tab; label: string; Icon: typeof Terminal }[] = [
   { key: "inspector", label: "Prompt Inspector", Icon: Terminal },
   { key: "evals", label: "Evals", Icon: ListChecks },
+  { key: "activity", label: "Activity", Icon: ActivityIcon },
 ]
 
 /** The Dev Door (docs/EVAL-DRIVEN-DEV.md) — admin-only. The page guards on is_admin;
@@ -45,7 +47,9 @@ export default function Dev() {
         ))}
       </div>
 
-      {tab === "inspector" ? <Inspector /> : <EvalRunner />}
+      {tab === "inspector" && <Inspector />}
+      {tab === "evals" && <EvalRunner />}
+      {tab === "activity" && <Activity />}
     </div>
   )
 }

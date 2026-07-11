@@ -130,3 +130,33 @@ export async function captureEvalCase(body: CaptureCaseBody): Promise<EvalCase> 
 export async function deleteEvalCase(id: string): Promise<void> {
   await apiClient.delete(`/api/dev/evals/cases/${id}`)
 }
+
+// ── Observability (Phase 4) ───────────────────────────────────────────────────
+
+export interface ActivityCall {
+  created_at: string | null
+  feature: string
+  model: string
+  skill: string | null
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cost_usd: number
+  actions: number
+  status: string
+  user: string | null
+  server: string | null
+}
+
+export interface ActivityData {
+  period_start: string
+  summary: { cost_usd: number; actions: number; calls: number }
+  by_feature: { feature: string; cost_usd: number; calls: number }[]
+  recent: ActivityCall[]
+}
+
+/** Recent AI calls (the ledger) + this period's cost/actions summary. */
+export async function getActivity(): Promise<ActivityData> {
+  const { data } = await apiClient.get<ActivityData>("/api/dev/activity")
+  return data
+}
