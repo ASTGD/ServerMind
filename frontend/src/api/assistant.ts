@@ -10,6 +10,9 @@ export interface ThreadSummary {
 export interface ThreadMessage {
   role: "user" | "assistant"
   content: string
+  /** A saved WORKSPACE message (finished mission / command output / artifact) — a
+   *  serialized ChatMessageData so a reopened thread restores the Workspace, not just chat. */
+  data?: unknown
 }
 
 export interface Thread {
@@ -46,6 +49,7 @@ export async function appendMessage(
   id: string,
   role: "user" | "assistant",
   content: string,
+  data?: unknown,
 ): Promise<void> {
-  await apiClient.post(`/api/assistant/threads/${id}/messages`, { role, content })
+  await apiClient.post(`/api/assistant/threads/${id}/messages`, { role, content, data })
 }

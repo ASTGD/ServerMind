@@ -26,6 +26,10 @@ router = APIRouter(tags=["assistant"])
 # and the shared DB — from being bloated by a single account.
 _MAX_MESSAGES_PER_THREAD = 500
 _MAX_CONTENT_CHARS = 20000
+# A workspace message (mission snapshot / command output / artifact) rides along as a
+# structured `data` blob so a reopened thread restores the Workspace, not just the chat.
+# Bounded so one heavy mission transcript can't bloat the inline JSONB thread.
+_MAX_DATA_CHARS = 120000
 
 
 class ThreadCreate(BaseModel):
@@ -38,7 +42,18 @@ class ThreadRename(BaseModel):
 
 class MessageAppend(BaseModel):
     role: str
-    content: str = Field(max_length=_MAX_CONTENT_CHARS)
+    content: str = Field(default="", max_length=_MAX_CONTENT_CHARS)
+    # Optional rich payload for a WORKSPACE message (a finished mission, command output,
+    # or an artifact). Chat text lives in `content`; work lives here so both restore.
+    data: dict | None = None
+
+
+def _within_data_cap(data: dict) -> bool:
+    """A workspace snapshot is stored only if its serialized size fits the cap — a huge
+    mission transcript is dropped (chat text still saves) rather than bloating the thread."""
+    import json
+
+    return len(json.dumps(data, default=str)) <= _MAX_DATA_CHARS
 
 
 def _summary(t: AssistantThread) -> dict:
@@ -140,7 +155,12 @@ async def append_message(
     if len(msgs) >= _MAX_MESSAGES_PER_THREAD:
         raise HTTPException(status_code=409, detail="This conversation is full — start a new chat.")
     role = "user" if body.role == "user" else "assistant"
-    msgs.append({"role": role, "content": body.content})
+    entry: dict = {"role": role, "content": body.content}
+    # Attach the workspace snapshot when it's within the size cap; too-large blobs are
+    # dropped (the chat text still saves) rather than bloating every thread read/write.
+    if body.data is not None and _within_data_cap(body.data):
+        entry["data"] = body.data
+    msgs.append(entry)
     t.messages = msgs
     flag_modified(t, "messages")
     # Auto-title the thread from its first user message.

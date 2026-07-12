@@ -32,27 +32,52 @@ export default function AssistantDrawer() {
   // Auto-save the continuous conversation to an assistant thread (best-effort — a save
   // failure never blocks chat). threadId lives in the store, read fresh via getState()
   // so concurrent turns can't race a stale closure into two threads.
-  const persistUser = useCallback(async (content: string) => {
-    try {
-      let tid = useAssistantStore.getState().threadId
-      if (!tid) {
-        const t = await createThread()
-        tid = t.id
-        useAssistantStore.getState().setThreadId(tid)
-      }
-      await appendMessage(tid, "user", content)
-      qc.invalidateQueries({ queryKey: ["assistant-threads"] })
-    } catch { /* keep chatting */ }
-  }, [qc])
+  //
+  // ALL appends run through ONE serial queue: a thread's messages live in a single JSONB
+  // column (read-modify-write per append), so appends that settle on the same event — the
+  // answer + command output + a chart artifact all landing together — would otherwise race
+  // and clobber each other (lost messages). Chaining guarantees order AND no lost writes,
+  // and also means the thread-creating user turn always finishes before any work append.
+  const persistQueue = useRef<Promise<unknown>>(Promise.resolve())
+  const enqueue = useCallback((fn: () => Promise<void>) => {
+    const run = () => fn().catch(() => {}) // best-effort: one failure never breaks the chain
+    persistQueue.current = persistQueue.current.then(run, run)
+    return persistQueue.current
+  }, [])
 
-  const persistAnswer = useCallback(async (content: string) => {
-    try {
-      const tid = useAssistantStore.getState().threadId
-      if (!tid || !content) return
-      await appendMessage(tid, "assistant", content)
-      qc.invalidateQueries({ queryKey: ["assistant-threads"] })
-    } catch { /* keep chatting */ }
-  }, [qc])
+  const persistUser = useCallback((content: string) => enqueue(async () => {
+    let tid = useAssistantStore.getState().threadId
+    if (!tid) {
+      const t = await createThread()
+      tid = t.id
+      useAssistantStore.getState().setThreadId(tid)
+    }
+    await appendMessage(tid, "user", content)
+    qc.invalidateQueries({ queryKey: ["assistant-threads"] })
+  }), [enqueue, qc])
+
+  const persistAnswer = useCallback((content: string) => enqueue(async () => {
+    const tid = useAssistantStore.getState().threadId
+    if (!tid || !content) return
+    await appendMessage(tid, "assistant", content)
+    qc.invalidateQueries({ queryKey: ["assistant-threads"] })
+  }), [enqueue, qc])
+
+  // Persist a finished WORKSPACE message (mission / command output / artifact) to the
+  // thread so reopening it restores the Workspace, not just the chat. The message rides
+  // along as structured `data`; command output is tail-capped so a huge dump can't bloat
+  // the thread. The triggering user turn already created the thread (and, via the queue,
+  // has finished), so a missing threadId just means "nothing to attach to".
+  const persistWork = useCallback((msg: ChatMessageData) => enqueue(async () => {
+    const tid = useAssistantStore.getState().threadId
+    if (!tid) return
+    const data =
+      msg.role === "assistant" && msg.kind === "output"
+        ? { ...msg, content: msg.content.slice(-16000) }
+        : msg
+    await appendMessage(tid, "assistant", "", data)
+    qc.invalidateQueries({ queryKey: ["assistant-threads"] })
+  }), [enqueue, qc])
 
   // Mount the chat (and its socket) lazily on first open, then keep it alive so a running
   // mission keeps streaming even while the window is minimized.
@@ -85,11 +110,16 @@ export default function AssistantDrawer() {
   async function openThread(id: string) {
     if (id === useAssistantStore.getState().threadId) { setHistoryOpen(false); return }
     const t = await getThread(id)
-    const msgs: ChatMessageData[] = t.messages.map((m, i) =>
-      m.role === "user"
+    const msgs: ChatMessageData[] = t.messages.map((m, i) => {
+      // A saved WORKSPACE message (mission / output / artifact) — restore it verbatim so
+      // the Workspace comes back, not just the chat. Re-id to a stable history key.
+      if (m.data && typeof m.data === "object") {
+        return { ...(m.data as ChatMessageData), id: `h${i}` }
+      }
+      return m.role === "user"
         ? ({ id: `h${i}`, role: "user", content: m.content } as ChatMessageData)
-        : ({ id: `h${i}`, role: "assistant", kind: "answer", content: m.content, suggestions: [] } as ChatMessageData),
-    )
+        : ({ id: `h${i}`, role: "assistant", kind: "answer", content: m.content, suggestions: [] } as ChatMessageData)
+    })
     setMessages(msgs)
     setThreadId(id)
     setHistoryOpen(false)
@@ -257,6 +287,7 @@ export default function AssistantDrawer() {
               workspace
               onPersistUser={persistUser}
               onPersistAnswer={persistAnswer}
+              onPersistWork={persistWork}
             />
           )}
         </div>

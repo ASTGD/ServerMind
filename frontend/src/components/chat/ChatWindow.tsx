@@ -29,6 +29,10 @@ interface Props {
   /** Persist a turn (saved-thread mode on the Assistant page). */
   onPersistUser?: (content: string) => void
   onPersistAnswer?: (content: string) => void
+  /** Persist a finished WORKSPACE message (mission / command output / artifact) to the
+   *  thread — called once per message when it settles — so reopening the thread restores
+   *  the Workspace, not just the chat. */
+  onPersistWork?: (msg: ChatMessageData) => void
   /** "What the user is looking at" — sent to Ally as background context (never as commands). */
   pageContext?: string | null
   /** Clickable starter questions for the current page, shown in the empty state. */
@@ -59,7 +63,20 @@ interface PendingPlan {
 let _msgId = 0
 function nextId() { return String(++_msgId) }
 
-export default function ChatWindow({ target, seed, initialMessages, onPersistUser, onPersistAnswer, pageContext, templates, pageLabel, persistent, workspace }: Props) {
+/** A message that belongs in the Workspace pane (live/finished WORK) rather than the
+ *  conversation: a mission offer/card, streamed command output, or an artifact. */
+type WorkMsg = Extract<
+  ChatMessageData,
+  { role: "assistant"; kind: "mission" | "mission_offer" | "output" | "artifact" }
+>
+function isWorkMsg(m: ChatMessageData): m is WorkMsg {
+  return (
+    m.role === "assistant" &&
+    (m.kind === "mission" || m.kind === "mission_offer" || m.kind === "output" || m.kind === "artifact")
+  )
+}
+
+export default function ChatWindow({ target, seed, initialMessages, onPersistUser, onPersistAnswer, onPersistWork, pageContext, templates, pageLabel, persistent, workspace }: Props) {
   const user = useAuthStore((s) => s.user)
   const language = user?.preferred_language ?? "en"
   const openServer = useAssistantStore((s) => s.openServer)
@@ -72,6 +89,23 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   const [localMessages, setLocalMessages] = useState<ChatMessageData[]>(initialMessages ?? [])
   const messages = persistent ? storeMessages : localMessages
   const setMessages = persistent ? setStoreMessages : setLocalMessages
+  // Talk vs work: WORK (mission cards, live command output, artifacts) shows in the
+  // Workspace pane; everything else is the conversation. In the narrow drawer (no split)
+  // work stays inline, so chatMsgs = all messages there.
+  const workMsgs = messages.filter(isWorkMsg)
+  const chatMsgs = workspace ? messages.filter((m) => !isWorkMsg(m)) : messages
+  // A compact signal of the work content — changes when a mission grows a step / flips
+  // status or output streams — so the Workspace auto-scroll + one-time persist fire on
+  // real work changes, not on every chat message.
+  const workSignal = workMsgs
+    .map((m) =>
+      m.kind === "mission"
+        ? `${m.id}:${m.mission.steps.length}:${m.mission.status}`
+        : m.kind === "output"
+          ? `${m.id}:${m.content.length}:${m.done ? 1 : 0}`
+          : m.id,
+    )
+    .join("|")
   const [batchModal, setBatchModal] = useState<BatchSpec | null>(null)
   const [pending, setPending] = useState<PendingPlan | null>(null)
   // Accumulates streamed command output across chunks. A ref, NOT state, on purpose: its
@@ -83,6 +117,10 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   // Set when a durable (worker) run starts — enables the Stop button.
   const [runningLogId, setRunningLogId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  // The Workspace pane scrolls independently of the chat — its own bottom anchor keeps it
+  // pinned to the newest work. persistedWorkRef guards one-time thread persistence per msg.
+  const workBottomRef = useRef<HTMLDivElement>(null)
+  const persistedWorkRef = useRef<Set<string>>(new Set())
   // Pass 2 — several missions can stream at once as workspace cards. Each event
   // carries a mission_id; this map routes it to its card's message. The fallback key
   // covers events from a mission whose row couldn't be persisted (id-less).
@@ -465,6 +503,36 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
+  // Keep the Workspace pinned to the newest work (a growing mission, streaming output).
+  // Keyed on the work signal — not `messages` — so it follows live work but doesn't yank
+  // the pane down every time a chat message arrives on the left.
+  useEffect(() => {
+    workBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+  }, [workSignal])
+
+  // Persist each finished work message to the thread ONCE, so reopening restores the
+  // Workspace. Stable = output done, artifact arrived, or a mission that reached a terminal
+  // state (complete/failed/stopped) — a running/blocked mission is still live (and durable
+  // server-side via the missions table), so we wait for it to settle.
+  useEffect(() => {
+    if (!onPersistWork) return
+    for (const m of workMsgs) {
+      // Restored-from-thread messages carry an "h…" id and are already saved — never
+      // re-persist them (that would duplicate the Workspace on the next reopen).
+      if (m.id.startsWith("h") || persistedWorkRef.current.has(m.id)) continue
+      const stable =
+        (m.kind === "output" && m.done) ||
+        m.kind === "artifact" ||
+        (m.kind === "mission" &&
+          (m.mission.status === "complete" || m.mission.status === "failed" || m.mission.status === "stopped"))
+      if (!stable) continue
+      persistedWorkRef.current.add(m.id)
+      onPersistWork(m)
+    }
+    // workSignal changes whenever a work message settles; workMsgs/onPersistWork are stable refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workSignal, onPersistWork])
+
   // Auto re-attach a still-running mission after a RECONNECT. A dropped socket (backend
   // restart, network blip, sleep) must not lose the live view of an in-flight mission —
   // the mission itself keeps running detached (Phase 4), so we just re-subscribe to it.
@@ -680,11 +748,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   // mission's offer card and its live steps) lives in the Workspace (right); until Ally
   // starts something it shows a calm idle hint. The narrow drawer never splits
   // (workspace=false) — work stays inline there and can be expanded to this page.
-  const isWorkMsg = (m: ChatMessageData) =>
-    m.role === "assistant" &&
-    (m.kind === "mission" || m.kind === "mission_offer" || m.kind === "output" || m.kind === "artifact")
-  const workMsgs = messages.filter(isWorkMsg)
-  const chatMsgs = workspace ? messages.filter((m) => !isWorkMsg(m)) : messages
+  // (workMsgs / chatMsgs are computed once up top, alongside the workspace scroll signal.)
 
   const reconnectBanner = status !== "open" && (
     <div className="flex items-center justify-center gap-2 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
@@ -775,7 +839,10 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
             </p>
           </div>
         ) : (
-          workMsgs.map(renderMessage)
+          <>
+            {workMsgs.map(renderMessage)}
+            <div ref={workBottomRef} />
+          </>
         )}
       </div>
     </div>
