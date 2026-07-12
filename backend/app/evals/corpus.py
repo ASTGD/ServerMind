@@ -43,6 +43,7 @@ SKILL_ROUTING: list[tuple[str, str, str | None]] = [
     ("my docker container keeps restarting", "ubuntu", "docker-troubles"),
     ("i think my server was hacked", "ubuntu", "security-incident"),
     ("i see a crypto miner on my server", "ubuntu", "security-incident"),
+    ("scan this server for malware", "ubuntu", "security-incident"),  # 2026-07-12 live-test phrasing
     ("my emails are going to spam", "ubuntu", "email-deliverability"),
     # Incident RESPONSE (a mission) must win the "respond/clean up" intent, while the
     # knowledge first-response skill above keeps the "am I hacked?" intent.

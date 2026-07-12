@@ -135,6 +135,23 @@ def test_incident_response_recognizes_own_session():
     assert "failed brute-force" in body or "failed password" in body
 
 
+def test_security_incident_scan_excludes_framework_noise():
+    """Regression guard for the live-found scan weakness (2026-07-12, panel2.firevps.net):
+    a malware scan's recently-modified-files `find` returned so many Laravel
+    storage/framework/views cache .php files that it truncated the real webshell-grep
+    results out of Ally's summary. The fix is in the skill — exclude framework/cache/vendor
+    noise, and run the signature scan as its OWN command — so lock those rules in."""
+    body = _skill_body("security-incident")
+    # Exclude the constantly-regenerated noise so it can't bury real webshells.
+    assert "exclude" in body
+    assert "storage/framework" in body
+    # Run the signature grep as its own command so hits aren't drowned in a file listing.
+    assert "own command" in body
+    # The lesson itself, so a future edit can't quietly drop it.
+    assert "bury" in body or "buries" in body
+    assert "truncate" in body
+
+
 # ── Safety invariants ─────────────────────────────────────────────────────────
 
 def test_plan_blocked_wins_over_confirm_and_ok():

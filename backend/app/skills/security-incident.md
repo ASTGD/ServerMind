@@ -21,8 +21,19 @@ DIAGNOSTIC ORDER (strictly read-only):
 4. Persistence checks: `crontab -l; ls /etc/cron.*/ -la`, new keys in
    `~/.ssh/authorized_keys` (every user!), new users in `/etc/passwd` (uid 0 clones),
    `systemctl list-units --type=service --state=running | tail -20` for odd services.
-5. Recent file changes in web space: `find <docroot> -mtime -3 -name "*.php" | head -20`
-   — fresh .php files in uploads/ are classic webshells. READ them, don't delete yet.
+5. Web space — run these as TWO separate commands, and EXCLUDE the noise that buries the
+   real signal (framework/cache .php regenerate constantly and vendored trees are huge,
+   so they drown out webshells and truncate your findings):
+   a. Recently modified: `find <docroot> -type f -name "*.php" -mtime -7
+      -not -path "*/storage/framework/*" -not -path "*/cache/*" -not -path "*/vendor/*"
+      -not -path "*/node_modules/*" | head -40` — fresh .php in uploads/ or wp-content/
+      is a classic webshell.
+   b. Signatures — as its OWN command so matches aren't buried in a big file list:
+      `grep -RislE 'eval\(|base64_decode|gzinflate|str_rot13|assert\(|shell_exec|passthru'
+      <docroot> --include="*.php" 2>/dev/null | head -30` (add the site's known spam
+      keywords when hunting a known campaign, e.g. gambling terms).
+   READ each hit before judging — a match alone isn't proof (WP core uses base64
+   legitimately); confirm the obfuscation. Don't delete yet.
 6. Auth history: `grep -c "Failed password" /var/log/auth.log` (brute force volume) and
    `grep "Accepted" /var/log/auth.log | tail -10` (what got in, from where, which key).
 
@@ -35,6 +46,10 @@ CONTAIN (each step needs the user's explicit OK):
    otherwise they return tomorrow.
 
 PITFALLS:
+- On WordPress/Laravel sites, `storage/framework/views` and `cache` .php files change
+  constantly — always EXCLUDE them from "recently modified" scans, or they bury the real
+  webshells and truncate the findings you can actually see. Run the signature grep as its
+  own command so its hits aren't drowned out by a long file listing.
 - No reboot, no `rm` of malware files until evidence is noted (paths, hashes:
   `sha256sum <file>`), and ideally a snapshot exists.
 - A rootkit can lie to `ps`/`ls` — if root-level compromise is likely, the honest
