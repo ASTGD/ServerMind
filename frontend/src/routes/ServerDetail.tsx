@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useParams, useNavigate, Link, NavLink, Outlet } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, Loader2, MessageSquare, Terminal as TerminalIcon, AlertTriangle, KeyRound, Monitor } from "lucide-react"
+import { ChevronLeft, Loader2, Sparkles, Terminal as TerminalIcon, AlertTriangle, KeyRound, Monitor } from "lucide-react"
 import { getServer, deleteServer, testConnection, detectOs, trustKey } from "@/api/servers"
 import ConnectionStatus from "@/components/server/ConnectionStatus"
 import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
@@ -120,14 +120,6 @@ export default function ServerDetail() {
               Open Desktop
             </button>
           )}
-          <button
-            onClick={() => openServer(server)}
-            title="Ask Ally about this server"
-            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            <MessageSquare size={14} />
-            Ask Ally
-          </button>
           <ServerActionsMenu
             onTest={() => testMutation.mutate()}
             onDetect={() => detectMutation.mutate()}
@@ -158,15 +150,28 @@ export default function ServerDetail() {
             {t.label}
           </NavLink>
         ))}
-        {/* Terminal — opens a session in the global terminal workspace (stays connected
-            across all navigation). */}
-        <button
-          onClick={() => { openTerminal(server); navigate("/terminal") }}
-          className="mb-1.5 flex shrink-0 items-center gap-1.5 rounded-full border border-red-500/50 px-3 py-1 text-sm font-medium text-red-600 transition-colors hover:bg-red-500/10 dark:text-red-400"
-        >
-          <TerminalIcon size={14} />
-          Terminal
-        </button>
+        {/* Per-server ACTIONS — grouped on the right, split off from the section tabs by a
+            divider. Terminal opens a live shell for this server; Ask Ally opens the
+            one-window Ally already focused on this server. */}
+        <div className="mb-1.5 ml-auto flex shrink-0 items-center gap-2 pl-4">
+          <span className="h-5 w-px bg-border" aria-hidden="true" />
+          <button
+            onClick={() => openTerminal(server)}
+            title="Open a terminal for this server"
+            className="flex shrink-0 items-center gap-1.5 rounded-full border border-red-500/50 px-3 py-1 text-sm font-medium text-red-600 transition-colors hover:bg-red-500/10 dark:text-red-400"
+          >
+            <TerminalIcon size={14} />
+            Terminal
+          </button>
+          <button
+            onClick={() => openServer(server)}
+            title="Ask Ally about this server"
+            className="flex shrink-0 items-center gap-1.5 rounded-full border border-primary/50 px-3 py-1 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+          >
+            <Sparkles size={14} />
+            Ask Ally
+          </button>
+        </div>
       </div>
 
       {showEdit && <EditServerModal server={server} onClose={() => setShowEdit(false)} />}

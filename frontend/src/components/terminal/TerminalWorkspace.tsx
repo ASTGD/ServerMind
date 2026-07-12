@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react"
-import { useLocation } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import {
-  Plus, X, Sparkles, Terminal as TerminalIcon, Server as ServerIcon, Square, LayoutGrid,
+  Plus, X, Sparkles, Terminal as TerminalIcon, Server as ServerIcon, Square, LayoutGrid, Minus, Maximize2,
 } from "lucide-react"
 import { listServers } from "@/api/servers"
 import { useTerminalStore, type TermStatus, type TermSession } from "@/store/terminalStore"
@@ -30,11 +29,11 @@ type Mode = "focus" | "split"
  * modes), so switching layouts never remounts them or drops a session.
  */
 export default function TerminalWorkspace() {
-  const { sessions, activeId, setActive, closeSession, openSession, setStatus, touch } = useTerminalStore()
+  const {
+    sessions, activeId, setActive, closeSession, openSession, setStatus, touch,
+    open: visible, maximized, minimize, toggleMax,
+  } = useTerminalStore()
   const openAlly = useAssistantStore((s) => s.openServer)
-  const assistantOpen = useAssistantStore((s) => s.open)
-  const location = useLocation()
-  const visible = location.pathname === "/terminal"
 
   const [mode, setMode] = useState<Mode>("focus")
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -53,7 +52,7 @@ export default function TerminalWorkspace() {
       else if (activeId) refs.current.get(activeId)?.fit()
     }, 60)
     return () => clearTimeout(t)
-  }, [visible, split, activeId, sessions.length])
+  }, [visible, split, activeId, sessions.length, maximized])
 
   // Idle timeout — close shells with no activity for IDLE_MS.
   useEffect(() => {
@@ -92,7 +91,25 @@ export default function TerminalWorkspace() {
     : undefined
 
   return (
-    <div className={`fixed bottom-0 left-0 top-14 z-20 flex flex-col bg-[#0d0d0d] transition-[right] duration-300 md:left-60 ${assistantOpen ? "right-0 md:right-[28rem]" : "right-0"} ${visible ? "" : "hidden"}`}>
+    <>
+      {/* Dim the workspace behind the window; click outside tucks it to the sidebar dock. */}
+      <div
+        onClick={minimize}
+        aria-hidden="true"
+        className={`fixed left-0 right-0 top-14 bottom-0 z-30 bg-black/30 backdrop-blur-[1px] transition-opacity duration-200 md:left-60 ${
+          visible ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
+      />
+      {/* The terminal window — a compact, PuTTY-sized floating window that grows out of the
+          sidebar dock. Maximize expands it to the workspace; Minimize tucks it away while
+          every SSH session keeps running. Only HIDDEN when closed, never unmounted. */}
+      <div
+        className={`fixed z-40 flex origin-bottom-left flex-col overflow-hidden rounded-xl border border-black/50 bg-[#0d0d0d] shadow-2xl transition-all duration-200 ease-out ${
+          maximized
+            ? "left-3 right-3 top-[4.5rem] bottom-[74px] md:left-[15.75rem] md:right-5"
+            : "left-3 bottom-[74px] h-[460px] w-[calc(100vw-1.5rem)] md:left-[15.75rem] md:h-[480px] md:w-[760px] md:max-w-[calc(100vw-17rem)]"
+        } ${visible ? "scale-100 opacity-100" : "pointer-events-none scale-90 opacity-0"}`}
+      >
       {/* Tab bar — macOS terminal window chrome (deep-indigo titlebar, distinct from the
           near-black terminal body so it clearly reads as a window bar). */}
       <div className="flex shrink-0 items-center gap-1 border-b border-black bg-gradient-to-b from-[#1e1b4b] to-[#15132a] px-3 py-2">
@@ -194,6 +211,23 @@ export default function TerminalWorkspace() {
             Hand to Ally
           </button>
         )}
+        {/* Window controls — maximize/restore + minimize to the sidebar dock. */}
+        <div className="ml-1 flex items-center gap-0.5">
+          <button
+            onClick={toggleMax}
+            title={maximized ? "Restore size" : "Maximize"}
+            className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-100"
+          >
+            <Maximize2 size={14} />
+          </button>
+          <button
+            onClick={minimize}
+            title="Minimize to dock"
+            className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-100"
+          >
+            <Minus size={15} />
+          </button>
+        </div>
       </div>
 
       {/* Bodies — every session's terminal stays mounted in the same position; CSS alone
@@ -259,5 +293,6 @@ export default function TerminalWorkspace() {
         )}
       </div>
     </div>
+    </>
   )
 }

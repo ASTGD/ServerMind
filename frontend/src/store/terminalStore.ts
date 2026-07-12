@@ -18,11 +18,24 @@ export interface TermSession {
 interface TerminalState {
   sessions: TermSession[]
   activeId: string | null
+  /** Whether the floating terminal window is showing. When minimized the window is only
+   *  HIDDEN (not unmounted), so every SSH session stays connected — like Ally's window. */
+  open: boolean
+  /** Window expanded to fill the workspace (vs the compact, PuTTY-sized default). */
+  maximized: boolean
   openSession: (server: Server) => void
   closeSession: (id: string) => void
   setActive: (id: string) => void
   setStatus: (id: string, status: TermStatus) => void
   touch: (id: string) => void
+  /** Show the floating terminal window (sessions untouched). */
+  openWindow: () => void
+  /** Tuck the window to the sidebar dock — sessions keep running. */
+  minimize: () => void
+  /** Show ↔ minimize the terminal window. */
+  toggle: () => void
+  /** Compact ↔ expanded window size. */
+  toggleMax: () => void
 }
 
 let _counter = 0
@@ -33,10 +46,15 @@ const nextId = () => `t${++_counter}`
  * terminal workspace is mounted in Layout), so they persist across all navigation —
  * moving between pages never disconnects a shell. Sessions end only on explicit close,
  * logout (the workspace unmounts), or idle timeout.
+ *
+ * The window's visibility (open/minimized) is separate from the sessions, mirroring the
+ * Ally window: minimizing hides the window but leaves every shell connected.
  */
 export const useTerminalStore = create<TerminalState>((set, get) => ({
   sessions: [],
   activeId: null,
+  open: false,
+  maximized: false,
 
   openSession: (server) => {
     const sessions = get().sessions
@@ -47,6 +65,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     set({
       sessions: [...sessions, { id, sid, server, label, status: "connecting", lastActivity: Date.now() }],
       activeId: id,
+      open: true, // opening a session brings up the window
     })
   },
 
@@ -62,4 +81,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     set({ sessions: get().sessions.map((s) => (s.id === id ? { ...s, status } : s)) }),
   touch: (id) =>
     set({ sessions: get().sessions.map((s) => (s.id === id ? { ...s, lastActivity: Date.now() } : s)) }),
+
+  openWindow: () => set({ open: true }),
+  minimize: () => set({ open: false }),
+  toggle: () => set((s) => ({ open: !s.open })),
+  toggleMax: () => set((s) => ({ maximized: !s.maximized })),
 }))

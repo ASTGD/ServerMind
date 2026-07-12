@@ -46,9 +46,9 @@ export default function App() {
           {/* Ally is now ONE window (opened from the sidebar icon, rendered by Layout),
               not a page — old /assistant links fall back to the dashboard. */}
           <Route path="assistant" element={<Navigate to="/dashboard" replace />} />
-          {/* The terminal workspace is rendered by Layout (persistent); this route just
-              exists so navigation + the sidebar active state work. */}
-          <Route path="terminal" element={<div />} />
+          {/* The terminal is now a floating window (opened from the sidebar dock / top-bar
+              icon), not a page — old /terminal links fall back to the dashboard. */}
+          <Route path="terminal" element={<Navigate to="/dashboard" replace />} />
           <Route path="servers" element={<Servers />} />
           <Route path="servers/:id" element={<ServerDetail />}>
             <Route index element={<ServerOverview />} />

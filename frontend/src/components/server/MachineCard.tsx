@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link } from "react-router-dom"
 import { Cpu, AlertTriangle, TerminalSquare, MonitorPlay, Sparkles } from "lucide-react"
 import type { Server } from "@/types"
 import { categoryForServer } from "@/lib/assetCategories"
@@ -21,7 +21,6 @@ interface Props {
  *  (SSH terminal for Linux, Open desktop for Windows). */
 export default function MachineCard({ server, onOpenDesktop }: Props) {
   const [showMsg, setShowMsg] = useState(false)
-  const navigate = useNavigate()
   const openSession = useTerminalStore((s) => s.openSession)
   const openServer = useAssistantStore((s) => s.openServer)
   const cat = categoryForServer(server)
@@ -40,7 +39,6 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
       onOpenDesktop?.(server)
     } else {
       openSession(server)
-      navigate("/terminal")
     }
   }
 
