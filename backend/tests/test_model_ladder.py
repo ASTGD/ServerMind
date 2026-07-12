@@ -23,14 +23,18 @@ def _srv(**kw):
 def _reset_ladder():
     """Each test controls the ladder flag / overrides; restore afterwards."""
     saved = (settings.ENABLE_MODEL_LADDER, settings.AI_MODEL_LOW, settings.AI_MODEL_HIGH,
-             llm_service._runtime_config)
+             settings.ANTHROPIC_MODEL, llm_service._runtime_config)
     settings.ENABLE_MODEL_LADDER = True
     settings.AI_MODEL_LOW = ""
     settings.AI_MODEL_HIGH = ""
+    # Pin the default model so these ladder-LOGIC tests don't depend on the operator's
+    # runtime .env choice (e.g. ANTHROPIC_MODEL=claude-opus-4-8 for a high-stakes run,
+    # which would collapse the default==high tier and is a supported, legitimate setting).
+    settings.ANTHROPIC_MODEL = "claude-sonnet-5"
     llm_service._runtime_config = None
     yield
     (settings.ENABLE_MODEL_LADDER, settings.AI_MODEL_LOW, settings.AI_MODEL_HIGH,
-     llm_service._runtime_config) = saved
+     settings.ANTHROPIC_MODEL, llm_service._runtime_config) = saved
 
 
 # ── tier → model (anthropic default provider) ─────────────────────────────────

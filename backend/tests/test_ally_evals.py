@@ -152,6 +152,33 @@ def test_security_incident_scan_excludes_framework_noise():
     assert "truncate" in body
 
 
+def test_incident_response_keeps_sites_working_and_handles_laravel():
+    """Preparation for the panel2.firevps.net production cleanup (2026-07-12): the two hard
+    requirements are (a) the whole box + every site malware-free and (b) NO site broken,
+    across WordPress AND Laravel sites. The runbook was WordPress-leaning and never forced a
+    per-site backup or a 'does it still load?' check. Lock the new safeguards into the skill
+    so a future edit can't silently drop them:
+      - the promise: keep every live site working
+      - back up each site BEFORE touching its files (per-site instant undo)
+      - after cleaning, CONFIRM the site still loads (curl HTTP code) and never leave it broken
+      - Laravel-aware cleanup (no core checksums; restore via composer, not hand-edits)
+    """
+    body = _skill_body("security-incident-response")
+    # (a) The explicit promise + per-site backup-first discipline.
+    assert "keep every live site working" in body
+    assert "back up the site first" in body
+    assert "haven't backed up" in body
+    # (b) Per-site "still loads" verification + never-leave-broken, with the real check.
+    assert "confirm the site still loads" in body
+    assert "http_code" in body  # the curl code check is actually present, not just described
+    assert "leave a site broken" in body
+    assert "confirm every site you touched still loads" in body  # reinforced in the finish check
+    # Laravel coverage — the framework the old runbook ignored.
+    assert "laravel" in body
+    assert "no core checksums" in body  # so it doesn't try WP-style checksums on Laravel
+    assert "composer install" in body   # restore framework files the right way
+
+
 # ── Safety invariants ─────────────────────────────────────────────────────────
 
 def test_plan_blocked_wins_over_confirm_and_ok():
