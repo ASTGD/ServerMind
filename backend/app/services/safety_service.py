@@ -167,6 +167,14 @@ _MUTATION_TOKENS_I = [
     r"\bdocker(-compose)?\s+(run|rm|start|stop|restart|kill|exec|pull|build|up|down|create)\b",
     # `find` that deletes or executes anything (a plain search is fine; -delete/-exec is not)
     r"\bfind\b[^\n]*\s-(delete|exec|execdir|ok|fprint|fls)\b",
+    # Malware SCANNERS invoked with a DESTRUCTIVE action (remove/quarantine/clean) — these
+    # delete or move infected files, so they're NEVER a read-only verification check even
+    # though the base command looks like a scan. A plain scan (clamscan --infected, maldet
+    # -a, `imunify… list`) carries no such flag and stays read-only. (Live-found via evals,
+    # 2026-07-12: the verify gate must not let a "scan" auto-clean the server it's checking.)
+    r"\bclam(d)?scan\b[^\n]*--(remove|move)\b",
+    r"\bmaldet\b[^\n]*(\s-[qn]\b|--(quarantine|clean))",
+    r"\bimunify[\w-]*\b[^\n]*\bcleanup\b",
     # awk/sed that call out to the shell or write a file (a plain filter is read-only)
     r"\bawk\b[^\n]*system\s*\(", r"\bawk\b[^\n]*\bprint[^\n]*>\s*\"?/",
     # Editors / stream editors that can write the file they open

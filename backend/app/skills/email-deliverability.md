@@ -1,7 +1,7 @@
 ---
 slug: email-deliverability
 title: Email Going to Spam — SPF/DKIM/DMARC
-triggers: email going to spam, going to spam, emails in spam, spf, dkim, dmarc, email not delivered, mail not sending, emails bounce, email deliverability, mail goes to junk
+triggers: email going to spam, going to spam, landing in spam, in spam folder, emails in spam, spf, dkim, dmarc, email not delivered, mail not sending, emails bounce, email deliverability, mail goes to junk, going to junk
 os: any
 priority: 5
 ---

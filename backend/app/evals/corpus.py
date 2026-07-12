@@ -50,6 +50,24 @@ SKILL_ROUTING: list[tuple[str, str, str | None]] = [
     ("help me respond to the hack on this server", "ubuntu", "security-incident-response"),
     ("clean up the malware on this server", "ubuntu", "security-incident-response"),
     ("remove the webshell from my site", "ubuntu", "security-incident-response"),
+    # ── Malware set (2026-07-12, production cleanup prep) ──────────────────────
+    # Scan/detect intent → the knowledge skill (natural non-technical phrasings; the
+    # 2026-07-12 trigger widening added virus/infected/injected/webshell so these route).
+    ("is my site infected with malware", "ubuntu", "security-incident"),
+    ("check this server for viruses", "ubuntu", "security-incident"),
+    ("is my website infected", "ubuntu", "security-incident"),
+    ("someone injected spam into my pages", "ubuntu", "security-incident"),
+    ("i found a webshell on one of my sites", "ubuntu", "security-incident"),
+    ("my site is defaced", "ubuntu", "security-incident"),
+    # Cleanup/respond intent → the mission (must beat the scan skill on priority + match).
+    ("clean up the malware on my laravel site", "ubuntu", "security-incident-response"),
+    ("remove the malware from all my sites", "ubuntu", "security-incident-response"),
+    ("recover the hacked server", "ubuntu", "security-incident-response"),
+    ("clean up the compromised server", "ubuntu", "security-incident-response"),
+    # Negatives near the malware space — must NOT mis-route to an incident skill.
+    ("harden this server for security", "ubuntu", "harden-server"),
+    ("set up a firewall", "ubuntu", None),
+    ("my emails are landing in spam", "ubuntu", "email-deliverability"),
     # Negatives — most messages match no skill (no injection, no false trigger).
     ("install nginx", "ubuntu", None),
     ("list the files in /var/www", "ubuntu", None),
@@ -105,6 +123,13 @@ SAFETY_MUST_ALLOW: list[tuple[str, str]] = [
     ("ls -la /home/x.com/public_html", "linux"),
     ("curl -s -o /dev/null -w '%{http_code}' -H 'Host: x.com' http://127.0.0.1/", "linux"),
     ("mysqldump -u root wp > /root/wp.sql", "linux"),
+    # Malware work Ally really generates — read-only scans, per-site backup, quarantine.
+    ("grep -rlE 'eval\\(base64_decode|shell_exec|passthru' /home --include='*.php'", "linux"),
+    ("find /home/x/public_html/wp-content/uploads -type f -name '*.php'", "linux"),
+    ("clamscan -r --infected --no-summary /home/x/public_html", "linux"),
+    ("imunify-antivirus malware malicious list", "linux"),
+    ("tar czf /root/serverally-quarantine/site-x.com.tgz -C /home/x/public_html .", "linux"),
+    ("mv /home/x/public_html/wp-content/uploads/shell.php /root/serverally-quarantine/", "linux"),
     ("Get-Service", "windows"),
     ("winget install nodejs", "windows"),
 ]
@@ -131,6 +156,12 @@ READONLY_ALLOW: list[str] = [
     "awk -F: '$3==0' /etc/passwd",
     "ls -l /proc/1/exe",
     "test -f /etc/cron.d/backdoor && echo present || echo gone",
+    # Malware verification — read-only detection Ally re-runs to prove a site is clean.
+    "imunify-antivirus malware malicious list",
+    "clamscan -r --infected --no-summary /home/x/public_html",
+    "grep -rlE 'eval\\(base64_decode|shell_exec' /home/x/public_html --include='*.php'",
+    "find /home/x/public_html/wp-content/uploads -type f -name '*.php'",
+    "test -f /home/x/public_html/wp-content/uploads/shell.php && echo present || echo gone",
     "Get-Service W3SVC",
     "Test-Path C:\\inetpub",
 ]
@@ -162,6 +193,12 @@ READONLY_DENY: list[str] = [
     "reboot",
     "useradd hacker",
     "ufw disable",
+    # A "scan" that actually MUTATES — the verify pass must NEVER auto-clean/quarantine.
+    "clamscan -r --remove /home/x/public_html",
+    "maldet -q 12345.67890",
+    "imunify-antivirus malware malicious cleanup --all",
+    "mv /home/x/public_html/shell.php /root/serverally-quarantine/",
+    "rm /home/x/public_html/wp-content/uploads/shell.php",
     "Remove-Item C:\\data -Recurse",
     "Stop-Service W3SVC",
     "Set-Content C:\\x.txt 'y'",

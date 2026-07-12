@@ -1,7 +1,7 @@
 ---
 slug: security-incident
 title: Suspected Hack — First Response
-triggers: hacked, i think i was hacked, server hacked, compromised, malware, suspicious process, crypto miner, someone logged in, unauthorized access, strange traffic, defaced
+triggers: hacked, i think i was hacked, server hacked, compromised, malware, virus, viruses, infected, injected, malicious code, malicious file, webshell, suspicious process, crypto miner, someone logged in, unauthorized access, strange traffic, defaced
 os: linux
 priority: 10
 ---
