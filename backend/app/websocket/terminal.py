@@ -19,7 +19,7 @@ from app.models.command_log import CommandLog
 from app.models.playbook import Playbook, PlaybookRun, UserScript
 from app.models.server import Server
 from app.models.user import User
-from app.services import ai_context_service, ai_service, connection_manager, safety_service
+from app.services import ai_context_service, ai_service, connection_manager, llm_service, safety_service
 from app.services import file_service, live_look_service, memory_service, metering_service, scout_service, skill_service
 from app.services import mission_service
 from app.websocket import mission_runner
@@ -403,6 +403,7 @@ async def _unified_loop(ws: WebSocket, user: User, fixed_server: Server | None =
                 # the client leaves, the task keeps running. Attach (subscribe) BEFORE
                 # the task can yield so the first events can't be missed.
                 runner = mission_runner.create()
+                runner.model = llm_service.manual_model(msg.get("model"))  # Ally model picker
                 hub.attach(runner)
                 runner.task = asyncio.create_task(_run_mission_detached(
                     runner, user, home_server=home, goal=str(msg.get("goal", "")),
@@ -430,6 +431,7 @@ async def _unified_loop(ws: WebSocket, user: User, fixed_server: Server | None =
                         continue
                     home = resolved
                 runner = mission_runner.create()
+                runner.model = llm_service.manual_model(msg.get("model"))  # Ally model picker
                 hub.attach(runner)
                 runner.task = asyncio.create_task(_run_mission_detached(
                     runner, user, home_server=home, goal=m.goal, skill_slug=m.skill_slug,
@@ -522,9 +524,12 @@ async def _unified_loop(ws: WebSocket, user: User, fixed_server: Server | None =
                 continue
 
             os_family = "windows" if server.connection_type == "winrm" else "linux"
+            # Ally's model picker (Auto/Manual): a pinned choice ('fast'/'smart'/'expert'/
+            # 'genius') overrides the ladder for THIS message's planning; None → Auto.
+            pinned_model = llm_service.manual_model(msg.get("model"))
             pending_frame = await _handle_message(
                 ws, server, user_input, user_language, os_family, page_context, history,
-                acting_user_id=str(user.id), mission_control=hub,
+                acting_user_id=str(user.id), mission_control=hub, model=pinned_model,
             )
     finally:
         # Client gone (or loop error): stop pumping. Missions keep running detached.
@@ -1402,7 +1407,7 @@ async def _run_mission(
                     decision = await ai_service.plan_mission_step(
                         goal, roster, steps, budget - executor_steps, skill,
                         user_language, home_id=home_id, tier=step_tier,
-                        ally_mode=ally_mode,
+                        ally_mode=ally_mode, model=ws.model,  # pinned model (Ally picker); None = Auto/ladder
                     )
                     break
                 except Exception as exc:  # noqa: BLE001
@@ -1777,6 +1782,7 @@ async def _handle_message(
     history: list[dict] | None = None,
     acting_user_id: str | None = None,
     mission_control: "_MissionHub | None" = None,
+    model: str | None = None,
 ) -> dict | None:
     """Metered wrapper (docs/AI-METERING.md) — collects every model call made for this
     one user message (plan → execute → explain = 1 action) and writes the ledger,
@@ -1796,7 +1802,7 @@ async def _handle_message(
         return await _handle_message_inner(
             ws, server, user_input, user_language, os_family, page_context, history,
             acting_user_id=acting_user_id, skill=skill, meta=meta,
-            mission_control=mission_control,
+            mission_control=mission_control, model=model,
         )
     finally:
         calls = metering_service.finish_collection(tok)
@@ -1821,9 +1827,13 @@ async def _handle_message_inner(
     skill: skill_service.Skill | None = None,
     meta: dict | None = None,
     mission_control: "_MissionHub | None" = None,
+    model: str | None = None,
 ) -> dict | None:
     """Plan, validate, execute and explain one user message. Returns a leftover
-    client frame (a new message that arrived instead of approve/cancel) or None."""
+    client frame (a new message that arrived instead of approve/cancel) or None.
+
+    ``model`` (Ally's model picker): a pinned model id for the planning call, or None for
+    Auto (the ladder). The mission it may offer carries the same pick via the start frame."""
     # ── 1. AI planning ────────────────────────────────────────────────────────
     await ws.send_text(json.dumps({"type": "thinking"}))
 
@@ -1842,7 +1852,7 @@ async def _handle_message_inner(
             server_profile=ctx.server_profile, memories=ctx.memories, skill=skill,
             skill_menu=ctx.skill_menu,
             live_snapshot=ctx.live_snapshot, other_servers=ctx.other_servers, scout=ctx.scout,
-            ally_mode=ctx.ally_mode,
+            ally_mode=ctx.ally_mode, model=model,
         )
     except Exception as exc:
         await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))
@@ -1863,7 +1873,7 @@ async def _handle_message_inner(
                     user_input, server, user_language, page_context, history,
                     server_profile=ctx.server_profile, memories=ctx.memories, skill=picked,
                     live_snapshot=ctx.live_snapshot, other_servers=ctx.other_servers, scout=ctx.scout,
-                    ally_mode=ctx.ally_mode,
+                    ally_mode=ctx.ally_mode, model=model,
                 )
             except Exception as exc:  # noqa: BLE001
                 await ws.send_text(json.dumps({"type": "error", "message": f"AI error: {exc}"}))

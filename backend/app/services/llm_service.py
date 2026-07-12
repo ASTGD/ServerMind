@@ -57,6 +57,29 @@ _DEFAULT_MODELS = {
 TIERS = ("low", "default", "high")
 _TIER_DEFAULTS = {"low": "claude-haiku-4-5-20251001", "high": "claude-opus-4-8"}
 
+# Manual model picker (the Ally chat "Auto / Manual" control): friendly names → concrete
+# models, fastest→smartest. When a user pins one, it overrides the automatic ladder for the
+# THINKING calls (chat + mission step planning). The safety verify gate always stays on the
+# top model regardless of the pick. Anthropic provider only, like the ladder.
+MANUAL_MODELS = {
+    "fast": "claude-haiku-4-5-20251001",  # Haiku 4.5
+    "smart": "claude-sonnet-5",           # Sonnet 5
+    "expert": "claude-opus-4-8",          # Opus 4.8
+    "genius": "claude-fable-5",           # Fable 5 (top)
+}
+
+
+def manual_model(choice: str | None) -> str | None:
+    """Resolve a picker choice ('fast'|'smart'|'expert'|'genius') to a concrete model id,
+    or None for Auto / unknown (→ the automatic ladder decides). Anthropic provider only —
+    a BYO/other-provider user keeps their single configured model."""
+    if not choice:
+        return None
+    provider, _key, _model, _base = _resolve()
+    if provider != "anthropic":
+        return None
+    return MANUAL_MODELS.get(choice.lower())
+
 
 def _tier_model(provider: str, tier: str) -> str | None:
     """The model to use for a non-default tier, or None to keep the resolved model
@@ -144,7 +167,7 @@ def _resolve() -> tuple[str, str, str, str | None]:
 
 async def complete(
     system: str, user: str, *, max_tokens: int = 2048, system_volatile: str = "",
-    tier: str = "default",
+    tier: str = "default", model: str | None = None,
 ) -> str:
     """Single-turn completion: a system prompt + one user message → text response.
     Routes to the configured provider.
@@ -161,18 +184,21 @@ async def complete(
     on repeat); on OpenAI-protocol providers the stable-first ordering makes their
     automatic prefix caching work.
     """
-    provider, key, model, base_url = _resolve()
+    provider, key, resolved, base_url = _resolve()
     if not key:
         raise RuntimeError(
             "No AI API key configured — set AI_API_KEY (or ANTHROPIC_API_KEY) and AI_PROVIDER."
         )
-    model = _tier_model(provider, tier) or model
+    # A pinned manual model (Ally's model picker) wins over the automatic tier ladder —
+    # anthropic only (a BYO/other-provider user keeps their one model). Otherwise the tier
+    # resolves the concrete model as before.
+    chosen = model if (model and provider == "anthropic") else (_tier_model(provider, tier) or resolved)
 
     async def _once() -> str:
         if provider == "anthropic":
-            return await _anthropic_complete(key, model, system, system_volatile, user, max_tokens)
+            return await _anthropic_complete(key, chosen, system, system_volatile, user, max_tokens)
         # openai / gemini / openai_compatible / others → the OpenAI-protocol client.
-        return await _openai_complete(key, model, base_url, system, system_volatile, user, max_tokens)
+        return await _openai_complete(key, chosen, base_url, system, system_volatile, user, max_tokens)
 
     # Retry an EMPTY response or a transient error with a short backoff — a single provider
     # hiccup should never reach the caller (and then the user) as "AI error".

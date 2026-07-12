@@ -5,6 +5,7 @@ import { listServers } from "@/api/servers"
 import { useAssistantStore } from "@/store/assistantStore"
 import ChatInput from "./ChatInput"
 import ChatMessage, { type ChatMessageData, type Handoff, type BatchSpec } from "./ChatMessage"
+import ModelPicker from "./ModelPicker"
 import ServerTag from "./ServerTag"
 import { detectServers } from "./serverMentions"
 import type { MissionOffer } from "./MissionCard"
@@ -81,6 +82,9 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   const language = user?.preferred_language ?? "en"
   const openServer = useAssistantStore((s) => s.openServer)
   const setTarget = useAssistantStore((s) => s.setTarget)
+  // Ally's model picker (Auto/Manual). Sent with each chat/mission frame; "auto" = omit
+  // so the backend runs its automatic ladder. A pinned choice overrides it for this convo.
+  const modelChoice = useAssistantStore((s) => s.modelChoice)
   const { data: servers = [] } = useQuery({ queryKey: ["servers"], queryFn: listServers })
   // Persistent mode (the drawer): messages live in the global store and survive target
   // switches + navigation. Otherwise (Assistant page): plain local state per thread.
@@ -599,6 +603,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
       content,
       language,
       ...(server ? { server_id: server.id } : {}),
+      ...(modelChoice !== "auto" ? { model: modelChoice } : {}),
       ...(pageContext ? { page_context: pageContext } : {}),
       ...(history.length ? { history } : {}),
     })
@@ -657,6 +662,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
       skill: offer.skill,
       language,
       ...(homeId ? { server_id: homeId } : {}),
+      ...(modelChoice !== "auto" ? { model: modelChoice } : {}),
     })
   }
 
@@ -703,7 +709,7 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
   useEffect(() => {
     if (resume && resume.key !== lastResumeKey.current && status === "open") {
       lastResumeKey.current = resume.key
-      send({ type: "mission_resume", mission_id: resume.missionId, language })
+      send({ type: "mission_resume", mission_id: resume.missionId, language, ...(modelChoice !== "auto" ? { model: modelChoice } : {}) })
       clearResume()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -810,6 +816,11 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
         servers={servers}
         placeholder={focusServer ? `Message Ally about ${focusServer.name}…` : undefined}
       />
+      {/* Composer toolbar — Ally's model picker lives by the input (Claude-Code style):
+          "which brain answers this" is right where you type. Opens upward (bottom-anchored). */}
+      <div className="mt-2 flex items-center px-1">
+        <ModelPicker />
+      </div>
     </div>
   )
 

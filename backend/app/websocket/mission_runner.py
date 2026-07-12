@@ -42,6 +42,9 @@ class MissionRunner:
         # The approval-request event a mission is currently paused on (so a client that
         # ATTACHES mid-approval can be re-shown the prompt and actually approve).
         self.pending_approval: dict | None = None
+        # A pinned model for this mission's step planning (Ally's model picker, Manual mode);
+        # None = Auto (the ladder decides). The verify gate ignores this and stays on top.
+        self.model: str | None = None
 
     # ── event fan-out (mission → attached clients) ────────────────────────────
     def subscribe(self) -> asyncio.Queue:

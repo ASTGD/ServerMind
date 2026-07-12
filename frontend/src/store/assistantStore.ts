@@ -6,6 +6,10 @@ import type { ChatMessageData } from "@/components/chat/ChatMessage"
 /** What the assistant is currently scoped to: the whole fleet, or one server. */
 export type AssistantTarget = { kind: "fleet" } | { kind: "server"; server: Server }
 
+/** Ally's model picker. "auto" = the automatic model ladder decides; the rest pin one
+ *  model for the conversation (fastest → smartest). Sent with each chat/mission frame. */
+export type ModelChoice = "auto" | "fast" | "smart" | "expert" | "genius"
+
 type MessagesUpdater = ChatMessageData[] | ((prev: ChatMessageData[]) => ChatMessageData[])
 
 interface AssistantState {
@@ -43,6 +47,9 @@ interface AssistantState {
   setPageContext: (ctx: PageContext | null) => void
   setMessages: (updater: MessagesUpdater) => void
   setThreadId: (id: string | null) => void
+  /** Ally's model picker for this conversation (Auto or a pinned model). */
+  modelChoice: ModelChoice
+  setModelChoice: (c: ModelChoice) => void
   clearConversation: () => void
   toggle: () => void
   close: () => void
@@ -62,6 +69,8 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   pageContext: null,
   messages: [],
   threadId: null,
+  modelChoice: "auto",
+  setModelChoice: (c) => set({ modelChoice: c }),
   openFleet: () => set({ open: true, target: { kind: "fleet" }, seed: null }),
   askAlly: (text) => set({ open: true, seed: { text, key: Date.now() } }),
   openServer: (server, seedText) =>

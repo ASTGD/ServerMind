@@ -739,6 +739,7 @@ async def plan_mission_step(
     home_id: str | None = None,
     tier: str = "default",
     ally_mode: str | None = None,
+    model: str | None = None,
 ) -> dict:
     """One iteration of the mission loop: given the goal, the runbook, the servers the
     user can act on, and everything that has happened, decide the next step (or
@@ -762,7 +763,7 @@ async def plan_mission_step(
     raw = _extract_json(
         await llm_service.complete(
             system, "Decide the next mission step.", max_tokens=3072,
-            system_volatile=volatile, tier=tier,
+            system_volatile=volatile, tier=tier, model=model,
         )
     )
     try:
@@ -774,7 +775,7 @@ async def plan_mission_step(
     # Smart Model Ladder — proactive escalation: Ally can flag THIS decision as hard and
     # re-plan the step on a stronger model (unless the loop already put it on high, or
     # there's no stronger tier). One hop, bounded.
-    if tier != "high" and decision.get("need_stronger") and llm_service.has_stronger_tier():
+    if model is None and tier != "high" and decision.get("need_stronger") and llm_service.has_stronger_tier():
         logger.info("mission step: Ally requested a stronger model — re-planning on high tier")
         try:
             decision2 = _parse_json(_extract_json(
@@ -1114,6 +1115,7 @@ async def plan_commands(
     scout: str | None = None,
     ally_mode: str | None = None,
     trace: dict | None = None,
+    model: str | None = None,
 ) -> dict:
     """Ask Claude to produce a command plan for the user's request. ``skill`` (Ally
     Skills Phase A) injects the matched expert procedure — our own authored content,
@@ -1161,7 +1163,7 @@ async def plan_commands(
     if trace is not None:
         trace.update({"system": system, "volatile": volatile, "user_input": user_input})
 
-    raw_text = await llm_service.complete(system, user_input, max_tokens=4096, system_volatile=volatile)
+    raw_text = await llm_service.complete(system, user_input, max_tokens=4096, system_volatile=volatile, model=model)
     if trace is not None:
         trace["raw"] = raw_text
     try:
@@ -1177,7 +1179,7 @@ async def plan_commands(
             + _scout_block(scout)
             + _server_profile_block(server_profile)
         )
-        raw_text = await llm_service.complete(system, user_input, max_tokens=4096, system_volatile=volatile_trim)
+        raw_text = await llm_service.complete(system, user_input, max_tokens=4096, system_volatile=volatile_trim, model=model)
         if trace is not None:
             trace.update({"raw": raw_text, "volatile": volatile_trim, "retried_trimmed": True})
         try:
@@ -1190,7 +1192,7 @@ async def plan_commands(
     # HARD / high-stakes request, re-plan it ONCE on a stronger model (one hop, only when
     # a stronger tier actually exists). This is Ally deciding up front — before acting —
     # that a bigger brain is warranted, not just reacting to a failure.
-    if plan.get("need_stronger") and llm_service.has_stronger_tier():
+    if model is None and plan.get("need_stronger") and llm_service.has_stronger_tier():
         logger.info("chat plan: Ally requested a stronger model — re-planning on high tier")
         try:
             raw_high = await llm_service.complete(

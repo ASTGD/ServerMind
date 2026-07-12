@@ -117,7 +117,7 @@ async def test_plan_commands_reruns_on_high_when_ally_flags_it(monkeypatch):
     stronger plan (marked escalated) is what's returned."""
     seen: list[str] = []
 
-    async def fake_complete(system, user, *, max_tokens=2048, system_volatile="", tier="default"):
+    async def fake_complete(system, user, *, max_tokens=2048, system_volatile="", tier="default", model=None):
         seen.append(tier)
         if tier == "high":
             return '{"plan_summary": "careful plan", "commands": []}'
@@ -136,7 +136,7 @@ async def test_plan_commands_does_not_escalate_without_a_stronger_tier(monkeypat
     settings.ENABLE_MODEL_LADDER = False
     seen: list[str] = []
 
-    async def fake_complete(system, user, *, max_tokens=2048, system_volatile="", tier="default"):
+    async def fake_complete(system, user, *, max_tokens=2048, system_volatile="", tier="default", model=None):
         seen.append(tier)
         return '{"plan_summary": "draft", "commands": [], "need_stronger": true}'
 
@@ -149,11 +149,39 @@ async def test_plan_commands_does_not_escalate_without_a_stronger_tier(monkeypat
 async def test_plan_commands_stays_default_when_not_flagged(monkeypatch):
     seen: list[str] = []
 
-    async def fake_complete(system, user, *, max_tokens=2048, system_volatile="", tier="default"):
+    async def fake_complete(system, user, *, max_tokens=2048, system_volatile="", tier="default", model=None):
         seen.append(tier)
         return '{"plan_summary": "easy", "commands": []}'
 
     monkeypatch.setattr(llm_service, "complete", fake_complete)
     plan = await ai_service.plan_commands("show me disk usage", _srv())
     assert seen == ["default"]
+    assert plan.get("escalated") is None
+
+
+# ── manual model picker (Ally chat "Auto / Manual" control) ───────────────────
+
+def test_manual_model_maps_friendly_names_to_ids():
+    assert llm_service.manual_model("fast") == "claude-haiku-4-5-20251001"
+    assert llm_service.manual_model("smart") == "claude-sonnet-5"
+    assert llm_service.manual_model("expert") == "claude-opus-4-8"
+    assert llm_service.manual_model("genius") == "claude-fable-5"
+    assert llm_service.manual_model(None) is None      # Auto
+    assert llm_service.manual_model("") is None
+    assert llm_service.manual_model("bogus") is None    # unknown → Auto (never crashes)
+
+
+async def test_plan_commands_pins_manual_model_and_skips_escalation(monkeypatch):
+    """A pinned manual model goes straight to complete() AND disables the need_stronger
+    escalation hop — the user chose the model, so we don't override it with a re-plan."""
+    seen: list[str | None] = []
+
+    async def fake_complete(system, user, *, max_tokens=2048, system_volatile="", tier="default", model=None):
+        seen.append(model)
+        # Flag need_stronger to prove the pin suppresses the escalation, not the absence of the flag.
+        return '{"plan_summary": "draft", "commands": [], "need_stronger": true}'
+
+    monkeypatch.setattr(llm_service, "complete", fake_complete)
+    plan = await ai_service.plan_commands("do something risky", _srv(), model="claude-opus-4-8")
+    assert seen == ["claude-opus-4-8"]     # the pinned model, exactly once — no high-tier hop
     assert plan.get("escalated") is None
