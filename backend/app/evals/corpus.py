@@ -64,6 +64,16 @@ SKILL_ROUTING: list[tuple[str, str, str | None]] = [
     ("remove the malware from all my sites", "ubuntu", "security-incident-response"),
     ("recover the hacked server", "ubuntu", "security-incident-response"),
     ("clean up the compromised server", "ubuntu", "security-incident-response"),
+    # 2026-07-13 LIVE regression: on the panel2.firevps.net cleanup, this exact phrasing
+    # routed to the SCAN runbook (matched 'malware' only) instead of the RESPONSE mission,
+    # so it ran on the smaller 20-step budget without the per-site-backup discipline. The
+    # response skill gained remediation-verb triggers (respond/contain/clean/quarantine/fix)
+    # so these now win on priority — lock them.
+    ("respond to the active malware compromise on this server", "ubuntu", "security-incident-response"),
+    ("contain the malware on my site", "ubuntu", "security-incident-response"),
+    ("quarantine the webshells you found", "ubuntu", "security-incident-response"),
+    ("fix the hacked site", "ubuntu", "security-incident-response"),
+    ("malware cleanup on this box", "ubuntu", "security-incident-response"),
     # Negatives near the malware space — must NOT mis-route to an incident skill.
     ("harden this server for security", "ubuntu", "harden-server"),
     ("set up a firewall", "ubuntu", None),

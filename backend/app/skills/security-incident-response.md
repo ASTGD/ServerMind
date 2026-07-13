@@ -1,7 +1,7 @@
 ---
 slug: security-incident-response
 title: Respond to a Compromised Server — Guided Cleanup
-triggers: respond to the incident, incident response, respond to the compromise, respond to the security alert, clean up the hack, clean up the malware, remove the malware, remove the webshell, clean the infected server, clean up the compromised server, recover the hacked server, help me respond to the hack, help me clean up the server
+triggers: respond to the incident, incident response, respond to the compromise, respond to the security alert, respond to the malware, respond to the attack, malware compromise, clean up the hack, clean up the malware, clean the malware, clean up malware, malware cleanup, remove the malware, remove malware, remove the webshell, quarantine the malware, quarantine the webshell, contain the malware, contain the compromise, contain the threat, clean the infected server, clean the infected site, clean the hacked site, clean up the compromised server, recover the hacked server, fix the hacked site, fix the compromised site, help me respond to the hack, help me clean up the server
 os: linux
 priority: 11
 mode: mission
