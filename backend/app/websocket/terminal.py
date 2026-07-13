@@ -1503,12 +1503,18 @@ async def _run_mission(
                 return None
             if status_ == "blocked":
                 reason = decision.get("summary", "I can't continue from here.")
-                await mission_service.finalize(mission_id, status="blocked", steps=steps, summary=reason)
+                # A blocked mission is still a finished-for-now outcome — render the same
+                # owner-facing result card (Found/Did/Left), where "Left" holds what Ally
+                # needs from the user.
+                result = ai_service.sanitize_mission_result(decision.get("result"))
+                await mission_service.finalize(
+                    mission_id, status="blocked", steps=steps, summary=reason, result=result)
                 await ws.send_text(json.dumps({
                     "type": "mission_blocked",
                     "reason": reason,
                     # Track C: enumerable answers ride along as tappable options.
                     "options": _clean_options(decision.get("options")),
+                    "result": result,
                     "steps_used": len(steps),
                 }))
                 return None

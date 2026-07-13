@@ -426,8 +426,10 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
                 ? ((msg.verification as string | undefined) ?? (msg.caveat as string | undefined) ?? m.verification)
                 : m.verification,
             // Owner-facing structured outcome → the clear result card (Found/Did/Left).
+            // Shown on complete AND blocked (a paused mission is still a finished-for-now
+            // outcome; "Left" holds what Ally needs from the user).
             result:
-              status === "complete"
+              status === "complete" || status === "blocked"
                 ? ((msg.result as MissionResult | null | undefined) ?? m.result)
                 : m.result,
             pendingApproval: null,

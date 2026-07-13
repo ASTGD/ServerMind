@@ -660,8 +660,11 @@ RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
   "need_stronger": false,
   "result": {{ "headline": "plain-words outcome ({user_language})", "found": ["..."], "did": ["..."], "left": ["..."] }}
 }}
-(For status="done" ONLY, fill "result" with the owner-facing outcome — headline + the
- found / did / left lists in plain language. Omit it (or null) for continue/blocked.)
+(Fill "result" whenever the mission ENDS — status "done" AND status "blocked" — with the
+ owner-facing outcome card: a one-line "headline", then "found" (what was wrong), "did"
+ (what you changed), and "left" (what's still for the user). For "blocked", "left" is where
+ you put the decision/question you need from them (e.g. "The site shows a separate error —
+ want me to look?"). Plain language, no jargon. Omit "result" (null) only for "continue".)
 (action=run → give "cmd"; action=transfer → give the from_/to_ fields;
  action=wait → give "seconds" only. Leave the fields you don't need out.
  "options" is ONLY for status=blocked when the answer is enumerable — up to 4 short
