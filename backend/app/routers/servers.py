@@ -113,9 +113,12 @@ async def create_server(
                 server.os_type = info.get("os_type")
                 server.os_version = info.get("os_version")
                 server.arch = info.get("arch")
-                # A control panel on an SSH box unlocks the Hosting tab (CLI-over-SSH).
+                # A control panel on an SSH box makes it a hosting-panel asset (Hosting tab,
+                # CLI-over-SSH) — file it under Hosting so it's one unified card, not a VPS.
                 if server.connection_type == "ssh":
                     server.panel_type = info.get("panel")
+                    if info.get("panel"):
+                        server.category = "hosting"
             except Exception:  # noqa: BLE001 — OS detect is a bonus; status is already set
                 pass
         elif result.host_key_changed:
@@ -315,9 +318,13 @@ async def detect_server_os(
     server.os_type = info.get("os_type")
     server.os_version = info.get("os_version")
     server.arch = info.get("arch")
-    # A control panel on an SSH box unlocks the Hosting tab (CLI-over-SSH, H1).
+    # A control panel on an SSH box IS a hosting-panel asset (managed via the panel CLI over
+    # the same SSH, H1). File it under the Hosting Panel category so it's ONE unified card
+    # (SSH + panel), not ALSO a separate VPS card.
     if server.connection_type == "ssh":
         server.panel_type = info.get("panel")
+        if info.get("panel"):
+            server.category = "hosting"
     server.last_seen = datetime.now(timezone.utc)
     await db.commit()
 
