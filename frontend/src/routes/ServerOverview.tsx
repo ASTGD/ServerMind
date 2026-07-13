@@ -13,8 +13,15 @@ import type { Server } from "@/types"
 export default function ServerOverview() {
   const { server } = useOutletContext<{ server: Server }>()
 
+  // A Windows (RDP) / WinRM asset has no command channel to auto-detect OS, but it IS
+  // Windows by definition — show that instead of a bare "—".
+  const isWindows = server.connection_type === "rdp" || server.connection_type === "winrm"
+  const osValue = server.os_type
+    ? `${server.os_type}${server.os_version ? ` ${server.os_version}` : ""}`
+    : isWindows ? "Windows" : "—"
+
   const info: { label: string; value: string }[] = [
-    { label: "OS", value: server.os_type ? `${server.os_type}${server.os_version ? ` ${server.os_version}` : ""}` : "—" },
+    { label: "OS", value: osValue },
     { label: "Architecture", value: server.arch ?? "—" },
     { label: "Shell", value: server.shell },
     { label: "Connection", value: server.connection_type.toUpperCase() },
