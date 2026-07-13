@@ -1998,6 +1998,12 @@ async def _handle_message_inner(
     # it has an id to stream and cancel against), enqueue the worker, and tail its
     # log — survives client disconnects (Update 15, slice 4). If the flag is on but
     # no worker responds, fall back to inline so the run never hangs (Risk 2).
+    # NOTE (live-found 2026-07-14): the inline path runs the whole plan on THIS ws
+    # handler, so a single long-running command (e.g. a `maldet` scan over a large
+    # infected vhost — 10+ min) blocks the receive loop. Because Ally uses one socket,
+    # the user can't send another message (or Stop) until it finishes. Long scans are
+    # better run as a detached mission (which polls via the `wait` action and never
+    # blocks the socket) or via the Celery worker path below. Worth a follow-up.
     use_celery = settings.EXECUTION_BACKEND == "celery" and await _worker_available()
     if settings.EXECUTION_BACKEND == "celery" and not use_celery:
         logger.warning("EXECUTION_BACKEND=celery but no worker responded — running chat inline")
