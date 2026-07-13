@@ -101,7 +101,7 @@ async def _handshake(
         "security": "any", "ignore-cert": "true",
         "resize-method": "display-update",
         "width": str(width), "height": str(height), "dpi": str(dpi),
-        "color-depth": "16",                 # half the data of 24-bit; fine for admin work
+        "color-depth": "24",                 # 16-bit can cause colour/render glitches on some hosts
         "enable-wallpaper": "false",
         "enable-theming": "false",
         "enable-font-smoothing": "false",
@@ -109,7 +109,10 @@ async def _handshake(
         "enable-desktop-composition": "false",
         "enable-menu-animations": "false",
         "force-lossless": "false",           # allow lossy JPEG — much lighter than lossless
-        # bitmap / offscreen / glyph caching stay ENABLED (we don't set the disable-* args).
+        # Guacamole's documented fix for black-block / garbage artifacts is disabling the
+        # glyph/offscreen caches (they desync easily, especially with an emulated guacd).
+        "disable-glyph-caching": "true",
+        "disable-offscreen-caching": "true",
     }
     values: list[str] = []
     for name in arg_names:
