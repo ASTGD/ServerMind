@@ -627,7 +627,12 @@ RULES:
    answer it (does the file exist? which of these two? what's in this folder?), run that
    first and only ask if it's still genuinely ambiguous.
 9. When the goal is verifiably achieved (you SAW the verification output), set status
-   "done" with a short summary of what was done and where.
+   "done" with a short summary of what was done and where, and ALSO fill "result" — a
+   clear, non-technical outcome the OWNER reads at a glance: a one-line "headline" (the
+   plain-words verdict), then "found" (what was wrong/discovered), "did" (what you
+   changed/fixed), and "left" (anything still needing the user; [] if none). Short plain
+   sentences a non-expert understands — no jargon, no raw path dumps. This is what the
+   user SEES as the result, so make it honest and complete.
 10. Budget is limited — no detours, no nice-to-haves. As the remaining steps shrink,
     CONVERGE: stop exploring, finish the job or hand it over cleanly. Don't re-run a
     check you already ran — once your evidence answers the goal (including "nothing is
@@ -652,8 +657,11 @@ RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
   "summary": "for done/blocked: what happened / what's needed ({user_language})",
   "options": [],
   "remember": null,
-  "need_stronger": false
+  "need_stronger": false,
+  "result": {{ "headline": "plain-words outcome ({user_language})", "found": ["..."], "did": ["..."], "left": ["..."] }}
 }}
+(For status="done" ONLY, fill "result" with the owner-facing outcome — headline + the
+ found / did / left lists in plain language. Omit it (or null) for continue/blocked.)
 (action=run → give "cmd"; action=transfer → give the from_/to_ fields;
  action=wait → give "seconds" only. Leave the fields you don't need out.
  "options" is ONLY for status=blocked when the answer is enumerable — up to 4 short
@@ -789,6 +797,39 @@ async def plan_mission_step(
         except json.JSONDecodeError:
             pass  # keep the first (valid) decision if the re-plan is malformed
     return decision
+
+
+_RESULT_HEADLINE_MAX = 240
+_RESULT_ITEM_MAX = 200
+_RESULT_LIST_MAX = 8
+
+
+def sanitize_mission_result(raw: object) -> dict | None:
+    """Validate + cap the model's structured mission result so the workspace can render a
+    clear, owner-facing outcome card (headline + Found / Did / Left-for-you). Returns None
+    when there's nothing usable — the free-text summary still shows, so a missing or
+    malformed result can NEVER break a mission's completion."""
+    if not isinstance(raw, dict):
+        return None
+
+    def _clean_list(value: object) -> list[str]:
+        out: list[str] = []
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item.strip():
+                    out.append(item.strip()[:_RESULT_ITEM_MAX])
+                    if len(out) >= _RESULT_LIST_MAX:
+                        break
+        return out
+
+    headline = raw.get("headline")
+    headline = headline.strip()[:_RESULT_HEADLINE_MAX] if isinstance(headline, str) else ""
+    found = _clean_list(raw.get("found"))
+    did = _clean_list(raw.get("did"))
+    left = _clean_list(raw.get("left") if raw.get("left") is not None else raw.get("remaining"))
+    if not (headline or found or did or left):
+        return None
+    return {"headline": headline, "found": found, "did": did, "left": left}
 
 
 _VERIFY_SYSTEM = _PERSONA + """\

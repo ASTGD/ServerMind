@@ -3,6 +3,7 @@ import { createPortal } from "react-dom"
 import {
   Rocket, CheckCircle2, XCircle, Loader2, Square, ChevronDown, ChevronRight,
   AlertTriangle, Flag, Hand, ShieldCheck, ShieldAlert, Clock, Maximize2, Minimize2, Check, Brain,
+  ArrowRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { serverColor, FLEET_COLOR } from "@/lib/serverColor"
@@ -26,6 +27,15 @@ export interface MissionStep {
   waiting?: boolean
   /** Planned with a stronger model (the mission was struggling) — model ladder. */
   strong?: boolean
+}
+
+/** Owner-facing structured outcome — the clear result card at the end of a mission
+ *  (headline + what Ally Found / Did / Left for the user), from the backend `result`. */
+export interface MissionResult {
+  headline: string
+  found: string[]
+  did: string[]
+  left: string[]
 }
 
 /** A risky step paused for the user — rendered INSIDE this mission's card so the
@@ -54,6 +64,8 @@ export interface MissionState {
   verified?: boolean
   /** What the verifier confirmed (verified) or what's still unproven (caveat). */
   verification?: string
+  /** Owner-facing outcome rendered as a clear result card (headline + Found/Did/Left). */
+  result?: MissionResult | null
   /** Set while a risky step waits for the user's OK (in-card approval). */
   pendingApproval?: MissionApproval | null
   /** Tappable answers when a mission blocks on a question (proactivity Track C). */
@@ -134,6 +146,34 @@ function StatusIcon({ mission }: { mission: MissionState }) {
   if (mission.status === "blocked") return <Hand size={13} className="shrink-0 text-amber-500" />
   if (mission.status === "stopped") return <Square size={13} className="shrink-0 text-muted-foreground" />
   return <XCircle size={13} className="shrink-0 text-red-500" />
+}
+
+/** The clear "what happened" result at the end of a mission: Found / Did / Left-for-you.
+ *  Renders only the sections that have content, so a simple mission stays compact. */
+function ResultLists({ result }: { result: MissionResult }) {
+  const sections = [
+    { label: "Found", items: result.found, Icon: AlertTriangle, color: "text-red-500" },
+    { label: "Ally did", items: result.did, Icon: Check, color: "text-emerald-500" },
+    { label: "Left for you", items: result.left, Icon: ArrowRight, color: "text-amber-500" },
+  ].filter((s) => s.items.length > 0)
+  if (!sections.length) return null
+  return (
+    <div className="border-t border-border">
+      {sections.map((s) => (
+        <div key={s.label} className="border-b border-border px-3 py-2 last:border-b-0">
+          <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{s.label}</p>
+          <div className="space-y-1">
+            {s.items.map((it, i) => (
+              <div key={i} className="flex items-start gap-1.5 text-xs">
+                <s.Icon size={12} className={cn("mt-0.5 shrink-0", s.color)} />
+                <span className="min-w-0 text-foreground">{it}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 /**
@@ -293,13 +333,18 @@ export default function MissionProgress({
               : mission.status === "blocked"
                 ? Hand
                 : AlertTriangle
+        // A clear result card (headline verdict → Found / Did / Left) when the mission
+        // produced a structured outcome; otherwise the plain summary banner.
+        const headline =
+          mission.status === "stopped"
+            ? "Mission stopped."
+            : mission.result?.headline || mission.summary || `Mission ${mission.status}.`
         return (
+          <>
           <div className={`flex items-start gap-2 border-t px-3 py-2 text-xs ${tone}`}>
             <Icon size={13} className="mt-0.5 shrink-0" />
             <span className="min-w-0">
-              {mission.status === "stopped"
-                ? "Mission stopped."
-                : mission.summary || `Mission ${mission.status}.`}
+              {headline}
               {verified && mission.verification && (
                 <span className="mt-1 flex items-start gap-1 font-medium">
                   <ShieldCheck size={12} className="mt-px shrink-0" /> Verified: {mission.verification}
@@ -328,6 +373,8 @@ export default function MissionProgress({
               )}
             </span>
           </div>
+          {mission.result && <ResultLists result={mission.result} />}
+          </>
         )
       })()}
     </div>

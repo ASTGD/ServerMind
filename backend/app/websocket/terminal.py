@@ -472,6 +472,7 @@ async def _unified_loop(ws: WebSocket, user: User, fixed_server: Server | None =
                         "summary": m.summary or "Mission finished.",
                         "verified": m.verified, "steps_used": m.steps_used,
                         "reason": m.summary or "", "caveat": m.summary or "",
+                        "result": mission_service.result_of(m),
                     }))
                 continue
 
@@ -1437,6 +1438,9 @@ async def _run_mission(
                 steps.extend(gathered)
                 verify_step_count += len(gathered)  # these don't count against the budget
                 summary = decision.get("summary", "Mission complete.")
+                # Owner-facing structured outcome (headline + Found/Did/Left) — the
+                # workspace renders this as a clear result card. None if unusable.
+                result = ai_service.sanitize_mission_result(decision.get("result"))
 
                 if verdict == "confirmed":
                     # Only a confirmed goal leaves a memory note (deploy facts) —
@@ -1449,12 +1453,14 @@ async def _run_mission(
                                 server_id=home_server.id if home_server is not None else None,
                             )
                     await mission_service.finalize(
-                        mission_id, status="complete", steps=steps, verified=True, summary=summary)
+                        mission_id, status="complete", steps=steps, verified=True,
+                        summary=summary, result=result)
                     await ws.send_text(json.dumps({
                         "type": "mission_complete",
                         "summary": summary,
                         "verified": True,
                         "verification": vreason,
+                        "result": result,
                         "steps_used": len(steps),
                     }))
                     return None
@@ -1484,12 +1490,14 @@ async def _run_mission(
                 # false green; no memory note (the goal isn't confirmed).
                 caveat = vreason or "I could not confirm the goal is fully done — please double-check."
                 await mission_service.finalize(
-                    mission_id, status="complete", steps=steps, verified=False, summary=caveat)
+                    mission_id, status="complete", steps=steps, verified=False,
+                    summary=caveat, result=result)
                 await ws.send_text(json.dumps({
                     "type": "mission_complete",
                     "summary": summary,
                     "verified": False,
                     "caveat": caveat,
+                    "result": result,
                     "steps_used": len(steps),
                 }))
                 return None

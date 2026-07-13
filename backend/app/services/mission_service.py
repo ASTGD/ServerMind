@@ -61,6 +61,7 @@ async def start(
 async def checkpoint(
     mission_id: uuid.UUID | None, *, status: str, steps: list[dict],
     verified: bool | None = None, summary: str | None = None,
+    result: dict | None = None,
 ) -> None:
     """Update a mission's transcript + status. Called after every step (and on
     terminal states). No-op if the mission wasn't persisted."""
@@ -76,6 +77,8 @@ async def checkpoint(
             values["verified"] = verified
         if summary is not None:
             values["summary"] = summary[:4000]
+        if result is not None:
+            values["result"] = json.dumps(result)[:8000]
         async with AsyncSessionLocal() as db:
             await db.execute(update(Mission).where(Mission.id == mission_id).values(**values))
             await db.commit()
@@ -86,10 +89,14 @@ async def checkpoint(
 async def finalize(
     mission_id: uuid.UUID | None, *, status: str, steps: list[dict],
     verified: bool | None = None, summary: str | None = None,
+    result: dict | None = None,
 ) -> None:
     """Terminal checkpoint (complete/blocked/failed/stopped). Same as checkpoint —
     named for intent at the call sites."""
-    await checkpoint(mission_id, status=status, steps=steps, verified=verified, summary=summary)
+    await checkpoint(
+        mission_id, status=status, steps=steps, verified=verified,
+        summary=summary, result=result,
+    )
 
 
 async def recover_orphaned() -> int:
@@ -159,6 +166,17 @@ def steps_of(mission: Mission) -> list[dict]:
         return []
 
 
+def result_of(mission: Mission) -> dict | None:
+    """Parse the stored structured outcome (None if absent or corrupt)."""
+    if not mission.result:
+        return None
+    try:
+        data = json.loads(mission.result)
+        return data if isinstance(data, dict) else None
+    except (ValueError, TypeError):
+        return None
+
+
 def to_dict(mission: Mission, *, include_steps: bool = False) -> dict:
     out = {
         "id": str(mission.id),
@@ -169,6 +187,7 @@ def to_dict(mission: Mission, *, include_steps: bool = False) -> dict:
         "status": mission.status,
         "verified": mission.verified,
         "summary": mission.summary,
+        "result": result_of(mission),
         "steps_used": mission.steps_used,
         "budget": mission.budget,
         "resumable": mission.status == "interrupted",

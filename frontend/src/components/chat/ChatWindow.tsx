@@ -9,7 +9,7 @@ import ModelPicker from "./ModelPicker"
 import ServerTag from "./ServerTag"
 import { detectServers } from "./serverMentions"
 import type { MissionOffer } from "./MissionCard"
-import type { MissionState, MissionStep } from "./MissionProgress"
+import type { MissionState, MissionStep, MissionResult } from "./MissionProgress"
 import BatchRunModal from "./BatchRunModal"
 import CommandPlan from "./CommandPlan"
 import type { Artifact } from "./ArtifactPanel"
@@ -425,6 +425,11 @@ export default function ChatWindow({ target, seed, initialMessages, onPersistUse
               status === "complete"
                 ? ((msg.verification as string | undefined) ?? (msg.caveat as string | undefined) ?? m.verification)
                 : m.verification,
+            // Owner-facing structured outcome → the clear result card (Found/Did/Left).
+            result:
+              status === "complete"
+                ? ((msg.result as MissionResult | null | undefined) ?? m.result)
+                : m.result,
             pendingApproval: null,
             steps: m.steps.map((s) => ({ ...s, running: false })),
           }))
