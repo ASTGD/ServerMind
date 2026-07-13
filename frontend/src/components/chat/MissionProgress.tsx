@@ -152,21 +152,22 @@ function StatusIcon({ mission }: { mission: MissionState }) {
  *  Renders only the sections that have content, so a simple mission stays compact. */
 function ResultLists({ result }: { result: MissionResult }) {
   const sections = [
-    { label: "Found", items: result.found, Icon: AlertTriangle, color: "text-red-500" },
-    { label: "Ally did", items: result.did, Icon: Check, color: "text-emerald-500" },
-    { label: "Left for you", items: result.left, Icon: ArrowRight, color: "text-amber-500" },
+    { label: "Found", items: result.found, Icon: AlertTriangle, color: "text-red-400" },
+    { label: "Ally did", items: result.did, Icon: Check, color: "text-emerald-400" },
+    { label: "Left for you", items: result.left, Icon: ArrowRight, color: "text-amber-400" },
   ].filter((s) => s.items.length > 0)
   if (!sections.length) return null
+  // Rendered on the DARK result card — light text, subtle white dividers.
   return (
-    <div className="border-t border-border">
+    <div className="border-t border-white/10">
       {sections.map((s) => (
-        <div key={s.label} className="border-b border-border px-3 py-2 last:border-b-0">
-          <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{s.label}</p>
-          <div className="space-y-1">
+        <div key={s.label} className="border-b border-white/10 px-3.5 py-2.5 last:border-b-0">
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{s.label}</p>
+          <div className="space-y-1.5">
             {s.items.map((it, i) => (
-              <div key={i} className="flex items-start gap-1.5 text-xs">
-                <s.Icon size={12} className={cn("mt-0.5 shrink-0", s.color)} />
-                <span className="min-w-0 text-foreground">{it}</span>
+              <div key={i} className="flex items-start gap-2 text-xs leading-relaxed">
+                <s.Icon size={13} className={cn("mt-0.5 shrink-0", s.color)} />
+                <span className="min-w-0 text-zinc-200">{it}</span>
               </div>
             ))}
           </div>
@@ -318,64 +319,65 @@ export default function MissionProgress({
         // but is NOT a success — show it honestly (amber), never a false green.
         const unconfirmed = mission.status === "complete" && mission.verified === false
         const verified = mission.status === "complete" && mission.verified !== false
-        // Per-outcome identity for the result-card header: circle icon, colored border,
+        // Per-outcome identity on the DARK result card: circled icon, colored border,
         // headline color, and a status badge — the "verdict" a non-technical owner reads.
         const v = verified
-          ? { ring: "border-emerald-500/25", head: "bg-emerald-500/10", chip: "bg-emerald-500/15",
-              ic: "text-emerald-600 dark:text-emerald-400", title: "text-emerald-800 dark:text-emerald-300",
-              badge: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+          ? { border: "border-emerald-500/40", chip: "bg-emerald-500/20", ic: "text-emerald-400",
+              title: "text-emerald-300", badge: "bg-emerald-500/20 text-emerald-300",
               Icon: ShieldCheck, label: mission.verified === undefined ? "Done" : "Verified" }
           : unconfirmed
-            ? { ring: "border-amber-500/25", head: "bg-amber-500/10", chip: "bg-amber-500/15",
-                ic: "text-amber-600 dark:text-amber-400", title: "text-amber-800 dark:text-amber-300",
-                badge: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+            ? { border: "border-amber-500/40", chip: "bg-amber-500/20", ic: "text-amber-400",
+                title: "text-amber-300", badge: "bg-amber-500/20 text-amber-300",
                 Icon: ShieldAlert, label: "Not confirmed" }
             : mission.status === "blocked"
-              ? { ring: "border-amber-500/25", head: "bg-amber-500/10", chip: "bg-amber-500/15",
-                  ic: "text-amber-600 dark:text-amber-400", title: "text-amber-800 dark:text-amber-300",
-                  badge: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+              ? { border: "border-amber-500/40", chip: "bg-amber-500/20", ic: "text-amber-400",
+                  title: "text-amber-300", badge: "bg-amber-500/20 text-amber-300",
                   Icon: Hand, label: "Needs your OK" }
               : mission.status === "stopped"
-                ? { ring: "border-border", head: "bg-muted/50", chip: "bg-muted",
-                    ic: "text-muted-foreground", title: "text-foreground",
-                    badge: "bg-muted text-muted-foreground", Icon: Square, label: "Stopped" }
-                : { ring: "border-red-500/25", head: "bg-red-500/10", chip: "bg-red-500/15",
-                    ic: "text-red-600 dark:text-red-400", title: "text-red-700 dark:text-red-400",
-                    badge: "bg-red-500/15 text-red-700 dark:text-red-300",
+                ? { border: "border-zinc-600", chip: "bg-zinc-700", ic: "text-zinc-400",
+                    title: "text-zinc-200", badge: "bg-zinc-700 text-zinc-300",
+                    Icon: Square, label: "Stopped" }
+                : { border: "border-red-500/40", chip: "bg-red-500/20", ic: "text-red-400",
+                    title: "text-red-300", badge: "bg-red-500/20 text-red-300",
                     Icon: AlertTriangle, label: "Failed" }
         const headline =
           mission.status === "stopped"
             ? "Mission stopped."
             : mission.result?.headline || mission.summary || `Mission ${mission.status}.`
-        // The result renders as its OWN bounded card (header + Found/Did/Left body) so it
-        // reads as a report, set apart from the step timeline above it.
+        // A distinct, rounded, DARK card so the result reads as its own report and stands
+        // out from the rest of the workspace. The header names the site/server clearly.
         return (
           <div className="border-t border-border p-2.5">
-            <div className={cn("overflow-hidden rounded-lg border", v.ring)}>
-              {/* Header — verdict at a glance: icon, "MISSION RESULT" eyebrow, status badge, headline. */}
-              <div className={cn("flex items-start gap-2.5 px-3 py-2.5", v.head)}>
+            <div className={cn("overflow-hidden rounded-2xl border bg-zinc-900 shadow-lg", v.border)}>
+              {/* Header — verdict + the site/server this result is about, stated clearly. */}
+              <div className="flex items-start gap-2.5 px-3.5 pt-3 pb-2.5">
                 <span className={cn("mt-px flex h-7 w-7 shrink-0 items-center justify-center rounded-full", v.chip)}>
                   <v.Icon size={15} className={v.ic} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                       Mission result
                     </span>
-                    {mission.serverName && <ServerTag name={mission.serverName} />}
                     <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold", v.badge)}>
                       {v.label}
                     </span>
                   </div>
-                  <p className={cn("mt-1 text-sm font-semibold leading-snug", v.title)}>{headline}</p>
+                  {mission.serverName && (
+                    <p className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+                      <span className={cn("h-2 w-2 shrink-0 rounded-full", color.dot)} />
+                      <span className="truncate">{mission.serverName}</span>
+                    </p>
+                  )}
+                  <p className={cn("mt-1 text-[13px] font-medium leading-snug", v.title)}>{headline}</p>
                   {verified && mission.verification && (
-                    <p className="mt-1 flex items-start gap-1 text-[11px] text-muted-foreground">
-                      <ShieldCheck size={11} className="mt-px shrink-0 text-emerald-500" /> Verified: {mission.verification}
+                    <p className="mt-1 flex items-start gap-1 text-[11px] text-zinc-400">
+                      <ShieldCheck size={11} className="mt-px shrink-0 text-emerald-400" /> Verified: {mission.verification}
                     </p>
                   )}
                   {unconfirmed && (
-                    <p className="mt-1 flex items-start gap-1 text-[11px] text-muted-foreground">
-                      <ShieldAlert size={11} className="mt-px shrink-0 text-amber-500" />
+                    <p className="mt-1 flex items-start gap-1 text-[11px] text-zinc-400">
+                      <ShieldAlert size={11} className="mt-px shrink-0 text-amber-400" />
                       Couldn't fully confirm: {mission.verification || "please double-check this yourself."}
                     </p>
                   )}
@@ -388,12 +390,12 @@ export default function MissionProgress({
               {/* Track C: a blocked mission that asked a question — tap an answer to reply
                   (free text still works by typing). Sits at the card's foot. */}
               {mission.status === "blocked" && mission.options && mission.options.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 border-t border-border px-3 py-2.5">
+                <div className="flex flex-wrap gap-1.5 border-t border-white/10 px-3.5 py-2.5">
                   {mission.options.map((o, i) => (
                     <button
                       key={i}
                       onClick={() => onOption?.(o)}
-                      className="rounded-full border border-amber-500/40 bg-amber-500/5 px-2.5 py-1 text-[11px] font-medium text-amber-700 transition-colors hover:bg-amber-500/15 dark:text-amber-300"
+                      className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
                     >
                       {o}
                     </button>
