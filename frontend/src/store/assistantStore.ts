@@ -91,7 +91,10 @@ export const useAssistantStore = create<AssistantState>((set) => ({
   setMessages: (updater) =>
     set((s) => ({ messages: typeof updater === "function" ? updater(s.messages) : updater })),
   setThreadId: (id) => set({ threadId: id }),
-  clearConversation: () => set({ messages: [], threadId: null }),
+  // A new conversation returns to the automatic model ladder (Auto) — the safe, low-cost
+  // default. A pinned model (Expert/etc.) applies only to the conversation you chose it
+  // in, so an earlier pick never silently drives cost in the next chat.
+  clearConversation: () => set({ messages: [], threadId: null, modelChoice: "auto" }),
   toggle: () => set((s) => ({ open: !s.open })),
   close: () => set({ open: false }),
 }))
