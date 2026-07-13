@@ -37,6 +37,7 @@ from app.routers import usage as usage_router
 from app.services import backup_service, playbook_service, scheduler_service
 from app.services.rate_limit_service import limiter
 from app.websocket import terminal as ws_handlers
+from app.websocket import rdp_tunnel as ws_rdp
 from app.workers import metrics_worker
 
 logging.basicConfig(
@@ -127,6 +128,7 @@ app.include_router(rdp_router.router)
 app.include_router(memories_router.router)
 app.include_router(entitlements_router.router)
 app.include_router(ws_handlers.router)
+app.include_router(ws_rdp.router)  # /ws/rdp — live Remote Desktop via guacd
 
 
 @app.get("/health")

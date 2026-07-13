@@ -40,6 +40,13 @@ def test_infer_category_maps_rdp_to_windows_rdp():
     assert infer_category("winrm", None) == "windows"
 
 
+def test_rdp_port_uses_asset_port_for_rdp_but_3389_for_winrm():
+    # A pure-RDP asset stores its RDP port directly…
+    assert rdp_service.rdp_port(_srv(connection_type="rdp", port=3390)) == 3390
+    # …but a WinRM box's stored port is WinRM (5985) — its desktop is still 3389.
+    assert rdp_service.rdp_port(_srv(connection_type="winrm", port=5985)) == 3389
+
+
 async def test_reachability_closed_port_is_a_clear_failure():
     r = await rdp_service.test_connection("127.0.0.1", 1)  # nothing listening → refused fast
     assert r["ok"] is False

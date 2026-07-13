@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { X, Monitor, Loader2, ShieldCheck, Info } from "lucide-react"
 import { enableRdp, openRdpSession, type RdpSession } from "@/api/rdp"
 import type { Server } from "@/types"
+import RdpCanvas from "./RdpCanvas"
 
 interface Props {
   server: Server
@@ -51,7 +52,7 @@ export default function RdpDesktopModal({ server, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="flex w-full max-w-2xl flex-col rounded-xl border border-border bg-card shadow-xl">
+      <div className={`flex w-full flex-col rounded-xl border border-border bg-card shadow-xl ${session?.streaming_available ? "max-w-5xl" : "max-w-2xl"}`}>
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="flex items-center gap-2 font-semibold text-foreground">
             <Monitor size={17} className="text-primary" /> Remote Desktop — {server.name}
@@ -97,9 +98,7 @@ export default function RdpDesktopModal({ server, onClose }: Props) {
           {session && (
             <div>
               {session.streaming_available ? (
-                <div className="flex aspect-video w-full items-center justify-center rounded-lg border border-border bg-black text-sm text-muted-foreground">
-                  <Loader2 size={16} className="mr-2 animate-spin" /> Connecting to {session.host}:{session.port}…
-                </div>
+                <RdpCanvas token={session.session_token} onError={setError} />
               ) : (
                 <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 p-4">
                   <Info size={18} className="mt-0.5 shrink-0 text-primary" />

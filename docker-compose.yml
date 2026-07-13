@@ -33,6 +33,16 @@ services:
       timeout: 5s
       retries: 5
 
+  # Remote Desktop proxy (Apache Guacamole). Translates RDP/VNC ↔ the Guacamole wire
+  # protocol our /ws/rdp tunnel speaks; exposed on 4822 so the host backend reaches it at
+  # 127.0.0.1:4822 (set RDP_GUACD_URL=127.0.0.1:4822 in backend/.env to enable the viewer).
+  guacd:
+    image: guacamole/guacd:1.5.5
+    container_name: servermind_guacd
+    restart: unless-stopped
+    ports:
+      - "4822:4822"
+
   # Durable-execution worker (optional, Update 15). Off by default; start with:
   #   docker compose --profile worker up -d --build worker
   # Connects to the SAME Postgres/Redis the host backend uses (via the host's

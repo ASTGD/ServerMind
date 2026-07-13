@@ -44,6 +44,13 @@ def ensure_available(server: Server) -> None:
         raise RdpError("Remote Desktop is turned off for this asset. Enable it first.")
 
 
+def rdp_port(server: Server) -> int:
+    """The RDP port for this asset. A pure-RDP asset stores its RDP port directly (default
+    3389); a WinRM box's stored port is its WinRM port (5985), so its desktop is still the
+    standard 3389."""
+    return server.port if server.connection_type == "rdp" else RDP_PORT
+
+
 async def test_connection(host: str, port: int) -> dict:
     """RDP has no command channel to 'log in' to from here, so the meaningful check is
     whether the Remote Desktop service is actually LISTENING and reachable. Do a bounded
@@ -92,7 +99,7 @@ def issue_session(server: Server, user: User) -> dict:
     return {
         "session_token": token,
         "host": server.host,
-        "port": RDP_PORT,
+        "port": rdp_port(server),  # RDP port (asset's own for rdp assets, else 3389)
         "expires_in": settings.RDP_SESSION_TTL_SECONDS,
         "streaming_available": streaming_available(),
     }
