@@ -2,7 +2,7 @@ import { useState } from "react"
 import { createPortal } from "react-dom"
 import {
   Rocket, CheckCircle2, XCircle, Loader2, Square, ChevronDown, ChevronRight,
-  AlertTriangle, Flag, Hand, ShieldCheck, ShieldAlert, Clock, Maximize2, Minimize2, Check, Brain,
+  AlertTriangle, Hand, ShieldCheck, ShieldAlert, Clock, Maximize2, Minimize2, Check, Brain,
   ArrowRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -317,49 +317,78 @@ export default function MissionProgress({
         // A completed mission that the verification gate could NOT confirm is finished
         // but is NOT a success — show it honestly (amber), never a false green.
         const unconfirmed = mission.status === "complete" && mission.verified === false
-        const verified = mission.status === "complete" && mission.verified === true
-        const tone =
-          verified || (mission.status === "complete" && mission.verified === undefined)
-            ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-            : unconfirmed || mission.status === "blocked"
-              ? "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-              : "border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400"
-        const Icon = verified
-          ? ShieldCheck
+        const verified = mission.status === "complete" && mission.verified !== false
+        // Per-outcome identity for the result-card header: circle icon, colored border,
+        // headline color, and a status badge — the "verdict" a non-technical owner reads.
+        const v = verified
+          ? { ring: "border-emerald-500/25", head: "bg-emerald-500/10", chip: "bg-emerald-500/15",
+              ic: "text-emerald-600 dark:text-emerald-400", title: "text-emerald-800 dark:text-emerald-300",
+              badge: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+              Icon: ShieldCheck, label: mission.verified === undefined ? "Done" : "Verified" }
           : unconfirmed
-            ? ShieldAlert
-            : mission.status === "complete"
-              ? Flag
-              : mission.status === "blocked"
-                ? Hand
-                : AlertTriangle
-        // A clear result card (headline verdict → Found / Did / Left) when the mission
-        // produced a structured outcome; otherwise the plain summary banner.
+            ? { ring: "border-amber-500/25", head: "bg-amber-500/10", chip: "bg-amber-500/15",
+                ic: "text-amber-600 dark:text-amber-400", title: "text-amber-800 dark:text-amber-300",
+                badge: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                Icon: ShieldAlert, label: "Not confirmed" }
+            : mission.status === "blocked"
+              ? { ring: "border-amber-500/25", head: "bg-amber-500/10", chip: "bg-amber-500/15",
+                  ic: "text-amber-600 dark:text-amber-400", title: "text-amber-800 dark:text-amber-300",
+                  badge: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                  Icon: Hand, label: "Needs your OK" }
+              : mission.status === "stopped"
+                ? { ring: "border-border", head: "bg-muted/50", chip: "bg-muted",
+                    ic: "text-muted-foreground", title: "text-foreground",
+                    badge: "bg-muted text-muted-foreground", Icon: Square, label: "Stopped" }
+                : { ring: "border-red-500/25", head: "bg-red-500/10", chip: "bg-red-500/15",
+                    ic: "text-red-600 dark:text-red-400", title: "text-red-700 dark:text-red-400",
+                    badge: "bg-red-500/15 text-red-700 dark:text-red-300",
+                    Icon: AlertTriangle, label: "Failed" }
         const headline =
           mission.status === "stopped"
             ? "Mission stopped."
             : mission.result?.headline || mission.summary || `Mission ${mission.status}.`
+        // The result renders as its OWN bounded card (header + Found/Did/Left body) so it
+        // reads as a report, set apart from the step timeline above it.
         return (
-          <>
-          <div className={`flex items-start gap-2 border-t px-3 py-2 text-xs ${tone}`}>
-            <Icon size={13} className="mt-0.5 shrink-0" />
-            <span className="min-w-0">
-              {headline}
-              {verified && mission.verification && (
-                <span className="mt-1 flex items-start gap-1 font-medium">
-                  <ShieldCheck size={12} className="mt-px shrink-0" /> Verified: {mission.verification}
+          <div className="border-t border-border p-2.5">
+            <div className={cn("overflow-hidden rounded-lg border", v.ring)}>
+              {/* Header — verdict at a glance: icon, "MISSION RESULT" eyebrow, status badge, headline. */}
+              <div className={cn("flex items-start gap-2.5 px-3 py-2.5", v.head)}>
+                <span className={cn("mt-px flex h-7 w-7 shrink-0 items-center justify-center rounded-full", v.chip)}>
+                  <v.Icon size={15} className={v.ic} />
                 </span>
-              )}
-              {unconfirmed && (
-                <span className="mt-1 flex items-start gap-1 font-medium">
-                  <ShieldAlert size={12} className="mt-px shrink-0" />
-                  Couldn't fully confirm: {mission.verification || "please double-check this yourself."}
-                </span>
-              )}
-              {/* Track C: a blocked mission that asked a question — tap an answer to
-                  reply (free text still works by typing). */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Mission result
+                    </span>
+                    {mission.serverName && <ServerTag name={mission.serverName} />}
+                    <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold", v.badge)}>
+                      {v.label}
+                    </span>
+                  </div>
+                  <p className={cn("mt-1 text-sm font-semibold leading-snug", v.title)}>{headline}</p>
+                  {verified && mission.verification && (
+                    <p className="mt-1 flex items-start gap-1 text-[11px] text-muted-foreground">
+                      <ShieldCheck size={11} className="mt-px shrink-0 text-emerald-500" /> Verified: {mission.verification}
+                    </p>
+                  )}
+                  {unconfirmed && (
+                    <p className="mt-1 flex items-start gap-1 text-[11px] text-muted-foreground">
+                      <ShieldAlert size={11} className="mt-px shrink-0 text-amber-500" />
+                      Couldn't fully confirm: {mission.verification || "please double-check this yourself."}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Body — the clear Found / Ally did / Left-for-you breakdown. */}
+              {mission.result && <ResultLists result={mission.result} />}
+
+              {/* Track C: a blocked mission that asked a question — tap an answer to reply
+                  (free text still works by typing). Sits at the card's foot. */}
               {mission.status === "blocked" && mission.options && mission.options.length > 0 && (
-                <span className="mt-2 flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-1.5 border-t border-border px-3 py-2.5">
                   {mission.options.map((o, i) => (
                     <button
                       key={i}
@@ -369,12 +398,10 @@ export default function MissionProgress({
                       {o}
                     </button>
                   ))}
-                </span>
+                </div>
               )}
-            </span>
+            </div>
           </div>
-          {mission.result && <ResultLists result={mission.result} />}
-          </>
         )
       })()}
     </div>
