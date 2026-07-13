@@ -48,6 +48,13 @@ async def test_connection(server: Server) -> ConnectionResult:
         result = await hosting_service.test_connection(server)
         return ConnectionResult(**result)
 
+    if server.connection_type == "rdp":
+        # RDP has no command channel — "connected" means the Remote Desktop port is
+        # reachable (the guacd viewer streams the pixels from there).
+        from app.services import rdp_service
+        result = await rdp_service.test_connection(server.host, server.port)
+        return ConnectionResult(**result)
+
     raise NotImplementedError(f"connection_type '{server.connection_type}' not yet supported")
 
 

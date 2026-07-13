@@ -23,7 +23,7 @@ export interface Server {
   port: number
   username: string
   auth_type: "password" | "key"
-  connection_type: "ssh" | "winrm" | "hosting"
+  connection_type: "ssh" | "winrm" | "hosting" | "rdp"
   panel_type: string | null
   category: string | null // 'bare_metal'|'vps'|'hosting'|'windows'|'cloud' (Assets grouping)
   cloud_account_id?: string | null // set when imported from a Cloud Account (provenance)

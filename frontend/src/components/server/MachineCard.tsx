@@ -25,8 +25,10 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
   const openServer = useAssistantStore((s) => s.openServer)
   const cat = categoryForServer(server)
   const CatIcon = cat.icon
-  // A WinRM / Windows-category box is Windows even if OS detection never ran.
-  const osSlug = osIconSlug(server.os_type) ?? (cat.id === "windows" || server.connection_type === "winrm" ? "windows" : undefined)
+  // Remote Desktop assets (RDP, or a WinRM box) connect to a desktop, not a shell.
+  const canDesktop = server.connection_type === "winrm" || server.connection_type === "rdp"
+  // A Windows-category / WinRM / RDP box is Windows even if OS detection never ran.
+  const osSlug = osIconSlug(server.os_type) ?? (cat.id === "windows" || cat.id === "windows_rdp" || canDesktop ? "windows" : undefined)
   const osBrand = hasBrandIcon(osSlug)
   // Imported cloud instances carry their provider as the first tag (e.g. "aws").
   const provider = server.cloud_account_id ? server.tags?.[0] : undefined
@@ -35,7 +37,7 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
   function connect(e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    if (server.connection_type === "winrm") {
+    if (canDesktop) {
       onOpenDesktop?.(server)
     } else {
       openSession(server)
@@ -117,20 +119,23 @@ export default function MachineCard({ server, onOpenDesktop }: Props) {
           onClick={connect}
           className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
         >
-          {server.connection_type === "winrm" ? (
+          {canDesktop ? (
             <><MonitorPlay size={14} /> Open desktop</>
           ) : (
             <><TerminalSquare size={14} /> Connect</>
           )}
         </button>
-        <button
-          onClick={askAlly}
-          title="Ask Ally about this server"
-          aria-label="Ask Ally about this server"
-          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
-        >
-          <Sparkles size={14} /> Ask Ally
-        </button>
+        {/* Ally manages over a command channel — a pure-RDP asset has none, so hide it there. */}
+        {server.connection_type !== "rdp" && (
+          <button
+            onClick={askAlly}
+            title="Ask Ally about this server"
+            aria-label="Ask Ally about this server"
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
+          >
+            <Sparkles size={14} /> Ask Ally
+          </button>
+        )}
       </div>
     </Link>
   )

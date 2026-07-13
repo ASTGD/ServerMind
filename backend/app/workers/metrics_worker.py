@@ -64,6 +64,11 @@ async def _collect_server(server: Server) -> bool:
     """
     from app.services import metrics_service
 
+    # RDP (and other command-less transports) have no CPU/RAM/disk to sample — a reachability
+    # check keeps their online/offline status honest without a doomed metrics command.
+    if server.connection_type == "rdp":
+        return await _refresh_reachability(server)
+
     try:
         data = await metrics_service.get_metrics(server)
     except Exception as exc:
@@ -139,6 +144,38 @@ async def _collect_server(server: Server) -> bool:
         float(data.get("disk_percent") or 0),
     )
     return True
+
+
+async def _refresh_reachability(server: Server) -> bool:
+    """For a command-less asset (RDP): re-check the service port is reachable and keep the
+    online/offline status honest — no metrics are collected. Uses the same strike logic so
+    a single dropped check doesn't flap a healthy asset."""
+    from app.services import connection_manager
+    sid = str(server.id)
+    try:
+        result = await connection_manager.test_connection(server)
+    except Exception as exc:  # noqa: BLE001 — a probe failure is just "unreachable this cycle"
+        logger.debug("Reachability check failed for %s: %s", server.name, exc)
+        result = None
+
+    if result is not None and result.ok:
+        _offline_strikes.pop(sid, None)
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                sa_update(Server).where(Server.id == server.id)
+                .values(status="online", last_seen=datetime.now(tz=timezone.utc))
+            )
+            await db.commit()
+        return True
+
+    strikes = _offline_strikes.get(sid, 0) + 1
+    _offline_strikes[sid] = strikes
+    if strikes < _OFFLINE_STRIKES:
+        return False  # keep prior status — don't flap on one blip
+    async with AsyncSessionLocal() as db:
+        await db.execute(sa_update(Server).where(Server.id == server.id).values(status="offline"))
+        await db.commit()
+    return False
 
 
 async def _prune_old_metrics() -> None:

@@ -58,6 +58,12 @@ export default function AddServerModal({ onClose, onPickCloud }: Props) {
         next.auth_type = "password" // WinRM uses NTLM, not SSH keys
         if (prev.port === 22) next.port = 5985
         if (prev.username === "root") next.username = "Administrator"
+      } else if (value === "rdp") {
+        next.auth_type = "password" // RDP is username + password (no SSH keys)
+        next.panel_type = null
+        const otherDefaults = [22, 5985, 5986, ...Object.values(HOSTING_PORTS)]
+        if (otherDefaults.includes(prev.port)) next.port = 3389 // RDP default, like 22 for SSH
+        if (prev.username === "root") next.username = "Administrator"
       } else if (value === "hosting") {
         next.auth_type = "password"
         next.panel_type = next.panel_type ?? "cyberpanel"

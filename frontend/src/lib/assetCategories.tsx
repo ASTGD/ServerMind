@@ -1,4 +1,4 @@
-import { HardDrive, Server as ServerIcon, LayoutPanelTop, AppWindow, Cloud } from "lucide-react"
+import { HardDrive, Server as ServerIcon, LayoutPanelTop, AppWindow, Cloud, Monitor } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type { Server } from "@/types"
 
@@ -12,7 +12,7 @@ import type { Server } from "@/types"
  * (`connection_type`/`panel_type`) still does the connecting. Bare Metal and VPS are two
  * tiles over the SAME ssh transport — a distinction users think in, not two engines.
  */
-export type AssetCategoryId = "bare_metal" | "vps" | "hosting" | "windows" | "cloud"
+export type AssetCategoryId = "bare_metal" | "vps" | "hosting" | "windows" | "windows_rdp" | "cloud"
 
 export interface AssetCategory {
   id: AssetCategoryId
@@ -34,7 +34,8 @@ export const ASSET_CATEGORIES: AssetCategory[] = [
   { id: "bare_metal", label: "Bare Metal", blurb: "A physical server you have SSH to", icon: HardDrive, connectionType: "ssh", available: true, accent: "bg-slate-500/10 text-slate-600 dark:text-slate-300" },
   { id: "vps", label: "VPS", blurb: "A cloud/rented Linux server over SSH", icon: ServerIcon, connectionType: "ssh", available: true, accent: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" },
   { id: "hosting", label: "Hosting Panel", blurb: "cPanel, CyberPanel or Plesk", icon: LayoutPanelTop, connectionType: "hosting", available: true, accent: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  { id: "windows", label: "Windows Server", blurb: "Managed over WinRM (RDP viewer soon)", icon: AppWindow, connectionType: "winrm", available: true, accent: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
+  { id: "windows", label: "Windows Server", blurb: "Manage with Ally over WinRM", icon: AppWindow, connectionType: "winrm", available: true, accent: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
+  { id: "windows_rdp", label: "Windows (RDP)", blurb: "Remote Desktop access on port 3389", icon: Monitor, connectionType: "rdp", available: true, accent: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400" },
   { id: "cloud", label: "Cloud Account", blurb: "Import instances from AWS & more", icon: Cloud, available: true, cloudFlow: true, accent: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
 ]
 
@@ -48,6 +49,7 @@ export function categoryById(id: string | null | undefined): AssetCategory | und
  *  `infer_category`, used as a fallback for rows without a stored category. */
 export function inferCategory(connectionType: string, panelType: string | null): AssetCategoryId {
   if (connectionType === "winrm") return "windows"
+  if (connectionType === "rdp") return "windows_rdp"
   if (connectionType === "hosting") return "hosting"
   if (connectionType === "ssh" && panelType) return "hosting"
   return "vps"

@@ -37,9 +37,13 @@ export default function RdpDesktopModal({ server, onClose }: Props) {
     onError: (err: unknown) => setError(errMsg(err) ?? "Could not enable Remote Desktop."),
   })
 
-  // If RDP is already enabled, request a session straight away.
+  // A pure-RDP asset IS the desktop — it's always "on" (no WinRM opt-in gate). A WinRM box
+  // must have RDP explicitly enabled first.
+  const rdpOn = server.rdp_enabled || server.connection_type === "rdp"
+
+  // If RDP is available, request a session straight away.
   useEffect(() => {
-    if (server.rdp_enabled) sessionMut.mutate()
+    if (rdpOn) sessionMut.mutate()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -58,8 +62,8 @@ export default function RdpDesktopModal({ server, onClose }: Props) {
         </div>
 
         <div className="p-5">
-          {/* Not enabled yet → offer the opt-in */}
-          {!server.rdp_enabled && !session && (
+          {/* Not enabled yet (WinRM box) → offer the opt-in. A pure-RDP asset skips this. */}
+          {!rdpOn && !session && (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
               <ShieldCheck size={34} className="text-primary" />
               <p className="font-medium text-foreground">Remote Desktop is off for this asset</p>
@@ -79,13 +83,13 @@ export default function RdpDesktopModal({ server, onClose }: Props) {
           )}
 
           {/* Requesting a session */}
-          {busy && !session && server.rdp_enabled && (
+          {busy && !session && rdpOn && (
             <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
               <Loader2 size={16} className="animate-spin" /> Opening a secure session…
             </div>
           )}
 
-          {error && server.rdp_enabled && !session && (
+          {error && rdpOn && !session && (
             <p className="py-8 text-center text-sm text-destructive">{error}</p>
           )}
 

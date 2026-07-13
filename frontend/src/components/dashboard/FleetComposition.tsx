@@ -8,6 +8,7 @@ const CATEGORY_BAR: Record<AssetCategoryId, string> = {
   vps: "bg-indigo-500",
   hosting: "bg-emerald-500",
   windows: "bg-sky-500",
+  windows_rdp: "bg-cyan-500",
   cloud: "bg-violet-500",
 }
 

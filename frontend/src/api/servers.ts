@@ -7,7 +7,7 @@ export interface ServerCreateBody {
   port: number
   username: string
   auth_type: "password" | "key"
-  connection_type: "ssh" | "winrm" | "hosting"
+  connection_type: "ssh" | "winrm" | "hosting" | "rdp"
   panel_type?: string | null
   category?: string | null
   credential: string

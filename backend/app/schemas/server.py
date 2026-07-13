@@ -11,7 +11,7 @@ class ServerCreate(BaseModel):
     port: int = 22
     username: str
     auth_type: str  # 'password' | 'key'
-    connection_type: str  # 'ssh' | 'winrm' | 'hosting'
+    connection_type: str  # 'ssh' | 'winrm' | 'hosting' | 'rdp'
     panel_type: str | None = None
     category: str | None = None  # 'bare_metal'|'vps'|'hosting'|'windows'|'cloud' (inferred if omitted)
     credential: str  # plaintext — encrypted before storage

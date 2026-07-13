@@ -51,6 +51,8 @@ def infer_category(connection_type: str, panel_type: str | None) -> str:
     SSH box defaults to 'vps'; the user can re-file it in Edit."""
     if connection_type == "winrm":
         return "windows"
+    if connection_type == "rdp":
+        return "windows_rdp"
     if connection_type == "hosting":
         return "hosting"
     if connection_type == "ssh" and panel_type:
@@ -87,7 +89,7 @@ async def create_server(
         panel_type=body.panel_type,
         category=body.category or infer_category(body.connection_type, body.panel_type),
         encrypted_cred=encrypted,
-        shell="powershell" if body.connection_type == "winrm" else "bash",
+        shell="powershell" if body.connection_type in ("winrm", "rdp") else "bash",
         tags=body.tags,
         notes=body.notes,
     )
