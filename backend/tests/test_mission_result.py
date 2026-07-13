@@ -45,6 +45,22 @@ def test_sanitize_drops_junk_and_empties():
     assert r["found"] == ["real"]
 
 
+def test_sanitize_subject_named_target():
+    # A site-specific mission names its subject (the website) for the card header.
+    r = ai_service.sanitize_mission_result({
+        "subject": "richhome.com.bd",
+        "headline": "Cleaned the site",
+        "did": ["quarantined the webshells"],
+    })
+    assert r["subject"] == "richhome.com.bd"
+    # Capped, and blank/non-string/missing subjects are simply omitted (server-wide).
+    long = ai_service.sanitize_mission_result({"subject": "x" * 200, "headline": "h"})
+    assert len(long["subject"]) <= ai_service._RESULT_SUBJECT_MAX
+    assert "subject" not in ai_service.sanitize_mission_result({"headline": "h", "subject": "   "})
+    assert "subject" not in ai_service.sanitize_mission_result({"headline": "h", "subject": 123})
+    assert "subject" not in ai_service.sanitize_mission_result({"headline": "h"})
+
+
 def test_sanitize_caps_list_length_and_item_length():
     r = ai_service.sanitize_mission_result({
         "headline": "x" * 500,

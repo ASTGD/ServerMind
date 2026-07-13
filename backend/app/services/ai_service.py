@@ -658,13 +658,16 @@ RESPOND WITH VALID JSON ONLY (no markdown, no text outside JSON):
   "options": [],
   "remember": null,
   "need_stronger": false,
-  "result": {{ "headline": "plain-words outcome ({user_language})", "found": ["..."], "did": ["..."], "left": ["..."] }}
+  "result": {{ "subject": "the specific site/target, e.g. richhome.com.bd (or null)", "headline": "plain-words outcome ({user_language})", "found": ["..."], "did": ["..."], "left": ["..."] }}
 }}
 (Fill "result" whenever the mission ENDS — status "done" AND status "blocked" — with the
- owner-facing outcome card: a one-line "headline", then "found" (what was wrong), "did"
- (what you changed), and "left" (what's still for the user). For "blocked", "left" is where
- you put the decision/question you need from them (e.g. "The site shows a separate error —
- want me to look?"). Plain language, no jargon. Omit "result" (null) only for "continue".)
+ owner-facing outcome card. "subject" = the specific WEBSITE/site or resource the mission
+ was about (a domain like "richhome.com.bd", a database, an app) so the card names it
+ clearly — null if it's about the whole server, not one site. Then a one-line "headline",
+ then "found" (what was wrong), "did" (what you changed), and "left" (what's still for the
+ user). For "blocked", "left" is where you put the decision/question you need from them
+ (e.g. "The site shows a separate error — want me to look?"). Plain language, no jargon.
+ Omit "result" (null) only for "continue".)
 (action=run → give "cmd"; action=transfer → give the from_/to_ fields;
  action=wait → give "seconds" only. Leave the fields you don't need out.
  "options" is ONLY for status=blocked when the answer is enumerable — up to 4 short
@@ -805,6 +808,7 @@ async def plan_mission_step(
 _RESULT_HEADLINE_MAX = 240
 _RESULT_ITEM_MAX = 200
 _RESULT_LIST_MAX = 8
+_RESULT_SUBJECT_MAX = 80  # the specific site/target the result is about (a domain, etc.)
 
 
 def sanitize_mission_result(raw: object) -> dict | None:
@@ -832,7 +836,13 @@ def sanitize_mission_result(raw: object) -> dict | None:
     left = _clean_list(raw.get("left") if raw.get("left") is not None else raw.get("remaining"))
     if not (headline or found or did or left):
         return None
-    return {"headline": headline, "found": found, "did": did, "left": left}
+    result = {"headline": headline, "found": found, "did": did, "left": left}
+    # The specific site/target this result is about (e.g. "richhome.com.bd"), shown as
+    # the card's header subject — distinct from the server it lives on. Optional.
+    subject = raw.get("subject")
+    if isinstance(subject, str) and subject.strip():
+        result["subject"] = subject.strip()[:_RESULT_SUBJECT_MAX]
+    return result
 
 
 _VERIFY_SYSTEM = _PERSONA + """\

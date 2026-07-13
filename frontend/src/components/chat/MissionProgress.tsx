@@ -3,7 +3,7 @@ import { createPortal } from "react-dom"
 import {
   Rocket, CheckCircle2, XCircle, Loader2, Square, ChevronDown, ChevronRight,
   AlertTriangle, Hand, ShieldCheck, ShieldAlert, Clock, Maximize2, Minimize2, Check, Brain,
-  ArrowRight,
+  ArrowRight, Globe,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { serverColor, FLEET_COLOR } from "@/lib/serverColor"
@@ -32,6 +32,9 @@ export interface MissionStep {
 /** Owner-facing structured outcome — the clear result card at the end of a mission
  *  (headline + what Ally Found / Did / Left for the user), from the backend `result`. */
 export interface MissionResult {
+  /** The specific site/target this result is about (e.g. "richhome.com.bd"), named in the
+   *  card header — distinct from the server it runs on. Optional (server-wide missions). */
+  subject?: string | null
   headline: string
   found: string[]
   did: string[]
@@ -363,11 +366,30 @@ export default function MissionProgress({
                       {v.label}
                     </span>
                   </div>
-                  {mission.serverName && (
-                    <p className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
-                      <span className={cn("h-2 w-2 shrink-0 rounded-full", color.dot)} />
-                      <span className="truncate">{mission.serverName}</span>
-                    </p>
+                  {/* Name the SITE the mission is about (e.g. richhome.com.bd) as the
+                      header subject; the server it lives on is secondary context below.
+                      Server-wide missions (no subject) just show the server name. */}
+                  {mission.result?.subject ? (
+                    <div className="mt-0.5">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+                        <Globe size={13} className="shrink-0 text-zinc-400" />
+                        <span className="truncate">{mission.result.subject}</span>
+                      </p>
+                      {mission.serverName && (
+                        <p className="mt-0.5 flex items-center gap-1 pl-[19px] text-[11px] text-zinc-500">
+                          on
+                          <span className={cn("ml-0.5 h-1.5 w-1.5 shrink-0 rounded-full", color.dot)} />
+                          <span className="truncate">{mission.serverName}</span>
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    mission.serverName && (
+                      <p className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+                        <span className={cn("h-2 w-2 shrink-0 rounded-full", color.dot)} />
+                        <span className="truncate">{mission.serverName}</span>
+                      </p>
+                    )
                   )}
                   <p className={cn("mt-1 text-[13px] font-medium leading-snug", v.title)}>{headline}</p>
                   {verified && mission.verification && (
