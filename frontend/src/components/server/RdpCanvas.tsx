@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import Guacamole from "guacamole-common-js"
-import { Loader2 } from "lucide-react"
+import { Loader2, Maximize2, Minimize2 } from "lucide-react"
 
 /** WebSocket base — same derivation as useWebSocket (origin-relative so it works on
  *  localhost/LAN/prod; Vite dev + prod nginx proxy /ws/* to the backend). */
@@ -27,9 +27,16 @@ type ViewState = "connecting" | "connected" | "closed" | "error"
  * token authorizes the tunnel; no credentials are ever held here.
  */
 export default function RdpCanvas({ token, onError }: { token: string; onError?: (msg: string) => void }) {
+  const wrapperRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<ViewState>("connecting")
   const [errMsg, setErrMsg] = useState<string | null>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    else wrapperRef.current?.requestFullscreen().catch(() => {})
+  }
 
   useEffect(() => {
     const container = containerRef.current
@@ -44,12 +51,18 @@ export default function RdpCanvas({ token, onError }: { token: string; onError?:
     const displayEl = display.getElement()
     container.appendChild(displayEl)
 
-    // Scale the remote display to fit the container width as it resizes.
+    // Scale the remote display to fit the container: to width normally; to whichever of
+    // width/height is the tighter fit in full-screen, so the whole desktop stays visible.
     const fit = () => {
-      const dw = display.getWidth()
-      if (dw > 0 && container.clientWidth > 0) display.scale(container.clientWidth / dw)
+      const dw = display.getWidth(), dh = display.getHeight()
+      const cw = container.clientWidth, ch = container.clientHeight
+      if (dw <= 0 || cw <= 0) return
+      const scale = document.fullscreenElement && ch > 0 ? Math.min(cw / dw, ch / dh) : cw / dw
+      display.scale(scale)
     }
     display.onresize = fit
+    const onFsChange = () => { setIsFullscreen(!!document.fullscreenElement); fit() }
+    document.addEventListener("fullscreenchange", onFsChange)
 
     client.onstatechange = (s: number) => {
       if (s === CONNECTED) { setState("connected"); fit() }
@@ -79,18 +92,29 @@ export default function RdpCanvas({ token, onError }: { token: string; onError?:
 
     return () => {
       window.removeEventListener("resize", onWinResize)
+      document.removeEventListener("fullscreenchange", onFsChange)
       try { client.disconnect() } catch { /* already closed */ }
       if (displayEl.parentNode === container) container.removeChild(displayEl)
     }
   }, [token, onError])
 
   return (
-    <div className="relative">
+    <div ref={wrapperRef} className="relative bg-black">
       <div
         ref={containerRef}
         tabIndex={0}
-        className="flex min-h-[420px] w-full items-center justify-center overflow-hidden rounded-lg border border-border bg-black outline-none focus:ring-2 focus:ring-primary/60"
+        className={`flex w-full items-center justify-center overflow-hidden rounded-lg border border-border bg-black outline-none focus:ring-2 focus:ring-primary/60 ${isFullscreen ? "h-screen" : "min-h-[420px]"}`}
       />
+      {state === "connected" && (
+        <button
+          onClick={toggleFullscreen}
+          title={isFullscreen ? "Exit full screen" : "Full screen"}
+          aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
+          className="absolute right-2 top-2 rounded-md bg-black/60 p-1.5 text-white/90 transition-colors hover:bg-black/80"
+        >
+          {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </button>
+      )}
       {state !== "connected" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg bg-black/70 text-sm text-white">
           {state === "connecting" && (<><Loader2 size={18} className="animate-spin" /> Connecting to the desktop…</>)}
@@ -98,8 +122,8 @@ export default function RdpCanvas({ token, onError }: { token: string; onError?:
           {state === "error" && <span className="max-w-sm px-4 text-center text-red-300">{errMsg}</span>}
         </div>
       )}
-      {state === "connected" && (
-        <p className="mt-2 text-center text-xs text-muted-foreground">Click the desktop to type. Session is private and expires automatically.</p>
+      {state === "connected" && !isFullscreen && (
+        <p className="mt-2 text-center text-xs text-muted-foreground">Click the desktop to type · use the ⤢ button for full screen. Private session.</p>
       )}
     </div>
   )

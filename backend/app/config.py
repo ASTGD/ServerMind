@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     # the desktop-streaming service isn't deployed; the access gate + session issuance still
     # work (and the viewer says so honestly) but live pixels need this configured.
     RDP_GUACD_URL: str = ""
-    RDP_SESSION_TTL_SECONDS: int = 120
+    RDP_SESSION_TTL_SECONDS: int = 3600  # 1h — the token authorizes the desktop session window
     # Hosted "ServerAlly AI" subscription (Update 20.3) — for customers without their
     # own key. When AI_PROVIDER='servermind', AI_API_KEY is the subscription token and
     # requests go to this gateway (which holds our upstream key + meters usage).

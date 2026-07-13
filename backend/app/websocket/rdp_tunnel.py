@@ -91,14 +91,25 @@ async def _handshake(
     await gw.drain()
 
     # 4. connect: one value per arg guacd listed, in order. Fill what we know; echo the
-    #    VERSION token; leave the rest empty (guacd applies its defaults).
+    #    VERSION token; leave the rest empty (guacd applies its defaults). The eye-candy is
+    #    turned OFF and colour depth lowered — the "optimize for speed" profile the native
+    #    RDP client uses — so far less pixel data has to be encoded and streamed (matters a
+    #    lot, especially while guacd runs emulated in local dev).
     known = {
         "hostname": hostname, "port": str(port),
         "username": username, "password": password,
         "security": "any", "ignore-cert": "true",
         "resize-method": "display-update",
         "width": str(width), "height": str(height), "dpi": str(dpi),
-        "enable-wallpaper": "true",
+        "color-depth": "16",                 # half the data of 24-bit; fine for admin work
+        "enable-wallpaper": "false",
+        "enable-theming": "false",
+        "enable-font-smoothing": "false",
+        "enable-full-window-drag": "false",
+        "enable-desktop-composition": "false",
+        "enable-menu-animations": "false",
+        "force-lossless": "false",           # allow lossy JPEG — much lighter than lossless
+        # bitmap / offscreen / glyph caching stay ENABLED (we don't set the disable-* args).
     }
     values: list[str] = []
     for name in arg_names:
