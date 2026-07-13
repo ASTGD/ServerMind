@@ -80,18 +80,26 @@ export default function ServerDetail() {
     )
   }
 
-  const tabs = [
-    { to: `/servers/${server.id}`, label: "Overview", end: true },
-    { to: `/servers/${server.id}/files`, label: "Files", end: false },
-    { to: `/servers/${server.id}/security`, label: "Security", end: false },
-    { to: `/servers/${server.id}/backups`, label: "Backups", end: false },
-    { to: `/servers/${server.id}/scheduler`, label: "Scheduler", end: false },
-    // Hosting tab for a panel connection, or an SSH server with a control panel
-    // installed (drives the panel CLI over SSH — H1).
-    ...(server.connection_type === "hosting" || server.panel_type
-      ? [{ to: `/servers/${server.id}/hosting`, label: "Hosting", end: false }]
-      : []),
-  ]
+  // A pure-RDP asset has NO command channel — no shell, SFTP, scans, backups, or AI
+  // management. Its whole page is Overview + Open Desktop; the command-based tabs and the
+  // Terminal / Ask Ally actions don't apply and are hidden.
+  const isRdp = server.connection_type === "rdp"
+  const canDesktop = server.connection_type === "winrm" || isRdp
+
+  const tabs = isRdp
+    ? [{ to: `/servers/${server.id}`, label: "Overview", end: true }]
+    : [
+        { to: `/servers/${server.id}`, label: "Overview", end: true },
+        { to: `/servers/${server.id}/files`, label: "Files", end: false },
+        { to: `/servers/${server.id}/security`, label: "Security", end: false },
+        { to: `/servers/${server.id}/backups`, label: "Backups", end: false },
+        { to: `/servers/${server.id}/scheduler`, label: "Scheduler", end: false },
+        // Hosting tab for a panel connection, or an SSH server with a control panel
+        // installed (drives the panel CLI over SSH — H1).
+        ...(server.connection_type === "hosting" || server.panel_type
+          ? [{ to: `/servers/${server.id}/hosting`, label: "Hosting", end: false }]
+          : []),
+      ]
 
   return (
     <div className="space-y-5">
@@ -110,7 +118,7 @@ export default function ServerDetail() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {server.connection_type === "winrm" && (
+          {canDesktop && (
             <button
               onClick={() => setShowDesktop(true)}
               title="Open the Windows desktop over RDP"
@@ -151,27 +159,33 @@ export default function ServerDetail() {
           </NavLink>
         ))}
         {/* Per-server ACTIONS — grouped on the right, split off from the section tabs by a
-            divider. Terminal opens a live shell for this server; Ask Ally opens the
-            one-window Ally already focused on this server. */}
-        <div className="mb-1.5 ml-auto flex shrink-0 items-center gap-2 pl-4">
-          <span className="h-5 w-px bg-border" aria-hidden="true" />
-          <button
-            onClick={() => openTerminal(server)}
-            title="Open a terminal for this server"
-            className="flex shrink-0 items-center gap-1.5 rounded-full border border-red-500/50 px-3 py-1 text-sm font-medium text-red-600 transition-colors hover:bg-red-500/10 dark:text-red-400"
-          >
-            <TerminalIcon size={14} />
-            Terminal
-          </button>
-          <button
-            onClick={() => openServer(server)}
-            title="Ask Ally about this server"
-            className="flex shrink-0 items-center gap-1.5 rounded-full border border-primary/50 px-3 py-1 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
-          >
-            <Sparkles size={14} />
-            Ask Ally
-          </button>
-        </div>
+            divider. Terminal opens a live shell; Ask Ally opens the one-window Ally focused
+            on this server. Both need a command channel, so they're hidden for a pure-RDP
+            asset (which is reached only through the desktop viewer). */}
+        {!isRdp && (
+          <div className="mb-1.5 ml-auto flex shrink-0 items-center gap-2 pl-4">
+            <span className="h-5 w-px bg-border" aria-hidden="true" />
+            {/* Interactive PTY is SSH-only; a WinRM box is managed through Ask Ally. */}
+            {server.connection_type === "ssh" && (
+              <button
+                onClick={() => openTerminal(server)}
+                title="Open a terminal for this server"
+                className="flex shrink-0 items-center gap-1.5 rounded-full border border-red-500/50 px-3 py-1 text-sm font-medium text-red-600 transition-colors hover:bg-red-500/10 dark:text-red-400"
+              >
+                <TerminalIcon size={14} />
+                Terminal
+              </button>
+            )}
+            <button
+              onClick={() => openServer(server)}
+              title="Ask Ally about this server"
+              className="flex shrink-0 items-center gap-1.5 rounded-full border border-primary/50 px-3 py-1 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+            >
+              <Sparkles size={14} />
+              Ask Ally
+            </button>
+          </div>
+        )}
       </div>
 
       {showEdit && <EditServerModal server={server} onClose={() => setShowEdit(false)} />}

@@ -1,4 +1,5 @@
 import { useOutletContext } from "react-router-dom"
+import { Monitor } from "lucide-react"
 import ServerMetrics from "@/components/server/ServerMetrics"
 import InstalledWidget from "@/components/server/widgets/InstalledWidget"
 import SecurityWidget from "@/components/server/widgets/SecurityWidget"
@@ -31,9 +32,13 @@ export default function ServerOverview() {
     { label: "Auth", value: server.auth_type },
   ]
 
+  // A pure-RDP asset has no command channel, so metrics/installed/security/backups/
+  // scheduler/memory don't apply — the Overview is Server info + a Remote Desktop card.
+  const isRdp = server.connection_type === "rdp"
+
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <div className="space-y-4 lg:col-span-2">
+    <div className={`grid grid-cols-1 gap-4 ${isRdp ? "" : "lg:grid-cols-3"}`}>
+      <div className={`space-y-4 ${isRdp ? "" : "lg:col-span-2"}`}>
         <div className="rounded-lg border border-border bg-card p-4">
           <h3 className="mb-3 text-sm font-medium text-foreground">Server info</h3>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
@@ -46,8 +51,24 @@ export default function ServerOverview() {
           </dl>
         </div>
 
-        <InstalledWidget serverId={server.id} />
-        <RecentActivityWidget serverId={server.id} />
+        {isRdp ? (
+          <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-4">
+            <Monitor size={20} className="mt-0.5 shrink-0 text-primary" />
+            <div>
+              <h3 className="text-sm font-medium text-foreground">Remote Desktop asset</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                This machine is managed over Remote Desktop. Use <span className="font-medium text-foreground">Open Desktop</span> above
+                to see and control its screen. RDP has no command shell, so file browsing, scans, backups, scheduling, and AI
+                management aren't available here — add it as a Windows Server (WinRM) if you need those.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <InstalledWidget serverId={server.id} />
+            <RecentActivityWidget serverId={server.id} />
+          </>
+        )}
 
         {server.notes && (
           <div className="rounded-lg border border-border bg-card p-4">
@@ -70,13 +91,15 @@ export default function ServerOverview() {
         )}
       </div>
 
-      <div className="space-y-4">
-        <ServerMetrics serverId={server.id} />
-        <SecurityWidget serverId={server.id} />
-        <BackupsWidget serverId={server.id} />
-        <SchedulerWidget serverId={server.id} />
-        <MemoryWidget serverId={server.id} />
-      </div>
+      {!isRdp && (
+        <div className="space-y-4">
+          <ServerMetrics serverId={server.id} />
+          <SecurityWidget serverId={server.id} />
+          <BackupsWidget serverId={server.id} />
+          <SchedulerWidget serverId={server.id} />
+          <MemoryWidget serverId={server.id} />
+        </div>
+      )}
     </div>
   )
 }
