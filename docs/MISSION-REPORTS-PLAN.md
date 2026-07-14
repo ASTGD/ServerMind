@@ -78,7 +78,7 @@ that have a `result`. Log = the detailed step/command feed. Missions = the high-
 
 ## Phasing
 
-### P1 — Reports area (build now; non-breaking, frontend-only)
+### P1 — Reports area ✅ SHIPPED (c4e60c4)
 1. `api/reports.ts` — `listReports()` (GET /api/missions, keep `result != null`),
    `getReport(id)` (GET /api/missions/{id}).
 2. `routes/Reports.tsx` — report-card list + filters (server / status / search), each row →
@@ -87,7 +87,7 @@ that have a `result`. Log = the detailed step/command feed. Missions = the high-
    **redacted** appendix + **Export ▾** (PDF via print, Markdown, JSON, Copy).
 4. Build clean + live-verify against this session's real missions.
 
-### P2 — Log area + slim Missions (done together, so the transcript is never orphaned)
+### P2 — Log area + slim Missions ✅ SHIPPED (eed0dd4) — done together, so the transcript is never orphaned
 - Promote/repurpose the existing `Logs` page into the **Log** area: mission `steps` +
   `command_logs` + `/api/activity`, **redacted**, with a sidebar item.
 - **Then** slim `routes/Missions.tsx` — remove the inline transcript (it now lives in Log);
