@@ -50,6 +50,7 @@ class Mission(Base):
     verified: Mapped[bool | None] = mapped_column(Boolean)  # verification-gate outcome (null until done)
     summary: Mapped[str | None] = mapped_column(Text)        # final summary / block reason / caveat
     result: Mapped[str | None] = mapped_column(Text)         # JSON owner-facing outcome {headline,found,did,left}
+    incident_report: Mapped[str | None] = mapped_column(Text)  # JSON AI narrative ("Explain this incident")
 
     steps: Mapped[str] = mapped_column(Text, default="[]", nullable=False)  # JSON transcript
     steps_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # denormalised count

@@ -27,8 +27,29 @@ export interface MissionSummary {
   steps_used: number
   budget: number
   resumable: boolean
+  /** Whether an "Explain this incident" narrative has already been generated. */
+  has_incident_report?: boolean
   created_at: string | null
   updated_at: string | null
+}
+
+/** One entry in the incident timeline (a date/time + what happened, plain-language). */
+export interface IncidentTimelineEntry {
+  when: string
+  what: string
+}
+
+/** The AI-generated incident narrative ("Explain this incident") — synthesized from the
+ *  mission's durable transcript. Every field may be empty; render what's present. */
+export interface IncidentReport {
+  headline: string
+  severity: "" | "low" | "medium" | "high" | "critical"
+  how_they_got_in: string
+  timeline: IncidentTimelineEntry[]
+  impact: string
+  done: string[]
+  left: string[]
+  caveat: string
 }
 
 /** A persisted step, as stored in the transcript (looser than the live MissionStep). */
@@ -44,6 +65,8 @@ export interface MissionStepRecord {
 
 export interface MissionDetail extends MissionSummary {
   steps: MissionStepRecord[]
+  /** The AI incident narrative, if one has been generated (null otherwise). */
+  incident_report?: IncidentReport | null
 }
 
 // ── Endpoints ────────────────────────────────────────────────────────────────
@@ -57,6 +80,17 @@ export async function listMissions(serverId?: string): Promise<MissionSummary[]>
 
 export async function getMission(id: string): Promise<MissionDetail> {
   const { data } = await apiClient.get<MissionDetail>(`/api/missions/${id}`)
+  return data
+}
+
+/** "Explain this incident" — generate (or fetch the cached) plain-language narrative for a
+ *  finished mission. Cached server-side; pass refresh to regenerate. Costs 1 AI action. */
+export async function generateIncidentReport(id: string, refresh = false): Promise<IncidentReport> {
+  const { data } = await apiClient.post<IncidentReport>(
+    `/api/missions/${id}/incident-report`,
+    null,
+    refresh ? { params: { refresh: true } } : undefined,
+  )
   return data
 }
 

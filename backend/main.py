@@ -22,6 +22,7 @@ from app.routers import installed as installed_router
 from app.routers import missions as missions_router
 from app.routers import monitoring as monitoring_router
 from app.routers import notifications as notifications_router
+from app.routers import server_reports as server_reports_router
 from app.routers import playbooks as playbooks_router
 from app.routers import rdp as rdp_router
 from app.routers import recipes as recipes_router
@@ -113,6 +114,7 @@ app.include_router(scripts_router.router)
 app.include_router(scheduler_router.router)
 app.include_router(monitoring_router.router)
 app.include_router(missions_router.router)
+app.include_router(server_reports_router.router)
 app.include_router(fleet_router.router)
 app.include_router(notifications_router.router)
 app.include_router(files_router.router)

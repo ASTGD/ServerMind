@@ -1,25 +1,19 @@
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useParams } from "react-router-dom"
 import {
   ArrowLeft, Printer, FileDown, Braces, Copy, Check, Globe, AlertTriangle,
-  ArrowRight, ShieldCheck, ShieldAlert, ChevronDown, ChevronRight,
+  ArrowRight, ShieldCheck, ShieldAlert, ChevronDown, ChevronRight, Sparkles, Loader2,
 } from "lucide-react"
 import {
   getReport, reportVerdict, reportSubject, reportToMarkdown, reportToJson,
-  reportFilename, downloadText, type Verdict,
+  reportFilename, downloadText,
 } from "@/api/reports"
+import { generateIncidentReport, type MissionDetail } from "@/api/missions"
+import { SHEET_TONE, Section, IncidentNarrative } from "@/components/reports/reportUI"
 import { redactSecrets } from "@/lib/redactSecrets"
 import { useAuthStore } from "@/store/authStore"
 import { cn } from "@/lib/utils"
-
-/** Fixed light colors for the badge so the printed sheet looks the same in light + dark. */
-const SHEET_TONE: Record<Verdict["tone"], string> = {
-  good: "bg-emerald-100 text-emerald-800",
-  warn: "bg-amber-100 text-amber-800",
-  bad: "bg-red-100 text-red-800",
-  neutral: "bg-zinc-200 text-zinc-700",
-}
 
 const PRINT_CSS = `
 @media print {
@@ -31,35 +25,27 @@ const PRINT_CSS = `
 }
 `
 
-function Section({ label, items, Icon, color }: { label: string; items: string[]; Icon: typeof AlertTriangle; color: string }) {
-  if (!items?.length) return null
-  return (
-    <div className="mt-5">
-      <h3 className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-zinc-500">{label}</h3>
-      <ul className="space-y-1.5">
-        {items.map((it, i) => (
-          <li key={i} className="flex items-start gap-2 text-[13px] leading-relaxed text-zinc-800">
-            <Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", color)} />
-            <span>{it}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
 export default function ReportView() {
   const { id = "" } = useParams()
   const user = useAuthStore((s) => s.user)
   const [copied, setCopied] = useState(false)
   const [showLog, setShowLog] = useState(false)
+  const qc = useQueryClient()
   const { data: m, isLoading, isError } = useQuery({ queryKey: ["report", id], queryFn: () => getReport(id), enabled: !!id })
+
+  // "Explain this incident" — generate the narrative, then patch it into the cached report.
+  const genIncident = useMutation({
+    mutationFn: () => generateIncidentReport(id),
+    onSuccess: (rep) =>
+      qc.setQueryData<MissionDetail>(["report", id], (old) => (old ? { ...old, incident_report: rep } : old)),
+  })
 
   if (isLoading) return <p className="px-6 py-8 text-sm text-muted-foreground">Loading report…</p>
   if (isError || !m) return <p className="px-6 py-8 text-sm text-muted-foreground">Report not found.</p>
 
   const v = reportVerdict(m)
   const r = m.result
+  const incident = m.incident_report ?? null
   const date = (m.updated_at || m.created_at || "").slice(0, 10)
   const steps = m.steps ?? []
 
@@ -117,6 +103,30 @@ export default function ReportView() {
           <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Goal</p>
           <p className="mt-0.5 text-[13px] text-zinc-700">{m.goal}</p>
         </div>
+
+        {/* The AI incident narrative — the "how this happened" story (generated on demand,
+            cached on the mission). Falls back to the structured result card below. */}
+        {incident ? (
+          <IncidentNarrative report={incident} showActions={!r} />
+        ) : (
+          <div className="no-print mt-5 rounded-lg border border-dashed border-zinc-300 bg-zinc-50/70 p-4">
+            <button
+              onClick={() => genIncident.mutate()}
+              disabled={genIncident.isPending}
+              className="flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+            >
+              {genIncident.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {genIncident.isPending ? "Ally is writing the story…" : "Explain how this happened"}
+            </button>
+            <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+              Ally reads the full mission and writes a plain-language story — how it started, a timeline, and how serious
+              it is. Uses 1 AI action.
+            </p>
+            {genIncident.isError && (
+              <p className="mt-1.5 text-xs text-red-600">Couldn't generate the story — please try again.</p>
+            )}
+          </div>
+        )}
 
         <h2 className="mt-5 text-base font-semibold leading-snug text-zinc-900">
           {r?.headline || m.summary || "Mission outcome"}

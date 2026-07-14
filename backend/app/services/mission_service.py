@@ -177,6 +177,23 @@ def result_of(mission: Mission) -> dict | None:
         return None
 
 
+def incident_report_of(mission: Mission) -> dict | None:
+    """Parse the stored AI incident narrative (None if absent or corrupt)."""
+    if not mission.incident_report:
+        return None
+    try:
+        data = json.loads(mission.incident_report)
+        return data if isinstance(data, dict) else None
+    except (ValueError, TypeError):
+        return None
+
+
+async def save_incident_report(db, mission: Mission, report: dict) -> None:
+    """Cache a generated incident report on the mission (router-facing write)."""
+    mission.incident_report = json.dumps(report)[:16000]
+    await db.commit()
+
+
 def to_dict(mission: Mission, *, include_steps: bool = False) -> dict:
     out = {
         "id": str(mission.id),
@@ -191,9 +208,13 @@ def to_dict(mission: Mission, *, include_steps: bool = False) -> dict:
         "steps_used": mission.steps_used,
         "budget": mission.budget,
         "resumable": mission.status == "interrupted",
+        # Whether an "Explain this incident" narrative has been generated (light flag for
+        # the list; the full report only rides the detail view).
+        "has_incident_report": bool(mission.incident_report),
         "created_at": mission.created_at.isoformat() if mission.created_at else None,
         "updated_at": mission.updated_at.isoformat() if mission.updated_at else None,
     }
     if include_steps:
         out["steps"] = steps_of(mission)
+        out["incident_report"] = incident_report_of(mission)
     return out

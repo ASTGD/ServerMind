@@ -19,6 +19,7 @@ import Logs from "@/routes/Logs"
 import Missions from "@/routes/Missions"
 import Reports from "@/routes/Reports"
 import ReportView from "@/routes/ReportView"
+import ServerReportView from "@/routes/ServerReportView"
 import MissionLog from "@/routes/MissionLog"
 import Team from "@/routes/Team"
 import AcceptInvite from "@/routes/AcceptInvite"
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="logs/mission/:id" element={<MissionLog />} />
           <Route path="missions" element={<Missions />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="reports/server/:serverId" element={<ServerReportView />} />
           <Route path="reports/:id" element={<ReportView />} />
           <Route path="team" element={<Team />} />
           <Route path="team/accept/:token" element={<AcceptInvite />} />

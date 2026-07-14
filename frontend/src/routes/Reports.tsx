@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { formatDistanceToNow } from "date-fns"
-import { FileText, Globe, ArrowRight, Search, ShieldCheck, ShieldAlert, Hand, Flag, Square } from "lucide-react"
+import { FileText, Globe, ArrowRight, Search, ShieldCheck, ShieldAlert, Hand, Flag, Square, Sparkles } from "lucide-react"
 import { listReports, reportVerdict, reportSubject, type Verdict } from "@/api/reports"
 import { listServers } from "@/api/servers"
 import { cn } from "@/lib/utils"
@@ -117,7 +117,20 @@ export default function Reports() {
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
         </select>
+        {serverId && (
+          <Link
+            to={`/reports/server/${serverId}`}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <Sparkles className="h-4 w-4" /> Whole-server report
+          </Link>
+        )}
       </div>
+      {serverId && (
+        <p className="no-print -mt-2 mb-4 text-xs text-muted-foreground">
+          One report summarizing every finished mission on this server — download or share it. Uses 1 AI action.
+        </p>
+      )}
 
       {isLoading ? (
         <p className="px-1 py-6 text-sm text-muted-foreground">Loading reports…</p>
