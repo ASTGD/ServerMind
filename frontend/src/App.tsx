@@ -17,6 +17,8 @@ import Installed from "@/routes/Installed"
 import Hosting from "@/routes/Hosting"
 import Logs from "@/routes/Logs"
 import Missions from "@/routes/Missions"
+import Reports from "@/routes/Reports"
+import ReportView from "@/routes/ReportView"
 import Team from "@/routes/Team"
 import AcceptInvite from "@/routes/AcceptInvite"
 import Settings from "@/routes/Settings"
@@ -65,6 +67,8 @@ export default function App() {
           <Route path="scripts" element={<MyScripts />} />
           <Route path="logs" element={<Logs />} />
           <Route path="missions" element={<Missions />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="reports/:id" element={<ReportView />} />
           <Route path="team" element={<Team />} />
           <Route path="team/accept/:token" element={<AcceptInvite />} />
           <Route path="settings" element={<Settings />} />

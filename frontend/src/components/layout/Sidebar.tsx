@@ -11,6 +11,7 @@ import {
   Sparkles,
   ArrowRight,
   Rocket,
+  FileText,
   ChevronDown,
   ChevronUp,
   FlaskConical,
@@ -28,6 +29,7 @@ const navItems = [
   { to: "/playbooks", icon: BookOpen, key: "playbooks" },
   { to: "/scripts", icon: FileCode, key: "scripts" },
   { to: "/missions", icon: Rocket, key: "missions" },
+  { to: "/reports", icon: FileText, key: "reports" },
   { to: "/team", icon: Users, key: "team" },
   { to: "/settings", icon: Settings, key: "settings" },
 ] as const

@@ -1,5 +1,5 @@
 import { apiClient } from "./client"
-import type { MissionStep } from "@/components/chat/MissionProgress"
+import type { MissionStep, MissionResult } from "@/components/chat/MissionProgress"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -21,6 +21,9 @@ export interface MissionSummary {
   status: MissionStatus
   verified: boolean | null
   summary: string | null
+  /** Owner-facing outcome card {subject, headline, found, did, left} — null until the
+   *  mission produced one. Present on finished missions; this is what a Report renders. */
+  result: MissionResult | null
   steps_used: number
   budget: number
   resumable: boolean
