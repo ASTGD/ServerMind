@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Rocket,
   FileText,
+  ScrollText,
   ChevronDown,
   ChevronUp,
   FlaskConical,
@@ -30,6 +31,7 @@ const navItems = [
   { to: "/scripts", icon: FileCode, key: "scripts" },
   { to: "/missions", icon: Rocket, key: "missions" },
   { to: "/reports", icon: FileText, key: "reports" },
+  { to: "/logs", icon: ScrollText, key: "logs" },
   { to: "/team", icon: Users, key: "team" },
   { to: "/settings", icon: Settings, key: "settings" },
 ] as const
