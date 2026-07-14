@@ -62,3 +62,37 @@ body,
   height: 100%;
   margin: 0;
 }
+
+/* Smart scrollbars — invisible at rest, appear (thin + rounded) when you're in a
+   scrollable area, like modern web apps. Firefox uses scrollbar-*; Chrome/Safari/
+   Edge use the ::-webkit pseudo-elements. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover,
+*:focus-within {
+  scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background-clip: content-box;
+  transition: background-color 0.2s ease;
+}
+:hover::-webkit-scrollbar-thumb,
+:focus-within::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.35);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.6);
+}
