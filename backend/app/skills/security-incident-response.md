@@ -5,7 +5,7 @@ triggers: respond to the incident, incident response, respond to the compromise,
 os: linux
 priority: 11
 mode: mission
-budget: 30
+budget: 40
 ---
 GOAL: Safely respond to a server that shows signs of compromise — preserve the
 evidence, contain the threat, clean up with the user's approval at every risky step,

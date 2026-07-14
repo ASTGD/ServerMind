@@ -220,8 +220,8 @@ def test_mission_budget_resolution():
     """Ad-hoc missions get the default; a skill that declares a budget gets its own."""
     assert skill_service.resolve_mission_budget(None) == skill_service.MISSION_BUDGET_DEFAULT
     ir = skill_service.get("security-incident-response")
-    assert ir is not None and ir.budget == 30
-    assert skill_service.resolve_mission_budget(ir) == 30
+    assert ir is not None and ir.budget == 40
+    assert skill_service.resolve_mission_budget(ir) == 40
 
 
 def test_mission_skills_declare_sane_budgets():

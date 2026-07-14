@@ -35,6 +35,8 @@ _BODY_MAX = 11000  # sized for the Laravel + per-site-safety incident-response r
 # Mission step budgets. Ad-hoc missions use the default; a mission-mode skill may
 # declare its own `budget:` (a deep investigation or multi-stage install needs more
 # than a quick fix) — always clamped to a safe range so no skill can remove the bound.
+# Incident-response is the most step-hungry (a whole-box depth check + guided cleanup),
+# so it declares the max; the verify gate + convergence nudges keep it from wasting steps.
 MISSION_BUDGET_DEFAULT = 20
 MISSION_BUDGET_MIN = 10
 MISSION_BUDGET_MAX = 40
