@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import { formatDistanceToNow } from "date-fns"
 import {
   Rocket, CheckCircle2, XCircle, ShieldCheck, ShieldAlert, Hand, Square, Loader2,
-  PlayCircle, FileText, Search, PanelRightOpen, Plus, ArrowLeft, Globe,
+  PlayCircle, FileText, Search, PanelRightOpen, Globe,
 } from "lucide-react"
 import { listMissions, getMission, type MissionSummary, type MissionStatus } from "@/api/missions"
 import { isReport, reportVerdict, reportSubject } from "@/api/reports"
@@ -96,7 +96,6 @@ function ResultBlock({ label, items, color }: { label: string; items: string[]; 
 
 /** The right-hand detail: header + result receipt + step log + actions. */
 function MissionDetail({ id, onServerFor }: { id: string; onServerFor: (m: MissionSummary) => AssistantTarget | null }) {
-  const navigate = useNavigate()
   const resumeMission = useAssistantStore((s) => s.resumeMission)
   const attachMission = useAssistantStore((s) => s.attachMission)
   const { data: m, isLoading, isError } = useQuery({
@@ -117,10 +116,6 @@ function MissionDetail({ id, onServerFor }: { id: string; onServerFor: (m: Missi
 
   return (
     <div>
-      <button onClick={() => navigate("/missions")} className="mb-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-        <ArrowLeft size={13} /> Recipes
-      </button>
-
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="line-clamp-3 text-base font-semibold leading-snug text-foreground" title={m.goal}>{m.goal}</h2>
@@ -220,6 +215,8 @@ export default function Missions() {
   }, [missions, q])
   const active = filtered.filter((m) => ACTIVE.includes(m.status))
   const history = filtered.filter((m) => !ACTIVE.includes(m.status))
+  // Default to the first mission (needs-you first) so the detail pane is never empty.
+  const shownId = id ?? [...active, ...history][0]?.id
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
@@ -228,15 +225,12 @@ export default function Missions() {
         <h1 className="text-xl font-semibold text-foreground">Missions</h1>
       </div>
 
+      {/* TOP — recipes, full width (the front door to start a mission) */}
+      <RecipeLibrary />
+
       <div className="flex flex-col gap-4 md:flex-row md:items-start">
         {/* LEFT — the mission list (receipts) */}
         <aside className="w-full shrink-0 md:w-[288px]">
-          <button
-            onClick={() => navigate("/missions")}
-            className="mb-2.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 px-3 py-2 text-[13px] font-medium text-white hover:opacity-90"
-          >
-            <Plus size={14} /> New mission
-          </button>
           <div className="relative mb-3">
             <Search size={14} className="absolute left-2.5 top-2.5 text-muted-foreground" />
             <input
@@ -258,7 +252,7 @@ export default function Missions() {
                   <p className="mb-1.5 px-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Needs you</p>
                   <div className="space-y-1.5">
                     {active.map((m) => (
-                      <MissionRow key={m.id} m={m} selected={m.id === id} onClick={() => navigate(`/missions/${m.id}`)} />
+                      <MissionRow key={m.id} m={m} selected={m.id === shownId} onClick={() => navigate(`/missions/${m.id}`)} />
                     ))}
                   </div>
                 </div>
@@ -268,7 +262,7 @@ export default function Missions() {
                   <p className="mb-1.5 px-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">History</p>
                   <div className="space-y-1.5">
                     {history.map((m) => (
-                      <MissionRow key={m.id} m={m} selected={m.id === id} onClick={() => navigate(`/missions/${m.id}`)} />
+                      <MissionRow key={m.id} m={m} selected={m.id === shownId} onClick={() => navigate(`/missions/${m.id}`)} />
                     ))}
                   </div>
                 </div>
@@ -280,9 +274,15 @@ export default function Missions() {
           )}
         </aside>
 
-        {/* RIGHT — recipes by default, mission detail when one is selected */}
+        {/* RIGHT — the selected mission's detail (first mission by default) */}
         <section className="min-w-0 flex-1 rounded-2xl border border-border bg-card/40 p-4 sm:p-5">
-          {id ? <MissionDetail id={id} onServerFor={targetFor} /> : <RecipeLibrary />}
+          {shownId ? (
+            <MissionDetail id={shownId} onServerFor={targetFor} />
+          ) : (
+            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+              Pick a recipe above to start your first mission.
+            </div>
+          )}
         </section>
       </div>
     </div>
