@@ -140,7 +140,7 @@ export default function AssistantDrawer() {
       <div
         onClick={close}
         aria-hidden="true"
-        className={`fixed left-0 right-0 top-14 bottom-0 z-40 bg-black/20 backdrop-blur-[1px] transition-opacity duration-200 md:left-60 ${
+        className={`fixed left-0 right-0 top-14 bottom-0 z-40 bg-black/20 backdrop-blur-[1px] transition-opacity duration-300 ease-out md:left-60 ${
           open ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
@@ -152,7 +152,7 @@ export default function AssistantDrawer() {
         role="complementary"
         aria-label="Ally"
         aria-hidden={!open}
-        className={`fixed left-3 right-3 top-[4.5rem] bottom-[74px] z-50 flex origin-bottom-left flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl transition-all duration-200 ease-out md:left-[15.75rem] md:right-5 ${
+        className={`fixed left-3 right-3 top-[4.5rem] bottom-[74px] z-50 flex origin-bottom-left flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] md:left-[15.75rem] md:right-5 ${
           open ? "scale-100 opacity-100" : "pointer-events-none scale-90 opacity-0"
         }`}
       >

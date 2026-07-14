@@ -96,3 +96,43 @@ body,
 ::-webkit-scrollbar-thumb:hover {
   background-color: hsl(var(--muted-foreground) / 0.6);
 }
+
+/* App-wide smoothness — smooth programmatic/anchor scrolling on the document-level
+   scrollers (scroll-behavior isn't inherited, so nested chat/streaming containers keep
+   their instant auto-scroll), plus consistent hover/press transitions on interactive
+   elements. All gated behind prefers-reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+  html,
+  main {
+    scroll-behavior: smooth;
+  }
+  a,
+  button,
+  summary,
+  label,
+  input,
+  select,
+  textarea,
+  [role="button"],
+  [role="tab"] {
+    transition:
+      color 0.18s ease,
+      background-color 0.18s ease,
+      border-color 0.18s ease,
+      box-shadow 0.18s ease,
+      transform 0.15s ease,
+      opacity 0.18s ease;
+  }
+}
+
+/* Accessibility — honor the OS "reduce motion" setting everywhere. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
