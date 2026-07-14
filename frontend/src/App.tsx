@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom"
 import Layout from "@/components/layout/Layout"
 import ProtectedRoute from "@/components/shared/ProtectedRoute"
 import Dashboard from "@/routes/Dashboard"
@@ -20,7 +20,6 @@ import Missions from "@/routes/Missions"
 import Reports from "@/routes/Reports"
 import ReportView from "@/routes/ReportView"
 import ServerReportView from "@/routes/ServerReportView"
-import MissionLog from "@/routes/MissionLog"
 import Team from "@/routes/Team"
 import AcceptInvite from "@/routes/AcceptInvite"
 import Settings from "@/routes/Settings"
@@ -28,6 +27,12 @@ import Dev from "@/routes/Dev"
 import Auth from "@/routes/Auth"
 import VerifyEmail from "@/routes/VerifyEmail"
 import Claim from "@/routes/Claim"
+
+/** Old per-mission log deep links now resolve to the mission's Missions detail pane. */
+function MissionLogRedirect() {
+  const { id } = useParams()
+  return <Navigate to={`/missions/${id}`} replace />
+}
 
 export default function App() {
   return (
@@ -68,8 +73,10 @@ export default function App() {
           <Route path="scripts/generate" element={<ScriptGenerator />} />
           <Route path="scripts" element={<MyScripts />} />
           <Route path="logs" element={<Logs />} />
-          <Route path="logs/mission/:id" element={<MissionLog />} />
+          {/* A mission's log now lives inside its Missions detail pane. */}
+          <Route path="logs/mission/:id" element={<MissionLogRedirect />} />
           <Route path="missions" element={<Missions />} />
+          <Route path="missions/:id" element={<Missions />} />
           <Route path="reports" element={<Reports />} />
           <Route path="reports/server/:serverId" element={<ServerReportView />} />
           <Route path="reports/:id" element={<ReportView />} />
