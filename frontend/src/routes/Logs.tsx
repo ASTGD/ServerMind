@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import { Terminal, PlayCircle, Search, ScrollText, ExternalLink } from "lucide-react"
+import { Terminal, PlayCircle, Search, ScrollText, ExternalLink, ArrowLeft } from "lucide-react"
 import { listActivity } from "@/api/activity"
 import { getCommand } from "@/api/commands"
 import { getPlaybookRun } from "@/api/playbooks"
@@ -76,7 +76,7 @@ function DetailShell({
             <Icon size={15} />
           </span>
           <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold leading-snug text-foreground">{title}</h2>
+            <h2 className="break-words text-[15px] font-semibold leading-snug text-foreground">{title}</h2>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
               <span>{item.kind === "command" ? "AI command" : "Playbook"}</span>
               {item.server_id && (
@@ -224,8 +224,9 @@ export default function Logs() {
         <p className="mt-1 text-sm text-muted-foreground">Playbook runs and AI commands across your servers.</p>
       </header>
 
-      {/* Controls — tabs + search, full width so the list and detail align at the top */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      {/* Controls — tabs + search, full width so the list and detail align at the top.
+          Hidden on mobile when an entry's detail is open. */}
+      <div className={cn("mb-4 flex flex-wrap items-center justify-between gap-3", selectedKey && "hidden lg:flex")}>
         <div className="flex gap-0.5 rounded-lg border border-border bg-card p-0.5">
           {tabs.map((t) => (
             <button
@@ -252,8 +253,8 @@ export default function Logs() {
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:items-start">
-        {/* LEFT — the activity list */}
-        <aside className="min-w-0 lg:col-span-1">
+        {/* LEFT — the activity list. Hidden on mobile when an entry's detail is open. */}
+        <aside className={cn("min-w-0 lg:col-span-1", selectedKey && "hidden lg:block")}>
           {isLoading ? (
             <div className="space-y-1.5">
               {[...Array(5)].map((_, i) => (
@@ -299,8 +300,16 @@ export default function Logs() {
           )}
         </aside>
 
-        {/* RIGHT — the selected entry's detail (first entry by default) */}
-        <section className="min-w-0 rounded-2xl border border-border bg-card/40 p-4 sm:p-5 lg:col-span-2">
+        {/* RIGHT — the selected entry's detail (first entry by default on desktop).
+            Hidden on mobile until an entry is tapped. */}
+        <section className={cn("min-w-0 rounded-2xl border border-border bg-card/40 p-4 sm:p-5 lg:col-span-2", !selectedKey && "hidden lg:block")}>
+          {/* Mobile-only back link to the list */}
+          <button
+            onClick={() => setSelectedKey(null)}
+            className="mb-3 -ml-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground lg:hidden"
+          >
+            <ArrowLeft size={13} /> All activity
+          </button>
           {selected ? (
             selected.kind === "command" ? (
               <CommandDetail item={selected} serverName={serverName} />

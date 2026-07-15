@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import { formatDistanceToNow } from "date-fns"
 import {
   Rocket, CheckCircle2, XCircle, ShieldCheck, ShieldAlert, Hand, Square, Loader2,
-  PlayCircle, FileText, Search, PanelRightOpen, Globe,
+  PlayCircle, FileText, Search, PanelRightOpen, Globe, ArrowLeft,
 } from "lucide-react"
 import { listMissions, getMission, type MissionSummary, type MissionStatus } from "@/api/missions"
 import { isReport, reportVerdict, reportSubject } from "@/api/reports"
@@ -12,6 +12,7 @@ import { listServers } from "@/api/servers"
 import { useAssistantStore, type AssistantTarget } from "@/store/assistantStore"
 import RecipeLibrary from "@/components/recipes/RecipeLibrary"
 import MissionStepList from "@/components/missions/MissionStepList"
+import { cn } from "@/lib/utils"
 
 const STATUS: Record<MissionStatus, { label: string; cls: string }> = {
   running: { label: "Running", cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
@@ -225,26 +226,29 @@ export default function Missions() {
         <h1 className="text-xl font-semibold text-foreground">Missions</h1>
       </div>
 
-      {/* TOP — recipes, full width (the front door to start a mission) */}
-      <RecipeLibrary />
+      {/* TOP — recipes, full width (the front door to start a mission). On mobile, a mission's
+          detail takes over the screen, so recipes + search + list hide while one is open. */}
+      <div className={cn(id && "hidden lg:block")}>
+        <RecipeLibrary />
 
-      {/* Search — above the grid so the first mission card lines up with the detail pane
-          (like Reports/Logs). Missions that need you are still ordered first. */}
-      <div className="relative mb-3 max-w-sm">
-        <Search size={14} className="absolute left-2.5 top-2.5 text-muted-foreground" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search missions"
-          className="w-full rounded-lg border border-border bg-card py-2 pl-8 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
-        />
+        {/* Search — above the grid so the first mission card lines up with the detail pane
+            (like Reports/Logs). Missions that need you are still ordered first. */}
+        <div className="relative mb-3 max-w-sm">
+          <Search size={14} className="absolute left-2.5 top-2.5 text-muted-foreground" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search missions"
+            className="w-full rounded-lg border border-border bg-card py-2 pl-8 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
+          />
+        </div>
       </div>
 
       {/* Same 3-column grid + gap as the recipes above, so the list lines up with
           recipe card 1 and the detail spans cards 2-3. */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:items-start">
-        {/* LEFT — the mission list (receipts), aligned to the first recipe column */}
-        <aside className="min-w-0 lg:col-span-1">
+        {/* LEFT — the mission list (receipts). Hidden on mobile when a detail is open. */}
+        <aside className={cn("min-w-0 lg:col-span-1", id && "hidden lg:block")}>
           {isLoading ? (
             <p className="px-1 text-xs text-muted-foreground">Loading…</p>
           ) : missions.length === 0 ? (
@@ -260,8 +264,16 @@ export default function Missions() {
           )}
         </aside>
 
-        {/* RIGHT — the selected mission's detail (first mission by default) */}
-        <section className="min-w-0 rounded-2xl border border-border bg-card/40 p-4 sm:p-5 lg:col-span-2">
+        {/* RIGHT — the selected mission's detail (first mission by default on desktop).
+            Hidden on mobile until a mission is tapped. */}
+        <section className={cn("min-w-0 rounded-2xl border border-border bg-card/40 p-4 sm:p-5 lg:col-span-2", !id && "hidden lg:block")}>
+          {/* Mobile-only back link to the list */}
+          <button
+            onClick={() => navigate("/missions")}
+            className="mb-3 -ml-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground lg:hidden"
+          >
+            <ArrowLeft size={13} /> All missions
+          </button>
           {shownId ? (
             <MissionDetail id={shownId} onServerFor={targetFor} />
           ) : (

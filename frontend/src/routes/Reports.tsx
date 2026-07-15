@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { formatDistanceToNow } from "date-fns"
-import { FileText, Globe, Search, ShieldCheck, ShieldAlert, Hand, Flag, Square, Sparkles } from "lucide-react"
+import { FileText, Globe, Search, ShieldCheck, ShieldAlert, Hand, Flag, Square, Sparkles, ArrowLeft } from "lucide-react"
 import { listReports, reportVerdict, reportSubject, type Verdict } from "@/api/reports"
 import { listServers } from "@/api/servers"
 import { cn } from "@/lib/utils"
@@ -102,8 +102,8 @@ export default function Reports() {
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:items-start">
         {/* LEFT — filters + the report list. Search + filter share one row so the first
-            list card lines up with the report sheet's top (single-row toolbar) on the right. */}
-        <aside className="min-w-0 lg:col-span-1">
+            list card lines up with the report sheet's top. Hidden on mobile when a report is open. */}
+        <aside className={cn("min-w-0 lg:col-span-1", id && "hidden lg:block")}>
           <div className="mb-3 flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -153,8 +153,16 @@ export default function Reports() {
           )}
         </aside>
 
-        {/* RIGHT — the selected report's document (first report by default) */}
-        <section className="min-w-0 lg:col-span-2">
+        {/* RIGHT — the selected report's document (first report by default on desktop).
+            Hidden on mobile until a report is tapped. */}
+        <section className={cn("min-w-0 lg:col-span-2", !id && "hidden lg:block")}>
+          {/* Mobile-only back link to the list */}
+          <button
+            onClick={() => navigate("/reports")}
+            className="mb-3 -ml-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground lg:hidden"
+          >
+            <ArrowLeft size={13} /> All reports
+          </button>
           {shownId ? (
             <ReportView embedded reportId={shownId} />
           ) : (

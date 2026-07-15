@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Outlet, useLocation } from "react-router-dom"
 import Sidebar from "./Sidebar"
 import TopBar from "./TopBar"
@@ -18,6 +18,8 @@ export default function Layout() {
   const toggleTerminal = useTerminalStore((s) => s.toggle)
   const minimizeTerminal = useTerminalStore((s) => s.minimize)
   const location = useLocation()
+  // Mobile navigation drawer (the sidebar is off-canvas below lg).
+  const [navOpen, setNavOpen] = useState(false)
 
   // ⌘K toggles Ally; ⌘` toggles the terminal window.
   useEffect(() => {
@@ -51,13 +53,14 @@ export default function Layout() {
     if (!didMount.current) { didMount.current = true; return }
     closeAssistant()
     minimizeTerminal()
+    setNavOpen(false)
   }, [location.pathname, closeAssistant, minimizeTerminal])
 
   return (
     <div className="flex h-full bg-background">
-      <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <TopBar />
+      <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <TopBar onMenuClick={() => setNavOpen(true)} />
         <VerifyBanner />
         <main className="flex-1 overflow-auto p-6">
           <Outlet />

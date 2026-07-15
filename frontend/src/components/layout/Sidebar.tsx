@@ -23,6 +23,7 @@ import UpgradeModal from "./UpgradeModal"
 import { useAssistantStore } from "@/store/assistantStore"
 import { useTerminalStore } from "@/store/terminalStore"
 import { useAuthStore } from "@/store/authStore"
+import { cn } from "@/lib/utils"
 
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, key: "dashboard" },
@@ -36,7 +37,7 @@ const navItems = [
   { to: "/settings", icon: Settings, key: "settings" },
 ] as const
 
-export default function Sidebar() {
+export default function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
   const { t } = useTranslation()
   const [showUpgrade, setShowUpgrade] = useState(false)
   const isAdmin = useAuthStore((s) => s.user?.is_admin)
@@ -54,7 +55,21 @@ export default function Sidebar() {
 
   return (
     <>
-      <aside className="flex w-60 flex-col border-r border-border bg-card px-3 py-5">
+      {/* Mobile backdrop — tap to close the drawer (hidden on lg where the sidebar is static). */}
+      <div
+        onClick={onClose}
+        aria-hidden="true"
+        className={cn(
+          "fixed inset-0 z-40 bg-black/40 transition-opacity lg:hidden",
+          open ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
+      />
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex w-60 flex-col overflow-y-auto border-r border-border bg-card px-3 py-5 transition-transform lg:static lg:z-auto lg:translate-x-0",
+          open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
+        )}
+      >
         <div className="mb-7 px-2">
           <Logo size="lg" />
         </div>
@@ -64,6 +79,7 @@ export default function Sidebar() {
             <NavLink
               key={to}
               to={to}
+              onClick={onClose}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] transition-colors ${
                   isActive
@@ -80,6 +96,7 @@ export default function Sidebar() {
           {isAdmin && (
             <NavLink
               to="/dev"
+              onClick={onClose}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] transition-colors ${
                   isActive
