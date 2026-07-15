@@ -123,3 +123,20 @@ async def activity(
 ) -> dict:
     """Recent AI calls (the ledger) + this period's cost/actions summary."""
     return await dev_service.activity(db, limit=min(max(limit, 1), 200))
+
+
+class ProviderAbRequest(BaseModel):
+    # Optional OpenAI price overrides per tier, e.g. {"mid": {"in": 2.5, "out": 10}} — so
+    # management can plug in OpenAI's real quote and see the true cost on our real usage.
+    openai: dict[str, dict[str, float]] | None = None
+
+
+@router.post("/provider-ab")
+async def provider_ab(
+    body: ProviderAbRequest | None = None,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Claude vs OpenAI cost, re-priced over this period's REAL ledger token usage. No
+    live calls, no OpenAI key — arithmetic over data we already have (docs/AI-METERING.md)."""
+    return await dev_service.provider_ab(db, body.openai if body else None)

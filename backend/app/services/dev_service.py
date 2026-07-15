@@ -323,3 +323,149 @@ async def activity(db: AsyncSession, limit: int = 60) -> dict:
         "daily": daily,
         "recent": recent,
     }
+
+
+# ── Provider cost A/B (Dev Door) — "what would our real usage cost on OpenAI?" ────
+#
+# Settles the migration question with DATA, not a guess. It takes the REAL token counts
+# already in the ledger (input / output / cache-read / cache-write, per model) and
+# re-prices them two ways: (a) Claude, exactly as billed; (b) an OpenAI-equivalent model,
+# using OpenAI's own caching economics. No live calls, no OpenAI key, no spend — pure
+# arithmetic over data we already have. The OpenAI prices are EDITABLE so management can
+# plug in a real quote — the only honest way to test "OpenAI is 1/3 the price".
+
+# OpenAI-equivalent tiers, matched from the Claude model by capability. Prices are
+# ESTIMATES ($/M tokens) — the UI overrides them with OpenAI's actual quote.
+_OA_TIERS: dict[str, dict] = {
+    "top": {"label": "GPT flagship (≈ Opus/Fable)", "in": 5.0, "out": 15.0},
+    "mid": {"label": "GPT-4o class (≈ Sonnet)", "in": 2.5, "out": 10.0},
+    "small": {"label": "GPT-mini (≈ Haiku)", "in": 0.15, "out": 0.6},
+}
+
+
+def _oa_tier(model: str) -> str:
+    """Which OpenAI tier a Claude model maps to, matched by capability."""
+    if model.startswith(("claude-opus", "claude-fable", "claude-mythos")):
+        return "top"
+    if model.startswith(("claude-haiku", "claude-3-5-haiku")):
+        return "small"
+    return "mid"  # sonnet / the default tier
+
+
+def _claude_cost(model: str, in_tok: int, out_tok: int, cr: int, cw: int) -> float:
+    """Claude cost for these tokens, exactly as billed: cache reads 0.1×, writes 2.0×
+    (1h TTL — our default), on current list prices."""
+    pin, pout = metering_service.price_per_mtok(model)
+    return (in_tok * pin + cr * pin * 0.1 + cw * pin * 2.0 + out_tok * pout) / 1_000_000
+
+
+def _openai_cost(tier: dict, in_tok: int, out_tok: int, cr: int, cw: int) -> float:
+    """OpenAI-equivalent cost for the SAME tokens under OpenAI's caching: a repeated
+    prefix (our cache-read tokens) bills at 0.5×; a first-time prefix (our cache-write
+    tokens) is just a normal full-price request (no write premium). This gives OpenAI the
+    benefit of the doubt — its cache window is shorter than our 1h TTL, so for bursty chat
+    OpenAI would likely cache LESS and cost MORE than shown here."""
+    pin, pout = tier["in"], tier["out"]
+    return ((in_tok + cw) * pin + cr * pin * 0.5 + out_tok * pout) / 1_000_000
+
+
+def _price_ab(rows: list[dict], oa_tiers: dict) -> dict:
+    """Pure: given per-(feature,model) token rows, compute the Claude vs OpenAI cost A/B.
+    Each row = {feature, model, input, output, cache_read, cache_write, calls}."""
+    feats: dict[str, dict] = {}
+    tot = {"claude_usd": 0.0, "openai_usd": 0.0, "in": 0, "out": 0, "cache_read": 0, "cache_write": 0}
+    model_tiers: dict[str, str] = {}
+    for r in rows:
+        model = r.get("model") or ""
+        tier_key = _oa_tier(model)
+        model_tiers[model] = tier_key
+        in_tok, out_tok = int(r.get("input", 0)), int(r.get("output", 0))
+        cr, cw = int(r.get("cache_read", 0)), int(r.get("cache_write", 0))
+        c_cl = _claude_cost(model, in_tok, out_tok, cr, cw)
+        c_oa = _openai_cost(oa_tiers[tier_key], in_tok, out_tok, cr, cw)
+        f = feats.setdefault(
+            r.get("feature") or "?",
+            {"feature": r.get("feature") or "?", "claude_usd": 0.0, "openai_usd": 0.0,
+             "in": 0, "out": 0, "cache_read": 0, "cache_write": 0, "calls": 0},
+        )
+        f["claude_usd"] += c_cl
+        f["openai_usd"] += c_oa
+        f["in"] += in_tok
+        f["out"] += out_tok
+        f["cache_read"] += cr
+        f["cache_write"] += cw
+        f["calls"] += int(r.get("calls", 0))
+        tot["claude_usd"] += c_cl
+        tot["openai_usd"] += c_oa
+        tot["in"] += in_tok
+        tot["out"] += out_tok
+        tot["cache_read"] += cr
+        tot["cache_write"] += cw
+    base = tot["in"] + tot["cache_read"] + tot["cache_write"]
+    tot["cache_hit_pct"] = (tot["cache_read"] / base * 100) if base else 0.0
+    tot["delta_pct"] = (
+        (tot["openai_usd"] - tot["claude_usd"]) / tot["claude_usd"] * 100
+        if tot["claude_usd"] > 0 else None
+    )
+    return {
+        "totals": tot,
+        "by_feature": sorted(feats.values(), key=lambda x: x["claude_usd"], reverse=True),
+        "model_tiers": model_tiers,
+    }
+
+
+_AB_CAVEATS = [
+    "Claude side = your REAL billed cost from the ledger: cache reads 0.1×, writes 2× (1h "
+    "TTL), on current list prices (Opus $5/$25, Sonnet $3/$15, Haiku $1/$5 per 1M).",
+    "OpenAI side re-prices the SAME real tokens with OpenAI's caching (repeat prefix 0.5×, "
+    "no write premium) — and gives OpenAI the benefit of the doubt: its cache window is "
+    "shorter than our 1h TTL, so for bursty chat OpenAI would likely cache less and cost MORE.",
+    "OpenAI prices are estimates — edit them to OpenAI's real quote. Tokenizers differ "
+    "slightly across providers, so the token counts aren't identical.",
+    "This is fuel cost only. Switching also means re-running the eval corpus and re-proving "
+    "the mission/verify safety behavior on a new model — real work, not in these numbers.",
+]
+
+
+async def provider_ab(db: AsyncSession, oa_overrides: dict | None = None) -> dict:
+    """The Claude-vs-OpenAI cost A/B over this period's real ledger usage. ``oa_overrides``
+    is an optional per-tier price map, e.g. {"mid": {"in": 2.5, "out": 10}}, so management
+    can plug in OpenAI's actual quote and see the true number on our real traffic."""
+    tiers = {k: dict(v) for k, v in _OA_TIERS.items()}
+    for key, val in (oa_overrides or {}).items():
+        if key in tiers and isinstance(val, dict):
+            if val.get("in") is not None:
+                tiers[key]["in"] = max(0.0, float(val["in"]))
+            if val.get("out") is not None:
+                tiers[key]["out"] = max(0.0, float(val["out"]))
+
+    period = metering_service.period_start()
+    rows = (
+        await db.execute(
+            select(
+                AiUsage.feature,
+                AiUsage.model,
+                func.coalesce(func.sum(AiUsage.input_tokens), 0),
+                func.coalesce(func.sum(AiUsage.output_tokens), 0),
+                func.coalesce(func.sum(AiUsage.cache_read_tokens), 0),
+                func.coalesce(func.sum(AiUsage.cache_write_tokens), 0),
+                func.count(),
+            )
+            .where(AiUsage.created_at >= period)
+            .group_by(AiUsage.feature, AiUsage.model)
+        )
+    ).all()
+    data = _price_ab(
+        [
+            {"feature": f, "model": m, "input": i, "output": o,
+             "cache_read": cr, "cache_write": cw, "calls": n}
+            for (f, m, i, o, cr, cw, n) in rows
+        ],
+        tiers,
+    )
+    return {
+        "period_start": period.isoformat(),
+        "tiers": {k: {"label": v["label"], "in": v["in"], "out": v["out"]} for k, v in tiers.items()},
+        "caveats": _AB_CAVEATS,
+        **data,
+    }

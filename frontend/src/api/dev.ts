@@ -161,3 +161,45 @@ export async function getActivity(): Promise<ActivityData> {
   const { data } = await apiClient.get<ActivityData>("/api/dev/activity")
   return data
 }
+
+// ── Provider cost A/B (Claude vs OpenAI, re-priced over real ledger usage) ─────
+
+export type OaTier = "top" | "mid" | "small"
+
+export interface AbFeature {
+  feature: string
+  claude_usd: number
+  openai_usd: number
+  in: number
+  out: number
+  cache_read: number
+  cache_write: number
+  calls: number
+}
+
+export interface ProviderAb {
+  period_start: string
+  tiers: Record<OaTier, { label: string; in: number; out: number }>
+  caveats: string[]
+  totals: {
+    claude_usd: number
+    openai_usd: number
+    in: number
+    out: number
+    cache_read: number
+    cache_write: number
+    cache_hit_pct: number
+    delta_pct: number | null
+  }
+  by_feature: AbFeature[]
+  model_tiers: Record<string, OaTier>
+}
+
+/** Re-price this period's real token usage on Claude vs OpenAI. Pass optional per-tier
+ * OpenAI price overrides to plug in a real quote. No live calls — pure arithmetic. */
+export async function getProviderAb(
+  openai?: Partial<Record<OaTier, { in: number; out: number }>>,
+): Promise<ProviderAb> {
+  const { data } = await apiClient.post<ProviderAb>("/api/dev/provider-ab", { openai })
+  return data
+}
