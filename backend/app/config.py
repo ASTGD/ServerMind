@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     ENABLE_MODEL_LADDER: bool = True
     AI_MODEL_LOW: str = ""   # default: claude-haiku-4-5-20251001
     AI_MODEL_HIGH: str = ""  # default: claude-opus-4-8
+    # Prompt-cache TTL for the stable system prefix (Anthropic). "1h" keeps the cache
+    # warm across a user's think-time between chat turns (writes cost 2× but reads stay
+    # 0.1×, and there are FAR fewer re-writes) — the single biggest lever on the cache
+    # hit rate for our sporadic, interactive usage. "5m" reverts to the default window.
+    AI_CACHE_TTL: str = "1h"
     # Remote Desktop (Phase E) — the guacd endpoint that streams RDP↔browser. Empty means
     # the desktop-streaming service isn't deployed; the access gate + session issuance still
     # work (and the viewer says so honestly) but live pixels need this configured.

@@ -234,8 +234,15 @@ async def _anthropic_complete(
         _anthropic_client = AsyncAnthropic(api_key=key)
     # The stable block is marked cacheable; below the provider's minimum prefix size
     # the marker is simply ignored (no error). The volatile tail is never cached.
+    # TTL "1h" (vs the 5m default) keeps the prefix warm across a user's think-time
+    # between turns — our usage is bursty/interactive, so the 5m window expired mid-
+    # conversation and forced a cold re-write every turn (the cause of chat's low hit
+    # rate). Writes cost 2× at 1h but there are far fewer of them; reads stay 0.1×.
+    cache_control: dict = {"type": "ephemeral"}
+    if settings.AI_CACHE_TTL and settings.AI_CACHE_TTL != "5m":
+        cache_control["ttl"] = settings.AI_CACHE_TTL
     system_blocks: list[dict] = [
-        {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+        {"type": "text", "text": system, "cache_control": cache_control}
     ]
     if system_volatile:
         system_blocks.append({"type": "text", "text": system_volatile})

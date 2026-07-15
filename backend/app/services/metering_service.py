@@ -34,17 +34,29 @@ logger = logging.getLogger(__name__)
 # ── Price table (USD per 1M tokens) — cost ESTIMATES for the ledger ───────────
 # Prefix-matched against the model id; unknown models are recorded at cost 0 (the
 # token counts are still exact). Update alongside provider pricing.
+# NOTE: prefix-matched top-down, first match wins — keep more-specific prefixes ABOVE
+# their broader parent (claude-3-5-haiku before claude-haiku; gpt-4o-mini before gpt-4o).
 _PRICES_PER_MTOK: list[tuple[str, float, float]] = [
     # (model-id prefix, input $/M, output $/M)
-    ("claude-opus", 15.0, 75.0),
-    ("claude-sonnet", 3.0, 15.0),
-    ("claude-haiku", 1.0, 5.0),
+    ("claude-opus", 5.0, 25.0),      # Opus 4.8 (was mis-priced at Opus-3's $15/$75)
+    ("claude-sonnet", 3.0, 15.0),    # Sonnet 5 (list; $2/$10 intro through 2026-08-31)
     ("claude-3-5-haiku", 0.8, 4.0),
+    ("claude-haiku", 1.0, 5.0),      # Haiku 4.5
+    ("claude-fable", 10.0, 50.0),    # Fable 5 (top tier)
     ("gpt-4o-mini", 0.15, 0.6),
     ("gpt-4o", 2.5, 10.0),
     ("gemini-1.5-pro", 1.25, 5.0),
     ("gemini-1.5-flash", 0.075, 0.3),
 ]
+
+
+def price_per_mtok(model: str) -> tuple[float, float]:
+    """(input $/M, output $/M) for a model id, or (0, 0) if unknown. Single source of
+    truth for cost math (the ledger cost + the Dev Door provider A/B both use this)."""
+    for prefix, in_price, out_price in _PRICES_PER_MTOK:
+        if model.startswith(prefix):
+            return in_price, out_price
+    return 0.0, 0.0
 
 
 def _cost_usd(
@@ -55,10 +67,11 @@ def _cost_usd(
     cache_write: int = 0,
 ) -> float:
     """Cost estimate incl. prompt caching: cache reads ≈ 10% of the input price and
-    writes ≈ 125% (Anthropic); OpenAI-style caches read at ~50%, write free."""
+    writes ≈ 200% (Anthropic, 1h TTL — our default; a 5m write is 125%); OpenAI-style
+    caches read at ~50%, write free."""
     for prefix, in_price, out_price in _PRICES_PER_MTOK:
         if model.startswith(prefix):
-            read_mult, write_mult = (0.5, 0.0) if prefix.startswith("gpt") else (0.1, 1.25)
+            read_mult, write_mult = (0.5, 0.0) if prefix.startswith("gpt") else (0.1, 2.0)
             return (
                 input_tokens * in_price
                 + cache_read * in_price * read_mult
