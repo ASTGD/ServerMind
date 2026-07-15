@@ -219,7 +219,7 @@ export default function Missions() {
   const shownId = id ?? [...active, ...history][0]?.id
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+    <div>
       <div className="mb-4 flex items-center gap-2">
         <Rocket size={20} className="text-primary" />
         <h1 className="text-xl font-semibold text-foreground">Missions</h1>

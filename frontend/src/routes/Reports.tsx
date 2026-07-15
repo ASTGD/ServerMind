@@ -87,7 +87,7 @@ export default function Reports() {
   }, [reports, serverId, q])
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
+    <div>
       <header className="mb-4">
         <h1 className="flex items-center gap-2 text-xl font-semibold text-foreground">
           <FileText className="h-5 w-5 text-primary" /> Reports
