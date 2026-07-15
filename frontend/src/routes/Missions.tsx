@@ -228,50 +228,34 @@ export default function Missions() {
       {/* TOP — recipes, full width (the front door to start a mission) */}
       <RecipeLibrary />
 
+      {/* Search — above the grid so the first mission card lines up with the detail pane
+          (like Reports/Logs). Missions that need you are still ordered first. */}
+      <div className="relative mb-3 max-w-sm">
+        <Search size={14} className="absolute left-2.5 top-2.5 text-muted-foreground" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search missions"
+          className="w-full rounded-lg border border-border bg-card py-2 pl-8 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
+        />
+      </div>
+
       {/* Same 3-column grid + gap as the recipes above, so the list lines up with
           recipe card 1 and the detail spans cards 2-3. */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:items-start">
         {/* LEFT — the mission list (receipts), aligned to the first recipe column */}
         <aside className="min-w-0 lg:col-span-1">
-          <div className="relative mb-3">
-            <Search size={14} className="absolute left-2.5 top-2.5 text-muted-foreground" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search missions"
-              className="w-full rounded-lg border border-border bg-card py-2 pl-8 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
-            />
-          </div>
-
           {isLoading ? (
             <p className="px-1 text-xs text-muted-foreground">Loading…</p>
           ) : missions.length === 0 ? (
             <p className="px-1 text-xs text-muted-foreground">No missions yet. Pick a recipe to start.</p>
+          ) : active.length === 0 && history.length === 0 ? (
+            <p className="px-1 text-xs text-muted-foreground">No missions match “{q}”.</p>
           ) : (
-            <div className="max-h-[calc(100vh-14rem)] space-y-3 overflow-y-auto pr-1">
-              {active.length > 0 && (
-                <div>
-                  <p className="mb-1.5 px-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Needs you</p>
-                  <div className="space-y-1.5">
-                    {active.map((m) => (
-                      <MissionRow key={m.id} m={m} selected={m.id === shownId} onClick={() => navigate(`/missions/${m.id}`)} />
-                    ))}
-                  </div>
-                </div>
-              )}
-              {history.length > 0 && (
-                <div>
-                  <p className="mb-1.5 px-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">History</p>
-                  <div className="space-y-1.5">
-                    {history.map((m) => (
-                      <MissionRow key={m.id} m={m} selected={m.id === shownId} onClick={() => navigate(`/missions/${m.id}`)} />
-                    ))}
-                  </div>
-                </div>
-              )}
-              {active.length === 0 && history.length === 0 && (
-                <p className="px-1 text-xs text-muted-foreground">No missions match “{q}”.</p>
-              )}
+            <div className="max-h-[calc(100vh-13rem)] space-y-1.5 overflow-y-auto pr-1">
+              {[...active, ...history].map((m) => (
+                <MissionRow key={m.id} m={m} selected={m.id === shownId} onClick={() => navigate(`/missions/${m.id}`)} />
+              ))}
             </div>
           )}
         </aside>
