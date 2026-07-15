@@ -88,8 +88,12 @@ export default function ReportView({ embedded = false, reportId }: { embedded?: 
         </div>
       </div>
 
-      {/* The report "sheet" — a clean white document (same on screen + PDF) */}
-      <article className="report-sheet mx-auto max-w-[820px] rounded-xl border border-zinc-200 bg-white p-8 text-zinc-900 shadow-sm">
+      {/* The report "sheet" — a clean white document (same on screen + PDF). Embedded in the
+          Reports pane it fills the pane (no centering gap); standalone it's a centered sheet. */}
+      <article className={cn(
+        "report-sheet rounded-xl border border-zinc-200 bg-white p-8 text-zinc-900 shadow-sm",
+        embedded ? "w-full" : "mx-auto max-w-[820px]",
+      )}>
         <header className="flex items-start justify-between gap-4 border-b border-zinc-200 pb-4">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400">ServerAlly · Mission Report</p>
