@@ -101,27 +101,30 @@ export default function Reports() {
       </header>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:items-start">
-        {/* LEFT — filters + the report list */}
+        {/* LEFT — filters + the report list. Search + filter share one row so the first
+            list card lines up with the report sheet's top (single-row toolbar) on the right. */}
         <aside className="min-w-0 lg:col-span-1">
-          <div className="relative mb-2">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search site, goal, outcome…"
-              className="w-full rounded-lg border border-border bg-background py-2 pl-8 pr-3 text-sm outline-none focus:border-primary"
-            />
+          <div className="mb-3 flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search reports…"
+                className="w-full rounded-lg border border-border bg-background py-1.5 pl-8 pr-3 text-sm outline-none focus:border-primary"
+              />
+            </div>
+            <select
+              value={serverId}
+              onChange={(e) => setServerId(e.target.value)}
+              className="shrink-0 rounded-lg border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
+            >
+              <option value="">All servers</option>
+              {servers.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
           </div>
-          <select
-            value={serverId}
-            onChange={(e) => setServerId(e.target.value)}
-            className="mb-2 w-full rounded-lg border border-border bg-background px-2.5 py-2 text-sm outline-none focus:border-primary"
-          >
-            <option value="">All servers</option>
-            {servers.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
           {serverId && (
             <Link
               to={`/reports/server/${serverId}`}
