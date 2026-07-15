@@ -25,8 +25,12 @@ const PRINT_CSS = `
 }
 `
 
-export default function ReportView() {
-  const { id = "" } = useParams()
+/** The full report document (header, incident narrative, result, redacted log) + export
+ *  toolbar. Standalone at /reports/:id, or embedded in the Reports page's detail pane
+ *  (embedded drops the outer centering + the back-link, since the list sits beside it). */
+export default function ReportView({ embedded = false, reportId }: { embedded?: boolean; reportId?: string } = {}) {
+  const params = useParams()
+  const id = reportId ?? params.id ?? ""
   const user = useAuthStore((s) => s.user)
   const [copied, setCopied] = useState(false)
   const [showLog, setShowLog] = useState(false)
@@ -58,12 +62,16 @@ export default function ReportView() {
   const btn = "flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
 
   return (
-    <div className="mx-auto max-w-[880px] px-4 py-6 sm:px-6">
+    <div className={embedded ? "" : "mx-auto max-w-[880px] px-4 py-6 sm:px-6"}>
       {/* Toolbar — hidden when printing */}
       <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-2">
-        <Link to="/reports" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Reports
-        </Link>
+        {embedded ? (
+          <span />
+        ) : (
+          <Link to="/reports" className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-4 w-4" /> Reports
+          </Link>
+        )}
         <div className="flex flex-wrap items-center gap-1.5">
           <button onClick={() => window.print()} className={cn(btn, "border-primary/40 bg-primary/5 text-primary hover:bg-primary/10")}>
             <Printer className="h-3.5 w-3.5" /> Download PDF
