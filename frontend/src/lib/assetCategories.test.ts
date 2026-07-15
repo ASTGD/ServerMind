@@ -8,12 +8,12 @@ import {
 } from "./assetCategories"
 
 describe("assetCategories registry", () => {
-  it("has the five categories, all addable (cloud via its own flow)", () => {
+  it("has the six categories, all addable (cloud via its own flow)", () => {
     expect(ASSET_CATEGORIES.map((c) => c.id)).toEqual([
-      "bare_metal", "vps", "hosting", "windows", "cloud",
+      "bare_metal", "vps", "hosting", "windows", "windows_rdp", "cloud",
     ])
     expect(ADDABLE_CATEGORIES.map((c) => c.id)).toEqual([
-      "bare_metal", "vps", "hosting", "windows", "cloud",
+      "bare_metal", "vps", "hosting", "windows", "windows_rdp", "cloud",
     ])
     // every addable category either connects over a transport, or opens the cloud flow
     for (const c of ADDABLE_CATEGORIES) expect(Boolean(c.connectionType) || Boolean(c.cloudFlow)).toBe(true)
