@@ -228,9 +228,11 @@ export default function Missions() {
       {/* TOP — recipes, full width (the front door to start a mission) */}
       <RecipeLibrary />
 
-      <div className="flex flex-col gap-4 md:flex-row md:items-start">
-        {/* LEFT — the mission list (receipts) */}
-        <aside className="w-full shrink-0 md:w-[288px]">
+      {/* Same 3-column grid + gap as the recipes above, so the list lines up with
+          recipe card 1 and the detail spans cards 2-3. */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3 lg:items-start">
+        {/* LEFT — the mission list (receipts), aligned to the first recipe column */}
+        <aside className="min-w-0 lg:col-span-1">
           <div className="relative mb-3">
             <Search size={14} className="absolute left-2.5 top-2.5 text-muted-foreground" />
             <input
@@ -275,7 +277,7 @@ export default function Missions() {
         </aside>
 
         {/* RIGHT — the selected mission's detail (first mission by default) */}
-        <section className="min-w-0 flex-1 rounded-2xl border border-border bg-card/40 p-4 sm:p-5">
+        <section className="min-w-0 rounded-2xl border border-border bg-card/40 p-4 sm:p-5 lg:col-span-2">
           {shownId ? (
             <MissionDetail id={shownId} onServerFor={targetFor} />
           ) : (
