@@ -28,12 +28,20 @@ DIAGNOSTIC ORDER (strictly read-only):
       -not -path "*/storage/framework/*" -not -path "*/cache/*" -not -path "*/vendor/*"
       -not -path "*/node_modules/*" | head -40` — fresh .php in uploads/ or wp-content/
       is a classic webshell.
-   b. Signatures — as its OWN command so matches aren't buried in a big file list:
+   b. Signatures — as its OWN command so matches aren't buried in a big file list, and
+      EXCLUDE dependency trees (they are third-party library code, full of legitimate
+      base64/eval and huge — they produce hundreds of false hits):
       `grep -RislE 'eval\(|base64_decode|gzinflate|str_rot13|assert\(|shell_exec|passthru'
-      <docroot> --include="*.php" 2>/dev/null | head -30` (add the site's known spam
-      keywords when hunting a known campaign, e.g. gambling terms).
-   READ each hit before judging — a match alone isn't proof (WP core uses base64
-   legitimately); confirm the obfuscation. Don't delete yet.
+      <docroot> --include="*.php" -not -path "*/vendor/*" -not -path "*/node_modules/*"
+      2>/dev/null | head -30` (add the site's known spam keywords when hunting a known
+      campaign, e.g. gambling terms).
+   READ each hit before judging — a match alone is NOT proof. A single token
+   (`base64_decode`, `eval(`, `assert(`, `gzinflate`) is used all over legitimate code —
+   WordPress core, image decoders, template engines, error-page renderers. Real malware
+   needs a STRONG signal: a long obfuscated/packed blob AND/OR user input (`$_GET`/`$_POST`/
+   `$_REQUEST`/`$_COOKIE`) flowing straight into execution. Confirm that before you treat a
+   file as a shell. Never judge a file as malware because a sibling in the same folder
+   matched. Don't delete yet.
 6. Auth history: `grep -c "Failed password" /var/log/auth.log` (brute force volume) and
    `grep "Accepted" /var/log/auth.log | tail -10` (what got in, from where, which key).
 
@@ -46,6 +54,13 @@ CONTAIN (each step needs the user's explicit OK):
    otherwise they return tomorrow.
 
 PITFALLS:
+- NEVER treat a `vendor/` or `node_modules/` file as malware because it matched a
+  signature grep — it is installed third-party library code. Legit packages (image
+  decoders using `base64_decode`, error-page renderers, a `.php` file that holds only
+  SVG/HTML template markup) trip a naive grep constantly. If a dependency file is truly
+  in doubt, verify it against the package manifest (`composer.lock` / `package-lock.json`)
+  or restore the whole tree cleanly (`composer install` / `npm ci`) — do NOT hand-remove
+  individual library files, and do NOT move a whole directory because one file in it hit.
 - On WordPress/Laravel sites, `storage/framework/views` and `cache` .php files change
   constantly — always EXCLUDE them from "recently modified" scans, or they bury the real
   webshells and truncate the findings you can actually see. Run the signature grep as its

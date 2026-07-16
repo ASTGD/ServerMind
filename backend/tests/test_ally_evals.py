@@ -152,6 +152,52 @@ def test_security_incident_scan_excludes_framework_noise():
     assert "truncate" in body
 
 
+def test_security_incident_does_not_flag_vendor_libraries():
+    """Regression guard for BUG-002 (2026-07-15, panel2.firevps.net): the first-response
+    signature grep matched a bare `base64_decode` token in `vendor/intervention/image`
+    (a legit image decoder) + a `.php` that held only SVG markup, and those false hits led
+    to 128 legitimate library files being quarantined — taking a live gov site offline.
+    Lock the fix into the detection skill: exclude dependency trees from the signature
+    scan, and teach that one token is not proof."""
+    body = _skill_body("security-incident")
+    # The signature grep must skip third-party dependency trees.
+    assert "exclude dependency trees" in body
+    assert "node_modules" in body
+    # One token is not malware; a real shell needs a strong signal.
+    assert "a single token" in body
+    assert "flowing straight into execution" in body
+    # Don't condemn a file because a neighbour matched.
+    assert "sibling in the same folder matched" in body
+    # Verify against the package manifest instead of hand-removing library files.
+    assert "composer.lock" in body
+
+
+def test_incident_response_protects_vendor_libraries():
+    """Regression guard for BUG-002 (2026-07-15): the cleanup mission had no rule stopping
+    Ally from quarantining vendored library files on a weak signal. It quarantined the
+    whole `intervention/image` package + `symfony/error-handler` assets (128 files, 0
+    malicious) and took a live government Laravel site offline for ~a day. Lock the
+    safeguards into the mission runbook so a future edit can't drop them:
+      - never quarantine a vendor/node_modules file on a signature match
+      - verify against the package manifest / restore via composer install, don't hand-remove
+      - one file at a time; never move a whole directory because a sibling matched
+      - a .php holding only SVG/HTML is not a shell
+    """
+    body = _skill_body("security-incident-response")
+    # Dependency-tree files are library code — not quarantined on a weak signal.
+    assert "never quarantine a" in body and "vendor" in body
+    # Verify against the manifest / restore cleanly rather than hand-removing.
+    assert "composer.lock" in body
+    assert "package manifest" in body
+    # One artifact at a time; never sweep a whole directory.
+    assert "quarantine one file at a time" in body
+    assert "never move a whole directory" in body
+    # A .php with no PHP logic (SVG/HTML template) is not malware.
+    assert "no php logic" in body
+    # The lesson itself, so the pitfall can't be silently removed.
+    assert "false positives over" in body
+
+
 def test_incident_response_keeps_sites_working_and_handles_laravel():
     """Preparation for the panel2.firevps.net production cleanup (2026-07-12): the two hard
     requirements are (a) the whole box + every site malware-free and (b) NO site broken,
