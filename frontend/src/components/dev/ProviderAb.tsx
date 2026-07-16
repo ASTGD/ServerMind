@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { Loader2, AlertTriangle, Info, Scale } from "lucide-react"
-import { getProviderAb, type ProviderAb, type OaTier } from "@/api/dev"
+import { getProviderAb, type ProviderAb as ProviderAbData, type OaTier } from "@/api/dev"
 
 function money(n: number): string {
   return n >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(4)}`
@@ -10,7 +10,7 @@ function money(n: number): string {
 const TIER_ORDER: OaTier[] = ["top", "mid", "small"]
 
 /** big verdict number, colored by who wins */
-function Verdict({ data }: { data: ProviderAb }) {
+function Verdict({ data }: { data: ProviderAbData }) {
   const t = data.totals
   const d = t.delta_pct
   const openaiCheaper = d != null && d < 0
