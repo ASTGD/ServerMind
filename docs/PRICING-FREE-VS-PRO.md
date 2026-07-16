@@ -109,6 +109,27 @@ Both walls offer the same exits: **Upgrade · own key (actions only) · wait for
 
 ---
 
+## 9a. ⚠️ Cost/action is running at ~$0.096 — nearly 2× the assumption (2026-07-17)
+
+The new admin Overview (SAAS-LAUNCH-PLAN §5.1) computes cost/action live from the
+ledger. Its first real reading: **$0.096/action** over 341 actions / 1,161 calls /
+$32.68 — against the **≤$0.05** this whole section's margin case rests on.
+
+**Read it with the caveat it deserves:** that is *our dev/test* usage, not a customer's.
+It is unusually mission- and verify-heavy (Opus verification runs ~$0.042 each), and the
+sample is small. It is a **signal, not a verdict** — real customer usage skews lighter.
+
+But it must not be waved away either, because the Pro case below is priced on $0.05:
+- At $0.096, a Pro user who **maxes 1,000 actions** costs **$96/mo** against a $15–19
+  price. §9's "worst case $50" becomes ~$96. Typical usage (5–10% of cap) is still fine
+  (~$3–10/mo) — the exposure is the tail, not the average.
+- Before arming `ENFORCE_PLAN_LIMITS`, re-read this number against **customer-shaped**
+  usage, and settle the Pro allowance against it (§11). The allowance — not the price —
+  is the lever that bounds our tail risk.
+
+The admin Overview now shows this tile in **red above $0.05**, so the assumption can
+never quietly drift again.
+
 ## 9. AI allowance — REAL numbers (First Flight, 2026-07-03)
 
 Measured live on Sonnet 5 with prompt caching + thinking disabled:

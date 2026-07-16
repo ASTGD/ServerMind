@@ -1,15 +1,23 @@
 import { useState } from "react"
 import { Navigate } from "react-router-dom"
-import { FlaskConical, Terminal, ListChecks, Activity as ActivityIcon, Scale } from "lucide-react"
+import { FlaskConical, Terminal, ListChecks, Activity as ActivityIcon, Scale, Users, Receipt, LayoutDashboard } from "lucide-react"
 import Inspector from "@/components/dev/Inspector"
 import EvalRunner from "@/components/dev/EvalRunner"
 import Activity from "@/components/dev/Activity"
 import ProviderAb from "@/components/dev/ProviderAb"
+import AdminOverview from "@/components/dev/AdminOverview"
+import AdminUsers from "@/components/dev/AdminUsers"
+import AdminEntitlements from "@/components/dev/AdminEntitlements"
 import { useAuthStore } from "@/store/authStore"
 
-type Tab = "inspector" | "evals" | "activity" | "cost-ab"
+type Tab = "overview" | "users" | "entitlements" | "inspector" | "evals" | "activity" | "cost-ab"
 
 const TABS: { key: Tab; label: string; Icon: typeof Terminal }[] = [
+  // Operator console (SAAS-LAUNCH-PLAN §5) — support/ops, never billing.
+  { key: "overview", label: "Overview", Icon: LayoutDashboard },
+  { key: "users", label: "Users", Icon: Users },
+  { key: "entitlements", label: "Billing events", Icon: Receipt },
+  // Ally engineering (EVAL-DRIVEN-DEV).
   { key: "inspector", label: "Prompt Inspector", Icon: Terminal },
   { key: "evals", label: "Evals", Icon: ListChecks },
   { key: "activity", label: "Activity", Icon: ActivityIcon },
@@ -20,19 +28,19 @@ const TABS: { key: Tab; label: string; Icon: typeof Terminal }[] = [
  * every /api/dev endpoint 403s a non-admin regardless. */
 export default function Dev() {
   const isAdmin = useAuthStore((s) => s.user?.is_admin)
-  const [tab, setTab] = useState<Tab>("inspector")
+  const [tab, setTab] = useState<Tab>("overview")
 
   if (isAdmin === false) return <Navigate to="/dashboard" replace />
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex items-center gap-2">
         <FlaskConical size={22} className="text-primary" />
         <h1 className="text-xl font-semibold text-foreground">Dev Door</h1>
         <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">admin</span>
       </div>
 
-      <div className="flex gap-1 border-b border-border">
+      <div className="flex flex-wrap gap-1 border-b border-border">
         {TABS.map(({ key, label, Icon }) => (
           <button
             key={key}
@@ -49,6 +57,9 @@ export default function Dev() {
         ))}
       </div>
 
+      {tab === "overview" && <AdminOverview />}
+      {tab === "users" && <AdminUsers />}
+      {tab === "entitlements" && <AdminEntitlements />}
       {tab === "inspector" && <Inspector />}
       {tab === "evals" && <EvalRunner />}
       {tab === "activity" && <Activity />}

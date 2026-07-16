@@ -203,3 +203,98 @@ export async function getProviderAb(
   const { data } = await apiClient.post<ProviderAb>("/api/dev/provider-ab", { openai })
   return data
 }
+
+// ── Operator console (docs/SAAS-LAUNCH-PLAN.md §5) ───────────────────────────
+// Support/ops only. WHMCS owns customers, orders and revenue; `plan` here is a
+// read-only mirror of WHMCS's decision and is never edited from this surface.
+
+export interface AdminOverview {
+  period_start: string
+  users_total: number
+  users_by_plan: Record<string, number>
+  users_new_this_period: number
+  users_active_7d: number
+  servers_total: number
+  ai_cost_usd: number
+  ai_actions: number
+  ai_calls: number
+  ai_errors: number
+}
+
+export interface AdminUser {
+  id: string
+  email: string
+  name: string | null
+  plan: string
+  is_admin: boolean
+  is_active: boolean
+  is_verified: boolean
+  created_at: string | null
+  actions_used: number
+  actions_limit: number
+  servers_used: number
+  servers_limit: number
+  ai_cost_usd: number
+}
+
+export interface EntitlementEvent {
+  created_at: string | null
+  action: string
+  email: string | null
+  plan: string | null
+  reference: string | null
+  created: boolean | null
+  forced: boolean | null
+  ip: string | null
+}
+
+export interface AdminUserDetail extends AdminUser {
+  totp_enabled: boolean
+  preferred_language: string
+  ally_mode: string
+  servers: {
+    id: string
+    name: string
+    host: string
+    connection_type: string
+    os_type: string | null
+    status: string
+    last_seen: string | null
+  }[]
+  missions: {
+    id: string
+    goal: string
+    server_name: string | null
+    status: string
+    verified: boolean | null
+    created_at: string | null
+  }[]
+  problems: {
+    created_at: string | null
+    status: string
+    risk_level: string | null
+    request: string
+  }[]
+  entitlements: EntitlementEvent[]
+}
+
+export async function getAdminOverview(): Promise<AdminOverview> {
+  const { data } = await apiClient.get<AdminOverview>("/api/dev/admin/overview")
+  return data
+}
+
+export async function getAdminUsers(q?: string): Promise<AdminUser[]> {
+  const { data } = await apiClient.get<AdminUser[]>("/api/dev/admin/users", { params: { q } })
+  return data
+}
+
+export async function getAdminUser(id: string): Promise<AdminUserDetail> {
+  const { data } = await apiClient.get<AdminUserDetail>(`/api/dev/admin/users/${id}`)
+  return data
+}
+
+/** "Did billing land?" — every plan change WHMCS drove. */
+export async function getEntitlementLog(): Promise<EntitlementEvent[]> {
+  const { data } = await apiClient.get<EntitlementEvent[]>("/api/dev/admin/entitlements")
+  return data
+}

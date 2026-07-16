@@ -180,6 +180,12 @@ exist. The admin area is **new tabs on the Dev Door**, reusing that auth and the
 
 ## 5. The admin area — screen by screen
 
+> **✅ Phase 5a SHIPPED (2026-07-17)** — read-only. Four tabs on the Dev Door
+> (`/dev` → Overview · Users · Billing events), `admin_service.py` +
+> `GET /api/dev/admin/*`. Reuses `is_admin`; no new auth, no new tables, no migration.
+> **Read-only is enforced by a test**, not by intent: a route on this surface accepting
+> anything but GET fails the suite. Controls are 5b.
+
 ### 5.1 Overview — the business at a glance
 
 | Block | Shows | Source |

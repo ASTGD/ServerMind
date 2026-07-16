@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies.auth import require_admin
 from app.models.user import User
-from app.services import dev_service, team_service
+from app.services import admin_service, dev_service, team_service
 
 router = APIRouter(prefix="/api/dev", tags=["dev"])
 
@@ -123,6 +123,54 @@ async def activity(
 ) -> dict:
     """Recent AI calls (the ledger) + this period's cost/actions summary."""
     return await dev_service.activity(db, limit=min(max(limit, 1), 200))
+
+
+# ── Operator console (SAAS-LAUNCH-PLAN §5) ───────────────────────────────────
+# Support/ops, NOT billing: WHMCS owns customers, orders and revenue. These answer only
+# what WHMCS cannot — servers, Ally, and what the AI really costs us. All read-only.
+
+
+@router.get("/admin/overview")
+async def admin_overview(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Users, plans, active, servers, and our REAL AI cost this period."""
+    return await admin_service.overview(db)
+
+
+@router.get("/admin/users")
+async def admin_users(
+    q: str | None = None,
+    limit: int = 100,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Every user with plan (a read-only mirror of WHMCS) + both meters + AI cost."""
+    return await admin_service.list_users(db, limit=min(max(limit, 1), 500), q=q)
+
+
+@router.get("/admin/users/{user_id}")
+async def admin_user_detail(
+    user_id: uuid.UUID,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """The support screen: their servers, missions and recent failures — never credentials."""
+    out = await admin_service.user_detail(db, user_id)
+    if out is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such user")
+    return out
+
+
+@router.get("/admin/entitlements")
+async def admin_entitlements(
+    limit: int = 100,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """"Did billing land?" — every plan change WHMCS drove."""
+    return await admin_service.entitlement_log(db, limit=min(max(limit, 1), 500))
 
 
 class ProviderAbRequest(BaseModel):

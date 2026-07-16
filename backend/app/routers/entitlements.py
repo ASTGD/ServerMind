@@ -111,7 +111,10 @@ async def set_plan(
     await audit_service.audit(
         db, user, "entitlement.set",
         target_type="plan", target_id=plan,
-        meta={"reference": body.reference, "created": created},
+        # Record the email IN the event: an audit trail that can only name its subject by
+        # joining a live row stops being able to answer "did billing land for X?" the
+        # moment that row is gone.
+        meta={"reference": body.reference, "created": created, "email": email},
         request=request,
     )
     return SetPlanResponse(email=email, plan=plan, created=created, claim_url=claim_url)
@@ -230,7 +233,7 @@ async def reconcile(
             await audit_service.audit(
                 db, u, "entitlement.reconcile",
                 target_type="plan", target_id=u.plan,
-                meta={"forced": body.force}, request=request,
+                meta={"forced": body.force, "email": u.email}, request=request,
             )
         logger.info(
             "entitlement reconcile: %d upgraded, %d downgraded, %d unknown",
