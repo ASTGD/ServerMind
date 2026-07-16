@@ -36,18 +36,21 @@ Copy this block for each new finding:
 
 ## Open
 
+_(none)_
+
+## Fixed
+
 ### BUG-001 — Ally forgets its own prior cleanup (chat-memory cap) → nearly proposed a stale full-backup restore on a live site
 - **Date:** 2026-07-15
-- **Status:** Open
+- **Status:** Fixed (2026-07-15)
 - **Context:** Live remediation on panel2.firevps.net. User asked Ally why `news.rmp.gov.bd` (a Laravel site under the `desktopit.net` account) isn't serving. The day before (Jul 14), Ally had cleaned that account and created `/home/desktopit.net/quarantine_20260714`.
 - **Server / mission:** panel2.firevps.net (`0b8e62f9-83f4-4f51-a453-2b0e0f13113e`); done in **chat**, not a formal mission.
 - **Observed:** Ally did not remember that *it* created `quarantine_20260714`. It said "I haven't opened any files in that quarantine folder, so I don't know yet if it's an old backup someone made, or genuine malware that got isolated." It correctly found `index.php` / `public/index.php` missing from the live docroot, but its proposed fix was to restore from `BackUp25August25.zip` — a **10-month-old** August backup — which on a live government site would roll back ~10 months of data. It treated a site it had personally worked on the day before as a cold, first-time investigation.
 - **Expected:** Carry forward that it cleaned this account yesterday and created `quarantine_20260714`, recall WHAT it quarantined (only some `vendor/` webshells — not `index.php`), and reason from that: "the entry point isn't in my quarantine and the app is otherwise intact → restore only a clean `index.php`, never a stale full backup." At minimum, treat its own prior quarantine folder as its own action, not an unknown.
 - **Severity:** High — on a live gov-site recovery the forgotten context pointed at a data-losing stale restore; only caught because the human + operator re-supplied the facts.
-- **Suspected cause:** chat memory is capped (~8 turns × 1500 chars) and the long-term "Ally remembers" notes don't capture per-site cleanup *actions* (what was quarantined, where, when). Same class as the 2026-07-14 "Explain this incident" limitation. Compounding factor: the Jul-14 cleanup was done **via chat, not a mission**, so there is no durable mission transcript to resurface either — a chat-only cleanup leaves no re-loadable record tied to the site.
-- **Repro:** not yet reproduced in Dev Door; needs a two-session scenario (session 1 cleans a site + makes a quarantine; session 2 later asks about the same site; assert Ally recalls its own quarantine). Candidate fix: auto-write an "Ally remembers" note on quarantine creation ("quarantined X from site Y on DATE → PATH"), and/or make chat-run cleanups leave a durable per-server record like missions do.
-
-## Fixed
+- **Root cause (confirmed):** the chat REMEMBER guidance only covered PASSIVE facts ("runs the client's shop") — it never told Ally to record the lasting ACTIONS it takes (quarantine/clean/restore), so the Jul-14 chat cleanup left no durable note, and there was no recall nudge to treat an unfamiliar quarantine folder as possibly its own work. (Missions already save a completion note; this cleanup was chat-only.)
+- **Fix:** prompt/skill-level. (1) `_CHAT_SYSTEM` REMEMBER now instructs Ally to record a lasting change — especially a cleanup — as a `fact` with the exact destination PATH ("Cleaned site X: quarantined webshell → /root/quarantine_…"), plus a recall nudge: a change/folder it finds may be its OWN prior work — check memory, never propose a stale full-backup restore for a site it already cleaned. (2) The injected `WHAT ALLY REMEMBERS` block gained a bullet to reason FROM a note about a change it made. (3) Both incident skills (`security-incident.md` step 10, `security-incident-response.md` Stage 5) now instruct saving the cleanup (what + site + quarantine path) to memory so chat AND mission cleanups leave a durable record.
+- **Repro / guard:** locked with three regression tests in `tests/test_ally_evals.py` — `test_chat_prompt_records_its_own_cleanup_actions`, `test_memories_block_reasons_from_own_prior_work`, `test_incident_skills_record_cleanup_to_memory`. Suite 598 pass. (Follow-up left open: a code-level auto-write of a memory note the moment a quarantine dir is created — a stronger guarantee than relying on the model to emit `remember` — and giving chat-run cleanups a durable per-server record like missions have.)
 
 ### BUG-002 — Malware scan false-positive quarantined legitimate vendor libraries → took a live Laravel gov site offline
 - **Date:** 2026-07-15

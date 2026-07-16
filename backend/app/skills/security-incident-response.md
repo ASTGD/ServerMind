@@ -165,6 +165,11 @@ STAGE 5 — HARDEN + HAND OVER (status "done"):
   compromise looks deep, a clean rebuild + restore-from-backup is the safest path —
   offer to help with that instead of endlessly chasing artifacts.
 - Summarize exactly what was quarantined and WHERE, so nothing is lost.
+- RECORD THIS CLEANUP TO MEMORY — set "remember" to a `fact` capturing what you cleaned,
+  from which site, and the quarantine PATH (e.g. "Cleaned site X on <date>: quarantined
+  webshell + rogue cron into /root/serverally-quarantine-<ts>"). This is how a LATER
+  conversation knows this was YOUR own work — so the quarantine folder isn't mistaken for
+  an unknown, and no one proposes a stale full-backup restore for a site you already cleaned.
 
 PITFALLS:
 - FALSE POSITIVES OVER `vendor/` TAKE SITES DOWN. A single signature token
