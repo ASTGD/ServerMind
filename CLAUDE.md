@@ -1300,7 +1300,7 @@ VITE_APP_TAGLINE=Your AI companion to manage, automate, and secure any server �
 - [x] Context memory: AI remembers what's installed per server — SHIPPED (Ally memory + installed inventory)
 
 ### Integrations
-- [ ] GitHub: deploy from repo to server
+- [x] **GitHub: deploy from repo to server** — SHIPPED as the `github-deploy` Ally mission runbook (`mode: mission`, budget 25; triggers "deploy my repo", "host my project", a `github.com/` URL). Ally clones, detects the stack, builds, runs and verifies it step-by-step with approval on risky steps. (Checkbox was stale — corrected in the 2026-07-16 audit.)
 - [x] **AWS EC2 / DigitalOcean / Hetzner / Google Cloud / Azure — import instances** — SHIPPED as Assets **Cloud Accounts** (Phase C + D): connect a provider account by API key, discover its instances, import the ones you pick as assets. All 5 providers live. See [docs/ASSETS-CATEGORIES-PLAN.md](docs/ASSETS-CATEGORIES-PLAN.md). (2026-07-06)
 - [ ] Cloudflare API: manage DNS from ServerAlly
 - [ ] Slack bot: alerts + commands from Slack
