@@ -10,6 +10,10 @@ import XTerminal, { type XTerminalHandle } from "./XTerminal"
 
 const IDLE_MS = 30 * 60 * 1000 // close a shell after 30 min of no input/output
 
+// Smallest usable terminal window when resizing by the corner grip.
+const MIN_W = 420
+const MIN_H = 240
+
 const DOT: Record<TermStatus, string> = {
   connected: "#10b981",
   connecting: "#f59e0b",
@@ -81,10 +85,48 @@ export default function TerminalWorkspace() {
     e.currentTarget.releasePointerCapture?.(e.pointerId)
   }
 
-  // Below md the window is full-width (left-3/right-3), so an explicit left/top would
+  // ── Resizable window ────────────────────────────────────────────────────────
+  // Drag the bottom-right grip. Clamped to a usable minimum and to the viewport.
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null)
+  const [resizing, setResizing] = useState(false)
+  const resizeFrom = useRef<{ x: number; y: number; w: number; h: number } | null>(null)
+
+  function onGripPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (maximized || window.innerWidth < 768) return
+    const el = winRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    resizeFrom.current = { x: e.clientX, y: e.clientY, w: r.width, h: r.height }
+    setSize({ w: r.width, h: r.height })
+    setResizing(true)
+    e.currentTarget.setPointerCapture(e.pointerId)
+    e.stopPropagation()
+  }
+  function onGripPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const from = resizeFrom.current
+    const el = winRef.current
+    if (!resizing || !from || !el) return
+    const r = el.getBoundingClientRect()
+    const maxW = Math.max(MIN_W, window.innerWidth - r.left - 8)
+    const maxH = Math.max(MIN_H, window.innerHeight - r.top - 8)
+    setSize({
+      w: Math.min(Math.max(MIN_W, from.w + (e.clientX - from.x)), maxW),
+      h: Math.min(Math.max(MIN_H, from.h + (e.clientY - from.y)), maxH),
+    })
+  }
+  function onGripPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    if (!resizing) return
+    setResizing(false)
+    resizeFrom.current = null
+    e.currentTarget.releasePointerCapture?.(e.pointerId)
+  }
+
+  // Below md the window is full-width (left-3/right-3), so an explicit left/size would
   // collapse it — drop back to the anchored layout.
   useEffect(() => {
-    const onResize = () => { if (window.innerWidth < 768) setPos(null) }
+    const onResize = () => {
+      if (window.innerWidth < 768) { setPos(null); setSize(null) }
+    }
     window.addEventListener("resize", onResize)
     return () => window.removeEventListener("resize", onResize)
   }, [])
@@ -93,7 +135,8 @@ export default function TerminalWorkspace() {
 
   const { data: servers = [] } = useQuery({ queryKey: ["servers"], queryFn: listServers, enabled: visible })
 
-  // Re-fit terminals when the workspace is shown, the mode changes, or tabs change.
+  // Re-fit terminals when the workspace is shown, the mode changes, tabs change, or the
+  // window is resized by the grip (the timeout debounces the drag's rapid updates).
   useEffect(() => {
     if (!visible) return
     const t = setTimeout(() => {
@@ -101,7 +144,7 @@ export default function TerminalWorkspace() {
       else if (activeId) refs.current.get(activeId)?.fit()
     }, 60)
     return () => clearTimeout(t)
-  }, [visible, split, activeId, sessions.length, maximized])
+  }, [visible, split, activeId, sessions.length, maximized, size])
 
   // Idle timeout — close shells with no activity for IDLE_MS.
   useEffect(() => {
@@ -155,9 +198,16 @@ export default function TerminalWorkspace() {
           Only HIDDEN when closed, never unmounted. */}
       <div
         ref={winRef}
-        style={pos && !maximized ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : undefined}
+        style={
+          maximized
+            ? undefined
+            : {
+                ...(pos ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : {}),
+                ...(size ? { width: size.w, height: size.h, maxWidth: "none", maxHeight: "none" } : {}),
+              }
+        }
         className={`fixed z-40 flex origin-top-right flex-col overflow-hidden rounded-xl border border-black/50 bg-[#0d0d0d] shadow-2xl ${
-          dragging ? "transition-none" : "transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+          dragging || resizing ? "transition-none" : "transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
         } ${
           maximized
             ? "left-3 right-3 top-[4.5rem] bottom-4 md:left-[15.75rem] md:right-5"
@@ -356,6 +406,22 @@ export default function TerminalWorkspace() {
           </div>
         )}
       </div>
+
+      {/* Corner grip — drag to resize (desktop; a maximized window has a fixed size). */}
+      {!maximized && (
+        <div
+          onPointerDown={onGripPointerDown}
+          onPointerMove={onGripPointerMove}
+          onPointerUp={onGripPointerUp}
+          onPointerCancel={onGripPointerUp}
+          title="Drag to resize"
+          className="group absolute bottom-0 right-0 z-10 hidden h-5 w-5 cursor-se-resize md:block"
+        >
+          {/* two short diagonal strokes, like a native grip */}
+          <span className="pointer-events-none absolute bottom-[5px] right-[3px] h-[7px] w-px rotate-45 bg-zinc-600 transition-colors group-hover:bg-zinc-300" />
+          <span className="pointer-events-none absolute bottom-[3px] right-[7px] h-[11px] w-px rotate-45 bg-zinc-600 transition-colors group-hover:bg-zinc-300" />
+        </div>
+      )}
     </div>
     </>
   )
