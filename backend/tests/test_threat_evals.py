@@ -93,3 +93,54 @@ def test_recommendations_never_auto_run():
     """Fix hints are display-only text; sanity-check they're strings, not executed."""
     f = t._c_webshell("/var/www/evil.php")
     assert isinstance(f["recommendation"], str) and f["recommendation"]
+
+
+# ── Scan scope: the whole account home, not just */public_html (task #2) ──────
+
+def test_scan_covers_whole_account_home_not_just_public_html():
+    """Regression guard for the live scope gap (panel2.firevps.net): CyberPanel puts each
+    child domain at /home/<account>/<domain>/ (e.g. /home/desktopit.net/news.rmp.gov.bd),
+    so globbing only `/home/*/public_html` silently MISSED whole infected sites. The scan
+    must walk the account homes wholesale."""
+    assert "/home" in t._SCAN_ROOTS
+    # The old, too-narrow glob must not come back in any probe.
+    for section in t.LINUX_SECTIONS:
+        assert "/home/*/public_html" not in section.command, \
+            f"section '{section.id}' still scopes to */public_html: {section.command}"
+
+
+def test_scan_prunes_dependency_trees_but_not_cache():
+    """Dependency trees are pruned (speed + the BUG-002 vendor false positive), but
+    cache/storage are NOT — real webshells hide in bootstrap/cache and
+    storage/framework/views, and the signatures are tight enough not to FP there."""
+    assert "vendor" in t._PRUNE_DIRS and "node_modules" in t._PRUNE_DIRS
+    assert "cache" not in t._PRUNE_DIRS and "storage" not in t._PRUNE_DIRS
+    webshell = next(s for s in t.LINUX_SECTIONS if s.id == "webshell")
+    assert "--exclude-dir=vendor" in webshell.command
+    assert "--exclude-dir=node_modules" in webshell.command
+
+
+def test_wpcore_cap_is_never_silent():
+    """The per-site wp-cli check is capped, so coverage is bounded — that MUST be stated,
+    never silently under-reported as a clean bill of health."""
+    capped_clean = t._c_wpcore(f"CAPPED:{t._WP_SITES_MAX}\nOK:/home/a/site1.com")
+    assert capped_clean["severity"] == "pass"
+    assert "not verified" in capped_clean["detail"]
+    assert str(t._WP_SITES_MAX) in capped_clean["detail"]
+    # Uncapped runs say nothing extra.
+    assert "not verified" not in t._c_wpcore("OK:/home/a/site1.com")["detail"]
+
+
+def test_timeout_helper_fails_open_not_into_a_false_clean():
+    """Every silent probe is bounded by `timeout` so the widened walk can't exceed
+    ssh_service's 60s channel-read timeout. But if a box lacked coreutils' timeout, a
+    bare `timeout ...` would emit NOTHING — and an empty webshell section reads as
+    'clean'. The _t helper must run the probe unbounded instead (fail OPEN)."""
+    script = t._build_script(t.LINUX_SECTIONS)
+    assert "_t()" in script
+    # Falls back to running the command (shift drops the seconds), never to silence.
+    assert 'else shift; "$@"' in script
+    # No probe may call bare `timeout` directly — it must go through _t.
+    for section in t.LINUX_SECTIONS:
+        assert "timeout " not in section.command, \
+            f"section '{section.id}' calls timeout directly instead of _t: {section.command}"

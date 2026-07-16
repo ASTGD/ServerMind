@@ -63,11 +63,35 @@ def _lines(raw: str, limit: int = 15) -> list[str]:
 
 
 # ── Read-only probe sections ──────────────────────────────────────────────────
-# Web roots cover CyberPanel (/home/<domain>/public_html), plain nginx/apache
-# (/var/www), and OLS. Each section is wrapped in a subshell + `|| true` by the
-# builder, so a missing path never aborts the scan.
+# Each section is wrapped in a subshell + `|| true` by the builder, so a missing
+# path never aborts the scan.
+#
+# SCOPE (widened 2026-07-15): web content lives in far more places than
+# `*/public_html`. CyberPanel puts each child domain at /home/<account>/<domain>/
+# (live: /home/desktopit.net/news.rmp.gov.bd), cPanel adds addon-domain dirs, and
+# plain nginx/apache use /var/www. Scanning only */public_html silently MISSED whole
+# infected sites, so we now scan the account homes wholesale and prune the noise.
+_SCAN_ROOTS = r'/home /var/www /usr/local/lsws/*/html'
 
-_WEBROOTS = r'/home/*/public_html /var/www /usr/local/lsws/*/html'
+# Package-manager-owned trees: huge (they dominate the walk) and third-party library
+# code we would never clean by hand anyway — a tampered dependency is fixed by
+# restoring the tree (composer install / npm ci), not by quarantining a file. Pruning
+# them keeps a 90-site box fast and keeps us away from the vendor false positive that
+# took a live site offline (BUG-002). NOTE: cache/storage are deliberately NOT pruned —
+# webshells really do hide in bootstrap/cache and storage/framework/views, and the
+# signatures below are tight enough not to false-positive on cached templates.
+_PRUNE_DIRS = ("vendor", "node_modules", ".git", ".svn")
+_GREP_PRUNE = " ".join(f"--exclude-dir={d}" for d in _PRUNE_DIRS)
+# find(1) equivalent: -name a -o -name b … ) -prune -o
+_FIND_PRUNE = r"\( " + " -o ".join(f"-name {d}" for d in _PRUNE_DIRS) + r" \) -prune -o"
+
+# Every SILENT probe must finish well inside ssh_service's 60s channel-read timeout,
+# or the whole scan dies with a "could not connect". These caps bound the widened walk.
+_T_GREP = 45
+_T_FIND = 30
+_T_LOCATE = 20
+_WP_SITES_MAX = 12   # per-site wp-cli check is slow; cap it and say so when we do
+_T_WPSITE = 25
 
 LINUX_SECTIONS: list[Section] = [
     Section("meta", "id -u; hostname; date -u +%Y-%m-%dT%H:%M:%SZ"),
@@ -76,14 +100,18 @@ LINUX_SECTIONS: list[Section] = [
     # preg_replace/assert (legit WP core + minifiers use those); modified core is
     # caught separately by the wp-cli checksum check.
     Section("webshell", (
-        r"grep -rlEI --include=*.php "
+        f"_t {_T_GREP} grep -rlEI --include=*.php {_GREP_PRUNE} "
         r"'eval[[:space:]]*\([[:space:]]*(base64_decode|gzinflate|gzuncompress|str_rot13|\$_)|"
         r"(system|passthru|shell_exec|proc_open|popen)[[:space:]]*\([[:space:]]*\$_(GET|POST|REQUEST|COOKIE)|"
         r"assert[[:space:]]*\([[:space:]]*\$_(GET|POST|REQUEST|COOKIE)' "
-        + _WEBROOTS + r" 2>/dev/null | head -25"
+        + _SCAN_ROOTS + r" 2>/dev/null | head -25"
     )),
-    # A .php inside wp-content/uploads is almost always a dropped shell.
-    Section("uploads_php", r"find /home/*/public_html/wp-content/uploads /var/www/*/wp-content/uploads -type f -name '*.php' 2>/dev/null | head -25"),
+    # A .php inside wp-content/uploads is almost always a dropped shell. Matched at ANY
+    # depth under the account homes, so a child-domain site is covered too.
+    Section("uploads_php", (
+        f"_t {_T_FIND} find {_SCAN_ROOTS} {_FIND_PRUNE} "
+        r"-type f -name '*.php' -path '*/wp-content/uploads/*' -print 2>/dev/null | head -25"
+    )),
     # Processes whose binary lives in a world-writable dir, or a known miner. A bare
     # "(deleted)" exe is NOT flagged — that's the benign case of a running service
     # whose binary was replaced by a package update.
@@ -110,9 +138,16 @@ LINUX_SECTIONS: list[Section] = [
     # (no backslash escaping). Per-site timeout keeps a slow site from hanging.
     Section("wpcore", (
         'if ! command -v wp >/dev/null 2>&1; then echo NO_WPCLI; else '
-        'for d in /home/*/public_html /var/www/*; do '
-        '[ -f "$d/wp-load.php" ] || continue; '
-        'o=$(timeout 40 wp core verify-checksums --path="$d" --allow-root 2>&1); '
+        # Locate every WordPress install by its wp-load.php, at any depth under the
+        # account homes — a child-domain site never had a */public_html path to match.
+        f'sites=$(_t {_T_LOCATE} find {_SCAN_ROOTS} {_FIND_PRUNE} '
+        f'-type f -name wp-load.php -print 2>/dev/null | head -{_WP_SITES_MAX + 1}); '
+        'n=$(echo "$sites" | grep -c .); '
+        # The per-site wp-cli check is slow, so cap it — and SAY SO rather than
+        # silently under-reporting coverage.
+        f'if [ "$n" -gt {_WP_SITES_MAX} ]; then echo "CAPPED:{_WP_SITES_MAX}"; fi; '
+        f'for f in $(echo "$sites" | head -{_WP_SITES_MAX}); do d=$(dirname "$f"); '
+        f'o=$(_t {_T_WPSITE} wp core verify-checksums --path="$d" --allow-root 2>&1); '
         # Only ADDED ("should not exist") or MODIFIED ("verify against checksum")
         # core files signal tampering. "doesn\'t exist" (missing) = benign version
         # drift and is ignored.
@@ -194,13 +229,20 @@ def _c_wpcore(raw: str) -> dict:
     # release). So this is a LOW "worth a look" signal, NOT an alarm: it does not
     # raise the compromise verdict on its own. The high-confidence compromise
     # detection is the webshell / uploads / process / persistence / account checks.
-    tampered = [ln for ln in _lines(raw, 25) if ln.startswith("TAMPER:")]
+    lines = _lines(raw, 25)
+    # Coverage was capped (more WP sites than we check per scan) — never let that read
+    # as "everything is fine"; say it in the detail.
+    capped = next((ln for ln in lines if ln.startswith("CAPPED:")), None)
+    cap_note = (f" Only the first {capped.split(':', 1)[1]} WordPress sites on this server were"
+                " checked (per-scan limit) — the rest were not verified.") if capped else ""
+    tampered = [ln for ln in lines if ln.startswith("TAMPER:")]
     if tampered:
         return _finding(_CHECKS_BY["wpcore"], severity="low",
-                        detail=f"{len(tampered)} WordPress site(s) have core files that differ from the official checksums. Often this is version drift or a custom build — but occasionally it's an injected file, so it's worth a manual look.",
+                        detail=f"{len(tampered)} WordPress site(s) have core files that differ from the official checksums. Often this is version drift or a custom build — but occasionally it's an injected file, so it's worth a manual look.{cap_note}",
                         recommendation="Compare against a clean copy of the same WordPress version. If you didn't customise core, re-download it (wp core download --force) after backing up.",
                         evidence="\n".join(t[:400] for t in tampered))
-    return _finding(_CHECKS_BY["wpcore"], severity="pass", detail="WordPress core files match official checksums (no added/modified files).")
+    return _finding(_CHECKS_BY["wpcore"], severity="pass",
+                    detail=f"WordPress core files match official checksums (no added/modified files).{cap_note}")
 
 
 LINUX_CHECKS: list[Check] = [
@@ -218,8 +260,18 @@ _CHECKS_BY: dict[str, Check] = {c.id: c for c in LINUX_CHECKS}
 
 # ── Runner ────────────────────────────────────────────────────────────────────
 
+# `timeout` (coreutils) bounds every silent probe so the widened walk can't blow past
+# ssh_service's 60s channel-read timeout. If a box somehow lacks it we must NOT return
+# nothing — an empty webshell section reads as "clean", i.e. a silent false all-clear on
+# a critical check. _t therefore falls back to running the probe UNBOUNDED (fail open).
+_TIMEOUT_HELPER = (
+    '_t() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; '
+    'else shift; "$@"; fi; }'
+)
+
+
 def _build_script(sections: list[Section]) -> str:
-    parts = ["export LC_ALL=C"]
+    parts = ["export LC_ALL=C", _TIMEOUT_HELPER]
     for s in sections:
         parts.append(f"printf '\\n{_marker(s.id)}\\n'")
         parts.append(f"( {s.command} ) 2>&1 || true")
