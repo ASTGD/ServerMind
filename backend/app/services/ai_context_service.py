@@ -19,12 +19,44 @@ from app.models.command_log import CommandLog
 from app.models.playbook import Playbook, PlaybookRun
 from app.models.security_scan import SecurityScan
 from app.models.server import Server
+from app.services import memory_service, safety_service
 
 logger = logging.getLogger(__name__)
 
 _MAX_INSTALLED = 8
 _MAX_COMMANDS = 5
 _MAX_INPUT_CHARS = 80
+_MAX_ACTIONS_PER_LOG = 3
+_MAX_ACTION_CHARS = 90
+
+
+def _actions_done(log: CommandLog) -> list[str]:
+    """What Ally actually CHANGED in this log — its own lasting work.
+
+    The activity line used to carry only the user's REQUEST and a status, so Ally could
+    see it had worked on a site but not what it DID there — the root of BUG-001 (it
+    quarantined files, then next day couldn't tell its own cleanup from an unknown and
+    nearly restored a 10-month-old backup). A read-only probe is Ally *looking*; only a
+    mutating command leaves a trace the next conversation needs. Uses the same
+    default-deny classifier the mission verify gate trusts.
+
+    Safety: prefers the plain-language `description` over the raw command, and drops
+    anything that smells like a credential (a raw `cmd` can carry a password).
+    """
+    done: list[str] = []
+    for c in log.commands or []:
+        if not isinstance(c, dict):
+            continue
+        cmd = (c.get("cmd") or "").strip()
+        if not cmd or safety_service.is_read_only_command(cmd):
+            continue  # looked, didn't change
+        text = " ".join((c.get("description") or cmd).split())
+        if not text or memory_service._looks_secret(text):
+            continue
+        done.append(text[:_MAX_ACTION_CHARS])
+        if len(done) >= _MAX_ACTIONS_PER_LOG:
+            break
+    return done
 
 
 def _age(ts: datetime | None) -> str:
@@ -137,8 +169,17 @@ async def build_server_profile(db: AsyncSession, server: Server) -> str | None:
             text = (log.user_input or "").strip().replace("\n", " ")
             if len(text) > _MAX_INPUT_CHARS:
                 text = text[:_MAX_INPUT_CHARS] + "…"
-            acts.append(f'"{text}" → {log.status or "unknown"} ({_age(log.created_at)})')
-        lines.append("Recent AI activity (newest first): " + "; ".join(acts))
+            line = f'"{text}" → {log.status or "unknown"} ({_age(log.created_at)})'
+            # What Ally CHANGED, not just what was asked — so it recognises its own work.
+            done = _actions_done(log)
+            if done:
+                line += " — Ally changed: " + "; ".join(done)
+            acts.append(line)
+        lines.append(
+            "Recent AI activity (newest first; 'Ally changed' = work YOU did on this "
+            "server — a folder/change matching it is your own, not an unknown): "
+            + "; ".join(acts)
+        )
 
     return "\n".join(lines) if lines else None
 

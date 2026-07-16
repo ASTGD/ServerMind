@@ -23,6 +23,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ally_memory import AllyMemory
+from app.services import safety_service
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,60 @@ async def save_from_ai(
         await _evict_over_cap(db, user_id=user_id, server_id=scope_server_id)
     except Exception as exc:  # noqa: BLE001 — memory must never break the chat
         logger.warning("ally memory save failed (user=%s): %s", user_id, exc)
+
+
+MAX_ACTION_NOTE_CHARS = 200
+
+
+async def record_action(
+    db: AsyncSession,
+    *,
+    user_id,
+    server_id,
+    commands: object,
+    status: str | None,
+) -> None:
+    """Auto-record a CRITICAL change Ally just made — no model cooperation needed.
+
+    The chat prompt ASKS Ally to `remember` its cleanups, but a prompt is a request, not
+    a guarantee: BUG-001 was exactly the model failing to record its own quarantine and
+    then, a day later, nearly restoring a 10-month-old backup over a live site. This is
+    the code-level floor under that prompt.
+
+    Deliberately NARROW. ``ally_memories`` is capped per server and injected into every
+    prompt, so flooding it with routine work would evict the curated facts and make the
+    memory feature worse. Only a HIGH-RISK command that actually CHANGED the server and
+    SUCCEEDED earns a permanent note; ordinary work is recalled from ``command_logs``
+    via the server profile instead (see ai_context_service._actions_done).
+
+    Best-effort, like the rest of memory: a failure here must never break the chat.
+    """
+    if status != "success" or not isinstance(commands, list):
+        return
+    try:
+        for c in commands:
+            if not isinstance(c, dict):
+                continue
+            cmd = (c.get("cmd") or "").strip()
+            if not cmd:
+                continue
+            if str(c.get("risk_level", "")).lower() != "high":
+                continue        # only the big, lasting ones
+            if safety_service.is_read_only_command(cmd):
+                continue        # looked, didn't change
+            desc = " ".join((c.get("description") or cmd).split())
+            if not desc:
+                continue
+            day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            note = f"ServerAlly did this on {day}: {desc}"[:MAX_ACTION_NOTE_CHARS]
+            # save_from_ai gives us the secret filter, dedupe and cap-eviction for free.
+            await save_from_ai(
+                db, user_id=user_id, remember={"kind": "fact", "note": note},
+                server_id=server_id,
+            )
+            return   # one note per action, not one per command
+    except Exception as exc:  # noqa: BLE001 — memory must never break the chat
+        logger.warning("ally action record failed (user=%s): %s", user_id, exc)
 
 
 async def _evict_over_cap(db: AsyncSession, *, user_id, server_id) -> None:
