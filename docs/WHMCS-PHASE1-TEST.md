@@ -29,6 +29,10 @@ failure is on the WHMCS side — and knowing which side broke saves most of the 
 
 ## 2. Part A — the API smoke test *(5 minutes, automated)*
 
+> **Validated 2026-07-16** against the real backend + real Postgres locally:
+> **26 passed, 0 failed**. So a failure on your staging almost certainly means a
+> *deployment/config* difference, not a broken script.
+
 ```bash
 API_URL=https://staging.example.com \
 ENTITLEMENT_KEY=<the ENTITLEMENT_API_KEY value> \
@@ -57,6 +61,8 @@ by hand if you want a clean slate.
 
 1. Copy `whmcs/serverally/` → `<whmcs>/modules/servers/serverally/`
    (copy the **folder**, not `test-entitlements.sh` — that stays in this repo).
+   The folder now also contains `hooks.php`, which installs the nightly reconciliation
+   job automatically — WHMCS auto-loads it, no crontab entry needed (§4).
 2. **Setup → Products/Services → Create a New Product**
    - Type: **Other**, Name: **ServerAlly Pro**
    - **Module Settings → Module: ServerAlly**
@@ -102,10 +108,22 @@ T12 shows this in the safest direction (a paying customer doesn't get Pro — th
 complain within a day). The dangerous direction is the mirror image: **a missed suspend
 leaves a non-paying customer on Pro forever, and nobody ever complains.**
 
-This is why **Phase 2 is the reconciliation cron**, not the admin area. A nightly WHMCS
-job re-asserting every active service's plan makes drift self-heal within 24 hours —
-and because `/set` is already idempotent, the upgrade direction needs **zero new
-ServerAlly code**. Record T12's behaviour carefully; it is Phase 2's requirement.
+This is why **Phase 2 was the reconciliation cron**, not the admin area — and it is now
+**built** (`whmcs/serverally/hooks.php` + `POST /api/admin/entitlements/reconcile`, see
+[SAAS-LAUNCH-PLAN.md](SAAS-LAUNCH-PLAN.md) §3.3). Installing the module installs the
+nightly job. Record T12's behaviour anyway: it tells you how a real failure surfaces.
+
+**T13 — reconciliation** *(after the module is installed)*: run WHMCS's daily cron
+(**Utilities → System → System Cron** or wait a night), then check **Utilities → Logs →
+Activity Log**.
+
+- No drift → **nothing is logged**. Silence here is correct: a clean run every night is
+  noise, and noise is how a real alert gets ignored.
+- To prove it actually runs, create drift on purpose: set a customer to `pro` in
+  ServerAlly who has no active WHMCS service, run the cron, and confirm the Activity Log
+  says `drift corrected … Downgraded: <email>` and the plan is now `free`.
+- If it ever logs `reconcile REFUSED — would downgrade N of M`, **do not force it**. That
+  guard fires when the list looks truncated; the list is likelier wrong than the customers.
 
 ---
 
@@ -170,6 +188,7 @@ Phase 1 is done when:
 
 - [ ] Part A: **26 passed, 0 failed**.
 - [ ] T1–T11 pass as described.
+- [ ] T13: the nightly reconcile runs, and a deliberate drift is corrected.
 - [ ] **T8 verified by hand** — after terminate, the customer's servers and data are all
       still there. This is the promise pricing v2 makes; it must be true.
 - [ ] T12's behaviour is recorded (it feeds Phase 2's requirement).

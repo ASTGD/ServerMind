@@ -19,8 +19,8 @@ set -uo pipefail
 URL="${API_URL:-}"
 KEY="${ENTITLEMENT_KEY:-}"
 STAMP="$(date +%s)"
-EMAIL="phase1-test-${STAMP}@serverally-test.invalid"
-EMAIL2="phase1-test-${STAMP}-renamed@serverally-test.invalid"
+EMAIL="phase1-test-${STAMP}@example.com"
+EMAIL2="phase1-test-${STAMP}-renamed@example.com"
 
 if [[ -z "$URL" || -z "$KEY" ]]; then
   echo "Usage: API_URL=https://staging.example.com ENTITLEMENT_KEY=xxx $0" >&2
@@ -157,7 +157,7 @@ check "plan is pro" "pro" "$(field plan)"
 check "pro action limit" "1000" "$(field actions_limit)"
 check "pro server limit" "15" "$(field servers_limit)"
 
-req GET "/api/admin/entitlements/nobody-${STAMP}@serverally-test.invalid"
+req GET "/api/admin/entitlements/nobody-${STAMP}@example.com"
 check "an unknown email is a clean 404" "404" "$STATUS"
 
 # ── 6. The renewal lifecycle ─────────────────────────────────────────────────

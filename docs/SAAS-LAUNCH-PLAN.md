@@ -115,19 +115,32 @@ service and re-asserts its plan by calling `/set` — which is already idempoten
 needs **zero new ServerAlly code** for the upgrade direction. Any drift self-heals within
 24 hours.
 
-For the downgrade direction (someone who is Pro in ServerAlly but has no active service
-in WHMCS) we need one small addition:
+**✅ BUILT (2026-07-16) — Phase 2 is done.** WHMCS sends the full truth once a night;
+ServerAlly makes reality match. Idempotent, nothing deleted, drift self-heals in 24h.
 
 ```
 POST /api/admin/entitlements/reconcile
-{ "active_pro_emails": ["a@x.com", "b@y.com", ...] }
-→ every other pro user is set to free; returns what changed
+{ "active_pro_emails": [...], "dry_run": false, "force": false }
+→ { upgraded[], downgraded[], unknown[], unchanged }
 ```
 
-WHMCS sends the full truth once a night; ServerAlly makes reality match. Both directions
-covered, still idempotent, still nothing deleted. **This is the single most important
-thing in this document** — without it, the billing integration has no failure detection
-at all.
+- **Both directions in one call** — a missed suspend downgrades, a missed CreateAccount
+  upgrades. WHMCS makes ONE call a night, not N.
+- **`whmcs/serverally/hooks.php`** — rides WHMCS's own `DailyCronJob`, so installing the
+  module installs the job. No crontab entry.
+- **Guarded, because it can mass-downgrade every customer.** An empty list is refused
+  (a broken billing query is not "we lost everyone"); more than
+  `max(3, 20% of Pro)` downgrades in one night returns **409** rather than obeying a
+  truncated list. `force: true` is the deliberate human override; `dry_run: true`
+  reports without changing.
+- **Admins are never downgraded** — staff are Pro by hand and don't exist in WHMCS.
+- **Unknown emails are reported, never created** — provisioning stays with
+  CreateAccount, the only event that can email a claim link.
+- **Refusals are loud** (409 + WHMCS activity log). A silent 200 would recreate the very
+  failure this exists to catch.
+
+It also heals the revenue-leak half of BUG-W1 (§5.1) for free: an orphaned Pro account
+isn't in WHMCS's active list, so it is corrected within a day.
 
 ### 3.4 Design decision: quota resets on the 1st, not the billing date
 
