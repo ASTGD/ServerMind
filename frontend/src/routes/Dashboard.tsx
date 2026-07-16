@@ -12,7 +12,6 @@ import FleetComposition from "@/components/dashboard/FleetComposition"
 import QuickActions from "@/components/dashboard/QuickActions"
 import RunningTasks from "@/components/dashboard/RunningTasks"
 import RecentActivity from "@/components/dashboard/RecentActivity"
-import BillingPreview from "@/components/dashboard/BillingPreview"
 
 export default function Dashboard() {
   const { data: servers = [], isLoading } = useQuery<Server[]>({
@@ -114,8 +113,6 @@ export default function Dashboard() {
             <FleetComposition servers={servers} />
             <QuickActions />
           </div>
-
-          <BillingPreview />
         </>
       )}
     </div>
