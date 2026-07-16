@@ -100,15 +100,16 @@ export default function TerminalWorkspace() {
           visible ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
-      {/* The terminal window — a compact, PuTTY-sized floating window that grows out of the
-          sidebar dock. Maximize expands it to the workspace; Minimize tucks it away while
-          every SSH session keeps running. Only HIDDEN when closed, never unmounted. */}
+      {/* The terminal window — a compact floating window that drops out of the Terminal
+          button in the top bar (grows from / flies back to the top-right). Maximize expands
+          it to the workspace; Minimize tucks it away while every SSH session keeps running.
+          Only HIDDEN when closed, never unmounted. */}
       <div
-        className={`fixed z-40 flex origin-bottom-left flex-col overflow-hidden rounded-xl border border-black/50 bg-[#0d0d0d] shadow-2xl transition-all duration-200 ease-out ${
+        className={`fixed z-40 flex origin-top-right flex-col overflow-hidden rounded-xl border border-black/50 bg-[#0d0d0d] shadow-2xl transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           maximized
-            ? "left-3 right-3 top-[4.5rem] bottom-[74px] md:left-[15.75rem] md:right-5"
-            : "left-3 bottom-[74px] h-[460px] w-[calc(100vw-1.5rem)] md:left-[15.75rem] md:h-[480px] md:w-[760px] md:max-w-[calc(100vw-17rem)]"
-        } ${visible ? "scale-100 opacity-100" : "pointer-events-none scale-90 opacity-0"}`}
+            ? "left-3 right-3 top-[4.5rem] bottom-4 md:left-[15.75rem] md:right-5"
+            : "left-3 right-3 top-[4.5rem] h-[540px] max-h-[calc(100vh-6rem)] md:left-auto md:right-5 md:w-[860px] md:max-w-[calc(100vw-17rem)]"
+        } ${visible ? "translate-x-0 translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-x-3 -translate-y-3 scale-90 opacity-0"}`}
       >
       {/* Tab bar — macOS terminal window chrome (deep-indigo titlebar, distinct from the
           near-black terminal body so it clearly reads as a window bar). */}
