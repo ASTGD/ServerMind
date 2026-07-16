@@ -91,28 +91,6 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
           <Logo size="lg" />
         </div>
 
-        {/* Ask Ally — the hero action. The floating window grows out of this button. */}
-        <button
-          onClick={openAlly}
-          title={assistantOpen ? "Minimize Ally" : "Ask Ally (⌘K)"}
-          className={cn(
-            "mb-4 flex w-full items-center gap-2.5 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 px-3 py-2.5 text-white shadow-sm transition hover:opacity-95",
-            assistantOpen && "ring-2 ring-primary/40",
-          )}
-        >
-          <span className="relative flex h-6 w-6 items-center justify-center">
-            <Sparkles size={17} />
-            {missionActive && (
-              <span className="absolute -right-1 -top-1 flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full border-2 border-indigo-500 bg-emerald-400" />
-              </span>
-            )}
-          </span>
-          <span className="flex-1 text-left text-sm font-medium">Ask Ally</span>
-          <kbd className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-medium tracking-wide">⌘K</kbd>
-        </button>
-
         <nav className="flex flex-col gap-0.5">
           <NavItem to="/dashboard" icon={LayoutDashboard} label={t("nav.dashboard")} onClick={onClose} />
           <NavItem to="/servers" icon={Boxes} label={t("nav.servers")} onClick={onClose} />
@@ -122,17 +100,39 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
           <NavItem to="/reports" icon={FileText} label={t("nav.reports")} onClick={onClose} />
           <NavItem to="/playbooks" icon={BookOpen} label={t("nav.playbooks")} onClick={onClose} />
           <NavItem to="/scripts" icon={FileCode} label={t("nav.scripts")} onClick={onClose} />
-        </nav>
 
-        {/* Pinned to the bottom — account nav + the plan card. */}
-        <div className="mt-auto flex flex-col gap-0.5 pt-3">
-          <div className="mx-2 mb-1 border-t border-border" />
+          <div className="mx-2 my-2 border-t border-border" />
           <NavItem to="/team" icon={Users} label={t("nav.team")} onClick={onClose} />
           <NavItem to="/settings" icon={Settings} label={t("nav.settings")} onClick={onClose} />
           {isAdmin && <NavItem to="/dev" icon={FlaskConical} label="Dev" onClick={onClose} />}
+        </nav>
+
+        {/* Pinned to the bottom — Ask Ally (the hero) sits just above the plan card. The
+            floating window grows out of / flies back into this button. */}
+        <div className="mt-auto flex flex-col gap-3 pt-3">
+          <button
+            onClick={openAlly}
+            title={assistantOpen ? "Minimize Ally" : "Ask Ally (⌘K)"}
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 px-3 py-2.5 text-white shadow-sm transition hover:opacity-95",
+              assistantOpen && "ring-2 ring-primary/40",
+            )}
+          >
+            <span className="relative flex h-6 w-6 items-center justify-center">
+              <Sparkles size={17} />
+              {missionActive && (
+                <span className="absolute -right-1 -top-1 flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full border-2 border-indigo-500 bg-emerald-400" />
+                </span>
+              )}
+            </span>
+            <span className="flex-1 text-left text-sm font-medium">Ask Ally</span>
+            <kbd className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-medium tracking-wide">⌘K</kbd>
+          </button>
 
           {/* Plan card — the upgrade CTA with the context of your live usage. */}
-          <div className="mt-3 rounded-xl border border-border bg-background p-3">
+          <div className="rounded-xl border border-border bg-background p-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-medium text-foreground">{isPro ? "Pro plan" : "Free plan"}</span>
               {usage && (
