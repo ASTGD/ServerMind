@@ -52,6 +52,10 @@ CONTAIN (each step needs the user's explicit OK):
    admin — in that order. Assume anything stored on the box is burned.
 9. Close the entry hole (the outdated plugin, the exposed port, the weak password) —
    otherwise they return tomorrow.
+10. RECORD what you cleaned to memory — if you quarantine/move/remove anything, set
+    "remember" to a `fact` naming the site, what you quarantined, and the destination PATH.
+    A later chat then knows the quarantine folder is YOUR own work, not an unknown, and
+    won't propose a stale full-backup restore for a site you already cleaned.
 
 PITFALLS:
 - NEVER treat a `vendor/` or `node_modules/` file as malware because it matched a

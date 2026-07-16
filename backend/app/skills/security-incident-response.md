@@ -140,11 +140,14 @@ Work ONE site at a time. For each site:
   its neighbours) because one file in it matched — that is how a single flag turns into dozens
   of legitimate files quarantined and a working site taken offline. A `.php` file that contains
   no PHP logic (just SVG/HTML/template markup) is NOT a shell.
-- CONFIRM THE SITE STILL LOADS after cleaning it, before you move on:
-  `curl -s -o /dev/null -w '%{http_code}' -H 'Host: <domain>' http://127.0.0.1/` (and its
-  login/admin path — wp-login.php or /login). A normal code (200/301/302) = still working. If
-  it does NOT, RESTORE the site backup you just made and mark that site NEEDS-HUMAN — NEVER
-  leave a site broken to remove malware.
+- CONFIRM THE SITE STILL LOADS after cleaning it, before you move on — check the CONTENT,
+  not just the status code (a 200 can be a blank page or a PHP/Laravel error page). Fetch a
+  body sample AND the code: `curl -s -H 'Host: <domain>' -w '\nHTTP:%{http_code}\n'
+  http://127.0.0.1/ | head -c 3000` (and its login/admin path — wp-login.php or /login).
+  Working = a good code (200/301/302) AND a body that is the REAL site — NOT blank, NOT a
+  "Whoops"/stack-trace/"critical error"/"Fatal error" page, NOT a placeholder. If the code is
+  bad OR the body shows an error/blank, RESTORE the site backup you just made and mark that
+  site NEEDS-HUMAN — NEVER leave a site broken to remove malware.
 - Do NOT mass-delete or run any "cleaner" script. One quarantined artifact at a time.
 
 STAGE 5 — HARDEN + HAND OVER (status "done"):
@@ -155,9 +158,10 @@ STAGE 5 — HARDEN + HAND OVER (status "done"):
   the server is clean while a flagged indicator is unresolved or NEEDS-HUMAN — say so
   honestly. A verification pass will independently re-check your ledger, so an over-claim
   will be caught — be accurate the first time.
-- CONFIRM EVERY SITE YOU TOUCHED STILL LOADS — list each cleaned site with its HTTP-code
-  check. If any site is down and you couldn't restore it from its backup, say so loudly and
-  mark it NEEDS-HUMAN. Removing malware is not "done" while a site it lived on is broken.
+- CONFIRM EVERY SITE YOU TOUCHED STILL LOADS — list each cleaned site with its status AND a
+  content check (a 200 can still be a blank or error page — confirm the real site renders).
+  If any site is down or serving an error and you couldn't restore it from its backup, say so
+  loudly and mark it NEEDS-HUMAN. Removing malware is not "done" while a site it lived on is broken.
 - Tell the user to rotate ALL passwords + SSH keys and update everything now.
 - Identify the likely entry point (outdated plugin? weak password? exposed service?)
   so it can be closed — otherwise they'll be back.
@@ -165,6 +169,11 @@ STAGE 5 — HARDEN + HAND OVER (status "done"):
   compromise looks deep, a clean rebuild + restore-from-backup is the safest path —
   offer to help with that instead of endlessly chasing artifacts.
 - Summarize exactly what was quarantined and WHERE, so nothing is lost.
+- RECORD THIS CLEANUP TO MEMORY — set "remember" to a `fact` capturing what you cleaned,
+  from which site, and the quarantine PATH (e.g. "Cleaned site X on <date>: quarantined
+  webshell + rogue cron into /root/serverally-quarantine-<ts>"). This is how a LATER
+  conversation knows this was YOUR own work — so the quarantine folder isn't mistaken for
+  an unknown, and no one proposes a stale full-backup restore for a site you already cleaned.
 
 PITFALLS:
 - FALSE POSITIVES OVER `vendor/` TAKE SITES DOWN. A single signature token

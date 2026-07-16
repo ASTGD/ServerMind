@@ -188,3 +188,22 @@ def test_wait_plan_refuses_when_budget_spent():
     assert ws._wait_plan(300, 0, ws._WAIT_TOTAL_MAX - 1)[0] is False
     # Within both caps -> allowed.
     assert ws._wait_plan(30, 5, 100)[0] is True
+
+
+# ── Content-aware verification (task #1 / Area C) ─────────────────────────────
+
+def test_verify_prompt_checks_page_content_not_just_status():
+    """Regression guard for the live gap (panel2.firevps.net): a "cleaned"/"fixed" site
+    can return HTTP 200 while serving a blank body or a PHP/Laravel error page — exactly
+    what happened when a restored index.php still 500-crashed (a quarantined asset was
+    missing). The verify gate must confirm the page BODY is the real site, not trust the
+    status code. Pin the rule into the verifier prompt so a future edit can't drop it."""
+    p = " ".join(ai_service._VERIFY_SYSTEM.lower().split())
+    # A status code alone is not proof.
+    assert "a 200 status is not proof" in p
+    # Must fetch and read a sample of the response body.
+    assert "sample of the body" in p
+    # An error/blank body overrides a good status code.
+    assert "no matter what the status code says" in p
+    # Names the concrete error-page shapes so the verifier recognises them.
+    assert "error page" in p

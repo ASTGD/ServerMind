@@ -198,7 +198,32 @@ def test_incident_response_protects_vendor_libraries():
     assert "false positives over" in body
 
 
-def test_incident_response_keeps_sites_working_and_handles_laravel():
+def test_incident_skills_record_cleanup_to_memory():
+    """Regression guard for BUG-001 (2026-07-15): a cleanup must leave a durable memory
+    note (what was quarantined, from which site, the destination path) so a later
+    conversation recognises it as Ally's own work. Both the chat first-response skill and
+    the cleanup mission must instruct it."""
+    chat = _skill_body("security-incident")
+    mission = _skill_body("security-incident-response")
+    assert "record what you cleaned to memory" in chat
+    assert "record this cleanup to memory" in mission
+    # Both must capture the quarantine PATH in the note, not just "cleaned".
+    assert "quarantine path" in mission or "quarantine-<ts>" in mission
+    assert "destination path" in chat
+
+
+def test_incident_response_confirms_real_page_content():
+    """Regression guard for the live gap (Area C / task #1): the cleanup's "site still
+    loads" check trusted the HTTP status code, but a 200 can be a blank body or a PHP/
+    Laravel error page (the restored index.php that still 500-crashed). The runbook must
+    read the page CONTENT after cleaning, not just the status code."""
+    body = _skill_body("security-incident-response")
+    # The per-site check must look at content, not just the code.
+    assert "check the content, not just the status code" in body
+    # Working = a good code AND the real site rendered (not blank/error/placeholder).
+    assert "a body that is the real site" in body
+    # The finish check reinforces it too.
+    assert "content check" in body
     """Preparation for the panel2.firevps.net production cleanup (2026-07-12): the two hard
     requirements are (a) the whole box + every site malware-free and (b) NO site broken,
     across WordPress AND Laravel sites. The runbook was WordPress-leaning and never forced a
@@ -333,6 +358,34 @@ def test_chat_prompt_is_a_doer_not_an_advisor():
     assert "share the output" in p
     # ...and explicitly license running read-only commands without asking.
     assert "read-only commands are always safe" in p
+
+
+def test_chat_prompt_records_its_own_cleanup_actions():
+    """Regression guard for BUG-001 (2026-07-15, panel2.firevps.net): Ally cleaned a site
+    (quarantined vendor webshells → quarantine_20260714) in chat one day, then the next day
+    forgot it was its OWN work — it treated the quarantine folder as an unknown and nearly
+    proposed restoring a 10-month-old backup on a live gov site. The chat REMEMBER guidance
+    only covered passive facts; it never told Ally to record the lasting CHANGES it makes.
+    Pin the fix into the prompt so a future edit can't drop it."""
+    p = _chat_prompt_lower()
+    # Record a lasting change (esp. a cleanup) with the destination path.
+    assert "always record a lasting change" in p
+    assert "the exact destination path" in p
+    # So a later session recognises its own prior work, not a fresh mystery.
+    assert "not an unknown to re-investigate" in p
+    # And never rolls a cleaned site back to a stale full backup.
+    assert "stale full-backup restore" in p
+
+
+def test_memories_block_reasons_from_own_prior_work():
+    """The injected WHAT-ALLY-REMEMBERS block must tell Ally to reason FROM a note about a
+    change it made (a quarantine folder is its own work, not a mystery) — the recall half of
+    the BUG-001 fix."""
+    m = " ".join(ai_service._MEMORIES_BLOCK.lower().split())
+    assert "a note about a change you made" in m
+    assert "reason from it" in m
+    # Never propose a stale restore for a site a note says was already cleaned.
+    assert "a site a note says you already cleaned" in m
 
 
 def test_normal_mode_makes_ally_do_the_looking():
