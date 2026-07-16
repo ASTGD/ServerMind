@@ -40,6 +40,55 @@ export default function TerminalWorkspace() {
   const pickerRef = useRef<HTMLDivElement>(null)
   const refs = useRef<Map<string, XTerminalHandle>>(new Map())
 
+  // ── Draggable window ────────────────────────────────────────────────────────
+  // Grab the title bar to move it, like a real window. Desktop only (on mobile the
+  // window is full-width, so there's nowhere to drag it to). While a position is set
+  // we position explicitly (left/top) instead of the anchored right-5 default.
+  const winRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const dragOff = useRef<{ dx: number; dy: number } | null>(null)
+
+  function onBarPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (maximized || window.innerWidth < 768) return
+    // Never start a drag from a control (tab, button, picker) inside the bar.
+    if ((e.target as HTMLElement).closest("button, input, select, [data-no-drag]")) return
+    const el = winRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    dragOff.current = { dx: e.clientX - r.left, dy: e.clientY - r.top }
+    setPos({ x: r.left, y: r.top })
+    setDragging(true)
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  function onBarPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const off = dragOff.current
+    const el = winRef.current
+    if (!dragging || !off || !el) return
+    const r = el.getBoundingClientRect()
+    // Keep it on screen and below the top bar.
+    const maxX = Math.max(0, window.innerWidth - r.width)
+    const maxY = Math.max(56, window.innerHeight - r.height)
+    setPos({
+      x: Math.min(Math.max(0, e.clientX - off.dx), maxX),
+      y: Math.min(Math.max(56, e.clientY - off.dy), maxY),
+    })
+  }
+  function onBarPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragging) return
+    setDragging(false)
+    dragOff.current = null
+    e.currentTarget.releasePointerCapture?.(e.pointerId)
+  }
+
+  // Below md the window is full-width (left-3/right-3), so an explicit left/top would
+  // collapse it — drop back to the anchored layout.
+  useEffect(() => {
+    const onResize = () => { if (window.innerWidth < 768) setPos(null) }
+    window.addEventListener("resize", onResize)
+    return () => window.removeEventListener("resize", onResize)
+  }, [])
+
   const split = mode === "split" && sessions.length > 1
 
   const { data: servers = [] } = useQuery({ queryKey: ["servers"], queryFn: listServers, enabled: visible })
@@ -105,15 +154,28 @@ export default function TerminalWorkspace() {
           it to the workspace; Minimize tucks it away while every SSH session keeps running.
           Only HIDDEN when closed, never unmounted. */}
       <div
-        className={`fixed z-40 flex origin-top-right flex-col overflow-hidden rounded-xl border border-black/50 bg-[#0d0d0d] shadow-2xl transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        ref={winRef}
+        style={pos && !maximized ? { left: pos.x, top: pos.y, right: "auto", bottom: "auto" } : undefined}
+        className={`fixed z-40 flex origin-top-right flex-col overflow-hidden rounded-xl border border-black/50 bg-[#0d0d0d] shadow-2xl ${
+          dragging ? "transition-none" : "transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+        } ${
           maximized
             ? "left-3 right-3 top-[4.5rem] bottom-4 md:left-[15.75rem] md:right-5"
             : "left-3 right-3 top-[4.5rem] h-[540px] max-h-[calc(100vh-6rem)] md:left-auto md:right-5 md:w-[860px] md:max-w-[calc(100vw-17rem)]"
         } ${visible ? "translate-x-0 translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-x-3 -translate-y-3 scale-90 opacity-0"}`}
       >
       {/* Tab bar — macOS terminal window chrome (deep-indigo titlebar, distinct from the
-          near-black terminal body so it clearly reads as a window bar). */}
-      <div className="flex shrink-0 items-center gap-1 border-b border-black bg-gradient-to-b from-[#1e1b4b] to-[#15132a] px-3 py-2">
+          near-black terminal body so it clearly reads as a window bar). Doubles as the
+          drag handle: grab it to move the window (desktop, when not maximized). */}
+      <div
+        onPointerDown={onBarPointerDown}
+        onPointerMove={onBarPointerMove}
+        onPointerUp={onBarPointerUp}
+        onPointerCancel={onBarPointerUp}
+        className={`flex shrink-0 select-none items-center gap-1 border-b border-black bg-gradient-to-b from-[#1e1b4b] to-[#15132a] px-3 py-2 ${
+          maximized ? "" : "md:cursor-move"
+        }`}
+      >
         {/* Decorative traffic lights (the Mac window frame). */}
         <div className="mr-3 flex shrink-0 items-center gap-2 pl-0.5" aria-hidden="true">
           <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
@@ -124,6 +186,7 @@ export default function TerminalWorkspace() {
         {!split && sessions.map((s) => (
           <div
             key={s.id}
+            data-no-drag
             onClick={() => setActive(s.id)}
             className={`group flex cursor-pointer items-center gap-2 rounded-t-md px-3 py-2 text-sm ${
               s.id === activeId ? "bg-[#0d0d0d] text-white" : "text-zinc-400 hover:text-zinc-200"
