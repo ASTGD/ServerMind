@@ -2117,6 +2117,18 @@ async def _handle_message_inner(
         execution_ms=execution_ms,
     )
 
+    # The code-level floor under the prompt's "remember your cleanups" rule (BUG-001):
+    # a HIGH-RISK change that succeeded is recorded automatically, whether or not the
+    # model thought to emit "remember". Narrow by design + best-effort (never breaks chat).
+    async with AsyncSessionLocal() as db:
+        await memory_service.record_action(
+            db,
+            user_id=acting_user_id or server.user_id,
+            server_id=server.id,
+            commands=plan.get("commands"),
+            status=overall_status,
+        )
+
     await ws.send_text(json.dumps({
         "type": "execution_complete",
         "log_id": str(log.id),
