@@ -152,8 +152,8 @@ export default function AssistantDrawer() {
         role="complementary"
         aria-label="Ally"
         aria-hidden={!open}
-        className={`fixed left-3 right-3 top-[4.5rem] bottom-[74px] z-50 flex origin-bottom-left flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] md:left-[15.75rem] md:right-5 ${
-          open ? "scale-100 opacity-100" : "pointer-events-none scale-90 opacity-0"
+        className={`fixed left-3 right-3 top-[4.5rem] bottom-4 z-50 flex origin-top-left flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] md:left-[15.75rem] md:right-5 ${
+          open ? "translate-x-0 translate-y-0 scale-100 opacity-100" : "pointer-events-none -translate-x-3 -translate-y-3 scale-90 opacity-0"
         }`}
       >
       <div className="flex items-center gap-2 border-b border-border px-3 py-3">

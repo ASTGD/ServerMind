@@ -1,41 +1,50 @@
 import { useState } from "react"
 import { NavLink } from "react-router-dom"
+import { useQuery } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
+import type { LucideIcon } from "lucide-react"
 import {
-  LayoutDashboard,
-  Boxes,
-  BookOpen,
-  FileCode,
-  Users,
-  Settings,
-  Sparkles,
-  ArrowRight,
-  Rocket,
-  FileText,
-  ScrollText,
-  ChevronDown,
-  ChevronUp,
-  FlaskConical,
-  Terminal as TerminalIcon,
+  LayoutDashboard, Boxes, BookOpen, FileCode, Users, Settings, Sparkles,
+  Rocket, FileText, FlaskConical, ArrowUpRight,
 } from "lucide-react"
 import Logo from "@/components/brand/Logo"
 import UpgradeModal from "./UpgradeModal"
 import { useAssistantStore } from "@/store/assistantStore"
-import { useTerminalStore } from "@/store/terminalStore"
 import { useAuthStore } from "@/store/authStore"
+import { getMyUsage } from "@/api/usage"
+import { listMissions } from "@/api/missions"
 import { cn } from "@/lib/utils"
 
-const navItems = [
-  { to: "/dashboard", icon: LayoutDashboard, key: "dashboard" },
-  { to: "/servers", icon: Boxes, key: "servers" },
-  { to: "/playbooks", icon: BookOpen, key: "playbooks" },
-  { to: "/scripts", icon: FileCode, key: "scripts" },
-  { to: "/missions", icon: Rocket, key: "missions" },
-  { to: "/reports", icon: FileText, key: "reports" },
-  { to: "/logs", icon: ScrollText, key: "logs" },
-  { to: "/team", icon: Users, key: "team" },
-  { to: "/settings", icon: Settings, key: "settings" },
-] as const
+/** Mission statuses that want the user's attention — surfaced as a badge on the Missions item. */
+const NEEDS_YOU = new Set(["blocked", "awaiting_approval", "interrupted"])
+
+/** A single nav row (icon + label, optional attention badge). */
+function NavItem({
+  to, icon: Icon, label, badge, onClick,
+}: { to: string; icon: LucideIcon; label: string; badge?: number; onClick?: () => void }) {
+  return (
+    <NavLink
+      to={to}
+      onClick={onClick}
+      className={({ isActive }) =>
+        cn(
+          "flex items-center gap-3 rounded-lg px-3 py-2 text-[14px] transition-colors",
+          isActive
+            ? "bg-accent font-medium text-accent-foreground"
+            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+        )
+      }
+    >
+      <Icon size={18} className="shrink-0" />
+      <span className="flex-1 truncate">{label}</span>
+      {badge ? (
+        <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+          {badge > 9 ? "9+" : badge}
+        </span>
+      ) : null}
+    </NavLink>
+  )
+}
 
 export default function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
   const { t } = useTranslation()
@@ -43,15 +52,23 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
   const isAdmin = useAuthStore((s) => s.user?.is_admin)
   const assistantOpen = useAssistantStore((s) => s.open)
   const toggleAssistant = useAssistantStore((s) => s.toggle)
-  const terminalOpen = useTerminalStore((s) => s.open)
-  const toggleTerminal = useTerminalStore((s) => s.toggle)
-  const termCount = useTerminalStore((s) => s.sessions.length)
-  // Live status on the Ally button: a mission is running (or paused for your OK).
+  // A live dot on the Ask Ally button when a mission is running (or paused for your OK).
   const missionActive = useAssistantStore((s) =>
     s.messages.some(
       (m) => m.role === "assistant" && m.kind === "mission" && (m.mission.status === "running" || m.mission.status === "blocked"),
     ),
   )
+
+  const { data: usage } = useQuery({ queryKey: ["usage"], queryFn: getMyUsage, staleTime: 60_000 })
+  const { data: missions = [] } = useQuery({ queryKey: ["missions"], queryFn: () => listMissions(), refetchInterval: 60_000 })
+  const needsYou = missions.filter((m) => NEEDS_YOU.has(m.status)).length
+  const isPro = (usage?.plan ?? "free").toLowerCase() === "pro"
+  const actionPct = usage ? Math.min(100, Math.round((usage.used / Math.max(1, usage.limit)) * 100)) : 0
+
+  const openAlly = () => {
+    toggleAssistant()
+    onClose?.()
+  }
 
   return (
     <>
@@ -66,163 +83,83 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
       />
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-60 flex-col overflow-y-auto border-r border-border bg-card px-3 py-5 transition-transform lg:static lg:z-auto lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex w-60 flex-col overflow-y-auto border-r border-border bg-card px-3 py-4 transition-transform lg:static lg:z-auto lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
-        <div className="mb-7 px-2">
+        <div className="mb-4 px-2">
           <Logo size="lg" />
         </div>
 
-        <nav className="flex flex-col gap-1">
-          {navItems.map(({ to, icon: Icon, key }) => (
-            <NavLink
-              key={to}
-              to={to}
-              onClick={onClose}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] transition-colors ${
-                  isActive
-                    ? "bg-accent font-medium text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                }`
-              }
-            >
-              <Icon size={19} className="shrink-0" />
-              {t(`nav.${key}`)}
-            </NavLink>
-          ))}
-          {/* Admin-only Dev Door — hidden for customers (backend 403s them regardless). */}
-          {isAdmin && (
-            <NavLink
-              to="/dev"
-              onClick={onClose}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] transition-colors ${
-                  isActive
-                    ? "bg-accent font-medium text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                }`
-              }
-            >
-              <FlaskConical size={19} className="shrink-0" />
-              Dev
-            </NavLink>
+        {/* Ask Ally — the hero action. The floating window grows out of this button. */}
+        <button
+          onClick={openAlly}
+          title={assistantOpen ? "Minimize Ally" : "Ask Ally (⌘K)"}
+          className={cn(
+            "mb-4 flex w-full items-center gap-2.5 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 px-3 py-2.5 text-white shadow-sm transition hover:opacity-95",
+            assistantOpen && "ring-2 ring-primary/40",
           )}
+        >
+          <span className="relative flex h-6 w-6 items-center justify-center">
+            <Sparkles size={17} />
+            {missionActive && (
+              <span className="absolute -right-1 -top-1 flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full border-2 border-indigo-500 bg-emerald-400" />
+              </span>
+            )}
+          </span>
+          <span className="flex-1 text-left text-sm font-medium">Ask Ally</span>
+          <kbd className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-medium tracking-wide">⌘K</kbd>
+        </button>
+
+        <nav className="flex flex-col gap-0.5">
+          <NavItem to="/dashboard" icon={LayoutDashboard} label={t("nav.dashboard")} onClick={onClose} />
+          <NavItem to="/servers" icon={Boxes} label={t("nav.servers")} onClick={onClose} />
+
+          <p className="px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Automate</p>
+          <NavItem to="/missions" icon={Rocket} label={t("nav.missions")} badge={needsYou || undefined} onClick={onClose} />
+          <NavItem to="/reports" icon={FileText} label={t("nav.reports")} onClick={onClose} />
+          <NavItem to="/playbooks" icon={BookOpen} label={t("nav.playbooks")} onClick={onClose} />
+          <NavItem to="/scripts" icon={FileCode} label={t("nav.scripts")} onClick={onClose} />
         </nav>
 
-        {/* Pinned to the bottom — Ally + Terminal as standalone action buttons (not
-            regular menu items), then the upgrade row, all in one bottom panel. */}
-        <div className="mt-auto -mx-3 border-t border-border px-3 pt-3">
-          {assistantOpen ? (
-            /* The Ally window is open — the composer lives inside it, so here we show the
-               round Ally icon with "Ally ⌄" and a "click to minimise" hint. Same rounded-pill
-               shape as the composer, so opening/closing just swaps the pill's contents. */
-            <button
-              onClick={toggleAssistant}
-              title="Minimize Ally"
-              className="flex w-full items-center gap-2.5 rounded-full border border-border bg-accent/40 py-1.5 pl-1.5 pr-3 text-left transition-colors hover:bg-accent"
-            >
-              <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
-                <Sparkles size={16} />
-                {missionActive && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full border-2 border-card bg-emerald-500" />
-                  </span>
-                )}
-              </span>
-              <span className="min-w-0 flex-1 leading-tight">
-                <span className="flex items-center gap-1 text-sm font-medium text-foreground">
-                  Ally
-                  <ChevronDown size={14} className="text-muted-foreground" />
-                </span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {missionActive ? "Working on a mission…" : "click to minimise"}
-                </span>
-              </span>
-            </button>
-          ) : (
-            /* Ally launcher — a plain button (not a text box); click opens the floating
-               window (where you type). A live dot on the icon means a mission is running. */
-            <button
-              onClick={toggleAssistant}
-              title="Open Ally"
-              className="flex w-full items-center gap-2.5 rounded-full border border-border bg-background py-1.5 pl-1.5 pr-3 text-left transition-colors hover:border-primary/40 hover:bg-accent"
-            >
-              <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
-                <Sparkles size={16} />
-                {missionActive && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-500" />
-                  </span>
-                )}
-              </span>
-              <span className="flex-1 text-sm font-medium text-foreground">Ask Ally</span>
-              <ChevronUp size={15} className="shrink-0 text-muted-foreground" />
-            </button>
-          )}
+        {/* Pinned to the bottom — account nav + the plan card. */}
+        <div className="mt-auto flex flex-col gap-0.5 pt-3">
+          <div className="mx-2 mb-1 border-t border-border" />
+          <NavItem to="/team" icon={Users} label={t("nav.team")} onClick={onClose} />
+          <NavItem to="/settings" icon={Settings} label={t("nav.settings")} onClick={onClose} />
+          {isAdmin && <NavItem to="/dev" icon={FlaskConical} label="Dev" onClick={onClose} />}
 
-          {/* Terminal dock — mirrors Ally: a floating window that minimizes here. A green
-              dot means live SSH sessions are running (they keep running when minimized). */}
-          {terminalOpen ? (
-            <button
-              onClick={toggleTerminal}
-              title="Minimize Terminal"
-              className="mt-2 flex w-full items-center gap-2.5 rounded-full border border-border bg-accent/40 py-1.5 pl-1.5 pr-3 text-left transition-colors hover:bg-accent"
-            >
-              <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-emerald-300">
-                <TerminalIcon size={16} />
-                {termCount > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full border-2 border-card bg-emerald-500" />
-                  </span>
-                )}
-              </span>
-              <span className="min-w-0 flex-1 leading-tight">
-                <span className="flex items-center gap-1 text-sm font-medium text-foreground">
-                  Terminal
-                  <ChevronDown size={14} className="text-muted-foreground" />
+          {/* Plan card — the upgrade CTA with the context of your live usage. */}
+          <div className="mt-3 rounded-xl border border-border bg-background p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-medium text-foreground">{isPro ? "Pro plan" : "Free plan"}</span>
+              {usage && (
+                <span className="text-[10px] text-muted-foreground">
+                  {usage.servers_used} of {usage.servers_limit} servers
                 </span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {termCount > 0 ? `${termCount} session${termCount === 1 ? "" : "s"} running` : "click to minimise"}
-                </span>
-              </span>
-            </button>
-          ) : (
-            <button
-              onClick={toggleTerminal}
-              title="Open Terminal"
-              className="mt-2 flex w-full items-center gap-2.5 rounded-full border border-border bg-background py-1.5 pl-1.5 pr-3 text-left transition-colors hover:border-primary/40 hover:bg-accent"
-            >
-              <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-300">
-                <TerminalIcon size={16} />
-                {termCount > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-500" />
-                  </span>
-                )}
-              </span>
-              <span className="flex-1 text-sm font-medium text-foreground">Terminal</span>
-              <ChevronUp size={15} className="shrink-0 text-muted-foreground" />
-            </button>
-          )}
-
-          <div className="my-3 border-t border-border" />
-
-          <button
-            onClick={() => setShowUpgrade(true)}
-            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-          >
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
-              <Sparkles size={13} />
-            </span>
-            <span className="flex-1 text-left">Upgrade to Pro</span>
-            <ArrowRight size={14} className="text-muted-foreground" />
-          </button>
+              )}
+            </div>
+            <div className="mb-1 flex items-center justify-between text-[10.5px] text-muted-foreground">
+              <span>Actions this month</span>
+              <span className="tabular-nums">{usage ? `${usage.used} / ${usage.limit}` : "—"}</span>
+            </div>
+            <div className="mb-2.5 h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-[width] duration-500"
+                style={{ width: `${actionPct}%` }}
+              />
+            </div>
+            {!isPro && (
+              <button
+                onClick={() => setShowUpgrade(true)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/5 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+              >
+                <ArrowUpRight size={14} /> Upgrade to Pro
+              </button>
+            )}
+          </div>
         </div>
       </aside>
 
