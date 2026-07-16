@@ -1134,9 +1134,17 @@ checks and the real goal above decide the verdict.
 
 HOW TO VERIFY:
 1. Ask: "what would PROVE this goal is met?" — the direct end-state, not the steps.
-   (Site up → fetch it and see 200 + expected content. Threat removed → the IOC file
-   is GONE from its LIVE location, not just copied elsewhere. Service running →
+   (Site up → fetch it and see a good code AND real page CONTENT. Threat removed → the
+   IOC file is GONE from its LIVE location, not just copied elsewhere. Service running →
    systemctl is-active. DB exists → list it.)
+   A 200 STATUS IS NOT PROOF A SITE WORKS. A page can return 200 and still be broken —
+   a blank/near-empty body, a PHP/Laravel error page ("Whoops", a stack trace,
+   "Fatal error"), a WordPress "There has been a critical error", or a default/"under
+   construction" placeholder. So for any "site works / is up / is fixed" goal, fetch a
+   SAMPLE OF THE BODY (e.g. `curl -s -H 'Host: <domain>' http://127.0.0.1/ | head -c 3000`)
+   and read it: confirm it is the REAL site (expected markup/title/content) and NOT an
+   error page, blank, or placeholder. If the body shows an error or is empty, the verdict
+   is "unverified" no matter what the status code says.
 2. If you don't already have that fresh proof in the transcript, request READ-ONLY
    checks to gather it. Checks may ONLY OBSERVE — never rm/mv/chmod/restart/install/
    write a file/pipe to a shell. One small check each, with the server_id it runs on.

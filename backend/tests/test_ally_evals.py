@@ -210,6 +210,20 @@ def test_incident_skills_record_cleanup_to_memory():
     # Both must capture the quarantine PATH in the note, not just "cleaned".
     assert "quarantine path" in mission or "quarantine-<ts>" in mission
     assert "destination path" in chat
+
+
+def test_incident_response_confirms_real_page_content():
+    """Regression guard for the live gap (Area C / task #1): the cleanup's "site still
+    loads" check trusted the HTTP status code, but a 200 can be a blank body or a PHP/
+    Laravel error page (the restored index.php that still 500-crashed). The runbook must
+    read the page CONTENT after cleaning, not just the status code."""
+    body = _skill_body("security-incident-response")
+    # The per-site check must look at content, not just the code.
+    assert "check the content, not just the status code" in body
+    # Working = a good code AND the real site rendered (not blank/error/placeholder).
+    assert "a body that is the real site" in body
+    # The finish check reinforces it too.
+    assert "content check" in body
     """Preparation for the panel2.firevps.net production cleanup (2026-07-12): the two hard
     requirements are (a) the whole box + every site malware-free and (b) NO site broken,
     across WordPress AND Laravel sites. The runbook was WordPress-leaning and never forced a
