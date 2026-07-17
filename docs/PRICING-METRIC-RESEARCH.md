@@ -114,6 +114,41 @@ The gap in §5 is now filled by reading each vendor's own page (primary sources,
 | **Plesk** | €6.60 / €9.90 / €16.50 | **Per-server licence**, tiered by **domain count** (10 / 30 / ∞) | No |
 | **Cloudways** | hourly by server spec | **Server** | Meters GB (disk/bandwidth) |
 
+### ⚠️ CORRECTION (2026-07-17, read off a live Ploi trial account)
+
+**Ploi DOES feature-gate — heavily. I implied it prices purely per server. It does both.**
+From the real in-app subscription page (not the marketing page):
+
+| Feature | Basic €8 (5 srv) | Pro €13 (10 srv) | Unlimited €30 (∞) |
+|---|---|---|---|
+| Unlimited sites · deployments · **API access** | ✓ | ✓ | ✓ |
+| Server monitoring · server insights · zero-downtime deploy | ✗ | ✓ | ✓ |
+| **Automatic backups** | ✗ | ✓ | ✓ |
+| **Access to support** | ✗ | ✓ | ✓ |
+| File explorer · clone sites · suspend sites | ✗ | ✓ | ✓ |
+| Status pages · site monitoring · **team management** | ✗ | ✗ | ✓ |
+
+**11 features struck through on Basic; 3 more on Pro.** What survives from §4b is the core
+finding — *the market does not meter USAGE* — which is still true and is what drove
+Pricing v3. What was **wrong** is any impression that per-server pricing arrives without
+feature gates.
+
+**Three consequences for us:**
+
+1. **"Every feature on every plan" is a REAL differentiator, not merely a principle.** At
+   €8, Ploi gives you 5 servers with **no backups, no monitoring, no file explorer and no
+   support**. Our v2/v3 rule — *never gate safety* — is now something we can actually say
+   out loud against a named competitor.
+2. **⚠️ We may be badly underpricing.** Ploi's everything-included tier is **€30/mo**. Ours
+   (Agency — everything, 50 servers) is **$19.99**, and Pro at **$4.99** already includes
+   features Ploi withholds until €13–30. Worth revisiting before launch.
+3. **"Access to support" is gated at Basic** — they charge €13 before a human answers.
+   Whether we copy that is a PM call, but it is the market norm we are choosing to reject.
+
+**MCP is absent from that matrix entirely**, despite Ploi's marketing page saying it is
+*"included in the Pro plan and up"*. Their own in-app plan comparison never mentions it —
+so MCP is not (yet) a selling point they lead with.
+
 ### Three findings that matter
 
 **1. Servers is the market's metric. Near-unanimous.** Every vendor prices on servers,
