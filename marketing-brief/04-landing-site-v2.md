@@ -40,7 +40,14 @@
 
 ## 3. The hero — the OpenReplay pattern (PM: *"I must want this type of hero"*)
 
-I inspected `openreplay.com` directly. The pattern is **not** a centered text hero. It is:
+### 🔗 REFERENCE — go and look at it: **https://openreplay.com**
+
+**Open it in a browser before you design.** Do not work from this description alone —
+a text scrape of that page reports it as a "centered text-only hero", which is **wrong**.
+It is an asymmetric dark split with a **continuously moving** panel collage. Look at the
+real thing, then reproduce the *pattern* with our content and brand.
+
+The structure: **not** a centered text hero —
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -92,9 +99,48 @@ Study `marketing-visuals/*.png` + `assets/screens/*.png`, then generate:
 | **Fleet donut** | A health ring (healthy/fair/at-risk) with an average score centred |
 | **Quarantine table** | Item / Type / Original location — 3 rows |
 
-**Motion:** panels drift in on load with staggered depth-parallax; the "running" step
-pulses; the ✓ Verified chip lands last with a small spring. Subtle — this is a hero, not
-a carnival.
+### ⚠️ The hero MOVES — this is the point, and it is easy to get wrong
+
+**The panels are in continuous, ambient motion.** I read the live CSS off openreplay.com:
+
+```css
+/* the collage — a slow DIAGONAL drift that never stops */
+@keyframes slideBackground {
+  0%   { background-position: 0px 0px; }
+  100% { background-position: 100% 100%; }
+}
+.animate-slide { animation: slideBackground 60s linear infinite; }
+/* container: overflow:hidden */
+
+/* the logo strip — a seamless marquee (we don't use logos; see §5) */
+@keyframes ticker { 0% { transform: translate(0); } 100% { transform: translate(-50%); } }
+.ticker-track { animation: ticker 30s linear infinite; }
+```
+
+**Read those numbers carefully — they are the whole feel:**
+
+- **60 seconds.** Extremely slow. You should barely notice it moving; you only notice that
+  the page feels *alive*.
+- **`linear`.** No easing. It never appears to start or stop — there is no beginning and no
+  end, so the eye never catches a loop point.
+- **`infinite`.** This is **ambient motion, not a load animation.** It runs forever. (My
+  earlier draft said "panels drift in on load" — that was **wrong**, corrected 2026-07-17.)
+- **Diagonal** (`0 0 → 100% 100%`), inside `overflow: hidden` — which is why panels crop
+  at the edge.
+
+**How WE do it — better than the reference.** OpenReplay pans a flat *background image*.
+Our panels are **real DOM/SVG**, so we can do what they can't:
+
+- **Per-panel parallax**: each panel drifts on its own `translate3d` at a slightly
+  different speed and angle (e.g. 45s / 60s / 75s / 90s cycles), so the collage gains
+  genuine depth instead of sliding as one flat sheet. Nearer panels move slightly faster.
+- All **`linear` + `infinite`**, long cycles (45–90s), no easing, no visible loop seam.
+- **Layer the motion, don't stack effects**: the ambient drift is the base; on top of it,
+  the "running" mission step may pulse gently and the **✓ Verified** chip lands once on
+  first view. That is *all*. Subtle — this is a hero, not a carnival.
+- `will-change: transform`, GPU-composited transforms only. Never animate `top`/`left`.
+- **`prefers-reduced-motion: reduce` → freeze the drift entirely** (keep the composition,
+  kill the animation). Non-negotiable.
 
 ---
 
@@ -266,6 +312,8 @@ inline. A linked font/CDN will silently fall back and the design will quietly de
 
 - [ ] 5 pages, responsive at 375 / 768 / 1440
 - [ ] Hero reproduces all five OpenReplay ingredients (§3), with **our** evidence strip
+- [ ] **Hero panels are in continuous ambient motion** — slow (45–90s), `linear`, `infinite`,
+      per-panel parallax, no visible loop seam; frozen under `prefers-reduced-motion`
 - [ ] **Zero** product screenshots on any page; every graphic generated
 - [ ] Exactly one GIF, lazy + click-to-play, on `/proof`
 - [ ] No invented metric, logo, or testimonial anywhere
