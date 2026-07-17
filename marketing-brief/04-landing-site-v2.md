@@ -234,6 +234,34 @@ done after a **✓ Verified** re-check.
 - Watch selector specificity — that's where the spacing quietly breaks.
 - Generative/decorative graphics: **Canvas or WebGL**, not hand-authored SVG path soup.
 
+## 9b. Output location & tech
+
+**Build into `marketing-site/`** at the repo root (create it). Do not touch `frontend/`
+(that is the product app) or any `backend/` file.
+
+```
+marketing-site/
+├── index.html            ← Home
+├── how-it-works.html     ← the interactive centrepiece
+├── pricing.html
+├── security.html
+├── proof.html
+├── assets/
+│   ├── css/  js/  fonts/ (inlined data-URI sources)
+│   ├── logo/             ← copy from ../marketing-brief/assets/logo/
+│   └── media/            ← the ONE gif (§6)
+└── README.md             ← how to preview + deploy notes
+```
+
+**Tech: plain static HTML + CSS + vanilla JS.** No build step, no framework, no CDN.
+Reasons: it deploys to `serverally.firevps.net` as static files behind OpenLiteSpeed with
+zero infrastructure, it caches perfectly, it cannot break the product app, and it has no
+dependency that can rot. Animation via CSS + the Web Animations API; use Canvas/WebGL only
+for genuinely generative visuals. Share one stylesheet + one JS bundle across the pages.
+
+**No external requests at all** — fonts inlined as data-URIs, all graphics generated
+inline. A linked font/CDN will silently fall back and the design will quietly degrade.
+
 ## 10. Definition of done
 
 - [ ] 5 pages, responsive at 375 / 768 / 1440
@@ -246,3 +274,5 @@ done after a **✓ Verified** re-check.
 - [ ] `prefers-reduced-motion` honoured throughout
 - [ ] Light + dark both correct
 - [ ] Fonts inlined as data-URIs (no CDN — it will silently fall back)
+- [ ] Built in `marketing-site/` as static HTML/CSS/JS; `frontend/` and `backend/` untouched
+- [ ] Zero external network requests (verify in devtools: no font/CDN/analytics calls)
