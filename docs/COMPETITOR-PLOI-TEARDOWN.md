@@ -162,11 +162,75 @@ credentials or plan overrides are touched.
 - **Windows + RDP + hosting panels.** Ploi is Linux/PHP-centric (NGINX/PHP/MySQL).
 - **Multi-cloud import** (5 providers incl. GCP/Azure) vs their 8 VPS providers, no GCP/Azure.
 
+## 10. Server provisioning UX — observed live (2026-07-17)
+
+The PM created a real server (`testserver`), which opened the one surface §9 said we
+couldn't see. **This is the best UX reference in the teardown.**
+
+The build screen (`/panel/servers/<id>`) is two cards:
+
+**Left — "Server installation"**
+- Sets expectations honestly: *"It might take a while to start up installation, this is
+  because your server has to be booted completely in order for Ploi to install your server."*
+- A support email, inline.
+- **Helpful links: Documentation · YouTube · Roadmap · Discord** — engagement offered
+  during dead time, which is exactly when a new user has attention to spare.
+- ⭐ A blue callout: **"It is safe to leave this screen, installation will run in the
+  background. You can always come back to this screen by pressing your server in the
+  server overview list."**
+
+**Right — "Installation tasks (3/27)"**, a live `11%` bar
+- The **current** task highlighted with a spinner + a **per-task elapsed timer** (`1m 31s`).
+- **Pending tasks (23)** and **Completed tasks (3)**, both collapsible.
+- Tasks are **named in human language**, never shell output.
+
+**The full 27-task recipe** (their initial-server-setup playbook, verbatim):
+
+> Installing system updates · Installing base packages · Configuring update policy ·
+> Installing Redis · Installing Memcached · Creating server user · Installing Git ·
+> Installing webserver · Configuring Gzip compression · Configuring firewall ·
+> Installing PHP 8.5 · Installing Composer · Setting upload limits · Installing MySQL ·
+> Configuring SSH · Installing SSL certificate tools · Installing Supervisor ·
+> Setting permissions · Installing Node.js · Creating swap file · Setting up base
+> cronjobs · Setting server hostname · Installing monitoring tools · Finalizing server
+> setup · Updating service statuses
+
+### What to borrow from this — Tier 1
+
+1. **⭐ "It is safe to leave this screen."** We made missions **durable and detached**
+   (ALLY-MISSIONS Phases 3–4) — a mission genuinely survives a closed tab. **But we never
+   say so.** Ploi has the weaker technical story and the better *emotional* one. This is a
+   one-line copy change on the mission/playbook runner and it removes the single most
+   common anxiety of a long-running job. Cheapest win in this document.
+2. **A named task checklist instead of a terminal stream.** Our playbook runs stream raw
+   output; a non-technical owner cannot read it. *"Configuring firewall"* is legible to
+   anyone. (Our **missions** already do this with named steps — the gap is **playbooks**.)
+   Consider: named checklist as the default view, raw output behind a toggle.
+3. **X/N counter + % + per-task elapsed timer.** We show step ticks but no total, no
+   percentage, and no per-step duration. "3 of 27, 11%" answers *"how much longer?"* —
+   which is the only question a waiting user actually has.
+4. **Collapsible Pending / Completed.** Keeps a 27-item list calm.
+5. **Fill the wait with engagement** — docs/video/roadmap/community links while something
+   slow runs. We show a spinner.
+
+### Also worth noting
+
+- Their recipe is essentially our `initial-hardening` + `lemp-stack` playbooks fused into
+  one non-optional provisioning path. Ours are **composable** (pick a playbook) where
+  theirs is **fixed** — ours is more flexible, theirs is simpler to reason about.
+- **Memcached *and* Redis, Supervisor, Composer, PHP 8.5** confirm how PHP/Laravel-centric
+  Ploi is. Our multi-OS/multi-stack range (Windows, RDP, hosting panels, cloud import) is
+  a genuine differentiator, not a slogan.
+
+---
+
 ## 9. Not explored (needs a provisioned server or would change the account)
 
 SSH keys · Backup configurations · Invoices · Documentation · Support · Team management
 detail · **any server/site detail UI** (the real product surface — deploys, logs, the file
 explorer, monitoring) · the deploy flow · what "Server insights" actually shows.
 
-**To go deeper we'd need a real server on the account** (paid) — worth it only if we want
-the deploy/monitoring UX, which is the part we most differ on anyway.
+**UPDATE 2026-07-17:** the PM provisioned a real server, which opened the provisioning
+screen (§10). The **post-install server detail UI** — deploys, logs, file explorer,
+monitoring, "Server insights" — becomes observable once the build finishes and is the
+next thing worth a look.
