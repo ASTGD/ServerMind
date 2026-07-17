@@ -146,6 +146,86 @@ every 5 minutes and some probes; going 15 → 50 costs cents. **Our real cost is
 (§9a: ~$0.096/action). We are being stingy with the cheap, *visible, comparable* thing
 and generous with the expensive one. That is exactly backwards.
 
+## 4bb. How do our competitors source their LLM? (2026-07-17)
+
+PM asked: *"can you guess what LLM they use? I suppose they host their own."*
+**Answer: nobody in our category hosts their own model — and the most interesting one
+runs no LLM at all.**
+
+| Competitor | AI feature | LLM source | **Their AI cost** |
+|---|---|---|---|
+| **Ploi** | **MCP server** — connect your own AI client | **None. Ploi hosts no LLM.** | **$0** |
+| **Panelica** | **OpsAI** — executes ops from natural language | *"Claude-powered OpsAI (15 expert profiles)"* (their own claim) | Unknown; bundled |
+| **RunCloud** | community/3rd-party MCP into Claude Desktop | Customer's own client | $0 |
+| **cPanel / Plesk** | Plesk "Smart Updates" = automated WP plugin updates | n/a — not a real assistant | ~$0 |
+
+### 1. Ploi's answer to AI is to not buy any: MCP
+
+> *"Works with Claude · Claude Code · ChatGPT · Cursor · VS Code · Windsurf + any MCP
+> client"* — included in **Pro and up, no extra charge, no usage limits**.
+> ([ploi.io/features/mcp](https://ploi.io/features/mcp))
+
+Ploi exposes an MCP server and **the customer's own AI subscription pays for every
+token.** Ploi's AI COGS is **zero**, which is exactly why they can offer it "unlimited"
+inside a €13 flat plan with no meter. This is the cleanest solution to the AI-cost
+problem in the entire market, and it costs them nothing to maintain.
+
+**Why it doesn't kill us:** MCP requires the customer to already own and configure an AI
+client. That is a *developer*. Our buyer is the person who doesn't know what MCP is — for
+them the hosted AI *is* the product. Ploi's model serves the customer we deliberately
+don't target.
+
+**But it is our BYO-key option, validated.** We already have that escape valve. Shipping
+an MCP server later would serve technical users at **$0 marginal cost** — a cheap
+adjacent market, not a threat.
+
+### 2. Panelica is the real head-to-head competitor
+
+Same pitch as ours — natural language that *executes*, not a chatbot that suggests:
+*"Create a domain with SSL and WordPress"* handled end-to-end, plus log/CPU/MySQL
+diagnostics. **Claude-powered**, by their own account.
+
+Their pricing ([panelica.com/pricing](https://panelica.com/pricing)) — flat licence per
+server, tiered by **domains**:
+
+| Plan | Price | Domains |
+|---|---|---|
+| Starter | Free | 3 |
+| Professional | **$4.99** | 15 |
+| Business | **$9.99** | 50 |
+| Enterprise | **$24.99** | Unlimited |
+
+**And they disclose no AI limit whatsoever** — no credits, no quota, no fair-use line, no
+BYO-key requirement.
+
+**Treat that with real scepticism.** At our measured ~$0.096/action, **52 AI requests
+would consume the entire $4.99 plan.** Claude-powered agentic server ops with no
+disclosed cap at $4.99/mo is not arithmetic that closes. The plausible explanations:
+their AI is thin/rarely used; there is an undisclosed internal cap; they are subsidising
+for growth; or OpsAI is more marketing than product. **Unverified either way** — worth a
+hands-on trial before we treat it as a benchmark.
+
+**What it does tell us:** a competitor is publicly anchoring "AI included, no visible
+meter" at **$4.99–24.99**. If that holds, our $15–19 *with* a visible action meter is a
+weak offer by comparison. This strengthens §4c: the meter should be fair-use, not a
+headline.
+
+### 3. Why nobody self-hosts (and neither should we, yet)
+
+Self-hosting is real only at Cursor's scale — and even Cursor built **Composer** on an
+**open Kimi K2.5 base** rather than training from scratch, while still defaulting to
+Claude Sonnet for hard work. At our scale the maths is brutal: our AI spend is **~$33/mo**
+against **~$700–1,500/mo** for one always-on GPU. Break-even is somewhere past
+**$1,500/mo** of API spend — hundreds of active customers.
+
+And our failure mode is not Cursor's. Bad code can be reviewed; a wrong root command
+deletes a database. The safety-critical path (verification gate, blocklist judgement,
+incident response) is exactly where a smaller open model degrades most. **Revisit only
+past ~$1,500/mo, and even then only for the cheap high-volume path** (explanations,
+classification) — never the safety-critical one. Our Smart Model Ladder already captures
+most of that saving (Haiku for explains, Sonnet default, Opus only to verify) plus
+50–70% off input via prompt caching.
+
 ## 4c. Revised recommendation (supersedes §4)
 
 **Be generous where we're cheap; strict where we're expensive; and never invent a currency.**
