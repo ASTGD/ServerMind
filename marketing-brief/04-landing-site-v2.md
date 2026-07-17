@@ -165,10 +165,24 @@ Spark violet `#7C3AED`.
 squircle badge, gradient, white shield, AI spark. **Use these directly** (they're brand
 assets, not screenshots). Wordmark: "Server" in text color, "**Ally**" in the gradient.
 
-**Typography — the one place to add premium.** The app uses the system stack; the *site*
-should not. Pair a characterful display face with a clean body face, **inlined as
-`@font-face` data-URIs** (the CSP blocks font CDNs — a linked webfont will silently fall
-back). Set a real scale. Tabular numerals wherever digits align.
+**Typography — the one place to add premium, and it is DECIDED (so you don't have to guess):**
+
+| Role | Face | Use |
+|---|---|---|
+| **Display** | **Cabinet Grotesk** (Fontshare, free) | headlines, weights 700–800, tight leading |
+| **Body / UI** | **Switzer** (Fontshare, free) | body, sub, panels, buttons |
+
+**Self-host them.** Download the `.woff2` files into `marketing-site/assets/fonts/` and
+declare them with `@font-face` + `font-display: swap` pointing at those **local** paths.
+This is a normal static site on our own domain — a self-hosted webfont is fine and
+correct. (Do **not** hotlink a CDN: it adds a third-party dependency and a privacy
+problem for no benefit.)
+
+**Fallback if you cannot obtain the files:** use a refined system stack — but do **NOT**
+reach for **Inter** or **Space Grotesk**, which §9 lists as the AI-generated tell.
+
+Set a real type scale and stay on it. `text-wrap: balance` on headings. Tabular numerals
+wherever digits align (pricing, metrics).
 
 ---
 
@@ -293,7 +307,7 @@ marketing-site/
 ├── security.html
 ├── proof.html
 ├── assets/
-│   ├── css/  js/  fonts/ (inlined data-URI sources)
+│   ├── css/  js/  fonts/   ← Cabinet Grotesk + Switzer .woff2, self-hosted
 │   ├── logo/             ← copy from ../marketing-brief/assets/logo/
 │   └── media/            ← the ONE gif (§6)
 └── README.md             ← how to preview + deploy notes
@@ -305,8 +319,37 @@ zero infrastructure, it caches perfectly, it cannot break the product app, and i
 dependency that can rot. Animation via CSS + the Web Animations API; use Canvas/WebGL only
 for genuinely generative visuals. Share one stylesheet + one JS bundle across the pages.
 
-**No external requests at all** — fonts inlined as data-URIs, all graphics generated
-inline. A linked font/CDN will silently fall back and the design will quietly degrade.
+**No external requests at all** — fonts served from our own , all graphics
+generated inline. No CDN, no Google Fonts, no analytics, no third-party anything: a
+marketing page for a product that holds root credentials should not be phoning out to
+strangers.
+
+## 9c. Build it in ONE SHOT — the working method
+
+**The PM wants the whole site in one pass.** Iterating across 5 pages is slow and
+expensive, and every subjective choice you'd normally ask about has already been decided
+above (tokens §4, typography §4, hero §3, motion §3, copy `02-copy.md`, pricing §7).
+**If it's in the docs, don't ask — build it.** If it is genuinely absent, pick the option
+most consistent with §4 + §9 and note it in `marketing-site/README.md`.
+
+**One shot does not mean one pass with no checking.** Do this internally, without coming
+back to the PM:
+
+1. **Build the design system first** — one `assets/css/site.css`: tokens (§4), type scale
+   (§4), and the shared primitives (button, card/panel, chip, badge, section). Everything
+   else composes from these. Get this right and the 5 pages are consistent by construction.
+2. **Build the Home hero** — the hardest, most load-bearing thing on the site.
+3. **🔍 STOP AND LOOK AT IT IN A BROWSER.** Screenshot it. Check it honestly against §3:
+   all five ingredients present? Is the collage genuinely *moving* (slow, linear,
+   infinite)? Do panels crop off the right edge? Is the glow lifting them, or is it mud?
+   Is any of it a screenshot rather than drawn? **Fix it now** — before it propagates.
+4. **Then build the remaining 4 pages** in the language the hero established.
+5. **Final self-review** against §10, in a browser, at 375 / 768 / 1440. Confirm zero
+   external requests in devtools. Then report what you built and any deviation.
+
+**Efficiency:** read each doc once. Don't re-read `02-copy.md` per page — pull the copy
+once and work from it. Share one stylesheet + one JS file across all 5 pages; do not
+restyle per page.
 
 ## 10. Definition of done
 
@@ -321,6 +364,6 @@ inline. A linked font/CDN will silently fall back and the design will quietly de
 - [ ] How It Works has one real click-to-approve interaction
 - [ ] `prefers-reduced-motion` honoured throughout
 - [ ] Light + dark both correct
-- [ ] Fonts inlined as data-URIs (no CDN — it will silently fall back)
+- [ ] Fonts self-hosted in `assets/fonts/` (Cabinet Grotesk + Switzer), no CDN hotlink
 - [ ] Built in `marketing-site/` as static HTML/CSS/JS; `frontend/` and `backend/` untouched
 - [ ] Zero external network requests (verify in devtools: no font/CDN/analytics calls)
