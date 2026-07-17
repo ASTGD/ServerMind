@@ -158,26 +158,44 @@ If it feels heavy, drop it — the generated graphics carry the site.
 
 ---
 
-## 7. ⚠️ Pricing page — the numbers are NOT decided
+## 7. Pricing page — 3 plans (PM-supplied placeholders, 2026-07-17)
 
-**Do not invent prices.** Per [PRICING-V3.md](../docs/PRICING-V3.md) §6, the numbers come
-from a beta cohort, not from theory. **This is a live PM decision — ask before building.**
+**Use these. Do not invent others.** Marked **placeholder** — final numbers come from the
+beta ([PRICING-V3.md](../docs/PRICING-V3.md) §6), so design the page so a number can change
+without a redesign.
 
-The **structure** is decided and you should design it:
+### Layer 1 — the platform (priced per server, the market's unit)
 
-```
-Layer 1 — The platform        Layer 2 — Your AI, your choice
-priced per SERVER             ┌─────────────────┬──────────────────┐
-(the familiar unit)           │ Bring your own  │ Ally included    │
-                              │ your key · $0   │ flat · fair use  │
-                              └─────────────────┴──────────────────┘
-```
+| Plan | Price | Servers *(placeholder — see note)* |
+|---|---|---|
+| **Free** | $0 | 2 |
+| **Pro** | **$4.99**/mo | 10 |
+| **Agency** | **$19.99**/mo | 50 |
 
-**The promise, verbatim, on the page:** *"We will never send you a bill you didn't choose."*
-**Never** show credits, tokens, or per-request pricing (PRICING-V3 §3 — a hard rule).
+> **Server counts are my proposal, not the PM's — confirm them.** Sized against the
+> verified competitive anchors (PRICING-V3 §7): at ~$19 **RunCloud gives 50 servers** and
+> **Forge gives unlimited**. Agency at $19.99 must therefore be generous or we look worse
+> than the market at the same price. Servers cost us almost nothing — **be generous here.**
 
-**Recommended treatment until numbers exist:** an **"Early access"** page — the structure,
-the promise, the two AI lanes, and a waitlist CTA. Honest, and it still sells the model.
+### Layer 2 — your AI, your choice (the differentiator — give it equal visual weight)
+
+| | |
+|---|---|
+| **Bring your own** — connect Claude/ChatGPT via **MCP**, or your own API key | **$0** · unlimited · your fuel |
+| **Ally included** — our hosted AI, set up for you | **+$X**/mo · flat · fair use |
+
+**⚠️ `$X` is NOT decided — do not print a number for it.** Render it as *"Coming with
+early access"* or a waitlist. If the PM later wants Ally bundled *into* $4.99, flag it: at
+our measured ~$0.096/request, **52 requests consume the entire $4.99** — that is precisely
+the arithmetic that doesn't close for Panelica (PRICING-V3 §7). **The $4.99 buys the
+platform; Ally is additive.**
+
+### Rules for this page
+
+- **The promise, verbatim:** *"We will never send you a bill you didn't choose."*
+- **🚫 Never** show credits, tokens, or per-request pricing (PRICING-V3 §3 — hard rule).
+- Lead with **servers** (the familiar unit). The AI choice is the second act, not the price.
+- Mark the page **Early access** — honest, and it still sells the model.
 
 ---
 
@@ -223,7 +241,7 @@ done after a **✓ Verified** re-check.
 - [ ] **Zero** product screenshots on any page; every graphic generated
 - [ ] Exactly one GIF, lazy + click-to-play, on `/proof`
 - [ ] No invented metric, logo, or testimonial anywhere
-- [ ] Pricing shows the two-layer structure, no credits/tokens, the promise verbatim
+- [ ] Pricing shows 3 plans (Free / Pro $4.99 / Agency $19.99) + the two AI lanes, no credits/tokens, the promise verbatim, marked Early access
 - [ ] How It Works has one real click-to-approve interaction
 - [ ] `prefers-reduced-motion` honoured throughout
 - [ ] Light + dark both correct

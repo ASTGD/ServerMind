@@ -138,6 +138,13 @@ priced our paying tier for someone our positioning says does not exist.
 
 **Do not invent these. They come from the beta, not from theory.**
 
+**PM placeholders set 2026-07-17** (for the marketing site; still placeholders):
+**Free $0 · Pro $4.99 · Agency $19.99** — these are **Layer 1 (platform) prices**, and
+Layer 2(b) Ally is **additive**. If Ally is ever bundled into $4.99, note that at ~$0.096/
+request **52 requests consume the whole plan** — the same arithmetic that does not close for
+Panelica (§7). Server counts per tier are **not** set; size them against §7 (RunCloud gives
+**50 servers at ~$19**, Forge unlimited) — servers cost us ~nothing, so be generous.
+
 - Layer 1 tier prices and server counts.
 - Layer 2(b) Ally subscription price (`$X`) and its fair-use limit (`N`).
 - Whether MCP is included from Starter up (Ploi gates it at "Pro and up").
