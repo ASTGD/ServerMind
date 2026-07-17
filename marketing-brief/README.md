@@ -33,3 +33,9 @@ and the **fleet report** (Ally noticing problems for you) — see `assets/screen
   is **pre-launch**, so there are no "10,000 servers managed"-type numbers yet.
 - **Tone:** calm, reassuring, plain-spoken, human — *not* hacker/terminal-dark by default.
 - **Confirm before publishing:** final pricing numbers and the production domain.
+
+## 04 — Landing site v2 (build brief)
+
+**[04-landing-site-v2.md](04-landing-site-v2.md)** — the spec for the 5-page marketing site
+(Claude Design / Fable 5). Hero pattern, brand tokens, page-by-page, and the hard rules:
+no screenshots on the page (redraw everything), no invented metrics, exactly one GIF.

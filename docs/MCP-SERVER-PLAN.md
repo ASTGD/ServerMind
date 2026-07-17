@@ -19,6 +19,61 @@ Windsurf — and manage their ServerAlly assets by conversation. **They authenti
 in a browser (OAuth), and their own AI subscription pays for every token. Our AI cost is
 zero.**
 
+### ⚠️ 1a. Read this first — the direction is the opposite of the intuition
+
+This trips everyone up, including the PM and me. **MCP gives tools TO a model. It does not
+give a model TO us.**
+
+```
+  ✅ WHAT MCP IS          Customer's Claude  ──calls our tools──▶  ServerAlly
+                          (their UI, their subscription pays)      (we are the backend)
+
+  ❌ WHAT IT IS NOT       ServerAlly's Ally  ──uses their Claude──▶  (impossible)
+                          (our UI, their subscription pays)
+```
+
+**Ploi's feature works the first way.** The user adds Ploi as a connector *inside Claude*
+and works *in Claude's interface*. Ploi never touches inference. **The customer leaves
+Ploi's UI to use it.**
+
+**"Connect your Claude account and use Ally inside our app" is not buildable.** Two
+independent reasons:
+
+1. **Architectural** — inference runs on the *client* side. An MCP server never gets to
+   use the client's model. There is no protocol direction that lends us their subscription.
+2. **Prohibited** — Anthropic, verbatim: *"Anthropic does not permit third-party developers
+   to offer Claude.ai login or to route requests through Free, Pro, or Max plan credentials
+   on behalf of their users."* … *"Use of third-party tools that … attempt to route
+   third-party traffic against subscription limits … is prohibited and **may be enforced
+   against**."* Third parties **must** use API-key auth via the Console.
+
+**So there are exactly three lanes, and only these three:**
+
+| Lane | Who pays | **Whose UI** | Our COGS | Status |
+|---|---|---|---|---|
+| **Ally subscription** | Them → us → Anthropic | **Ours** | We pay | ✅ Built |
+| **BYO API key** | Them, per token, direct to Anthropic | **Ours** | **$0** | ✅ **Built** — only hidden by `SHOW_AI_PROVIDER_SETTINGS=false` |
+| **MCP** (this doc) | Their **subscription** | **Claude's** ⚠️ | **$0** | ⬜ This plan |
+
+### 1b. The strategic cost of MCP — decide this before building
+
+**MCP means the customer works in Claude's interface, not ours.** The Ally window,
+workspace cards, mission reports, the verification gate UI, "explain this incident" — all
+bypassed. **We become a backend.**
+
+Ploi accepts that trade happily: Ploi is a *panel*, and AI is a bonus feature. **For us,
+Ally IS the product.**
+
+> **MCP is not "the same product, cheaper". It is a different product: our tools inside
+> someone else's AI.**
+
+That does not kill it — it reaches people who live in Claude and would never open our app,
+at zero marginal cost. But **build it as a reach play, not as a cost fix.** The cost fix is
+BYO API key: same benefit, our UI, one flag.
+
+**Sequencing recommendation:** flip `SHOW_AI_PROVIDER_SETTINGS` first (~1 day, keeps the
+customer in our product), then build MCP on its own merits.
+
 ## 2. Why we're building it
 
 From [PRICING-V3.md](PRICING-V3.md) §2 and [PRICING-METRIC-RESEARCH.md](PRICING-METRIC-RESEARCH.md):
