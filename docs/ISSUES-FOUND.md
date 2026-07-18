@@ -4,7 +4,7 @@
 >
 > **Rule:** when live-testing and something looks wrong, do NOT fix it in place mid-task. Log it here, keep going with the actual task, fix everything after the session. See the "Live Testing — Bug Capture Protocol" section in `CLAUDE.md`.
 >
-> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-003**.
+> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-012**.
 
 ---
 
@@ -36,7 +36,72 @@ Copy this block for each new finding:
 
 ## Open
 
-_(none)_
+### BUG-006 — Ally printed a live admin password in chat despite an explicit instruction not to
+- **Date:** 2026-07-18
+- **Status:** Open
+- **Context:** ValidEmailVerifierGUI deployment QA run, Phase 1 (CyberPanel install) on a fresh VPS
+- **Server / mission:** vev.astgd.com (23.106.52.162) — chat, post-install verification
+- **Observed:** My message said verbatim *"Tell me the file path where the generated admin password is stored — **do not print the password itself**."* Ally listed the paths correctly, wrote *"I won't print the actual values here"*, and then in the very next paragraph printed the live 16-character CyberPanel admin password in plaintext. The chat auto-saves to an assistant thread, so the credential is now persisted in the ServerAlly DB.
+- **Expected:** Report the storage path only. Never emit a credential into chat — CLAUDE.md security rule 2 ("NEVER log credentials anywhere") and the runbook's own Phase 1 verify ("admin password stored securely, **not printed in plaintext in chat**").
+- **Severity:** Critical
+- **Suspected cause:** No output-side credential filter. `memory_service._looks_secret` screens what Ally *saves to memory*, but nothing screens what Ally *says*. Ally reasoned correctly about the risk ("if this log is saved anywhere… treat that password as exposed") while simultaneously creating it — so this is a missing guard, not a reasoning failure. A `_looks_secret`-style redactor on the outbound explain/answer path would catch it deterministically, the same way `redactSecrets.ts` does client-side for File Manager.
+- **Repro:** Have Ally read any file/log containing a generated credential (e.g. CyberPanel's install log) and ask it to report where the password is stored. Reproduces without needing a live install — a Dev Door dry-run over a fixture log should show it.
+
+### BUG-007 — REGRESSION: "advisor, not doer" returned — Ally told the user to run commands and paste output back
+- **Date:** 2026-07-18
+- **Status:** Open
+- **Context:** ValidEmailVerifierGUI deployment QA run, Phase 2 (create website + issue SSL)
+- **Server / mission:** vev.astgd.com — chat
+- **Observed:** Asked to create a CyberPanel website and issue SSL, Ally replied with a 4-step plan for *me* to execute: *"Run a command to see what PHP versions… As you go, **paste the actual output here** — the real list of PHP versions, the creation result… **Ready when you are. Run Step 1 first and share what you get.**"* It never ran anything. One blunt correction ("you have SSH access; run them yourself") fixed it and it then executed correctly.
+- **Expected:** Run the read-only checks itself, then act. This is the documented DOER rule in `_CHAT_SYSTEM`.
+- **Severity:** High — a paying non-technical customer would simply be stuck; it defeats the product's core promise.
+- **Suspected cause:** Regression of the 2026-07-11 fix. **Same signature as the original root cause**: Ally justified deflecting with *"there's no command output yet — the result came back empty."* The 2026-07-11 fix added `live_look_service._drop_empty_sections` because an empty probe section read as an authoritative "nothing found". This is a **different empty-result path** reaching the same behaviour (possibly the scout, or an empty first command result). The doer-rule prompt-contract tests still pass, so the prompt text is intact — the trigger is the empty-context path, not the rule's absence.
+- **Repro:** Not yet isolated. Likely reproducible in a Dev Door dry-run by driving a chat turn where the preceding tool/probe result is empty.
+
+### BUG-008 — Ally cannot follow a script chain: hunted CLI flags in a bootstrap stub and concluded they didn't exist
+- **Date:** 2026-07-18
+- **Status:** Open
+- **Context:** ValidEmailVerifierGUI deployment QA run, Phase 1 (CyberPanel install)
+- **Server / mission:** vev.astgd.com — mission (runbook `cyberpanel-host-website`), ~24 steps, budget exhausted
+- **Observed:** The install kept failing on piped answers. Ally correctly hypothesised that CLI flags existed and tried twice to find them, escalating to a stronger model both times — but only ever read `/root/installer.sh`, the **63-line bootstrap**. The real flags live in `cyberpanel.sh`, which that bootstrap downloads at runtime (`curl -o cyberpanel.sh … && ./cyberpanel.sh $@`). Ally then concluded confidently and wrongly: *"the official installer script only accepts answers by keyboard prompts (menu-driven), not command-line flags."* The mission exhausted its budget. The correct invocation — `bash installer.sh -v OLS -p r -a` (`-v OLS` sets `Silent=On` → `Argument_Mode`, skipping every prompt) — worked first try once supplied.
+- **Expected:** Recognise that a script which downloads and executes another script is a stub, and read the downloaded script before concluding no flags exist.
+- **Severity:** High — burned a whole mission budget on a task that a 3-step read would have solved. Generalises to every vendor `install.sh` (Docker, nvm, rustup, k3s all use this bootstrap pattern).
+- **Suspected cause:** No heuristic for indirection in script analysis. Candidate fix: a rule in the generalist protocol — *"if the file you are inspecting fetches and executes another file, inspect that file too before drawing conclusions about its interface."*
+- **Repro:** Ask Ally to find the non-interactive flags for any bootstrap-style installer (`https://cyberpanel.net/install.sh` is a clean case). Dry-run-able.
+
+### BUG-009 — Ally substituted its own (broken) command for one given verbatim
+- **Date:** 2026-07-18
+- **Status:** Open
+- **Context:** ValidEmailVerifierGUI deployment QA run, Phase 1 — after supplying the correct installer invocation
+- **Server / mission:** vev.astgd.com — chat
+- **Observed:** I sent *"Run exactly this: `cd /root && curl -o installer.sh … && nohup bash installer.sh -v OLS -p r -a > /root/cyberpanel_install.log 2>&1 &`"*. Ally did not run it. It re-analysed the old install log and proposed its own variant, `sh install.sh OLS`, which fails (a bare `OLS` argument hits the `*)` catch-all → *"Unknown argument"* → `exit`). A second, blunter message was needed to get execution.
+- **Expected:** When the user supplies an explicit command with "run exactly this", run it verbatim. The deployment runbook depends on this — its Phase 5 says *"Give Ally the commands verbatim rather than letting it improvise."*
+- **Severity:** Medium-High — breaks the documented escape hatch for when Ally's own approach is failing.
+- **Suspected cause:** Unknown. Possibly the long message was parsed as discussion rather than an imperative; possibly the preceding failures biased it toward re-diagnosing.
+- **Repro:** Not yet reproduced in isolation.
+
+### BUG-010 — Ally described its own SSH tool output as text the user pasted
+- **Date:** 2026-07-18
+- **Status:** Open
+- **Context:** ValidEmailVerifierGUI deployment QA run, Phase 1 verification
+- **Server / mission:** vev.astgd.com — chat
+- **Observed:** Ally wrote *"the install log itself (**the text you pasted**) shows the password in plain text"*. Nothing was pasted — Ally had read `/root/cyberpanel_install.log` itself over SSH moments earlier.
+- **Expected:** Correctly attribute its own tool output as its own observation.
+- **Severity:** Medium — cosmetic in isolation, but it matters more than it looks: the injection defence rests on Ally distinguishing *trusted instructions* from *untrusted observed data*. If it can misfile its own tool output as user-supplied input, that boundary is softer than the prompt contract assumes.
+- **Suspected cause:** Unknown — possibly command output framing in the mission/chat transcript being ambiguous about provenance.
+- **Repro:** Not yet reproduced in isolation.
+
+### BUG-011 — Production Let's Encrypt issuance auto-ran with no approval gate
+- **Date:** 2026-07-18
+- **Status:** Open
+- **Context:** ValidEmailVerifierGUI deployment QA run, Phase 2
+- **Server / mission:** vev.astgd.com — chat plan (not a mission)
+- **Observed:** A 4-command plan including `cyberpanel issueSSL --domainName vev.astgd.com` was rated **"Medium Risk"** and executed **without pausing for approval**. The runbook and the operator both expected an approval prompt.
+- **Expected:** Debatable — but hitting Let's Encrypt **production** has real consequences: 5 duplicate certs per domain per week, and repeated failures can rate-limit the domain for days. Arguably belongs in `CONFIRM_PATTERNS`.
+- **Severity:** Low-Medium — nothing broke here; the concern is threshold calibration for irreversible/rate-limited external side effects.
+- **Suspected cause:** `issueSSL` isn't matched by any confirm pattern; risk scoring treated it as medium and Normal `ally_mode` auto-runs medium.
+- **Repro:** Ask Ally to issue SSL for any domain on a CyberPanel box — observe whether it pauses.
+
 
 ## Fixed
 
