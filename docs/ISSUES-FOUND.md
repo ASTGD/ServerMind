@@ -34,6 +34,79 @@ Copy this block for each new finding:
 
 ---
 
+## Run summary — live VPS deployment QA, 2026-07-18
+
+A full 10-phase production deployment (Laravel + Horizon + 2 Go services onto a fresh
+CyberPanel VPS, `vev.astgd.com`) driven end-to-end through Ally in the browser. **The app
+is live and serving.** Ten bugs found (BUG-006 … BUG-015). What the run is worth is less
+the individual bugs than the three patterns underneath them.
+
+### 🔴 Pattern 1 — Ally does not know how it is itself connected (BUG-015, BUG-014, BUG-013)
+
+The single most important finding. Ally reasons about a server as though it were not the
+thing connected to it:
+
+- **BUG-015** — it disabled root password SSH on a box ServerAlly reaches *as root with a
+  password*, reasoning that "no key is set up so this just closes a risky path." The
+  opposite is true: no key is what makes it fatal. **Applied to a live server**, silent
+  (reload, not restart), then its own summary reported access was fine.
+- **BUG-014** — told to fix a host-key alarm, it suggested `ssh-keyscan >> ~/.ssh/known_hosts`.
+  ServerAlly pins fingerprints in Postgres; that file is on the wrong machine and is not
+  consulted. It does not know its own product's mechanics.
+- **BUG-013** — the pin stores a fingerprint without the key ALGORITHM, so a server that
+  merely *gains* an ed25519 key trips a false "identity changed" and locks out.
+
+**These are one bug wearing three faces.** The fix is not three prompt patches: the safety
+layer must be given the connection facts (`auth_type`, `username`, `port`) and must
+**block** — not merely confirm — any command that would sever Ally's own access. A
+confirmation gate provably fails here: the human approving cannot see that
+`prohibit-password` is fatal for *this specific* server.
+
+### 🟠 Pattern 2 — verification that confirms the wrong thing (BUG-015, and the runbook gates)
+
+Every gate in this run checked that something *started*, never that it *worked*:
+
+| Gate | Said | Reality |
+|---|---|---|
+| Phase 2 | "loads with a valid cert" ✓ | CyberPanel placeholder; Laravel never served a request — **survived 6 phases** |
+| Phase 8 | "all four units active (running)" ✓ | two services non-functional (404 / no Laravel client) |
+| BUG-015 | "password login still allowed" ✓ | root locked out |
+
+Same defect ServerAlly's own verify gate had (fixed 2026-07-15: check page CONTENT, not
+HTTP status). Seeing it recur independently — in a runbook, and in Ally's own
+post-change check — suggests promoting it to a general rule: **a gate that can pass while
+the thing is broken is not a gate.** Note the mission verifier DID catch scope drift here
+("the executor followed the hardening runbook… never delivered an audit report") — it just
+has no notion of "did this break my own access?"
+
+### 🟡 Pattern 3 — empty results turn Ally into an advisor (BUG-007, ×7)
+
+Seven occurrences, **every one following an empty, stalled, or failed command result** —
+no counter-example. This is not prompt drift (the doer-rule contract tests still pass); it
+is what Ally does when it has no output to reason from. Fix belongs on the empty-result
+path, mirroring the 2026-07-11 `_drop_empty_sections` fix, plus an explicit rule: a command
+returning nothing means retry or investigate — never hand the task back to the user.
+
+### What Ally did genuinely well (worth protecting in any fix)
+
+- Generated passwords **on the server** and kept them out of chat, unprompted.
+- Used `--defaults-extra-file` for the DB password so it never hit `ps`.
+- **Test-restored a backup into a throwaway DB and compared all 88 tables** before calling
+  it done — nobody asked for that.
+- Confirmed SSH/22 was allowed in the firewall *before* touching firewall rules.
+- Flagged that backups live only on the same server, as its own "left for you".
+- Its result card was more honest than the operator's own script (it reported the sed
+  writes as **Failed** while the script printed "TOKEN OK").
+
+### Process note for whoever runs the next live session
+
+Flagging a risk is not the same as containing it. In this run the operator flagged the SSH
+step as dangerous and said the mission was paused — but never confirmed it had *stayed*
+paused. The mission engine continued and the step was applied. **Stop the mission first,
+then write the warning.**
+
+---
+
 ## Open
 
 ### BUG-006 — Ally printed a live admin password in chat despite an explicit instruction not to
@@ -57,6 +130,65 @@ Copy this block for each new finding:
 - **Severity:** High — a paying non-technical customer would simply be stuck; it defeats the product's core promise.
 - **Suspected cause:** Regression of the 2026-07-11 fix. **Same signature as the original root cause**: Ally justified deflecting with *"there's no command output yet — the result came back empty."* The 2026-07-11 fix added `live_look_service._drop_empty_sections` because an empty probe section read as an authoritative "nothing found". This is a **different empty-result path** reaching the same behaviour (possibly the scout, or an empty first command result). The doer-rule prompt-contract tests still pass, so the prompt text is intact — the trigger is the empty-context path, not the rule's absence.
 - **Repro:** Not yet isolated. Likely reproducible in a Dev Door dry-run by driving a chat turn where the preceding tool/probe result is empty.
+- **Recurrence:** **6 occurrences across the run** (Phases 2, 3, 5, 7, 8 ×2). **Every one followed an empty, stalled or failed command result** — 6/6, no counter-example. The Phase 8 occurrence followed a stalled heredoc (BUG-012): *"Log into the server terminal directly on vev.astgd.com and run the command by hand… Want me to help you figure out the next step once you've seen the prompt?"* This raises the empty-result trigger from "suspected" to **near-certain** and narrows the fix: the deflection is not prompt drift, it is what Ally does when it has no output to reason from. Two candidates — (a) extend the `_drop_empty_sections` treatment to *command* results, not just live-look probes, so an empty result never reads as authoritative; (b) an explicit prompt rule for the empty case ("a command that returned nothing means retry differently or investigate — never hand the task back to the user").
+
+### BUG-012 — Ally writes multi-line scripts with heredocs over the exec channel; a stalled heredoc kills the step
+- **Date:** 2026-07-18
+- **Status:** Open
+- **Context:** ValidEmailVerifierGUI deployment QA run, Phase 8 (capture the verifier API token)
+- **Server / mission:** vev.astgd.com — chat
+- **Observed:** Asked to re-issue and capture a token, Ally wrote a multi-line `bash` script to `/root/fix_token.sh` using `cat > file << 'SCRIPT_EOF' … SCRIPT_EOF` chained with `chmod 700 … && bash …`. The channel produced no output and the idle watchdog killed it: *"No output for a while — this looks stuck, most likely waiting for an answer it can't get."*
+- **Expected:** Either write the file through the existing File Manager write path (`file_service.write`, already built and used elsewhere in this same deployment) or compose a single-line command. A heredoc over a non-interactive exec channel is the fragile option, and Ally reaches for it by default.
+- **Severity:** Medium — recoverable, but it costs a step, trips the watchdog, and reliably triggers BUG-007 afterwards (empty result → deflection).
+- **Suspected cause:** Nothing in the prompt steers file-writing toward `file_service`; the model defaults to the shell idiom it knows.
+- **Repro:** Ask Ally to create any multi-line shell script on a server. Dry-run-able — inspect whether the planned command uses a heredoc.
+- **⚠️ Scope note (two corrections, recorded to prevent a wrong fix):**
+  1. I first attributed a second, *later* silence to this bug. Wrong — the **local ServerAlly backend had died** (uvicorn gone; `curl :8888` refused), so commands after the watchdog message had nothing to run them. The watchdog message itself pre-dated the crash and is genuine.
+  2. I then recorded Ally's "waiting for an answer it can't get" reading as *plausible and unrefuted*. It is now **REFUTED**. Run with stdin closed, `php artisan app:issue-verifier-token` **exits 1 immediately** — `EXIT_CODE=1 … Verifier service user not found. Run app:bootstrap-users first.` It never waits for input. So the stall came from the **heredoc construct itself**, not from the wrapped command, and Ally's diagnosis was wrong after all.
+  - Net: the heredoc-vs-`file_service` observation stands and is now the *sole* established cause. The lesson for the fix is that the heredoc swallowed a fast, loud, non-zero exit and turned it into silence — which is worse than the failure it hid.
+
+### BUG-015 — 🔴 CONFIRMED LIVE INCIDENT: Ally locked ServerAlly out of its own server by disabling root password SSH
+- **Date:** 2026-07-18
+- **Status:** Open — **the lockout was APPLIED to a live server and then manually reverted**
+- **Context:** ValidEmailVerifierGUI deployment QA run, Phase 9 — security audit mission (`harden-server` runbook)
+- **Server / mission:** vev.astgd.com — mission (approved and executed)
+- **What actually happened (corrected — this was first logged as a near-miss):** the step WAS approved and applied. `sshd -T` afterwards reported `permitrootlogin without-password`; `/etc/ssh/sshd_config:33` read `PermitRootLogin prohibit-password`. Because the step used `systemctl reload` (not `restart`), **the live session kept working and nothing appeared wrong** — the failure was silent and deferred to the next reconnect. Recovered by forcing `PermitRootLogin yes` + `sshd -t` + reload, then **verified on a brand-new TCP+KEX handshake** (not the pooled connection, which would have reported success either way): `root auth methods: ['publickey','password'] | password ok: True`. Backups left at `/etc/ssh/sshd_config.bak.*` and `.before_restore.*`.
+- **The compounding failure — Ally's own post-change report was wrong in the reassuring direction:** it summarised *"Password-only SSH login is still allowed because no login key was found."* That reads `PasswordAuthentication yes` (which governs NORMAL users) and misses `PermitRootLogin prohibit-password` (which governs root, the account it uses). So the verification step actively concealed the damage it had just caused.
+- **Observed:** The hardening mission proposed `sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config` followed by `systemctl reload sshd`. Its own description said: *"root can still use a key, **but no key is set up** so this just closes a risky path."*
+- **Why this is critical:** ServerAlly connects to this server as **root via PASSWORD** — confirmed directly in `servers`: `vev.astgd.com | root | password | ssh`. `PermitRootLogin prohibit-password` disables exactly that. The current session survives (`reload`, not `restart`), so the step would report **success** — and every subsequent connection would fail. There is no key configured to fall back to, and no recovery path from inside ServerAlly; it would need out-of-band console access at the VPS provider.
+- **The reasoning is inverted, and that's the real defect:** Ally *correctly observed* that no root SSH key exists, then treated that as evidence the change was **harmless** ("so this just closes a risky path"). The opposite is true — "no key is set up" is precisely what makes it fatal. It is a generic-hardening-advice pattern applied without checking how *it itself* is connected.
+- **Expected:** Before proposing any change to `sshd_config`, auth methods, the SSH port, firewall rules on 22, or the account Ally uses, Ally must check its OWN connection (`auth_type`, username, port) and refuse-or-warn if the change would break it. This is the same self-footprint blind spot as the incident-response false positive (see the 2026-07-05 entry) — Ally reasons about the server as though it were not the one connected to it.
+- **Severity:** **Critical** — a non-technical customer clicking "Approve" on a plausible-sounding hardening step would lose all access to their own server, with no in-product recovery. The safety scaffolding present (config backup, `sshd -t`, gentle reload) does not help: it protects the live session, not the next one, so the failure is silent and delayed.
+- **Suggested fix:** a hard pre-flight guard in the safety layer — any command touching `sshd_config` / `PermitRootLogin` / `PasswordAuthentication` / `Port` / firewall rules on the SSH port is checked against the server's stored `auth_type`+`username`; if it would disable the method Ally is using, BLOCK (not merely confirm) and explain. Add the connection facts (`you are connected as root via password`) to the mission/chat prompt context so the model can reason about it at all.
+- **Repro:** Ask Ally to harden/audit SSH on any server added with `auth_type='password'` and `username='root'`. Dry-run-able via the Dev Door — inspect the planned commands.
+
+### BUG-013 — False "server identity changed" alarm: the fingerprint pin ignores the host-key ALGORITHM, so a server that gains a key type is locked out
+- **Date:** 2026-07-18
+- **Status:** Open
+- **Context:** ValidEmailVerifierGUI deployment QA run, Phase 8 — surfaced immediately after a local backend restart
+- **Server / mission:** vev.astgd.com (23.106.52.162) — chat
+- **Observed:** Every command began failing with *"Server identity changed — the host key does not match the one trusted before. The server may have been rebuilt, or the connection may be intercepted. Refused for safety."* **The server was NOT compromised or rebuilt.** Verified independently from a separate path (`ssh-keyscan` on the operator's Mac + `dig`): the host still resolves to 23.106.52.162 and still presents the pinned RSA key.
+- **Root cause (established, not suspected):** `ssh_service._make_client` (line 135) pins whatever `get_transport().get_remote_server_key()` returns — **the negotiated key — without pinning the key algorithm**. Evidence chain:
+  - Stored pin (DB `servers.fingerprint`): `SHA256:eCh35I6V0djfBPtUE3VhTdGvjJja44TFjBBldNBf+IY` — an **RSA** key.
+  - Live server offers **both** `3072 SHA256:eCh35I…` (RSA) and `256 SHA256:F5YmFrrb…` (ED25519). Both are genuinely the server's.
+  - Paramiko's `_preferred_keys` begins `('ssh-ed25519', …)`, and a credential-free KEX against the box negotiates **`ssh-ed25519` → `SHA256:F5YmFrrb…`**.
+  - So the check compares the negotiated **ED25519** fingerprint against the pinned **RSA** one and always mismatches.
+- **Why it stayed hidden through Phases 2–7:** `_get_client` returns a pooled client while its transport is alive (lines 149–151), so verification only runs on a **fresh** connect. The long-lived backend held a connection established *before* the box gained its ED25519 key. The backend crash + restart forced a fresh connect and exposed it.
+- **How the box gained a key:** the ED25519 host key did not exist when the server was added at preflight (else Paramiko would have pinned it). It appeared during the run — consistent with the CyberPanel installer running `ssh-keygen -A` / reinstalling `openssh-server`. **Our own Phase 1 playbook can therefore lock a customer out of their own server.**
+- **Expected:** Pin the algorithm alongside the fingerprint (store `ssh-rsa|SHA256:…`) and verify the *same* key type, or pin the full set of host keys and accept a match against any of them. A key type appearing is not an identity change.
+- **Severity:** **High** — blocks *all* work on an affected server, presents as a security incident, and is triggered by a routine restart plus our own install playbook. It also does the classic damage of a crying-wolf control: it teaches users to bypass the one check that would catch a real MITM.
+- **Repro:** Deterministic, no live box needed — pin an RSA fingerprint for a host that also offers ED25519, drop the pooled client, reconnect.
+
+### BUG-014 — Ally's remediation for the host-key alarm was both ineffective and unsafe
+- **Date:** 2026-07-18
+- **Status:** Open
+- **Context:** Immediately following BUG-013
+- **Server / mission:** vev.astgd.com — chat
+- **Observed:** Having correctly refused to proceed, Ally then told the operator to run `ssh-keyscan -H vev.astgd.com >> ~/.ssh/known_hosts` and *"then try your artisan command again"*, framing the alarm as *"just SSH refusing to proceed until you confirm the server's identity."*
+- **Two problems:** (1) **It does not work** — ServerAlly verifies against its own pinned `servers.fingerprint` in Postgres, not `~/.ssh/known_hosts`; the suggested command touches an unrelated file on the wrong machine (the operator's laptop, not the backend). Ally does not know how its own product's fingerprint pinning works. (2) **It is the wrong instinct** — blindly appending a scanned key is exactly the bypass that defeats host-key verification. Ally did add a caveat ("check with whoever manages it"), but led with the bypass one-liner and characterised a genuine MITM warning as a formality.
+- **Expected:** Explain that ServerAlly pinned the key itself, that the alarm is ServerAlly's own control, and that resolving it means confirming the key out-of-band then re-pinning it in ServerAlly — never a blind `ssh-keyscan >>`.
+- **Severity:** Medium-High — a security-critical control paired with bypass advice. Compounds BUG-013: the false positive creates the pressure, this supplies the unsafe release valve.
+- **Repro:** Trigger any host-key mismatch and ask Ally what to do.
 
 ### BUG-008 — Ally cannot follow a script chain: hunted CLI flags in a bootstrap stub and concluded they didn't exist
 - **Date:** 2026-07-18
