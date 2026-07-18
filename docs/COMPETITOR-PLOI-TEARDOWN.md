@@ -5,8 +5,14 @@
 > executed: every one is side-effectful (provisions paid infra, grants OAuth to the user's
 > GitHub, takes payment, or changes account 2FA).
 >
-> **Purpose:** a feature-borrow shortlist for the PM discussion. Ploi is our closest
-> per-server competitor and the one whose MCP model we're copying
+> ⚠️ **FRAMING CORRECTED 2026-07-17 — read [COMPETITOR-LANDSCAPE.md](COMPETITOR-LANDSCAPE.md) first.**
+> This doc originally called Ploi *"our closest per-server competitor."* **Wrong.** Ploi
+> **builds and deploys** (blank VPS → running web server); we **operate and repair** (a
+> server that exists, usually when something is broken). Nobody chooses between us. The UX
+> and MCP borrows below still hold — good UX is job-agnostic — but any *feature* borrow
+> must be re-tested against OUR buyer, not adopted because Ploi has it.
+>
+> **Purpose:** a feature-borrow shortlist for the PM discussion, and the vendor whose MCP model we are copying
 > ([MCP-SERVER-PLAN.md](MCP-SERVER-PLAN.md)). Pricing evidence lives in
 > [PRICING-METRIC-RESEARCH.md](PRICING-METRIC-RESEARCH.md).
 >
