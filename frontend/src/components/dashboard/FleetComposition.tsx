@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import type { Server } from "@/types"
 import { ASSET_CATEGORIES, categoryForServer, type AssetCategoryId } from "@/lib/assetCategories"
+import { Card } from "@/components/ui"
 import { cn } from "@/lib/utils"
 
 const CATEGORY_BAR: Record<AssetCategoryId, string> = {
@@ -32,7 +33,7 @@ export default function FleetComposition({ servers }: { servers: Server[] }) {
   const total = servers.length
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
+    <Card className="p-5">
       <h2 className="mb-3 text-sm font-semibold text-foreground">Fleet composition</h2>
       <div className="mb-3 flex h-2.5 overflow-hidden rounded-full bg-muted">
         {counts.map((c) => (
@@ -52,6 +53,6 @@ export default function FleetComposition({ servers }: { servers: Server[] }) {
           </div>
         ))}
       </div>
-    </div>
+    </Card>
   )
 }

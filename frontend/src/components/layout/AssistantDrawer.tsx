@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef, useCallback } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { X, Sparkles, ChevronDown, Layers, Server as ServerIcon, Check, Plus, Minus, PanelLeft, MessageSquare, Trash2 } from "lucide-react"
+import { Sparkles, ChevronDown, Layers, Server as ServerIcon, Check, Plus, Minus, PanelLeft } from "lucide-react"
 import { listServers } from "@/api/servers"
 import { listThreads, getThread, createThread, deleteThread, appendMessage } from "@/api/assistant"
 import ChatWindow from "@/components/chat/ChatWindow"
+import ThreadHistory from "./ThreadHistory"
+import { Button } from "@/components/ui"
 import type { ChatMessageData } from "@/components/chat/ChatMessage"
 import { useAssistantStore } from "@/store/assistantStore"
 import { useResolvedPageContext } from "@/hooks/usePageContext"
@@ -168,7 +170,7 @@ export default function AssistantDrawer() {
           <PanelLeft size={17} />
         </button>
 
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-gradient text-white">
           <Sparkles size={17} />
         </div>
         <div className="min-w-0 flex-1">
@@ -213,13 +215,10 @@ export default function AssistantDrawer() {
         </div>
 
         {hasMessages && (
-          <button
-            onClick={clearConversation}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-          >
+          <Button variant="outline" size="sm" onClick={clearConversation}>
             <Plus size={15} />
             New chat
-          </button>
+          </Button>
         )}
         <button
           onClick={close}
@@ -234,45 +233,13 @@ export default function AssistantDrawer() {
       {/* Body: Chat + Workspace (paired), with the thread History tucked behind a toggle. */}
       <div className="flex min-h-0 flex-1">
         {historyOpen && (
-          <aside className="flex w-60 shrink-0 flex-col border-r border-border">
-            <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
-              <span className="text-sm font-semibold text-foreground">History</span>
-              <button
-                onClick={() => setHistoryOpen(false)}
-                aria-label="Close history"
-                className="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              >
-                <X size={15} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-2 py-2">
-              {threads.length === 0 ? (
-                <p className="px-2 py-6 text-center text-xs text-muted-foreground">No conversations yet</p>
-              ) : (
-                threads.map((tItem) => (
-                  <div
-                    key={tItem.id}
-                    onClick={() => openThread(tItem.id)}
-                    className={`group flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-                      threadId === tItem.id
-                        ? "bg-accent font-medium text-accent-foreground"
-                        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                    }`}
-                  >
-                    <MessageSquare size={14} className="shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">{tItem.title}</span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); removeThread(tItem.id) }}
-                      aria-label="Delete conversation"
-                      className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          </aside>
+          <ThreadHistory
+            threads={threads}
+            activeId={threadId}
+            onOpen={openThread}
+            onDelete={removeThread}
+            onClose={() => setHistoryOpen(false)}
+          />
         )}
 
         <div className="min-h-0 min-w-0 flex-1">

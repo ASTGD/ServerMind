@@ -35,6 +35,7 @@ import {
   type BackupCreateBody,
 } from "@/api/backups"
 import { parseSchedule } from "@/api/scheduler"
+import { Button, EmptyState } from "@/components/ui"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -429,7 +430,7 @@ export default function Backups() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+          <h1 className="text-h1 text-foreground flex items-center gap-2">
             <HardDriveDownload className="h-6 w-6 text-primary" />
             Backups
           </h1>
@@ -437,10 +438,9 @@ export default function Backups() {
             Schedule file and database backups with retention, run on demand, and restore.
           </p>
         </div>
-        <button onClick={() => setModal({ open: true })}
-          className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors shrink-0">
+        <Button onClick={() => setModal({ open: true })} className="shrink-0">
           <Plus className="h-4 w-4" />New Backup
-        </button>
+        </Button>
       </div>
 
       {isLoading && (
@@ -450,17 +450,16 @@ export default function Backups() {
       )}
 
       {!isLoading && !backups.length && (
-        <div className="flex flex-col items-center justify-center py-16 text-center rounded-xl border border-dashed border-border">
-          <FolderArchive className="h-10 w-10 text-muted-foreground/30 mb-3" />
-          <p className="text-sm text-foreground font-medium">No backups configured</p>
-          <p className="text-xs text-muted-foreground/70 mt-1 max-w-sm">
-            Create a backup job to archive a directory or dump a database — manually or on a schedule.
-          </p>
-          <button onClick={() => setModal({ open: true })}
-            className="mt-4 flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
-            <Plus className="h-4 w-4" />New Backup
-          </button>
-        </div>
+        <EmptyState
+          icon={FolderArchive}
+          title="No backups configured"
+          description="Create a backup job to archive a directory or dump a database — manually or on a schedule."
+          action={
+            <Button onClick={() => setModal({ open: true })}>
+              <Plus className="h-4 w-4" />New Backup
+            </Button>
+          }
+        />
       )}
 
       <div className="space-y-3">

@@ -6,9 +6,9 @@ type Tone = "default" | "green" | "amber" | "red"
 
 const valueTone: Record<Tone, string> = {
   default: "text-foreground",
-  green: "text-green-600 dark:text-green-400",
-  amber: "text-amber-600 dark:text-amber-400",
-  red: "text-red-600 dark:text-red-400",
+  green: "text-success",
+  amber: "text-warning",
+  red: "text-destructive",
 }
 
 interface Props {
@@ -37,7 +37,7 @@ export default function StatCard({ icon: Icon, label, value, tone = "default", t
   )
 
   const className = cn(
-    "block rounded-lg border border-border bg-card px-3.5 py-3",
+    "block rounded-xl border border-border bg-card px-4 py-3.5",
     to && "transition-colors hover:border-primary/40",
   )
 

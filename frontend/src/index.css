@@ -22,6 +22,18 @@
     --destructive-foreground: 210 40% 98%;
     --ring: 243 75% 59%;
     --radius: 0.5rem;
+
+    /* Brand gradient stops — indigo #6366F1 → violet #8B5CF6 → purple #A855F7.
+       The signature gradient; identical in both themes. */
+    --brand-start: 239 84% 67%;
+    --brand-mid: 258 90% 66%;
+    --brand-end: 271 91% 65%;
+
+    /* Status colors — green/amber text & fills that read on a light surface. */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 32 95% 44%;
+    --warning-foreground: 0 0% 100%;
   }
 
   .dark {
@@ -42,6 +54,17 @@
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
     --ring: 234 89% 74%;
+
+    /* Brand gradient stops stay identical in dark mode (signature color). */
+    --brand-start: 239 84% 67%;
+    --brand-mid: 258 90% 66%;
+    --brand-end: 271 91% 65%;
+
+    /* Status colors lighten for dark surfaces (the -400 shades). */
+    --success: 142 69% 58%;
+    --success-foreground: 222.2 47.4% 11.2%;
+    --warning: 43 96% 56%;
+    --warning-foreground: 222.2 47.4% 11.2%;
   }
 }
 

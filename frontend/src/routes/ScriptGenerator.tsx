@@ -94,10 +94,10 @@ export default function ScriptGenerator() {
   const lang = result?.script_type === "powershell" ? "powershell" : "shell"
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="mx-auto max-w-5xl space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+        <h1 className="text-h1 text-foreground flex items-center gap-2">
           <Sparkles className="h-6 w-6 text-primary" />
           Ally Script Generator
         </h1>

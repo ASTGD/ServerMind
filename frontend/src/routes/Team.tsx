@@ -30,6 +30,7 @@ import {
   type ServerAccessItem,
 } from "@/api/team"
 import { listServers } from "@/api/servers"
+import { Button, EmptyState } from "@/components/ui"
 
 // ── Role config ──────────────────────────────────────────────────────────────
 
@@ -307,7 +308,7 @@ export default function Team() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+          <h1 className="text-h1 text-foreground flex items-center gap-2">
             <Users className="h-6 w-6 text-primary" />
             Team
           </h1>
@@ -315,10 +316,9 @@ export default function Team() {
             Invite people and control which servers they can view or run commands on.
           </p>
         </div>
-        <button onClick={() => setShowInvite(true)}
-          className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors shrink-0">
+        <Button onClick={() => setShowInvite(true)} className="shrink-0">
           <UserPlus className="h-4 w-4" />Invite
-        </button>
+        </Button>
       </div>
 
       {newInviteToken && <InviteLink token={newInviteToken} onDone={() => setNewInviteToken(null)} />}
@@ -328,14 +328,16 @@ export default function Team() {
       )}
 
       {!isLoading && members.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center rounded-xl border border-dashed border-border">
-          <Users className="h-10 w-10 text-muted-foreground/30 mb-3" />
-          <p className="text-sm text-foreground font-medium">No team members yet</p>
-          <p className="text-xs text-muted-foreground/70 mt-1 max-w-sm">Invite teammates and assign roles to collaborate on your servers.</p>
-          <button onClick={() => setShowInvite(true)} className="mt-4 flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
-            <UserPlus className="h-4 w-4" />Invite your first member
-          </button>
-        </div>
+        <EmptyState
+          icon={Users}
+          title="No team members yet"
+          description="Invite teammates and assign roles to collaborate on your servers."
+          action={
+            <Button onClick={() => setShowInvite(true)}>
+              <UserPlus className="h-4 w-4" />Invite your first member
+            </Button>
+          }
+        />
       )}
 
       <div className="space-y-2">

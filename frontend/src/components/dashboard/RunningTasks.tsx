@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Loader2, ChevronRight } from "lucide-react"
 import { getAllActiveRuns, type ActiveRunSummary } from "@/api/servers"
 import RunLogModal from "@/components/playbooks/RunLogModal"
+import { Card } from "@/components/ui"
 
 /** Compact "elapsed since" — e.g. 30s / 4m / 2h / 1d. */
 function shortAgo(iso: string): string {
@@ -31,7 +32,7 @@ export default function RunningTasks() {
 
   return (
     <>
-      <div className="rounded-xl border border-border bg-card p-4">
+      <Card className="p-5">
         <div className="flex items-center gap-2">
           <Loader2 size={14} className="animate-spin text-primary" />
           <h2 className="text-sm font-semibold text-foreground">
@@ -59,7 +60,7 @@ export default function RunningTasks() {
             </button>
           ))}
         </div>
-      </div>
+      </Card>
 
       {open && (
         <RunLogModal

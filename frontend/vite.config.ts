@@ -13,8 +13,12 @@ export default defineConfig({
   },
   server: {
     host: true,          // bind 0.0.0.0 so other devices on the LAN can reach it
-    port: 5190,          // dedicated port (5173 is used by another local project)
-    strictPort: true,    // fail loudly if 5190 is taken instead of silently moving
+    // Dedicated port 5190 (5173 is used by another local project); PORT env
+    // overrides it so a second dev instance (e.g. an agent preview) can run
+    // alongside — the /api proxy below forces the Origin header, so CORS
+    // matches the backend allowlist on any port.
+    port: Number(process.env.PORT) || 5190,
+    strictPort: true,    // fail loudly if the chosen port is taken instead of silently moving
     proxy: {
       // The app calls relative /api and /ws — proxied here to the backend.
       // We force the Origin header to localhost:5190 so the backend CORS list

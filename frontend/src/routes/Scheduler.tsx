@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react"
 import { useParams } from "react-router-dom"
+import { Button } from "@/components/ui"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Clock,
@@ -535,7 +536,7 @@ export default function Scheduler() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+            <h1 className="text-h1 text-foreground flex items-center gap-2">
               <Clock className="h-6 w-6 text-primary" />
               Scheduler
             </h1>
@@ -543,13 +544,10 @@ export default function Scheduler() {
               Recurring tasks on this server — runs automatically on your cron schedule
             </p>
           </div>
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
-          >
+          <Button onClick={() => setShowModal(true)}>
             <Plus className="h-4 w-4" />
             New Task
-          </button>
+          </Button>
         </div>
 
         {/* Loading */}

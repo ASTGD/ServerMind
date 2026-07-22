@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom"
 import { formatDistanceToNow } from "date-fns"
 import {
   Rocket, CheckCircle2, XCircle, ShieldCheck, ShieldAlert, Hand, Square, Loader2,
-  PlayCircle, FileText, Search, PanelRightOpen, Globe, ArrowLeft,
+  PlayCircle, FileText, Search, PanelRightOpen, Globe, ArrowLeft, History,
 } from "lucide-react"
 import { listMissions, getMission, type MissionSummary, type MissionStatus } from "@/api/missions"
 import { isReport, reportVerdict, reportSubject } from "@/api/reports"
@@ -12,15 +12,16 @@ import { listServers } from "@/api/servers"
 import { useAssistantStore, type AssistantTarget } from "@/store/assistantStore"
 import RecipeLibrary from "@/components/recipes/RecipeLibrary"
 import MissionStepList from "@/components/missions/MissionStepList"
+import { Button, buttonVariants } from "@/components/ui"
 import { cn } from "@/lib/utils"
 
 const STATUS: Record<MissionStatus, { label: string; cls: string }> = {
   running: { label: "Running", cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
   awaiting_approval: { label: "Awaiting approval", cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
   interrupted: { label: "Interrupted", cls: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" },
-  complete: { label: "Complete", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  blocked: { label: "Blocked", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-  failed: { label: "Failed", cls: "bg-red-500/10 text-red-600 dark:text-red-400" },
+  complete: { label: "Complete", cls: "bg-success/10 text-success" },
+  blocked: { label: "Blocked", cls: "bg-warning/10 text-warning" },
+  failed: { label: "Failed", cls: "bg-destructive/10 text-destructive" },
   stopped: { label: "Stopped", cls: "bg-zinc-500/10 text-zinc-500 dark:text-zinc-400" },
 }
 
@@ -50,20 +51,20 @@ function MissionRow({ m, selected, onClick }: { m: MissionSummary; selected: boo
   return (
     <button
       onClick={onClick}
-      className={`block w-full rounded-lg border bg-card p-2.5 text-left transition hover:border-primary/40 ${
+      className={`block w-full rounded-lg border bg-card p-3 text-left transition hover:border-primary/40 ${
         selected ? "border-primary ring-1 ring-primary/40" : "border-border"
       }`}
     >
       <div className="flex items-center gap-2">
-        <chip.Icon size={14} className="shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{m.goal}</span>
+        <chip.Icon size={15} className="shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{m.goal}</span>
       </div>
-      <div className="mt-1.5 flex items-center justify-between gap-2 pl-6">
-        <span className="truncate text-[11px] text-muted-foreground">
+      <div className="mt-1.5 flex items-center justify-between gap-2 pl-[26px]">
+        <span className="truncate text-xs text-muted-foreground">
           {m.server_name ? `${m.server_name} · ` : ""}{m.steps_used} step{m.steps_used === 1 ? "" : "s"}
           {m.created_at ? ` · ${formatDistanceToNow(new Date(m.created_at), { addSuffix: true })}` : ""}
         </span>
-        <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${chip.cls}`}>
+        <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${chip.cls}`}>
           {chip.label}
         </span>
       </div>
@@ -72,9 +73,9 @@ function MissionRow({ m, selected, onClick }: { m: MissionSummary; selected: boo
 }
 
 const TONE: Record<string, { chip: string; head: string; bar: string }> = {
-  good: { chip: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", head: "text-emerald-600 dark:text-emerald-400", bar: "border-emerald-500/40" },
-  warn: { chip: "bg-amber-500/10 text-amber-600 dark:text-amber-400", head: "text-amber-600 dark:text-amber-400", bar: "border-amber-500/40" },
-  bad: { chip: "bg-red-500/10 text-red-600 dark:text-red-400", head: "text-red-600 dark:text-red-400", bar: "border-red-500/40" },
+  good: { chip: "bg-success/10 text-success", head: "text-success", bar: "border-success/40" },
+  warn: { chip: "bg-warning/10 text-warning", head: "text-warning", bar: "border-warning/40" },
+  bad: { chip: "bg-destructive/10 text-destructive", head: "text-destructive", bar: "border-destructive/40" },
   neutral: { chip: "bg-zinc-500/10 text-zinc-500 dark:text-zinc-400", head: "text-zinc-500", bar: "border-zinc-500/40" },
 }
 
@@ -82,10 +83,10 @@ function ResultBlock({ label, items, color }: { label: string; items: string[]; 
   if (!items?.length) return null
   return (
     <div className="mt-3">
-      <p className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <ul className="space-y-1">
+      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <ul className="space-y-1.5">
         {items.map((it, i) => (
-          <li key={i} className="flex items-start gap-1.5 text-[13px] text-foreground">
+          <li key={i} className="flex items-start gap-2 text-sm leading-relaxed text-foreground">
             <span className={color}>•</span>
             <span>{it}</span>
           </li>
@@ -119,11 +120,11 @@ function MissionDetail({ id, onServerFor }: { id: string; onServerFor: (m: Missi
     <div>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="line-clamp-3 text-base font-semibold leading-snug text-foreground" title={m.goal}>{m.goal}</h2>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+          <h2 className="line-clamp-3 text-lg font-semibold leading-snug text-foreground" title={m.goal}>{m.goal}</h2>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[13px] text-muted-foreground">
             {(r?.subject || m.server_name) && (
               <span className="inline-flex items-center gap-1">
-                <Globe size={11} /> {reportSubject(m)}
+                <Globe size={12} /> {reportSubject(m)}
               </span>
             )}
             {m.skill && <span>· {m.skill}</span>}
@@ -131,22 +132,22 @@ function MissionDetail({ id, onServerFor }: { id: string; onServerFor: (m: Missi
             {m.created_at && <span>· {formatDistanceToNow(new Date(m.created_at), { addSuffix: true })}</span>}
           </div>
         </div>
-        <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium ${tone.chip}`}>
+        <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${tone.chip}`}>
           {v.label}
         </span>
       </div>
 
       {/* Result receipt */}
       {(r || m.summary) && (
-        <div className={`mt-3 rounded-xl border border-l-4 bg-card p-3.5 ${tone.bar}`}>
+        <div className={`mt-3.5 rounded-xl border border-l-4 bg-card p-4 ${tone.bar}`}>
           <p className={`text-[11px] font-semibold uppercase tracking-wide ${tone.head}`}>Result</p>
-          {r?.headline && <p className="mt-1 text-[13px] font-medium text-foreground">{r.headline}</p>}
-          {!r && m.summary && <p className="mt-1 text-[13px] text-foreground">{m.summary}</p>}
+          {r?.headline && <p className="mt-1.5 text-sm font-medium leading-relaxed text-foreground">{r.headline}</p>}
+          {!r && m.summary && <p className="mt-1.5 text-sm leading-relaxed text-foreground">{m.summary}</p>}
           {r && (
             <>
-              <ResultBlock label="Found" items={r.found} color="text-red-500" />
-              <ResultBlock label="Ally did" items={r.did} color="text-emerald-500" />
-              <ResultBlock label="Left for you" items={r.left} color="text-amber-500" />
+              <ResultBlock label="Found" items={r.found} color="text-destructive" />
+              <ResultBlock label="Ally did" items={r.did} color="text-success" />
+              <ResultBlock label="Left for you" items={r.left} color="text-warning" />
             </>
           )}
         </div>
@@ -154,37 +155,35 @@ function MissionDetail({ id, onServerFor }: { id: string; onServerFor: (m: Missi
 
       {/* Actions */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <button
+        <Button
+          size="sm"
           onClick={() => target && attachMission(target, m.id)}
           disabled={serverGone}
           title={serverGone ? "Server no longer available" : "Open this session in the Ally workspace"}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
         >
-          <PanelRightOpen size={13} /> Open in Ally workspace
-        </button>
+          <PanelRightOpen size={14} /> Open in Ally workspace
+        </Button>
         {m.resumable && (
-          <button
+          <Button
+            size="sm"
+            variant="gradient"
             onClick={() => target && resumeMission(target, m.id)}
             disabled={serverGone}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
           >
-            <PlayCircle size={13} /> Resume
-          </button>
+            <PlayCircle size={14} /> Resume
+          </Button>
         )}
         {isReport(m) && (
-          <Link
-            to={`/reports/${m.id}`}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
-          >
-            <FileText size={13} /> Report
+          <Link to={`/reports/${m.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <FileText size={14} /> Report
           </Link>
         )}
       </div>
 
       {/* Step log */}
-      <p className="mb-1.5 mt-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Log</p>
+      <p className="mb-2 mt-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Log</p>
       <MissionStepList steps={m.steps ?? []} />
-      <p className="mt-2 px-1 text-[11px] text-muted-foreground">Secrets in commands and output are masked.</p>
+      <p className="mt-2 px-1 text-xs text-muted-foreground">Secrets in commands and output are masked.</p>
     </div>
   )
 }
@@ -221,9 +220,9 @@ export default function Missions() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-5 flex items-center gap-2">
         <Rocket size={20} className="text-primary" />
-        <h1 className="text-xl font-semibold text-foreground">Missions</h1>
+        <h1 className="text-h1 text-foreground">Missions</h1>
       </div>
 
       {/* TOP — recipes, full width (the front door to start a mission). On mobile, a mission's
@@ -231,15 +230,22 @@ export default function Missions() {
       <div className={cn(id && "hidden lg:block")}>
         <RecipeLibrary />
 
+        {/* The history zone gets its own header (parallel to "Recipes" above) so the
+            front door and the record read as two distinct areas. */}
+        <div className="mb-3 flex items-center gap-2">
+          <History size={16} className="text-muted-foreground" />
+          <h2 className="text-h3 text-foreground">Mission history</h2>
+        </div>
+
         {/* Search — above the grid so the first mission card lines up with the detail pane
             (like Reports/Logs). Missions that need you are still ordered first. */}
         <div className="relative mb-3 max-w-sm">
-          <Search size={14} className="absolute left-2.5 top-2.5 text-muted-foreground" />
+          <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search missions"
-            className="w-full rounded-lg border border-border bg-card py-2 pl-8 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary/50 focus:outline-none"
+            className="w-full rounded-lg border border-border bg-card py-2 pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
       </div>
@@ -250,13 +256,13 @@ export default function Missions() {
         {/* LEFT — the mission list (receipts). Hidden on mobile when a detail is open. */}
         <aside className={cn("min-w-0 lg:col-span-1", id && "hidden lg:block")}>
           {isLoading ? (
-            <p className="px-1 text-xs text-muted-foreground">Loading…</p>
+            <p className="px-1 text-sm text-muted-foreground">Loading…</p>
           ) : missions.length === 0 ? (
-            <p className="px-1 text-xs text-muted-foreground">No missions yet. Pick a recipe to start.</p>
+            <p className="px-1 text-sm text-muted-foreground">No missions yet. Pick a recipe to start.</p>
           ) : active.length === 0 && history.length === 0 ? (
-            <p className="px-1 text-xs text-muted-foreground">No missions match “{q}”.</p>
+            <p className="px-1 text-sm text-muted-foreground">No missions match “{q}”.</p>
           ) : (
-            <div className="max-h-[calc(100vh-13rem)] space-y-1.5 overflow-y-auto pr-1">
+            <div className="max-h-[calc(100vh-13rem)] space-y-2 overflow-y-auto pr-1">
               {[...active, ...history].map((m) => (
                 <MissionRow key={m.id} m={m} selected={m.id === shownId} onClick={() => navigate(`/missions/${m.id}`)} />
               ))}

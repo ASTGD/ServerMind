@@ -35,6 +35,7 @@ import {
   type Verdict,
 } from "@/api/security"
 import { getServer } from "@/api/servers"
+import { Button, EmptyState } from "@/components/ui"
 
 // ── Threat panel (indicators of compromise) ─────────────────────────────────
 
@@ -104,7 +105,7 @@ function ThreatPanel({ serverId }: { serverId: string }) {
             <button
               onClick={respondWithAlly}
               disabled={!server}
-              className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              className="flex items-center gap-1.5 rounded-lg bg-brand-gradient-r px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
             >
               <ShieldAlert className="h-4 w-4" />
               Respond with Ally
@@ -351,7 +352,7 @@ export default function Security() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+          <h1 className="text-h1 text-foreground flex items-center gap-2">
             <Shield className="h-6 w-6 text-primary" />
             Security Audit
           </h1>
@@ -359,14 +360,10 @@ export default function Security() {
             Read-only checks for SSH, firewall, updates, accounts, and hardening.
           </p>
         </div>
-        <button
-          onClick={() => runMut.mutate()}
-          disabled={scanning}
-          className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60 transition-colors shrink-0"
-        >
+        <Button onClick={() => runMut.mutate()} disabled={scanning} className="shrink-0">
           {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           {scanning ? "Scanning…" : scans.length ? "Re-scan" : "Run Scan"}
-        </button>
+        </Button>
       </div>
 
       {/* Run error */}
@@ -387,21 +384,17 @@ export default function Security() {
 
       {/* Empty state */}
       {!isLoading && !scans.length && !scanning && (
-        <div className="flex flex-col items-center justify-center py-16 text-center rounded-xl border border-dashed border-border">
-          <ShieldAlert className="h-10 w-10 text-muted-foreground/30 mb-3" />
-          <p className="text-sm text-foreground font-medium">No security scans yet</p>
-          <p className="text-xs text-muted-foreground/70 mt-1 max-w-sm">
-            Run an audit to check this server's SSH config, firewall, pending updates,
-            account hygiene, file permissions, and more.
-          </p>
-          <button
-            onClick={() => runMut.mutate()}
-            className="mt-4 flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <Play className="h-4 w-4" />
-            Run first scan
-          </button>
-        </div>
+        <EmptyState
+          icon={ShieldAlert}
+          title="No security scans yet"
+          description="Run an audit to check this server's SSH config, firewall, pending updates, account hygiene, file permissions, and more."
+          action={
+            <Button onClick={() => runMut.mutate()}>
+              <Play className="h-4 w-4" />
+              Run first scan
+            </Button>
+          }
+        />
       )}
 
       {/* Scanning placeholder (first scan) */}

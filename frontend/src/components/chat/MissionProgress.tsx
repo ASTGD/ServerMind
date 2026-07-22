@@ -8,6 +8,7 @@ import {
 import { cn } from "@/lib/utils"
 import { serverColor, FLEET_COLOR } from "@/lib/serverColor"
 import ServerTag from "./ServerTag"
+import CmdOutput from "@/components/missions/CmdOutput"
 
 export interface MissionStep {
   index: number
@@ -79,62 +80,53 @@ function StepRow({ step }: { step: MissionStep }) {
   const [open, setOpen] = useState(false)
   const icon = step.running ? (
     step.waiting ? (
-      <Clock size={13} className="shrink-0 animate-pulse text-amber-500" />
+      <Clock size={15} className="shrink-0 animate-pulse text-warning" />
     ) : (
-      <Loader2 size={13} className="shrink-0 animate-spin text-indigo-500" />
+      <Loader2 size={15} className="shrink-0 animate-spin text-indigo-500" />
     )
   ) : step.exitCode === 0 ? (
-    <CheckCircle2 size={13} className="shrink-0 text-emerald-500" />
+    <CheckCircle2 size={15} className="shrink-0 text-success" />
   ) : (
-    <XCircle size={13} className="shrink-0 text-red-500" />
+    <XCircle size={15} className="shrink-0 text-destructive" />
   )
   const hasDetail = Boolean(step.outputTail || step.note)
   return (
-    <div className="text-xs">
+    <div className="text-sm">
       <button
         onClick={() => hasDetail && setOpen((o) => !o)}
-        className={`flex w-full items-start gap-1.5 text-left ${hasDetail ? "cursor-pointer" : "cursor-default"}`}
+        className={`flex w-full items-start gap-2 text-left ${hasDetail ? "cursor-pointer" : "cursor-default"}`}
       >
         <span className="mt-0.5">{icon}</span>
-        <span className="min-w-0 flex-1">
+        <span className="min-w-0 flex-1 leading-relaxed">
           {step.verifying && (
-            <span className="mr-1.5 inline-flex items-center gap-0.5 rounded bg-violet-500/10 px-1 py-px text-[10px] font-medium text-violet-600 dark:text-violet-400">
-              <ShieldCheck size={9} /> verify
+            <span className="mr-1.5 inline-flex items-center gap-0.5 rounded bg-violet-500/10 px-1.5 py-px text-[11px] font-medium text-violet-600 dark:text-violet-400">
+              <ShieldCheck size={10} /> verify
             </span>
           )}
           {step.waiting && (
-            <span className="mr-1.5 inline-flex items-center gap-0.5 rounded bg-amber-500/10 px-1 py-px text-[10px] font-medium text-amber-600 dark:text-amber-400">
-              <Clock size={9} /> wait
+            <span className="mr-1.5 inline-flex items-center gap-0.5 rounded bg-warning/10 px-1.5 py-px text-[11px] font-medium text-warning">
+              <Clock size={10} /> wait
             </span>
           )}
           {step.strong && (
             <span
-              className="mr-1.5 inline-flex items-center gap-0.5 rounded bg-fuchsia-500/10 px-1 py-px text-[10px] font-medium text-fuchsia-600 dark:text-fuchsia-400"
+              className="mr-1.5 inline-flex items-center gap-0.5 rounded bg-fuchsia-500/10 px-1.5 py-px text-[11px] font-medium text-fuchsia-600 dark:text-fuchsia-400"
               title="Ally used a stronger model for this step"
             >
-              <Brain size={9} /> stronger model
+              <Brain size={10} /> stronger model
             </span>
           )}
           {step.serverName && <ServerTag name={step.serverName} className="mr-1.5" />}
           <span className="text-foreground">{step.description || step.cmd}</span>
-          {step.note && <span className="ml-1 text-amber-600 dark:text-amber-400">({step.note})</span>}
+          {step.note && <span className="ml-1 text-warning">({step.note})</span>}
         </span>
         {hasDetail && (
-          <span className="mt-0.5 shrink-0 text-muted-foreground">
-            {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          <span className="mt-1 shrink-0 text-muted-foreground">
+            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           </span>
         )}
       </button>
-      {open && (
-        <div className="ml-5 mt-1 space-y-1">
-          <pre className="overflow-x-auto rounded bg-[#0d0d0d] px-2 py-1 font-mono text-[11px] text-zinc-300">$ {step.cmd}</pre>
-          {step.outputTail && (
-            <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all rounded bg-[#0d0d0d] px-2 py-1 font-mono text-[11px] text-zinc-400">
-              {step.outputTail}
-            </pre>
-          )}
-        </div>
-      )}
+      {open && <CmdOutput cmd={step.cmd} output={step.outputTail} className="ml-6 mt-1.5" />}
     </div>
   )
 }
@@ -164,12 +156,12 @@ function ResultLists({ result }: { result: MissionResult }) {
   return (
     <div className="border-t border-white/10">
       {sections.map((s) => (
-        <div key={s.label} className="border-b border-white/10 px-3.5 py-2.5 last:border-b-0">
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{s.label}</p>
+        <div key={s.label} className="border-b border-white/10 px-3.5 py-3 last:border-b-0">
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{s.label}</p>
           <div className="space-y-1.5">
             {s.items.map((it, i) => (
-              <div key={i} className="flex items-start gap-2 text-xs leading-relaxed">
-                <s.Icon size={13} className={cn("mt-0.5 shrink-0", s.color)} />
+              <div key={i} className="flex items-start gap-2 text-sm leading-relaxed">
+                <s.Icon size={14} className={cn("mt-1 shrink-0", s.color)} />
                 <span className="min-w-0 text-zinc-200">{it}</span>
               </div>
             ))}
@@ -217,12 +209,12 @@ export default function MissionProgress({
         title="Show the mission card"
       >
         <StatusIcon mission={mission} />
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">{mission.goal}</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{mission.goal}</span>
         {mission.serverName && <ServerTag name={mission.serverName} />}
-        <span className="shrink-0 text-[11px] text-muted-foreground">
+        <span className="shrink-0 text-xs text-muted-foreground">
           {mission.steps.length} step{mission.steps.length === 1 ? "" : "s"}
         </span>
-        <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
+        <ChevronDown size={13} className="shrink-0 text-muted-foreground" />
       </button>
     )
   }
@@ -236,12 +228,12 @@ export default function MissionProgress({
         {running ? (
           <button
             onClick={onStop}
-            className="flex shrink-0 items-center gap-1 rounded-md bg-red-500/90 px-2 py-1 text-[11px] font-medium text-white hover:bg-red-500"
+            className="flex shrink-0 items-center gap-1 rounded-md bg-red-500/90 px-2 py-1 text-xs font-medium text-white hover:bg-red-500"
           >
-            <Square size={10} /> Stop
+            <Square size={11} /> Stop
           </button>
         ) : (
-          <span className="shrink-0 text-[11px] text-muted-foreground">
+          <span className="shrink-0 text-xs text-muted-foreground">
             {mission.steps.length} step{mission.steps.length === 1 ? "" : "s"}
           </span>
         )}
@@ -263,53 +255,51 @@ export default function MissionProgress({
         )}
       </div>
 
-      <div className={cn("space-y-1.5 px-3 py-2.5", big && "min-h-0 flex-1 overflow-y-auto")}>
+      <div className={cn("space-y-2 px-3 py-2.5", big && "min-h-0 flex-1 overflow-y-auto")}>
         {mission.steps.length === 0 && running && (
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Loader2 size={12} className="animate-spin" /> Planning the first step…
+          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Loader2 size={13} className="animate-spin" /> Planning the first step…
           </p>
         )}
         {mission.steps.map((s) => (
           <StepRow key={s.index} step={s} />
         ))}
         {running && mission.steps.length > 0 && mission.steps.every((s) => !s.running) && !mission.pendingApproval && (
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Loader2 size={12} className="animate-spin" /> Deciding the next step…
+          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Loader2 size={13} className="animate-spin" /> Deciding the next step…
           </p>
         )}
       </div>
 
       {/* In-card approval — the OK always binds visibly to THIS mission's step. */}
       {running && mission.pendingApproval && (
-        <div className="space-y-1.5 border-t border-amber-500/25 bg-amber-500/5 px-3 py-2.5">
-          <p className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-            <Hand size={12} className="shrink-0" />
+        <div className="space-y-2 border-t border-amber-500/25 bg-amber-500/5 px-3 py-3">
+          <p className="flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-400">
+            <Hand size={13} className="shrink-0" />
             Ally needs your OK for this step
             {mission.pendingApproval.serverName && (
               <ServerTag name={mission.pendingApproval.serverName} />
             )}
           </p>
           {mission.pendingApproval.description && (
-            <p className="text-xs text-foreground">{mission.pendingApproval.description}</p>
+            <p className="text-sm text-foreground">{mission.pendingApproval.description}</p>
           )}
-          <pre className="overflow-x-auto rounded bg-[#0d0d0d] px-2 py-1 font-mono text-[11px] text-zinc-300">
-            $ {mission.pendingApproval.cmd}
-          </pre>
+          <CmdOutput cmd={mission.pendingApproval.cmd} />
           <div className="flex items-center gap-2 pt-0.5">
             <button
               onClick={onApprove}
-              className="flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-500"
+              className="flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500"
             >
-              <Check size={11} /> Approve
+              <Check size={12} /> Approve
             </button>
             <button
               onClick={onStop}
-              className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-accent"
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
             >
-              <Square size={10} /> Stop the mission
+              <Square size={11} /> Stop the mission
             </button>
             {mission.pendingApproval.riskLevel === "high" && (
-              <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400">
+              <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400">
                 high risk
               </span>
             )}
@@ -359,10 +349,10 @@ export default function MissionProgress({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                       Mission result
                     </span>
-                    <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold", v.badge)}>
+                    <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold", v.badge)}>
                       {v.label}
                     </span>
                   </div>
@@ -371,12 +361,12 @@ export default function MissionProgress({
                       Server-wide missions (no subject) just show the server name. */}
                   {mission.result?.subject ? (
                     <div className="mt-0.5">
-                      <p className="flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
-                        <Globe size={13} className="shrink-0 text-zinc-400" />
+                      <p className="flex items-center gap-1.5 text-[15px] font-semibold text-zinc-100">
+                        <Globe size={14} className="shrink-0 text-zinc-400" />
                         <span className="truncate">{mission.result.subject}</span>
                       </p>
                       {mission.serverName && (
-                        <p className="mt-0.5 flex items-center gap-1 pl-[19px] text-[11px] text-zinc-500">
+                        <p className="mt-0.5 flex items-center gap-1 pl-[20px] text-xs text-zinc-500">
                           on
                           <span className={cn("ml-0.5 h-1.5 w-1.5 shrink-0 rounded-full", color.dot)} />
                           <span className="truncate">{mission.serverName}</span>
@@ -385,21 +375,21 @@ export default function MissionProgress({
                     </div>
                   ) : (
                     mission.serverName && (
-                      <p className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+                      <p className="mt-0.5 flex items-center gap-1.5 text-[15px] font-semibold text-zinc-100">
                         <span className={cn("h-2 w-2 shrink-0 rounded-full", color.dot)} />
                         <span className="truncate">{mission.serverName}</span>
                       </p>
                     )
                   )}
-                  <p className={cn("mt-1 text-[13px] font-medium leading-snug", v.title)}>{headline}</p>
+                  <p className={cn("mt-1 text-sm font-medium leading-snug", v.title)}>{headline}</p>
                   {verified && mission.verification && (
-                    <p className="mt-1 flex items-start gap-1 text-[11px] text-zinc-400">
-                      <ShieldCheck size={11} className="mt-px shrink-0 text-emerald-400" /> Verified: {mission.verification}
+                    <p className="mt-1.5 flex items-start gap-1.5 text-xs text-zinc-400">
+                      <ShieldCheck size={13} className="mt-px shrink-0 text-emerald-400" /> Verified: {mission.verification}
                     </p>
                   )}
                   {unconfirmed && (
-                    <p className="mt-1 flex items-start gap-1 text-[11px] text-zinc-400">
-                      <ShieldAlert size={11} className="mt-px shrink-0 text-amber-400" />
+                    <p className="mt-1.5 flex items-start gap-1.5 text-xs text-zinc-400">
+                      <ShieldAlert size={13} className="mt-px shrink-0 text-amber-400" />
                       Couldn't fully confirm: {mission.verification || "please double-check this yourself."}
                     </p>
                   )}
@@ -417,7 +407,7 @@ export default function MissionProgress({
                     <button
                       key={i}
                       onClick={() => onOption?.(o)}
-                      className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
+                      className="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/20"
                     >
                       {o}
                     </button>

@@ -15,6 +15,7 @@ import AddServerModal from "@/components/server/AddServerModal"
 import ConnectCloudModal from "@/components/server/ConnectCloudModal"
 import RdpDesktopModal from "@/components/server/RdpDesktopModal"
 import CloudAccountModal from "@/components/server/CloudAccountModal"
+import { Button, EmptyState } from "@/components/ui"
 import type { Server } from "@/types"
 
 export default function Servers() {
@@ -56,11 +57,11 @@ export default function Servers() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-foreground">{t("nav.servers")}</h1>
-        <button onClick={() => setShowAdd(true)} className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+        <h1 className="text-h1 text-foreground">{t("nav.servers")}</h1>
+        <Button onClick={() => setShowAdd(true)}>
           <Plus size={15} />
           {t("servers.add")}
-        </button>
+        </Button>
       </div>
 
       {isLoading ? (
@@ -68,14 +69,17 @@ export default function Servers() {
           {[...Array(4)].map((_, i) => <div key={i} className="aspect-square animate-pulse rounded-2xl border border-border bg-card" />)}
         </div>
       ) : empty ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20 text-center">
-          <ServerOff size={36} className="mb-4 text-muted-foreground/50" />
-          <p className="font-medium text-foreground">No assets yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">Add your first server, hosting panel, or cloud account to manage it with AI.</p>
-          <button onClick={() => setShowAdd(true)} className="mt-5 flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-            <Plus size={14} /> {t("servers.add")}
-          </button>
-        </div>
+        <EmptyState
+          icon={ServerOff}
+          title="No assets yet"
+          description="Add your first server, hosting panel, or cloud account to manage it with AI."
+          className="py-20"
+          action={
+            <Button onClick={() => setShowAdd(true)}>
+              <Plus size={14} /> {t("servers.add")}
+            </Button>
+          }
+        />
       ) : (
         <>
           {/* Filter pills — hoisted above the two-column split so both columns start flush */}

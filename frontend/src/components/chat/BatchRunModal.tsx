@@ -80,7 +80,7 @@ export default function BatchRunModal({ batch, onClose }: { batch: BatchSpec; on
       >
         {/* Header */}
         <div className="flex items-start gap-2.5 border-b border-border px-5 py-4">
-          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-white">
             <Layers size={16} />
           </div>
           <div className="min-w-0 flex-1">

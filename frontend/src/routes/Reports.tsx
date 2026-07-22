@@ -92,7 +92,7 @@ export default function Reports() {
   return (
     <div>
       <header className="mb-4">
-        <h1 className="flex items-center gap-2 text-xl font-semibold text-foreground">
+        <h1 className="flex items-center gap-2 text-h1 text-foreground">
           <FileText className="h-5 w-5 text-primary" /> Reports
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">

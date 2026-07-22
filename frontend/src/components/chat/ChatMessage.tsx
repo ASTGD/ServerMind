@@ -176,7 +176,7 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch,
   // ── ASSISTANT conversation — document style: an "Ally" header + flowing text ─────
   const allyHeader = (
     <div className="flex items-center gap-2">
-      <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-violet-500 text-white">
+      <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-brand-gradient text-white">
         <Sparkles size={13} />
       </div>
       <span className="text-[13px] font-medium text-foreground">Ally</span>
@@ -194,7 +194,7 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch,
         {message.handoff && (
           <button
             onClick={() => onHandoff?.(message.handoff!)}
-            className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+            className="flex items-center gap-1.5 rounded-lg bg-brand-gradient-r px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
           >
             <ServerIcon size={13} />
             Run on {message.handoff.serverName}
@@ -218,7 +218,7 @@ export default function ChatMessage({ message, onSuggestion, onHandoff, onBatch,
             </div>
             <button
               onClick={() => onBatch?.(message.batch!)}
-              className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+              className="flex items-center gap-1.5 rounded-lg bg-brand-gradient-r px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
             >
               <Layers size={13} />
               Run on all

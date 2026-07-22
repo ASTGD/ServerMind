@@ -218,7 +218,7 @@ export default function Logs() {
   return (
     <div>
       <header className="mb-4">
-        <h1 className="flex items-center gap-2 text-xl font-semibold text-foreground">
+        <h1 className="flex items-center gap-2 text-h1 text-foreground">
           <ScrollText className="h-5 w-5 text-primary" /> Activity Log
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">Playbook runs and AI commands across your servers.</p>

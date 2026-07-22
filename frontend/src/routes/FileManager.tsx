@@ -616,7 +616,7 @@ export default function FileManager() {
                       <button
                         onClick={() => openAI()}
                         title="Ask Ally about this file — passwords and keys are hidden first"
-                        className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                        className="flex items-center gap-1.5 rounded-lg bg-brand-gradient-r px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
                       >
                         <Sparkles className="h-3.5 w-3.5" />
                         Ask Ally

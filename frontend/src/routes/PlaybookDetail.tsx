@@ -106,7 +106,7 @@ export default function PlaybookDetail() {
 
   return (
     <>
-      <div className="space-y-6 max-w-4xl">
+      <div className="mx-auto max-w-4xl space-y-6">
         {/* Back */}
         <button
           onClick={() => navigate("/playbooks")}
@@ -143,7 +143,7 @@ export default function PlaybookDetail() {
                 </span>
               )}
             </div>
-            <h1 className="text-2xl font-semibold text-foreground">{playbook.title}</h1>
+            <h1 className="text-h1 text-foreground">{playbook.title}</h1>
             {playbook.description && (
               <p className="text-muted-foreground mt-2 leading-relaxed">{playbook.description}</p>
             )}

@@ -34,7 +34,7 @@ export default function UpgradeModal({ onClose }: { onClose: () => void }) {
         className="w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
       >
         {/* Gradient header */}
-        <div className="relative bg-gradient-to-br from-indigo-500 to-violet-600 px-6 py-6 text-white">
+        <div className="relative bg-brand-gradient px-6 py-6 text-white">
           <button
             onClick={onClose}
             aria-label="Close"

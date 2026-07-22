@@ -125,7 +125,7 @@ export default function Installed() {
   const scan = useMutation({ mutationFn: () => scanServer(id!) })
 
   return (
-    <div className="max-w-4xl space-y-8">
+    <div className="mx-auto max-w-4xl space-y-8">
       <div>
         <Link
           to={`/servers/${id}`}
@@ -133,7 +133,7 @@ export default function Installed() {
         >
           <ArrowLeft className="h-4 w-4" /> {server?.name ?? "Server"}
         </Link>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold text-foreground">
+        <h1 className="flex items-center gap-2 text-h1 text-foreground">
           <Package className="h-6 w-6 text-primary" /> Installed software
         </h1>
         <p className="mt-1 text-muted-foreground">

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { useParams } from "react-router-dom"
+import { Button } from "@/components/ui"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Globe,
@@ -165,19 +166,19 @@ export default function Hosting() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+          <h1 className="text-h1 text-foreground flex items-center gap-2">
             <ServerIcon className="h-6 w-6 text-primary" />
             Hosting
           </h1>
           <p className="text-sm text-muted-foreground mt-1">Manage websites, databases, and email through your control panel.</p>
         </div>
-        <button
+        <Button
           onClick={() => setModal(tab === "websites" ? "website" : tab === "databases" ? "database" : "email")}
-          className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
+          className="shrink-0"
         >
           <Plus className="h-4 w-4" />
           New {tab === "websites" ? "website" : tab === "databases" ? "database" : "email"}
-        </button>
+        </Button>
       </div>
 
       {/* Tabs */}

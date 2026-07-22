@@ -69,7 +69,7 @@ export default function Logo({ size = "md", className }: LogoProps) {
       <LogoMark size={markSize} />
       <span className={`${textCls} font-bold tracking-tight text-foreground`}>
         Server
-        <span className="bg-gradient-to-r from-indigo-500 to-violet-500 bg-clip-text text-transparent">
+        <span className="bg-brand-gradient-r bg-clip-text text-transparent">
           Ally
         </span>
       </span>

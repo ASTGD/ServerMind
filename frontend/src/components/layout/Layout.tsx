@@ -63,7 +63,12 @@ export default function Layout() {
         <TopBar onMenuClick={() => setNavOpen(true)} />
         <VerifyBanner />
         <main className="flex-1 overflow-auto p-6">
-          <Outlet />
+          {/* Global page container — every route renders in a centered, width-capped
+              column so pages never sprawl edge-to-edge on wide monitors. The Ally
+              window and terminal overlay independently (fixed) and are unaffected. */}
+          <div className="mx-auto w-full max-w-[1400px]">
+            <Outlet />
+          </div>
         </main>
       </div>
       <AssistantDrawer />

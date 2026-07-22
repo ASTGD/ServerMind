@@ -473,7 +473,7 @@ export default function Settings() {
                   ? "bg-red-500"
                   : usage.used / usage.limit >= 0.7
                     ? "bg-amber-500"
-                    : "bg-gradient-to-r from-indigo-500 to-violet-500"
+                    : "bg-brand-gradient-r"
               }`}
               style={{ width: `${Math.min(100, (usage.used / Math.max(1, usage.limit)) * 100)}%` }}
             />
@@ -978,7 +978,7 @@ export default function Settings() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Settings</h1>
+        <h1 className="text-h1 text-foreground">Settings</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">Manage your account and preferences.</p>
       </div>
 

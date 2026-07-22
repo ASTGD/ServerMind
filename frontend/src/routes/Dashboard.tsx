@@ -11,7 +11,9 @@ import FleetHealthPanel from "@/components/dashboard/FleetHealthPanel"
 import FleetComposition from "@/components/dashboard/FleetComposition"
 import QuickActions from "@/components/dashboard/QuickActions"
 import RunningTasks from "@/components/dashboard/RunningTasks"
-import RecentActivity from "@/components/dashboard/RecentActivity"
+import SubscriptionCard from "@/components/dashboard/SubscriptionCard"
+import { SectionHeader, EmptyState, buttonVariants } from "@/components/ui"
+import { cn } from "@/lib/utils"
 
 export default function Dashboard() {
   const { data: servers = [], isLoading } = useQuery<Server[]>({
@@ -40,46 +42,43 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Dashboard</h1>
-          {servers.length > 0 && (
-            <p className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
-              <span className={`h-2 w-2 rounded-full ${attention ? "bg-amber-500" : "bg-green-500"}`} />
+      <SectionHeader
+        title="Dashboard"
+        description={
+          servers.length > 0 ? (
+            <span className="flex items-center gap-2">
+              <span className={cn("h-2 w-2 rounded-full", attention ? "bg-warning" : "bg-success")} />
               {online} of {servers.length} servers healthy
               {attention > 0 && `, ${attention} need${attention === 1 ? "s" : ""} attention`}
-            </p>
-          )}
-        </div>
-        <Link
-          to="/servers"
-          className="flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          <Plus size={15} />
-          Add server
-        </Link>
-      </div>
+            </span>
+          ) : undefined
+        }
+        actions={
+          <Link to="/servers" className={buttonVariants({ size: "sm" })}>
+            <Plus size={15} />
+            Add server
+          </Link>
+        }
+      />
 
       {isLoading ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-[70px] animate-pulse rounded-lg border border-border bg-card" />
+            <div key={i} className="h-[74px] animate-pulse rounded-xl border border-border bg-card" />
           ))}
         </div>
       ) : servers.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
-          <ServerOff size={32} className="mb-3 text-muted-foreground/50" />
-          <p className="font-medium text-foreground">No servers yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">Add your first server to start managing it with AI.</p>
-          <Link
-            to="/servers"
-            className="mt-4 flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus size={14} />
-            Add server
-          </Link>
-        </div>
+        <EmptyState
+          icon={ServerOff}
+          title="No servers yet"
+          description="Add your first server to start managing it with AI."
+          action={
+            <Link to="/servers" className={buttonVariants({ size: "sm" })}>
+              <Plus size={14} />
+              Add server
+            </Link>
+          }
+        />
       ) : (
         <>
           {/* Running now — slim, auto-hides when nothing is running */}
@@ -104,12 +103,11 @@ export default function Dashboard() {
             <StatCard icon={BookOpen} label="Playbooks" value={playbooks.length} to="/playbooks" />
           </div>
 
-          {/* Bento grid */}
+          {/* Bento — fleet health (the centerpiece) beside the subscription summary,
+              then composition beside quick actions. Recent activity lives on /logs. */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
             <FleetHealthPanel health={fleetHealth} servers={servers} />
-            <RecentActivity servers={servers} />
-          </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
+            <SubscriptionCard />
             <FleetComposition servers={servers} />
             <QuickActions />
           </div>

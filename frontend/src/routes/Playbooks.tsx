@@ -46,7 +46,7 @@ export default function Playbooks() {
     <div className="space-y-6">
       {/* Page header */}
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Playbooks</h1>
+        <h1 className="text-h1 text-foreground">Playbooks</h1>
         <p className="text-muted-foreground text-sm mt-1">
           One-click scripts for common server administration tasks
         </p>

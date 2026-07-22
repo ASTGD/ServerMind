@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
+import { Button } from "@/components/ui"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import Editor from "@monaco-editor/react"
 import {
@@ -192,18 +193,15 @@ export default function MyScripts() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">My Scripts</h1>
+            <h1 className="text-h1 text-foreground">My Scripts</h1>
             <p className="text-sm text-muted-foreground mt-1">
               Your saved and Ally-generated scripts
             </p>
           </div>
-          <button
-            onClick={() => navigate("/scripts/generate")}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
-          >
+          <Button onClick={() => navigate("/scripts/generate")}>
             <Sparkles className="h-4 w-4" />
             Generate with Ally
-          </button>
+          </Button>
         </div>
 
         {/* Filters */}

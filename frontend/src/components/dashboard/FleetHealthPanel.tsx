@@ -5,6 +5,7 @@ import { ShieldCheck } from "lucide-react"
 import type { FleetHealth, FleetFinding } from "@/api/fleet"
 import type { Server } from "@/types"
 import { useAssistantStore } from "@/store/assistantStore"
+import { Card } from "@/components/ui"
 import { cn } from "@/lib/utils"
 
 const SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 }
@@ -15,7 +16,12 @@ const SEV_DOT: Record<string, string> = {
   low: "bg-blue-500",
   info: "bg-zinc-400",
 }
-const BUCKET_COLOR = { healthy: "#10b981", fair: "#f59e0b", atRisk: "#ef4444" } as const
+// Theme-aware token colors — recharts fills accept CSS var() strings (rendered as SVG fill).
+const BUCKET_COLOR = {
+  healthy: "hsl(var(--success))",
+  fair: "hsl(var(--warning))",
+  atRisk: "hsl(var(--destructive))",
+} as const
 
 interface FlatFinding extends FleetFinding {
   serverId: string
@@ -76,19 +82,19 @@ export default function FleetHealthPanel({ health, servers }: { health?: FleetHe
   if (!health) return null
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
+    <Card className="p-5">
       <h2 className="mb-3 text-sm font-semibold text-foreground">Fleet health</h2>
 
-      <div className="mb-3.5 flex items-center gap-4">
-        <div className="relative h-[84px] w-[84px] shrink-0">
+      <div className="mb-3.5 flex items-center gap-5">
+        <div className="relative h-[100px] w-[100px] shrink-0">
           {buckets.length > 0 ? (
-            <ResponsiveContainer width={84} height={84}>
+            <ResponsiveContainer width={100} height={100}>
               <PieChart>
                 <Pie
                   data={buckets}
                   dataKey="value"
-                  innerRadius={28}
-                  outerRadius={38}
+                  innerRadius={34}
+                  outerRadius={46}
                   startAngle={90}
                   endAngle={-270}
                   stroke="none"
@@ -101,10 +107,10 @@ export default function FleetHealthPanel({ health, servers }: { health?: FleetHe
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-full w-full rounded-full border-[9px] border-muted" />
+            <div className="h-full w-full rounded-full border-[11px] border-muted" />
           )}
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-[19px] font-semibold tabular-nums text-foreground">{avgScore}</span>
+            <span className="text-[22px] font-semibold tabular-nums text-foreground">{avgScore}</span>
             <span className="text-[10px] text-muted-foreground">score</span>
           </div>
         </div>
@@ -121,7 +127,7 @@ export default function FleetHealthPanel({ health, servers }: { health?: FleetHe
       <div className="border-t border-border pt-3">
         {topFindings.length === 0 ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <ShieldCheck size={13} className="text-emerald-500" />
+            <ShieldCheck size={13} className="text-success" />
             Everything looks healthy.
           </div>
         ) : (
@@ -150,6 +156,6 @@ export default function FleetHealthPanel({ health, servers }: { health?: FleetHe
           </>
         )}
       </div>
-    </div>
+    </Card>
   )
 }

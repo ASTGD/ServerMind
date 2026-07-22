@@ -110,7 +110,7 @@ export default function ServerDetail() {
         </Link>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
-            <h1 className="truncate text-2xl font-semibold text-foreground">{server.name}</h1>
+            <h1 className="truncate text-h1 text-foreground">{server.name}</h1>
             <ConnectionStatus status={server.status} />
           </div>
           <p className="text-sm text-muted-foreground">
