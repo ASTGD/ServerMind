@@ -86,9 +86,21 @@ def oauth_root_routes() -> list[Route]:
     corrected = _advertise_public_clients(
         build_metadata(issuer, None, client_registration_options, revocation_options)
     )
+    _handle = MetadataHandler(corrected).handle
+
+    async def metadata_endpoint(request):
+        # The SDK's handler pins Cache-Control: max-age=3600. If a client cached a
+        # PREVIOUS (wrong) metadata doc, it would reuse it for up to an hour and keep
+        # failing even after we correct it. Serve a short cache so a retry always sees
+        # the current metadata; the endpoint is a tiny static lookup, so re-fetching
+        # costs nothing.
+        response = await _handle(request)
+        response.headers["Cache-Control"] = "public, max-age=60"
+        return response
+
     metadata_route = Route(
         _AS_METADATA_PATH,
-        endpoint=cors_middleware(MetadataHandler(corrected).handle, ["GET", "OPTIONS"]),
+        endpoint=cors_middleware(metadata_endpoint, ["GET", "OPTIONS"]),
         methods=["GET", "OPTIONS"],
     )
     routes = [metadata_route if getattr(r, "path", None) == _AS_METADATA_PATH else r for r in routes]
