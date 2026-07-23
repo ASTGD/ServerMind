@@ -45,6 +45,26 @@ async def check_command_rate(user_id: str, server_id: str) -> bool:
         return True
 
 
+async def check_rate(bucket: str, limit: int, window_seconds: int = 60) -> bool:
+    """Generic per-key fixed-window limiter. True if allowed, False if over the cap.
+
+    Used for the MCP OAuth endpoints (brute-force + DCR-spam protection). Fail-OPEN on any
+    Redis error — a rate limiter must never take the service down.
+    """
+    if not settings.RATE_LIMIT_ENABLED:
+        return True
+    try:
+        r = get_redis()
+        key = f"rl:{bucket}"
+        count = await r.incr(key)
+        if count == 1:
+            await r.expire(key, window_seconds)
+        return count <= limit
+    except Exception as exc:  # noqa: BLE001 — never let rate limiting break a request
+        logger.warning("Rate-limit check failed (allowing) for %s: %s", bucket, exc)
+        return True
+
+
 # ── TOTP login brute-force lockout (per user) ─────────────────────────────────
 # A 6-digit code is a small space, so the per-IP slowapi login limit isn't enough
 # against rotating IPs. We add a per-user failed-attempt counter. Fail-OPEN on

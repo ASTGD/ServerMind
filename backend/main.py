@@ -236,11 +236,14 @@ if settings.MCP_REQUIRE_AUTH:
     # root origin (issuer = MCP_BASE_URL) so .well-known discovery is unambiguous, and the
     # browser consent page is /oauth/consent.
     from app.mcp.http_auth import guard_mcp_app, oauth_root_routes
+    from app.mcp.rate_limit import OAuthRateLimitMiddleware
     from app.routers import mcp_oauth as mcp_oauth_router
 
     app.mount("/mcp", guard_mcp_app(_mcp_app))
     app.include_router(mcp_oauth_router.router)     # /oauth/consent (login + approve)
     app.router.routes.extend(oauth_root_routes())   # /authorize /token /register /revoke + .well-known
+    # Per-IP throttle on the OAuth mutation endpoints (brute-force + DCR-spam).
+    app.add_middleware(OAuthRateLimitMiddleware)
     logger.info("MCP OAuth enabled — issuer=%s, resource=%s/mcp", settings.MCP_BASE_URL, settings.MCP_BASE_URL)
 else:
     # LOCAL DEV ONLY — authless (Phase-0 behaviour); the dev-user resolver picks the caller.
