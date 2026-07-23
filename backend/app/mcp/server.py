@@ -38,7 +38,16 @@ from app.models.security_scan import SecurityScan
 from app.models.server import Server
 from app.models.threat_scan import ThreatScan
 from app.models.user import User
-from app.services import audit_service, fleet_service, mission_service, team_service
+from app.services import (
+    audit_service,
+    file_service,
+    fleet_service,
+    hosting_service,
+    mission_service,
+    team_service,
+)
+from app.services.hosting_service import HostingError
+from app.services.secret_redact import redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -318,6 +327,23 @@ def _load_json(text, default):
         return json.loads(text) if text else default
     except (ValueError, TypeError):
         return default
+
+
+def _looks_binary(text: str) -> bool:
+    """Robust binary check for file content.
+
+    ``file_service`` decodes with a latin-1 fallback, which accepts ANY byte sequence — so
+    its ``is_binary`` almost never fires (a real /bin/bash slipped through live). A NUL byte
+    is a near-certain binary signal (text files don't contain it); a high control-char ratio
+    catches the rest.
+    """
+    if "\x00" in text:
+        return True
+    sample = text[:4096]
+    if not sample:
+        return False
+    ctrl = sum(1 for ch in sample if ord(ch) < 9 or 13 < ord(ch) < 32 or ord(ch) == 127 or 128 <= ord(ch) < 160)
+    return ctrl / len(sample) > 0.15
 
 
 # ── read tools (Phase 2) ──────────────────────────────────────────────────────
@@ -643,3 +669,131 @@ async def serverally_get_mission(mission_id: str, response_format: ResponseForma
                 lines += [f"- {it}" for it in items]
     lines.append(f"\n_Transcript: {len(data['transcript'])} steps (use response_format='json' for full detail)._")
     return "\n".join(lines)
+
+
+# ── live-SSH read tools (Phase 2) ─────────────────────────────────────────────
+
+# Cap file content well under the client 150k result limit.
+_FILE_CONTENT_CAP = 100_000
+
+
+@mcp_server.tool(name="serverally_list_sites", annotations={"title": "List hosted sites", **_RO})
+async def serverally_list_sites(server: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
+    """Websites/domains hosted on a server (CyberPanel, or a connected cPanel/Plesk panel).
+
+    ``server`` is a name or id. Read-only, credential-free. A server with no panel returns
+    a clear note. Each site: domain, state, PHP version, admin email.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        acc = await _resolve_server(db, user, server)
+        if acc is None:
+            return await _unknown_server(db, user, server)
+        srv = acc.server
+        await _audit(db, user, "list_sites", srv.id)
+    # Live call — outside the DB session (SSH/API is slow; srv columns stay usable).
+    try:
+        sites = await hosting_service.list_websites(srv)
+    except HostingError as exc:
+        return f"{srv.name}: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        return f"Error listing sites on {srv.name}: {type(exc).__name__}"
+    data = {"server": srv.name, "count": len(sites), "sites": sites}
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+    if not sites:
+        return f"No sites found on {srv.name}."
+    lines = [f"# Sites on {srv.name} ({len(sites)})", ""]
+    for s in sites:
+        php = f"  ·  PHP {s['php']}" if s.get("php") else ""
+        lines.append(f"- **{s.get('domain', '?')}** — {s.get('state', '')}{php}")
+    return "\n".join(lines)
+
+
+@mcp_server.tool(name="serverally_list_files", annotations={"title": "List files", **_RO})
+async def serverally_list_files(
+    server: str, path: str = "/", show_hidden: bool = False,
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """List a directory on a server over SFTP (metadata only — name/type/size/permissions).
+
+    ``server`` is a name or id; ``path`` an absolute directory. SSH servers only. Read-only.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        acc = await _resolve_server(db, user, server)
+        if acc is None:
+            return await _unknown_server(db, user, server)
+        srv = acc.server
+        if srv.connection_type != "ssh":
+            return f"{srv.name}: file browsing needs an SSH server (this is '{srv.connection_type}')."
+        await _audit(db, user, "list_files", srv.id)
+    try:
+        entries = await file_service.list_dir(srv, path or "/", show_hidden)
+    except Exception as exc:  # noqa: BLE001
+        return f"Error listing '{path}' on {srv.name}: {type(exc).__name__}: {exc}"[:250]
+    items = [
+        {"name": e["name"], "type": e["type"], "size": e["size"],
+         "permissions": e["permissions"], "path": e["path"], "modified": _iso(e.get("modified"))}
+        for e in entries
+    ]
+    data = {"server": srv.name, "path": path, "count": len(items), "entries": items}
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+    lines = [f"# {path} on {srv.name} ({len(items)} entries)", ""]
+    for e in items:
+        tag = "📁" if e["type"] == "dir" else "🔗" if e["type"] == "link" else "  "
+        size = "" if e["type"] == "dir" else f"  ({e['size']} B)"
+        lines.append(f"- {tag} `{e['name']}`{size}  {e['permissions']}")
+    return "\n".join(lines)
+
+
+@mcp_server.tool(name="serverally_read_file", annotations={"title": "Read a file", **_RO})
+async def serverally_read_file(
+    server: str, path: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN
+) -> str:
+    """Read a TEXT file on a server over SFTP.
+
+    Secrets are masked **server-side** before returning (passwords, keys, tokens, connection
+    strings, PEM blocks) — over MCP there is no client-side redaction, so this is enforced
+    here. Binary files are refused; large files are truncated. ``server`` is a name or id;
+    ``path`` an absolute file path. SSH servers only. Read-only.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        acc = await _resolve_server(db, user, server)
+        if acc is None:
+            return await _unknown_server(db, user, server)
+        srv = acc.server
+        if srv.connection_type != "ssh":
+            return f"{srv.name}: reading files needs an SSH server (this is '{srv.connection_type}')."
+        await _audit(db, user, "read_file", srv.id)
+    try:
+        res = await file_service.read_file(srv, path)
+    except Exception as exc:  # noqa: BLE001
+        return f"Error reading '{path}' on {srv.name}: {type(exc).__name__}: {exc}"[:250]
+    raw = res.get("content") or ""
+    if res.get("is_binary") or _looks_binary(raw):
+        return f"'{path}' on {srv.name} is a binary file ({res.get('size', 0)} bytes) — not shown."
+    content, hidden = redact_secrets(raw)
+    truncated = len(content) > _FILE_CONTENT_CAP
+    if truncated:
+        content = content[:_FILE_CONTENT_CAP]
+    data = {
+        "server": srv.name, "path": path, "size": res.get("size"),
+        "secrets_hidden": hidden, "truncated": truncated, "content": content,
+    }
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+    note = f"{res.get('size', 0)} bytes"
+    if hidden:
+        note += f", {hidden} secret(s) hidden"
+    if truncated:
+        note += ", truncated"
+    return f"# {path} on {srv.name} ({note})\n\n```\n{content}\n```"

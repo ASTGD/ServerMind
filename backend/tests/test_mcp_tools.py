@@ -13,6 +13,7 @@ import json
 import uuid
 
 from app.mcp.server import (
+    _looks_binary,
     _mission_summary,
     _scan_finding_public,
     _server_public,
@@ -30,6 +31,7 @@ _READ_TOOLS = {
     "serverally_list_servers", "serverally_get_server", "serverally_get_metrics",
     "serverally_get_fleet_health", "serverally_get_security_scan", "serverally_get_threat_scan",
     "serverally_list_playbooks", "serverally_list_missions", "serverally_get_mission",
+    "serverally_list_sites", "serverally_list_files", "serverally_read_file",
 }
 
 
@@ -104,6 +106,15 @@ def test_mission_summary_is_scalar_and_safe():
     out = _mission_summary(_M())
     assert out["goal"] == "Fix the site" and out["verified"] is True
     assert "steps" not in out and "transcript" not in out  # heavy/possibly-sensitive blobs excluded here
+
+
+def test_looks_binary_detects_what_latin1_would_hide():
+    """read_file's own binary guard — file_service's latin-1 fallback lets real binaries
+    through (a live /bin/bash did), so the tool must catch NUL + control-heavy content."""
+    assert _looks_binary("\x7fELF\x02\x01\x01\x00\x00\x00 binary")     # NUL present
+    assert _looks_binary("".join(chr(b) for b in range(0, 32)) * 200)  # control-heavy
+    assert not _looks_binary("NAME=\"Ubuntu\"\nVERSION=\"20.04\"\n")   # ordinary text
+    assert not _looks_binary("")                                        # empty is not binary
 
 
 def test_all_shipped_tools_are_read_only():
