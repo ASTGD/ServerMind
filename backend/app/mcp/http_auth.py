@@ -16,14 +16,39 @@ from pydantic import AnyHttpUrl
 from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.routing import Route
 
+from mcp.server.auth.handlers.metadata import MetadataHandler
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend, RequireAuthMiddleware
 from mcp.server.auth.routes import (
+    build_metadata,
     build_resource_metadata_url,
+    cors_middleware,
     create_auth_routes,
     create_protected_resource_routes,
 )
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
+
+_AS_METADATA_PATH = "/.well-known/oauth-authorization-server"
+
+
+def _advertise_public_clients(metadata):
+    """Add ``"none"`` to the token/revocation auth-method lists in the AS metadata.
+
+    The SDK hardcodes ``token_endpoint_auth_methods_supported`` to
+    ``["client_secret_post", "client_secret_basic"]`` and omits ``"none"``. A
+    spec-strict OAuth client (Claude Desktop / claude.ai) that registered as a
+    PUBLIC client — ``token_endpoint_auth_method="none"`` + PKCE, no secret — reads
+    this metadata, sees that ``"none"`` is not advertised at the token endpoint, and
+    ABORTS the flow *before* ever calling ``/token`` (the exact failure we hit: the
+    consent redirect delivered the code, but no token exchange followed). Our provider
+    *does* accept public clients — the whole flow completes when the metadata check is
+    skipped — so we correct the advertised metadata to match reality.
+    """
+    for field in ("token_endpoint_auth_methods_supported", "revocation_endpoint_auth_methods_supported"):
+        methods = getattr(metadata, field, None)
+        if methods is not None and "none" not in methods:
+            setattr(metadata, field, [*methods, "none"])
+    return metadata
 
 from app.config import settings
 from app.mcp.oauth_provider import ALL_SCOPES, DEFAULT_SCOPES, SCOPE_READ, oauth_provider
@@ -43,16 +68,31 @@ def oauth_root_routes() -> list[Route]:
     """The AS endpoints (metadata, /authorize, /token, /register, /revoke) plus the
     protected-resource metadata — all served at the root origin."""
     issuer = issuer_url()
+    client_registration_options = ClientRegistrationOptions(
+        enabled=True,                 # Dynamic Client Registration (oauth_dcr)
+        valid_scopes=ALL_SCOPES,
+        default_scopes=DEFAULT_SCOPES,  # read-only by default
+    )
+    revocation_options = RevocationOptions(enabled=True)
     routes = create_auth_routes(
         provider=oauth_provider,
         issuer_url=issuer,
-        client_registration_options=ClientRegistrationOptions(
-            enabled=True,                 # Dynamic Client Registration (oauth_dcr)
-            valid_scopes=ALL_SCOPES,
-            default_scopes=DEFAULT_SCOPES,  # read-only by default
-        ),
-        revocation_options=RevocationOptions(enabled=True),
+        client_registration_options=client_registration_options,
+        revocation_options=revocation_options,
     )
+
+    # Replace the SDK's AS-metadata route with one that advertises public-client
+    # ("none") support, so strict clients (Claude) proceed to the token exchange.
+    corrected = _advertise_public_clients(
+        build_metadata(issuer, None, client_registration_options, revocation_options)
+    )
+    metadata_route = Route(
+        _AS_METADATA_PATH,
+        endpoint=cors_middleware(MetadataHandler(corrected).handle, ["GET", "OPTIONS"]),
+        methods=["GET", "OPTIONS"],
+    )
+    routes = [metadata_route if getattr(r, "path", None) == _AS_METADATA_PATH else r for r in routes]
+
     routes.extend(
         create_protected_resource_routes(
             resource_url=resource_url(),
