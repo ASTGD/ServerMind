@@ -330,7 +330,7 @@ mutation, team/billing management, anything that deletes.
 | **2** | **Read tools** + Rule-7 scoping + audit + credential-free tests | Claude answers *"which of my servers need attention?"* from real data; a second user's servers are invisible | 3–4 d |
 | **3 ✅** | **Bounded write tools** — every write EXECUTE-gated (Rule 7; a viewer can never execute, via the `_executor` helper → team_service), 0 AI actions, no shell/delete/restore (§3). DONE (2026-07-23): run_security_scan + run_threat_scan (inline, persist like the router), run_playbook (start+poll: durable PlaybookRun + enqueue, returns run_id immediately — §7) + get_playbook_run (poll), list_backups + run_backup (existing job only), create_site (verifies the domain appears before success — §3a) + issue_ssl + create_database (password is an INPUT, never returned). **21 tools total (14 read, 7 write).** Validated live: the write-gate refuses a non-owner for every write; run_playbook rejects an unknown slug before enqueuing; a real run_security_scan on panel2 → grade D, 19 findings; create_site on a non-panel server errors cleanly (no mutation); create_database never echoes the password. Mutating happy-paths mirror the tested router + cyberpanel_cli (live-proven, H1) — not live-fired to avoid changing real infra. **Deferred to a later pass:** skills as MCP prompts + injection framing on tool results | Claude runs a playbook end-to-end via poll; a 6-minute op does not hit the 5-min timeout | 3–4 d |
 | **4 ✅** | **UI + gating** | DONE (2026-07-23). Settings → **Connected applications** card: the MCP URL + copy, connect instructions (Claude Code / Desktop / ChatGPT), the connected clients with scope + timestamps, and **Revoke** (immediate). Authed API `GET/DELETE /api/mcp/*` (app JWT, own-subject-scoped). **Scopes: Read-only (default) / Full** chosen on the consent page — read tools need `mcp:read`, write tools require `mcp:write` (enforced in `_executor`, validated live). **Plan gate** (`mcp_enabled_for` — paid-tier only when `ENFORCE_PLAN_LIMITS` is on; the card shows an upgrade note). Validated live: connections list/revoke, the card rendered authed (no console errors), read-only blocked from writes, consent access-level radio. **Deferred:** Custom per-tool scopes + a standalone docs page. | A customer can connect and revoke without support | 2–3 d |
-| **5 ◑ (hardening done; live-connect pending)** | **Live verification + hardening** | HARDENING DONE (2026-07-23): **per-IP rate limit** on the OAuth mutation endpoints (`OAuthRateLimitMiddleware` — /oauth/consent 10·min, /token 30·min, /register 10·min; a path-based ASGI middleware because the SDK's OAuth routes are CORS-wrapped and unreachable by SlowAPI's decorator; Redis fixed-window, fail-open). Validated live: the 11th /register in a minute → 429. Most of the §11 checklist is already green from earlier validation (revoke→immediate loss, cross-user isolation, viewer/read-only can't write, no credential in any payload, refresh rotation, PKCE, the 401 handshake). **Remaining = the user's step + deploy config:** a real Claude connection (Claude Code works against localhost today; claude.ai/ChatGPT need the public deploy), the Anthropic **egress allowlist `160.79.104.0/21`** must not be WAF-blocked (§5.2 — deploy config, not code), and the latency budget holds (endpoints are fast DB lookups). | The §11 checklist passes end to end | 2–3 d |
+| **5 ◑ (hardening done; deployed live; two real-connect bugs fixed)** | **Live verification + hardening** | HARDENING DONE (2026-07-23): **per-IP rate limit** on the OAuth mutation endpoints (`OAuthRateLimitMiddleware` — /oauth/consent 10·min, /token 30·min, /register 10·min; a path-based ASGI middleware because the SDK's OAuth routes are CORS-wrapped and unreachable by SlowAPI's decorator; Redis fixed-window, fail-open). Validated live: the 11th /register in a minute → 429. Most of the §11 checklist is already green from earlier validation (revoke→immediate loss, cross-user isolation, viewer/read-only can't write, no credential in any payload, refresh rotation, PKCE, the 401 handshake). **DEPLOYED to serverally.firevps.net (2026-07-23) — a real Claude Desktop connect surfaced + fixed two deploy bugs the mock flow could not (see §5.5):** the OAuth flow + an authenticated `initialize`/`tools/list` (21 tools) now complete end-to-end over public HTTPS. **Remaining = the user's step:** approve the connector in Claude Desktop and run a tool; confirm the Anthropic **egress allowlist `160.79.104.0/21`** isn't WAF-blocked (§5.2 — Caddy/ufw allow 443 from anywhere, so this is already satisfied). | The §11 checklist passes end to end | 2–3 d |
 
 **Total ≈ 3–4 weeks.** Phase 1 is the risk; Phases 2–3 are thin adapters over services
 that already exist and are already tested.
@@ -364,6 +364,43 @@ that already exist and are already tested.
 - [ ] A **150k+ char** log read truncates cleanly rather than failing
 - [ ] MCP calls record **0 actions** in `ai_usage`
 - [ ] Rate limit still applies to MCP-driven SSH work
+
+## 11a. Live-connect deploy bugs (found by a real Claude Desktop connect, 2026-07-23)
+
+The mock/replicated OAuth flow passed 17/17 because a script skips the metadata compliance
+checks a *real* client enforces and can call `/token` directly. A real Claude Desktop
+connect against the public deploy surfaced two bugs the mock never could — both are the
+kind that only bite behind a reverse proxy with a spec-strict client:
+
+1. **"Authorization with ServerAlly failed" — `/token` was never called.** The flow reached
+   consent → `302` back to claude.ai with the code, but **no token exchange followed**
+   (absent from the Caddy access log). Root cause: the MCP SDK hardcodes the AS metadata's
+   `token_endpoint_auth_methods_supported` to `["client_secret_post","client_secret_basic"]`
+   and **omits `"none"`**. Claude registers as a **public client** (`token_endpoint_auth_method=
+   none` + PKCE, no secret); a spec-strict client reads that metadata, sees `none` isn't
+   advertised at the token endpoint, and **aborts before `/token`**. Our provider already
+   accepts public clients — the whole flow completes when the metadata check is skipped —
+   so the fix corrects the advertised metadata: `http_auth._advertise_public_clients` rebuilds
+   the AS-metadata route with `"none"` appended (SDK left unpatched). Locked by
+   `tests/test_mcp_oauth_metadata.py`.
+
+2. **The session 401s right after OAuth — `/mcp` unreachable behind the proxy.** Two proxy-
+   integration faults on the resource endpoint: (a) `POST /mcp/` → **421 "Invalid Host
+   header"** because FastMCP defaults DNS-rebinding protection ON with localhost-only
+   `allowed_hosts` whenever `transport_security` is unset, rejecting the proxied
+   `Host: serverally.firevps.net`; fixed by `transport_security=TransportSecuritySettings(
+   enable_dns_rebinding_protection=False)` — `/mcp` is a public, bearer-gated endpoint behind
+   a trusted proxy where that browser-localhost guard is redundant. (b) `POST /mcp` (no slash)
+   → **307 to `http://…/mcp/`** (the mount's trailing-slash redirect, emitted with an
+   `http://` scheme), and following it **drops the Authorization header** → 401; fixed in
+   nginx with `location = /mcp` that internally rewrites to the backend's `/mcp/` (no
+   client-visible redirect) and pins `X-Forwarded-Proto https`. After both: bare `POST /mcp`
+   → `200` (initialize/tools-list), unauthenticated `/mcp` → the proper `401` +
+   `WWW-Authenticate … resource_metadata=…` handshake.
+
+**Lesson:** validate an OAuth/MCP server against a *real* strict client through the *actual*
+proxy chain before calling it done — a scripted flow that calls endpoints directly cannot
+catch metadata-compliance or proxy-integration faults.
 
 ## 12. Risks
 
