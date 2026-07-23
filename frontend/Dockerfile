@@ -14,7 +14,7 @@ ENV VITE_API_URL=$VITE_API_URL \
     VITE_APP_TAGLINE=$VITE_APP_TAGLINE
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install --no-audit --no-fund
 
 COPY . .
 RUN npm run build
