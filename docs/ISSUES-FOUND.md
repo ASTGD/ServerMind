@@ -4,7 +4,7 @@
 >
 > **Rule:** when live-testing and something looks wrong, do NOT fix it in place mid-task. Log it here, keep going with the actual task, fix everything after the session. See the "Live Testing — Bug Capture Protocol" section in `CLAUDE.md`.
 >
-> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-012**.
+> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-017**.
 
 ---
 
@@ -108,6 +108,18 @@ then write the warning.**
 ---
 
 ## Open
+
+### BUG-016 — Phantom playbook run: stuck "Running" forever with an empty live log while NOTHING executed on the server
+- **Date:** 2026-07-22
+- **Status:** Open
+- **Context:** Live testing — user ran the "Virtualmin (GPL)" playbook on a fresh VPS and reported it "showing still running" with a blank live-log box; asked whether it was actually running.
+- **Server / run:** Worker02 (Ubuntu 22.04, `vasevev.com`, 150.241.230.202) — playbook run `cb40abf9-a9c3-4809-b8fa-c0263c1fda3f`
+- **Observed:** The run modal showed **Running** with a completely empty live log. Ground-truth on the server proved **nothing ever executed**: no virtualmin/apt/dpkg/perl process, no installer script downloaded (`/root/virtualmin-install.sh`, `/tmp/*.sh` absent), no `/root/virtualmin-install.log`, apt history showed nothing since the previous day's VPS provisioning, `virtualmin` not installed, and load average `0.00, 0.00, 0.00` (idle). The DB record confirmed it: `playbook_runs` row `status=running`, `completed_at=NULL`, `output` length **0**, `started_at=2026-07-22 09:40:07Z` — i.e. dispatched, zero output ever captured, never transitioned to a terminal state.
+- **Expected:** A run either streams the installer's output, or — if the command failed to launch / a pre-flight guard aborted / an early precondition failed — the run flips to **failed** with the reason surfaced. A run that produced no output and did nothing on the box must NOT sit on "Running" indefinitely showing a blank log. A non-technical user is left staring at an empty box with no way to know it's dead.
+- **Severity:** High — it's a silent dead-end. The user can't tell a working long install (Virtualmin legitimately takes 10–20 min and can be quiet early) from a run that never started. Two distinct failures compound: (a) **no output captured** (blank live log even though the remote command should emit *something*, or should at least record the launch/guard result), and (b) **no completion / timeout** (status never leaves "Running", `completed_at` stays NULL). Either alone is bad; together they produce a phantom run.
+- **Suspected cause:** Not yet root-caused in code. Candidates: the run's remote command (likely a `nohup … > logfile &` + poll pattern, as the control-panel playbooks use) failed at its very first step (e.g. the installer download, or a pre-flight guard, or a hostname/clean-box/RAM precondition) so the backgrounded process exited immediately and the logfile it was meant to poll was never created → the streamer saw nothing and the run was never marked done. Note "Virtualmin" is **not** in the official control-panel playbook set (cyberpanel/hestiacp/aapanel/cloudpanel/cpanel-whm/plesk/directadmin), so this may be an AI-generated or newer playbook whose launch/streaming path is less hardened.
+- **Repro:** Run a playbook whose remote command produces no early stdout / fails to launch (e.g. a backgrounded install whose first command errors) and observe whether the run streams anything and whether it ever leaves "Running". Should be reproducible in a Dev Door dry-run or against a box where the installer's precondition fails fast.
+- **Fixes to consider:** (1) a **watchdog / max-idle timeout** on a run with zero output that flips it to failed with "no output — the command may have failed to start"; (2) always capture and persist the launch result (exit status of the dispatch, and the first N bytes of the log/guard output) so an early abort is visible; (3) surface pre-flight-guard aborts as a failed run with the plain-English reason, never a silent "Running".
 
 ### BUG-006 — Ally printed a live admin password in chat despite an explicit instruction not to
 - **Date:** 2026-07-18
