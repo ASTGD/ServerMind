@@ -33,7 +33,7 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.alert import ServerMetric
 from app.models.mission import Mission
-from app.models.playbook import Playbook
+from app.models.playbook import Playbook, PlaybookRun
 from app.models.security_scan import SecurityScan
 from app.models.server import Server
 from app.models.threat_scan import ThreatScan
@@ -44,10 +44,15 @@ from app.services import (
     fleet_service,
     hosting_service,
     mission_service,
+    security_service,
     team_service,
+    threat_service,
 )
 from app.services.hosting_service import HostingError
+from app.services.playbook_service import os_matches, substitute_variables, supported_os_for
 from app.services.secret_redact import redact_secrets
+from app.services.secret_vars import encrypt_variables
+from app.workers.playbook_tasks import run_playbook_task
 
 logger = logging.getLogger(__name__)
 
@@ -797,3 +802,205 @@ async def serverally_read_file(
     if truncated:
         note += ", truncated"
     return f"# {path} on {srv.name} ({note})\n\n```\n{content}\n```"
+
+
+# ── write tools (Phase 3) ─────────────────────────────────────────────────────
+# Every write requires EXECUTE permission (Rule 7 across the boundary — a viewer can
+# never execute). Deterministic — 0 AI actions. No shell, no deletes, no restore (§3).
+
+# Non-read annotations. destructiveHint defaults False (scans change nothing); a tool that
+# modifies the server overrides it to True.
+_WRITE = {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True}
+
+
+async def _executor(db, user: User, ref: str):
+    """Resolve a server the caller may EXECUTE on. Returns ``(Access, None)`` when allowed,
+    else ``(None, message)`` — an unknown server or missing execute permission."""
+    acc = await _resolve_server(db, user, ref)
+    if acc is None:
+        return None, await _unknown_server(db, user, ref)
+    if not acc.can_execute:
+        return None, (
+            f"You don't have permission to run actions on {acc.server.name} — this needs "
+            "execute access, which your role doesn't grant."
+        )
+    return acc, None
+
+
+@mcp_server.tool(name="serverally_run_security_scan", annotations={"title": "Run security scan", **_WRITE})
+async def serverally_run_security_scan(server: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
+    """Run a FRESH security audit on a server and save it, returning the grade + findings.
+
+    The probes are read-only (they don't change the server), but this performs an action
+    and needs execute permission. May take a minute. ``server`` is a name or id. If the call
+    times out, the result is still saved — read it with get_security_scan.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        acc, err = await _executor(db, user, server)
+        if err:
+            return err
+        srv = acc.server
+        result = await security_service.run_scan(srv)  # inline SSH scan (mirrors the router)
+        counts = result["counts"]
+        db.add(SecurityScan(
+            server_id=srv.id, user_id=user.id, score=result["score"], grade=result["grade"],
+            status=result["status"], error=result.get("error"), duration_ms=result.get("duration_ms"),
+            critical_count=counts.get("critical", 0), high_count=counts.get("high", 0),
+            medium_count=counts.get("medium", 0), low_count=counts.get("low", 0),
+            pass_count=counts.get("pass", 0), info_count=counts.get("info", 0),
+            findings=json.dumps(result["findings"]),
+        ))
+        await db.commit()
+        await _audit(db, user, "run_security_scan", srv.id)
+        data = {
+            "server": srv.name, "grade": result["grade"], "score": result["score"], "counts": counts,
+            "findings": [_scan_finding_public(f) for f in result["findings"] if isinstance(f, dict)],
+        }
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+    lines = [f"# {data['server']} security scan — grade {data['grade']} ({data['score']}/100)", f"Findings: {data['counts']}", ""]
+    for f in data["findings"]:
+        if f.get("status") == "pass":
+            continue
+        lines.append(f"- **[{f.get('severity', '?')}]** {f.get('title') or f.get('name', '')} — {f.get('detail') or f.get('description', '')}")
+    return "\n".join(lines).rstrip()
+
+
+@mcp_server.tool(name="serverally_run_threat_scan", annotations={"title": "Run threat scan", **_WRITE})
+async def serverally_run_threat_scan(server: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
+    """Run a FRESH threat/IOC scan on a server and save it, returning the verdict + evidence.
+
+    Every probe is read-only (recommended fixes are display-only, never run), but this
+    performs an action and needs execute permission. ``server`` is a name or id.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        acc, err = await _executor(db, user, server)
+        if err:
+            return err
+        srv = acc.server
+        result = await threat_service.run_scan(srv)
+        counts = result["counts"]
+        db.add(ThreatScan(
+            server_id=srv.id, user_id=user.id, verdict=result["verdict"],
+            status=result["status"], error=result.get("error"), duration_ms=result.get("duration_ms"),
+            critical_count=counts.get("critical", 0), high_count=counts.get("high", 0),
+            medium_count=counts.get("medium", 0), low_count=counts.get("low", 0),
+            pass_count=counts.get("pass", 0), info_count=counts.get("info", 0),
+            findings=json.dumps(result["findings"]),
+        ))
+        await db.commit()
+        await _audit(db, user, "run_threat_scan", srv.id)
+        data = {
+            "server": srv.name, "verdict": result["verdict"], "counts": counts,
+            "findings": [_scan_finding_public(f) for f in result["findings"] if isinstance(f, dict)],
+        }
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+    lines = [f"# {data['server']} threat scan — {data['verdict']}", f"Findings: {data['counts']}", ""]
+    for f in data["findings"]:
+        lines.append(f"- **[{f.get('severity', '?')}]** {f.get('title') or f.get('name', '')} — {f.get('detail') or f.get('description') or f.get('evidence', '')}")
+    return "\n".join(lines).rstrip()
+
+
+@mcp_server.tool(
+    name="serverally_run_playbook",
+    annotations={"title": "Run a playbook", "readOnlyHint": False, "destructiveHint": True,
+                 "idempotentHint": False, "openWorldHint": True},
+)
+async def serverally_run_playbook(
+    server: str, playbook: str, variables: dict[str, str] | None = None,
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Start an official playbook (one-click install/config script) on a server.
+
+    Returns a ``run_id`` IMMEDIATELY — the playbook runs in the background (it can take
+    minutes); poll ``get_playbook_run(run_id)`` for progress and output. A playbook CHANGES
+    the server, so this needs execute permission. ``playbook`` is a slug from list_playbooks;
+    ``variables`` is a dict of that playbook's inputs. ``server`` is a name or id.
+    """
+    variables = variables or {}
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        acc, err = await _executor(db, user, server)
+        if err:
+            return err
+        srv = acc.server
+        pb = (await db.execute(
+            select(Playbook).where(Playbook.slug == playbook, Playbook.is_official == True)  # noqa: E712
+        )).scalar_one_or_none()
+        if pb is None:
+            return f"Playbook '{playbook}' not found. Use list_playbooks to see the available slugs."
+        supported = supported_os_for(pb)
+        if not os_matches(srv, supported):
+            return (f"Playbook '{playbook}' needs {', '.join(supported or []) or 'a different OS'} — "
+                    f"{srv.name} is {srv.os_type or 'unknown'}.")
+        raw = pb.script_powershell if (srv.connection_type == "winrm" and pb.script_powershell) else pb.script_bash
+        if not raw:
+            return f"Playbook '{playbook}' has no script for {srv.name}'s OS."
+        script = substitute_variables(raw, variables)
+        run = PlaybookRun(
+            server_id=srv.id, user_id=user.id, playbook_id=pb.id,
+            variables_used=encrypt_variables(variables), status="running",
+        )
+        db.add(run)
+        await db.flush()  # populate run.id
+        run_id = str(run.id)
+        srv_id = str(srv.id)
+        srv_name = srv.name
+        await db.commit()  # commit BEFORE enqueuing so the worker can find the run
+        await _audit(db, user, "run_playbook", srv.id)
+
+    run_playbook_task.delay(run_id, srv_id, script)  # durable background run
+    data = {"run_id": run_id, "server": srv_name, "playbook": playbook, "status": "running",
+            "note": "Started in the background. Poll get_playbook_run(run_id) for progress and output."}
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+    return (f"▶ Started **{playbook}** on {srv_name}. Run id `{run_id}`.\n\n"
+            "It runs in the background — call `get_playbook_run` with that id to follow progress.")
+
+
+@mcp_server.tool(name="serverally_get_playbook_run", annotations={"title": "Playbook run status", **_RO})
+async def serverally_get_playbook_run(run_id: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
+    """Status + output of a playbook run started with run_playbook.
+
+    ``run_id`` is what run_playbook returned. Scoped to your own runs. Output is truncated to
+    the most recent portion. Read-only.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        try:
+            rid = uuid.UUID(str(run_id))
+        except ValueError:
+            return "Invalid run_id — use the id returned by run_playbook."
+        run = (await db.execute(
+            select(PlaybookRun).where(PlaybookRun.id == rid, PlaybookRun.user_id == user.id)
+        )).scalar_one_or_none()
+        await _audit(db, user, "get_playbook_run")
+        if run is None:
+            return "Playbook run not found (or it belongs to another account)."
+        output = run.output or ""
+        if len(output) > _FILE_CONTENT_CAP:
+            output = "… (earlier output trimmed)\n" + output[-_FILE_CONTENT_CAP:]
+        data = {
+            "run_id": str(run.id), "status": run.status,
+            "started_at": _iso(run.started_at), "completed_at": _iso(run.completed_at),
+            "failure_reason": run.failure_reason, "output": output,
+        }
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+    lines = [f"# Playbook run {data['run_id']} — {data['status']}"]
+    if data["failure_reason"]:
+        lines.append(f"**Failed:** {data['failure_reason']}")
+    body = output[-4000:] if output else "(no output captured yet — still running or just started)"
+    lines.append(f"\n```\n{body}\n```")
+    return "\n".join(lines)

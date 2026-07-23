@@ -32,7 +32,11 @@ _READ_TOOLS = {
     "serverally_get_fleet_health", "serverally_get_security_scan", "serverally_get_threat_scan",
     "serverally_list_playbooks", "serverally_list_missions", "serverally_get_mission",
     "serverally_list_sites", "serverally_list_files", "serverally_read_file",
+    "serverally_get_playbook_run",
 }
+
+# Phase 3 writes — NOT read-only; run_playbook additionally changes the server.
+_WRITE_TOOLS = {"serverally_run_security_scan", "serverally_run_threat_scan", "serverally_run_playbook"}
 
 
 def _server(**over) -> Server:
@@ -117,12 +121,16 @@ def test_looks_binary_detects_what_latin1_would_hide():
     assert not _looks_binary("")                                        # empty is not binary
 
 
-def test_all_shipped_tools_are_read_only():
-    """Every tool registered this phase is read-only + non-destructive (Phase 2 = reads)."""
-    tools = asyncio.run(mcp_server.list_tools())
-    names = {t.name for t in tools}
-    assert _READ_TOOLS <= names, f"missing tools: {_READ_TOOLS - names}"
-    for t in tools:
-        if t.name in _READ_TOOLS:
-            assert t.annotations and t.annotations.readOnlyHint is True, f"{t.name} not read-only"
-            assert t.annotations.destructiveHint is False, f"{t.name} marked destructive"
+def test_read_tools_are_read_only_and_writes_are_not():
+    """Read tools declare readOnlyHint; write tools do NOT (and run_playbook is destructive)
+    — so a client can trust the annotations, and no write tool masquerades as a read."""
+    tools = {t.name: t for t in asyncio.run(mcp_server.list_tools())}
+    assert _READ_TOOLS <= set(tools), f"missing read tools: {_READ_TOOLS - set(tools)}"
+    assert _WRITE_TOOLS <= set(tools), f"missing write tools: {_WRITE_TOOLS - set(tools)}"
+    for name in _READ_TOOLS:
+        a = tools[name].annotations
+        assert a and a.readOnlyHint is True and a.destructiveHint is False, f"{name} not read-only"
+    for name in _WRITE_TOOLS:
+        a = tools[name].annotations
+        assert a and a.readOnlyHint is False, f"{name} wrongly marked read-only"
+    assert tools["serverally_run_playbook"].annotations.destructiveHint is True
