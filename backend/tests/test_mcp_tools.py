@@ -32,11 +32,15 @@ _READ_TOOLS = {
     "serverally_get_fleet_health", "serverally_get_security_scan", "serverally_get_threat_scan",
     "serverally_list_playbooks", "serverally_list_missions", "serverally_get_mission",
     "serverally_list_sites", "serverally_list_files", "serverally_read_file",
-    "serverally_get_playbook_run",
+    "serverally_get_playbook_run", "serverally_list_backups",
 }
 
 # Phase 3 writes — NOT read-only; run_playbook additionally changes the server.
-_WRITE_TOOLS = {"serverally_run_security_scan", "serverally_run_threat_scan", "serverally_run_playbook"}
+_WRITE_TOOLS = {
+    "serverally_run_security_scan", "serverally_run_threat_scan", "serverally_run_playbook",
+    "serverally_run_backup", "serverally_create_site", "serverally_issue_ssl",
+    "serverally_create_database",
+}
 
 
 def _server(**over) -> Server:

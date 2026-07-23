@@ -32,6 +32,7 @@ from sqlalchemy import func, select
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.alert import ServerMetric
+from app.models.backup import Backup
 from app.models.mission import Mission
 from app.models.playbook import Playbook, PlaybookRun
 from app.models.security_scan import SecurityScan
@@ -40,6 +41,7 @@ from app.models.threat_scan import ThreatScan
 from app.models.user import User
 from app.services import (
     audit_service,
+    backup_service,
     file_service,
     fleet_service,
     hosting_service,
@@ -1004,3 +1006,177 @@ async def serverally_get_playbook_run(run_id: str, response_format: ResponseForm
     body = output[-4000:] if output else "(no output captured yet — still running or just started)"
     lines.append(f"\n```\n{body}\n```")
     return "\n".join(lines)
+
+
+# ── hosting + backup writes (Phase 3) ─────────────────────────────────────────
+# Additive, procedure-carrying writes (§3a): create sites/databases, issue SSL, run an
+# existing backup. Execute-gated. No deletes, no restore (§3). The underlying
+# cyberpanel_cli.create_website already verifies the site really appears before success.
+
+@mcp_server.tool(name="serverally_list_backups", annotations={"title": "List backup jobs", **_RO})
+async def serverally_list_backups(server: str = "", response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
+    """Configured backup jobs the caller can see. Optional ``server`` (name or id) filter.
+
+    Read-only. Each: id, name, type, source, server, schedule, last_run, last_status. Use the
+    id with run_backup. Never returns the backup's stored DB credential.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        servers = await team_service.accessible_servers(db, user)
+        name_by_id = {s.id: s.name for s in servers}
+        ids = list(name_by_id)
+        if server.strip():
+            acc = await _resolve_server(db, user, server)
+            if acc is None:
+                return await _unknown_server(db, user, server)
+            ids = [acc.server.id]
+        rows = (await db.execute(
+            select(Backup).where(Backup.server_id.in_(ids)).order_by(Backup.created_at)
+        )).scalars().all() if ids else []
+        await _audit(db, user, "list_backups")
+        items = [
+            {"id": str(b.id), "name": b.name, "type": b.backup_type, "source": b.source,
+             "server": name_by_id.get(b.server_id), "schedule": b.human_schedule or b.cron_expression,
+             "active": b.is_active, "last_run": _iso(b.last_run), "last_status": b.last_status}
+            for b in rows
+        ]
+        data = {"count": len(items), "backups": items}
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+    if not items:
+        return "No backup jobs configured."
+    lines = [f"# Backup jobs ({len(items)})", ""]
+    for b in items:
+        lines.append(f"- **{b['name']}** ({b['type']}) on {b['server']} — {b['schedule'] or 'manual'}  ·  "
+                     f"last: {b['last_status'] or 'never'}  ·  `{b['id']}`")
+    return "\n".join(lines)
+
+
+@mcp_server.tool(name="serverally_run_backup", annotations={"title": "Run a backup", **_WRITE})
+async def serverally_run_backup(backup_id: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
+    """Run an EXISTING backup job now (no ad-hoc definitions — only jobs already configured).
+
+    ``backup_id`` is from list_backups. Requires execute permission on the backup's server.
+    Non-destructive (it creates an archive). May take a while for large data.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        try:
+            bid = uuid.UUID(str(backup_id))
+        except ValueError:
+            return "Invalid backup_id — use the id from list_backups."
+        backup = (await db.execute(select(Backup).where(Backup.id == bid))).scalar_one_or_none()
+        if backup is None:
+            return "Backup job not found."
+        acc, err = await _executor(db, user, str(backup.server_id))
+        if err:
+            return err
+        srv = acc.server
+        run = await backup_service.perform_backup(db, srv, backup)
+        await _audit(db, user, "run_backup", srv.id)
+        data = {"backup": backup.name, "server": srv.name, "status": run.status,
+                "artifact": run.artifact_path, "size_bytes": run.size_bytes, "run_id": str(run.id)}
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+    ok = "✅" if data["status"] == "success" else "⚠️"
+    size = f" ({data['size_bytes']} bytes)" if data["size_bytes"] else ""
+    return f"{ok} Backup **{data['backup']}** on {data['server']} — {data['status']}{size}."
+
+
+@mcp_server.tool(name="serverally_create_site", annotations={"title": "Create a website", **_WRITE})
+async def serverally_create_site(
+    server: str, domain: str, php: str = "8.1", email: str = "",
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Create a new website/domain on a CyberPanel (or connected hosting) server.
+
+    Verifies the site actually appears before reporting success (the underlying CLI can
+    report success while failing). Requires execute permission. ``server`` name/id.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        acc, err = await _executor(db, user, server)
+        if err:
+            return err
+        srv = acc.server
+        await _audit(db, user, "create_site", srv.id)
+    body = {"domain": domain, "php": php}
+    if email:
+        body["email"] = email
+    try:
+        result = await hosting_service.create_website(srv, body)
+    except HostingError as exc:
+        return f"Could not create {domain} on {srv.name}: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        return f"Error creating {domain} on {srv.name}: {type(exc).__name__}"
+    data = {"server": srv.name, "domain": domain, "result": result}
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+    return f"✅ Created **{domain}** on {srv.name} (PHP {php}). Point its DNS at the server, then issue SSL."
+
+
+@mcp_server.tool(name="serverally_issue_ssl", annotations={"title": "Issue SSL", **_WRITE})
+async def serverally_issue_ssl(server: str, domain: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
+    """Issue (or renew) a free Let's Encrypt SSL certificate for a domain on the server.
+
+    The domain's DNS must already point to the server, or issuance fails. Requires execute
+    permission. ``server`` is a name or id.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        acc, err = await _executor(db, user, server)
+        if err:
+            return err
+        srv = acc.server
+        await _audit(db, user, "issue_ssl", srv.id)
+    try:
+        result = await hosting_service.issue_ssl(srv, domain)
+    except HostingError as exc:
+        return f"Could not issue SSL for {domain} on {srv.name}: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        return f"Error issuing SSL for {domain} on {srv.name}: {type(exc).__name__}"
+    if response_format == ResponseFormat.JSON:
+        return json.dumps({"server": srv.name, "domain": domain, "result": result}, indent=2)
+    return f"🔒 SSL issued for **{domain}** on {srv.name}."
+
+
+@mcp_server.tool(name="serverally_create_database", annotations={"title": "Create a database", **_WRITE})
+async def serverally_create_database(
+    server: str, domain: str, db_name: str, db_user: str, db_password: str,
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Create a MySQL/MariaDB database + user on a hosting server.
+
+    You supply ``db_password`` — it is used to create the database and is NEVER returned or
+    stored by this tool. ``domain`` is the site the DB belongs to. Requires execute
+    permission. ``server`` is a name or id.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        acc, err = await _executor(db, user, server)
+        if err:
+            return err
+        srv = acc.server
+        await _audit(db, user, "create_database", srv.id)
+    body = {"domain": domain, "db_name": db_name, "db_user": db_user, "db_password": db_password}
+    try:
+        await hosting_service.create_database(srv, body)
+    except HostingError as exc:
+        return f"Could not create database {db_name} on {srv.name}: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        return f"Error creating database {db_name} on {srv.name}: {type(exc).__name__}"
+    # Never echo the password back.
+    data = {"server": srv.name, "domain": domain, "db_name": db_name, "db_user": db_user, "status": "created"}
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+    return f"✅ Created database **{db_name}** (user {db_user}) on {srv.name}."
