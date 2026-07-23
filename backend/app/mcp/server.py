@@ -27,6 +27,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from sqlalchemy import func, select
 
 from app.config import settings
@@ -66,6 +67,13 @@ mcp_server = FastMCP(
     stateless_http=True,
     json_response=True,
     streamable_http_path="/",
+    # DNS-rebinding protection defaults to ON (localhost-only allowed_hosts) whenever
+    # transport_security is unset — which 421-rejects the proxied Host in production
+    # (Caddy → nginx → backend forwards Host: serverally.firevps.net). That protection
+    # guards browser-driven localhost servers; ours is a PUBLIC, bearer-token-gated
+    # endpoint behind a trusted reverse proxy, so it's redundant here and only blocks
+    # legitimate traffic. Disable it; the OAuth bearer requirement is the real gate.
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
 )
 
 
