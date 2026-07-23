@@ -817,7 +817,18 @@ _WRITE = {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": Fal
 
 async def _executor(db, user: User, ref: str):
     """Resolve a server the caller may EXECUTE on. Returns ``(Access, None)`` when allowed,
-    else ``(None, message)`` — an unknown server or missing execute permission."""
+    else ``(None, message)`` — a read-only connection, an unknown server, or missing execute
+    permission."""
+    # A read-only connection (Phase 4 scopes) cannot use write tools.
+    from mcp.server.auth.middleware.auth_context import get_access_token
+    from app.mcp.oauth_provider import SCOPE_WRITE
+
+    token = get_access_token()
+    if token is not None and SCOPE_WRITE not in (token.scopes or []):
+        return None, (
+            "This connection is read-only. Reconnect from ServerAlly → Settings → Connected "
+            "applications with Full access to make changes."
+        )
     acc = await _resolve_server(db, user, ref)
     if acc is None:
         return None, await _unknown_server(db, user, ref)

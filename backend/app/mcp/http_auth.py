@@ -26,7 +26,7 @@ from mcp.server.auth.routes import (
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 
 from app.config import settings
-from app.mcp.oauth_provider import SCOPE, oauth_provider
+from app.mcp.oauth_provider import ALL_SCOPES, DEFAULT_SCOPES, SCOPE_READ, oauth_provider
 
 
 def issuer_url() -> AnyHttpUrl:
@@ -48,8 +48,8 @@ def oauth_root_routes() -> list[Route]:
         issuer_url=issuer,
         client_registration_options=ClientRegistrationOptions(
             enabled=True,                 # Dynamic Client Registration (oauth_dcr)
-            valid_scopes=[SCOPE],
-            default_scopes=[SCOPE],
+            valid_scopes=ALL_SCOPES,
+            default_scopes=DEFAULT_SCOPES,  # read-only by default
         ),
         revocation_options=RevocationOptions(enabled=True),
     )
@@ -57,7 +57,7 @@ def oauth_root_routes() -> list[Route]:
         create_protected_resource_routes(
             resource_url=resource_url(),
             authorization_servers=[issuer],
-            scopes_supported=[SCOPE],
+            scopes_supported=ALL_SCOPES,
             resource_name=settings.APP_NAME,
         )
     )
@@ -86,8 +86,9 @@ def guard_mcp_app(streamable_app):
     ``WWW-Authenticate: Bearer resource_metadata="…"`` handshake.
     """
     resource_metadata = build_resource_metadata_url(resource_url())
+    # Every connection needs at least read; write tools additionally require mcp:write.
     guarded = RequireAuthMiddleware(
-        streamable_app, required_scopes=[SCOPE], resource_metadata_url=resource_metadata
+        streamable_app, required_scopes=[SCOPE_READ], resource_metadata_url=resource_metadata
     )
     guarded = AuthContextMiddleware(guarded)
     guarded = AuthenticationMiddleware(guarded, backend=BearerAuthBackend(oauth_provider))

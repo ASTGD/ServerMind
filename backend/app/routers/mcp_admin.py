@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.dependencies.auth import get_current_user
+from app.mcp.oauth_provider import mcp_enabled_for
 from app.models.oauth import OAuthClient, OAuthTokenRecord
 from app.models.user import User
 from app.services import audit_service
@@ -40,8 +41,12 @@ class MCPConnection(BaseModel):
 
 @router.get("/info", response_model=MCPInfo)
 async def mcp_info(current_user: User = Depends(get_current_user)) -> MCPInfo:
-    """The MCP endpoint URL to connect to, and whether the feature is on."""
-    return MCPInfo(url=settings.MCP_BASE_URL.rstrip("/") + "/mcp", enabled=settings.MCP_REQUIRE_AUTH)
+    """The MCP endpoint URL to connect to, and whether the feature is on for this user
+    (on unless plan limits gate a free plan)."""
+    return MCPInfo(
+        url=settings.MCP_BASE_URL.rstrip("/") + "/mcp",
+        enabled=settings.MCP_REQUIRE_AUTH and mcp_enabled_for(current_user),
+    )
 
 
 @router.get("/connections", response_model=list[MCPConnection])

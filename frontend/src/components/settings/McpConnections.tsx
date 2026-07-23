@@ -40,6 +40,7 @@ export default function McpConnections() {
   })
 
   const url = info?.url ?? ""
+  const gated = info ? !info.enabled : false
 
   const copy = () => {
     if (!url) return
@@ -56,6 +57,12 @@ export default function McpConnections() {
 
   return (
     <div className="mt-4 space-y-6">
+      {gated && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-300">
+          Connecting an AI client requires a Pro plan. Upgrade to enable it — you can still
+          revoke existing connections below.
+        </div>
+      )}
       {/* Endpoint + how to connect */}
       <div>
         <div className="text-xs font-medium text-muted-foreground">Your MCP endpoint</div>

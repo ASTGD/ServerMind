@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
-from app.mcp.oauth_provider import oauth_provider, verify_txn
+from app.mcp.oauth_provider import ALL_SCOPES, DEFAULT_SCOPES, mcp_enabled_for, oauth_provider, verify_txn
 from app.models.user import User
 from app.services import audit_service, auth_service, totp_service
 
@@ -80,6 +80,10 @@ def _page(*, client_name: str, txn: str, error: str = "", email: str = "", need_
   .perm ul {{ margin:8px 0 0; padding-left:18px; color:var(--muted); }}
   .perm li {{ margin:3px 0; }}
   .perm .safe {{ color:var(--fg); font-weight:600; }}
+  .level {{ margin:0 0 18px; display:flex; flex-direction:column; gap:8px; }}
+  .lvl {{ display:flex; gap:9px; align-items:flex-start; font-size:13px; font-weight:400; margin:0; cursor:pointer; }}
+  .lvl input {{ width:auto; margin-top:3px; }}
+  .lvl em {{ color:var(--muted); font-style:normal; }}
   label {{ display:block; font-size:13px; font-weight:600; margin:0 0 14px; }}
   .opt {{ color:var(--muted); font-weight:400; }}
   input {{ width:100%; margin-top:6px; padding:10px 12px; font-size:14px; border:1px solid var(--border);
@@ -108,6 +112,12 @@ def _page(*, client_name: str, txn: str, error: str = "", email: str = "", need_
         <li>Run the actions you ask it to (read-only to start)</li>
       </ul>
       <div style="margin-top:10px"><span class="safe">It will never see</span> your passwords, SSH keys, or host fingerprints.</div>
+    </div>
+    <div class="level">
+      <label class="lvl"><input type="radio" name="access_level" value="read" checked />
+        <span><strong>Read-only</strong> — see status, metrics, security &amp; sites <em>(recommended)</em></span></label>
+      <label class="lvl"><input type="radio" name="access_level" value="full" />
+        <span><strong>Full access</strong> — also run scans &amp; playbooks, create sites &amp; databases</span></label>
     </div>
     {err_html}
     <label>Email
@@ -144,6 +154,7 @@ async def consent_submit(
     email: str = Form(""),
     password: str = Form(""),
     totp_code: str = Form(""),
+    access_level: str = Form("read"),
 ):
     """Handle the approve/deny submission: authenticate, then mint a code + redirect."""
     data = verify_txn(txn)
@@ -176,11 +187,21 @@ async def consent_submit(
             if not (totp_code and totp_service.verify(user.totp_secret, totp_code)):
                 return _reject("Enter your two-factor code to continue.", need_totp=True)
 
-        redirect_url = await oauth_provider.create_authorization_code(data, str(user.id))
+        # Plan gate — MCP is a paid-tier feature (only enforced when plan limits are on).
+        if not mcp_enabled_for(user):
+            return HTMLResponse(
+                _page(client_name=client_name, txn=txn, email=email,
+                      error="Connecting an AI client requires a Pro plan. Upgrade in ServerAlly, then try again."),
+                status_code=403,
+            )
+
+        # Access level the user chose: Full = read + write; Read-only = read only (default).
+        scopes = ALL_SCOPES if access_level == "full" else DEFAULT_SCOPES
+        redirect_url = await oauth_provider.create_authorization_code(data, str(user.id), scopes=scopes)
         await audit_service.audit(
             db, user, "mcp.oauth.approve", request=request,
-            meta={"client_id": data.get("client_id"), "client_name": client_name},
+            meta={"client_id": data.get("client_id"), "client_name": client_name, "scopes": scopes},
         )
 
-    logger.info("MCP OAuth: %s approved access for client %s", email, data.get("client_id"))
+    logger.info("MCP OAuth: %s approved %s access for client %s", email, access_level, data.get("client_id"))
     return RedirectResponse(redirect_url, status_code=302)

@@ -45,13 +45,28 @@ from app.models.oauth import OAuthAuthorizationCode, OAuthClient, OAuthTokenReco
 
 logger = logging.getLogger(__name__)
 
-# Single scope for Phase 1 (Phase 4 refines to Full / Read-only / Custom).
-SCOPE = "mcp"
+# Scopes (Phase 4): read tools need mcp:read, write tools need mcp:write. A "Read-only"
+# connection carries just mcp:read (the safe first-connection default); "Full" carries both.
+SCOPE_READ = "mcp:read"
+SCOPE_WRITE = "mcp:write"
+ALL_SCOPES = [SCOPE_READ, SCOPE_WRITE]
+DEFAULT_SCOPES = [SCOPE_READ]  # read-only by default — the safe first connection
+SCOPE = SCOPE_READ  # back-compat alias (the base scope every connection has)
+
 _TXN_TTL_SECONDS = 600  # signed consent transaction — 10 minutes
 _TXN_TYPE = "mcp_consent"
 
 
 # ── small helpers ─────────────────────────────────────────────────────────────
+
+def mcp_enabled_for(user) -> bool:
+    """MCP is a paid-tier platform feature (docs/MCP-SERVER-PLAN.md §8). When plan limits
+    are enforced (cloud), free plans are gated; otherwise (dev / self-hosted) it's on for
+    everyone."""
+    if not settings.ENFORCE_PLAN_LIMITS:
+        return True
+    return (getattr(user, "plan", None) or "free").lower() != "free"
+
 
 def _hash(value: str) -> str:
     """SHA-256 hex — how every code/token is stored + looked up."""
@@ -142,21 +157,25 @@ class ServerAllyOAuthProvider(
             "redirect_uri": str(params.redirect_uri),
             "redirect_uri_provided_explicitly": params.redirect_uri_provided_explicitly,
             "code_challenge": params.code_challenge,
-            "scopes": params.scopes or [SCOPE],
+            "scopes": params.scopes or DEFAULT_SCOPES,
             "state": params.state,
             "resource": params.resource,
         })
         base = settings.MCP_BASE_URL.rstrip("/")
         return f"{base}/oauth/consent?txn={txn}"
 
-    async def create_authorization_code(self, txn: dict, user_id: str) -> str:
+    async def create_authorization_code(
+        self, txn: dict, user_id: str, scopes: list[str] | None = None
+    ) -> str:
         """Called by the consent route once the user has logged in AND approved.
 
         Mints a single-use code bound to this user + request, and returns the redirect
-        URL back to the client (``redirect_uri?code=…&state=…``).
+        URL back to the client (``redirect_uri?code=…&state=…``). ``scopes`` is the access
+        level the user chose on the consent page (read-only vs full); it overrides whatever
+        the client requested.
         """
         code = secrets.token_urlsafe(32)
-        scopes = list(txn.get("scopes") or [SCOPE])
+        scopes = list(scopes or txn.get("scopes") or DEFAULT_SCOPES)
         async with AsyncSessionLocal() as db:
             db.add(OAuthAuthorizationCode(
                 code_hash=_hash(code),
@@ -215,7 +234,7 @@ class ServerAllyOAuthProvider(
                 db,
                 client_id=client.client_id,
                 subject=authorization_code.subject or "",
-                scopes=list(authorization_code.scopes or [SCOPE]),
+                scopes=list(authorization_code.scopes or DEFAULT_SCOPES),
                 resource=authorization_code.resource,
                 grant_id=uuid.uuid4(),
             )
@@ -263,7 +282,7 @@ class ServerAllyOAuthProvider(
                 raise ValueError("invalid_grant")  # SDK maps to an OAuth error response
             grant_id = row.grant_id
             subject = row.subject
-            use_scopes = list(scopes) if scopes else list(row.scopes or [SCOPE])
+            use_scopes = list(scopes) if scopes else list(row.scopes or DEFAULT_SCOPES)
             resource = row.resource
             # Rotation: drop the whole old grant (old access + old refresh).
             await db.execute(delete(OAuthTokenRecord).where(OAuthTokenRecord.grant_id == grant_id))
