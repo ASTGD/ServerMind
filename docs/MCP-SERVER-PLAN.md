@@ -239,6 +239,37 @@ credentials."* Approve/Deny, revocable from Settings (per Ploi's model). Tokens 
 Add **`authlib`** (the standard Python OAuth AS). Do **not** hand-roll OAuth 2.1 —
 PKCE, DCR, rotation and metadata are exactly where hand-rolled auth goes wrong.
 
+> **REVISED 2026-07-23 (Phase 1 build) — use the MCP SDK's native OAuth AS, not `authlib`.**
+> The installed SDK (`mcp` 1.28.1, newer than this plan) ships a *complete, MCP-native*
+> OAuth 2.1 Authorization Server: `mcp.server.auth` provides the DCR/authorize/token/
+> revoke/metadata handlers, the PKCE-S256 checks, the bearer middleware, and the exact
+> 401 `WWW-Authenticate` + protected-resource-metadata handshake Claude clients are tested
+> against. You implement one interface — `OAuthAuthorizationServerProvider` (storage +
+> token issuance) — and a `TokenVerifier`. This honours "don't hand-roll OAuth" *better*
+> than `authlib` (which is not MCP-aware and would still need the RFC 9728 handshake bolted
+> on), with **no new dependency** (tokens signed via the existing `python-jose`). `authlib`
+> was **not** added.
+>
+> **Mount point: root, not `/mcp`.** The AS is served at the origin (issuer =
+> `MCP_BASE_URL`) via `create_auth_routes` + `create_protected_resource_routes` added to the
+> FastAPI app, so RFC 8414 discovery is unambiguous (matches this plan's §4 diagram). `/mcp`
+> is the Resource Server, guarded by `AuthenticationMiddleware(BearerAuthBackend)` →
+> `AuthContextMiddleware` → `RequireAuthMiddleware`. One SlowAPI friction fixed: the SDK
+> CORS-wraps its metadata routes (no `endpoint.__name__`), which crashed
+> `SlowAPIMiddleware`; each such endpoint is given a stable `__name__` (the limiter has no
+> default limits, so they stay unlimited — rate-limiting the OAuth endpoints is a Phase-5
+> item).
+>
+> **Built + validated (17/17 end-to-end checks vs the live server + real DB):** metadata
+> discovery, DCR, PKCE authorize→consent→token, single-use codes, refresh **rotation**
+> (old refresh dies), **Rule-7 isolation** (a token holder sees only their own servers),
+> credential-free payloads, invalid-bearer → 401. Storage: migration 034 (`oauth_clients`,
+> `oauth_authorization_codes`, `oauth_tokens`) — codes/tokens stored SHA-256-hashed,
+> access+refresh share a `grant_id` (the revoke unit). Consent is a self-contained
+> login+approve page (`/oauth/consent`) reusing ServerAlly's password + TOTP verification;
+> no ambient session ⇒ inherently CSRF-safe. `MCP_REQUIRE_AUTH` (default **on**) gates
+> enforcement; off = the Phase-0 authless dev resolver.
+
 ## 6. Tool catalogue (v1)
 
 Every tool: scoped to the caller's `accessible_servers`, Rule-7 checked, audit-logged,
@@ -293,8 +324,8 @@ mutation, team/billing management, anything that deletes.
 
 | # | Scope | Acceptance criteria | Est. |
 |---|---|---|---|
-| **0** | **Spike** — FastMCP mounted on FastAPI, one authless `list_servers`, validated with **MCP Inspector** | Inspector lists + calls the tool locally | 1–2 d |
-| **1** | **OAuth 2.1 AS** (`authlib`): metadata, DCR, authorize + consent, token, PKCE S256, refresh rotation, the 401 handshake | **A real Claude account connects** via Settings → Connectors → URL → approve. Also `claude mcp add` from Claude Code (loopback redirect). Token refresh survives expiry | 5–8 d |
+| **0 ✅** | **Spike** — FastMCP mounted on FastAPI, one authless `list_servers` | DONE (2026-07-23) — real MCP streamable-http client lists + calls the tool locally (both `/mcp` and `/mcp/`), returns the 11 real servers, credential-free | 1–2 d |
+| **1 ✅ (core)** | **OAuth 2.1 AS** — via the **MCP SDK's native provider** (not `authlib`; see §5.4 revision): metadata, DCR, authorize + consent, token, PKCE S256, refresh rotation, the 401 handshake | Core DONE (2026-07-23) — 17/17 end-to-end checks pass vs the live server; a real Claude connection is the remaining live gate (Phase 5) | 5–8 d |
 | **2** | **Read tools** + Rule-7 scoping + audit + credential-free tests | Claude answers *"which of my servers need attention?"* from real data; a second user's servers are invisible | 3–4 d |
 | **3** | **Bounded write tools** that CARRY THE PROCEDURE (§3a: refuse-in-code, deterministic verify), + skills as MCP prompts, + injection framing on results, + start/poll for long ops | Claude runs a playbook end-to-end via poll; a 6-minute op does not hit the 5-min timeout | 3–4 d |
 | **4** | **UI + gating** — put it under **Profile → API keys → "Connected applications"** (Ploi's model — see [COMPETITOR-PLOI-TEARDOWN.md](COMPETITOR-PLOI-TEARDOWN.md) §5.1: OAuth apps belong beside API keys, same concept, one surface). Show the MCP URL + copy, connected clients, **revoke**; scopes **Full / Read-only / Custom** (read-only = the right first-connection default). Plan gate, docs page | A customer can connect and revoke without support | 2–3 d |

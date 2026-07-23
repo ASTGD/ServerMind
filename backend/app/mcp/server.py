@@ -22,11 +22,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import uuid
 from enum import Enum
 
 from mcp.server.fastmcp import FastMCP
 from sqlalchemy import func, select
 
+from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.server import Server
 from app.models.user import User
@@ -80,12 +82,31 @@ def _server_public(s: Server) -> dict:
 
 
 async def _resolve_caller(db) -> User | None:
-    """Phase-0 authless caller resolver.
+    """Resolve the calling user.
 
-    Uses ``MCP_DEV_USER_EMAIL`` if set; otherwise, for a useful local demo, the
-    account that owns the most servers; otherwise the first user. Phase 1 replaces
-    this entirely with OAuth-bearer resolution — tool bodies don't change.
+    Phase 1: the authenticated OAuth bearer's ``subject`` (a ServerAlly user id) taken
+    from the auth context the bearer middleware published. Every tool then scopes to this
+    user's ``accessible_servers`` (Rule 7 across the boundary).
+
+    When ``MCP_REQUIRE_AUTH`` is off (LOCAL DEV ONLY), there is no bearer, so fall back to
+    the Phase-0 dev resolver: ``MCP_DEV_USER_EMAIL`` → the account owning the most servers
+    → the first user.
     """
+    from mcp.server.auth.middleware.auth_context import get_access_token
+
+    token = get_access_token()
+    if token is not None and token.subject:
+        try:
+            uid = uuid.UUID(str(token.subject))
+        except ValueError:
+            return None
+        return (await db.execute(select(User).where(User.id == uid))).scalar_one_or_none()
+
+    # No authenticated bearer. In enforced mode the /mcp guard already blocked the request
+    # before it reached a tool, so this path is dev-only.
+    if settings.MCP_REQUIRE_AUTH:
+        return None
+
     email = os.environ.get("MCP_DEV_USER_EMAIL")
     if email:
         u = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()

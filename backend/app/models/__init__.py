@@ -14,6 +14,7 @@ from app.models.ally_memory import AllyMemory
 from app.models.mission import Mission
 from app.models.cloud_account import CloudAccount
 from app.models.dev_eval_case import DevEvalCase
+from app.models.oauth import OAuthClient, OAuthAuthorizationCode, OAuthTokenRecord
 
 __all__ = [
     "User",
@@ -36,4 +37,7 @@ __all__ = [
     "Mission",
     "CloudAccount",
     "DevEvalCase",
+    "OAuthClient",
+    "OAuthAuthorizationCode",
+    "OAuthTokenRecord",
 ]

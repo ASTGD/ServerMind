@@ -101,6 +101,18 @@ class Settings(BaseSettings):
     # self-signed certs; operators whose panels have valid certs can enable it.
     HOSTING_TLS_VERIFY: bool = False
 
+    # MCP server (docs/MCP-SERVER-PLAN.md) — the "bring your own AI" lane. MCP_BASE_URL
+    # is the PUBLIC origin of THIS backend: the OAuth 2.1 issuer and where the browser
+    # consent page + /authorize /token /register live (dev backend runs on :8888; prod
+    # is https://app.serverally...). MCP_REQUIRE_AUTH gates whether /mcp enforces the
+    # OAuth bearer — True (Phase 1+) requires a real token; False falls back to the
+    # Phase-0 authless local resolver (LOCAL DEV ONLY, never in production).
+    MCP_BASE_URL: str = "http://localhost:8888"
+    MCP_REQUIRE_AUTH: bool = True
+    MCP_ACCESS_TTL_SECONDS: int = 3600                  # access token — 1 hour
+    MCP_REFRESH_TTL_SECONDS: int = 60 * 60 * 24 * 60    # refresh token — 60 days
+    MCP_CODE_TTL_SECONDS: int = 300                     # authorization code — 5 minutes
+
     # Execution backend — "celery" (durable worker: installs keep running if the
     # window closes and can be rejoined) or "inline" (in the web process). When set
     # to "celery" but no worker is responding, execution safely falls back to inline,

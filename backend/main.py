@@ -226,9 +226,24 @@ app.include_router(ws_handlers.router)
 app.include_router(ws_rdp.router)  # /ws/rdp — live Remote Desktop via guacd
 
 # MCP server (docs/MCP-SERVER-PLAN.md) — a customer's own AI client (Claude Code,
-# Desktop, ChatGPT, Cursor) → our bounded, credential-free tools. Streamable HTTP
-# at exactly /mcp. Its session manager is started in the lifespan above.
-app.mount("/mcp", mcp_server.streamable_http_app())
+# Desktop, ChatGPT, Cursor) → our bounded, credential-free tools. Streamable HTTP at
+# exactly /mcp; its session manager is started in the lifespan above.
+_mcp_app = mcp_server.streamable_http_app()
+if settings.MCP_REQUIRE_AUTH:
+    # Phase 1: /mcp is an OAuth 2.1 Resource Server. The Authorization Server lives at the
+    # root origin (issuer = MCP_BASE_URL) so .well-known discovery is unambiguous, and the
+    # browser consent page is /oauth/consent.
+    from app.mcp.http_auth import guard_mcp_app, oauth_root_routes
+    from app.routers import mcp_oauth as mcp_oauth_router
+
+    app.mount("/mcp", guard_mcp_app(_mcp_app))
+    app.include_router(mcp_oauth_router.router)     # /oauth/consent (login + approve)
+    app.router.routes.extend(oauth_root_routes())   # /authorize /token /register /revoke + .well-known
+    logger.info("MCP OAuth enabled — issuer=%s, resource=%s/mcp", settings.MCP_BASE_URL, settings.MCP_BASE_URL)
+else:
+    # LOCAL DEV ONLY — authless (Phase-0 behaviour); the dev-user resolver picks the caller.
+    app.mount("/mcp", _mcp_app)
+    logger.warning("MCP auth DISABLED (MCP_REQUIRE_AUTH=false) — local dev only, do not ship")
 
 
 @app.get("/health")
