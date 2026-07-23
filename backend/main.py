@@ -34,6 +34,7 @@ from app.routers import servers as servers_router
 from app.routers import settings as settings_router
 from app.routers import entitlements as entitlements_router
 from app.routers import memories as memories_router
+from app.routers import mcp_admin as mcp_admin_router
 from app.routers import team as team_router
 from app.routers import usage as usage_router
 from app.services import backup_service, playbook_service, scheduler_service
@@ -221,6 +222,7 @@ app.include_router(usage_router.router)
 app.include_router(cloud_accounts_router.router)
 app.include_router(rdp_router.router)
 app.include_router(memories_router.router)
+app.include_router(mcp_admin_router.router)  # /api/mcp — Connected applications (Phase 4)
 app.include_router(entitlements_router.router)
 app.include_router(ws_handlers.router)
 app.include_router(ws_rdp.router)  # /ws/rdp — live Remote Desktop via guacd

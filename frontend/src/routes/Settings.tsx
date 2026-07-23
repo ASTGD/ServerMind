@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, History, Check, Loader2, Sparkles, Brain, Trash2, Mail, Send, Gauge } from "lucide-react"
+import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, History, Check, Loader2, Sparkles, Brain, Trash2, Mail, Send, Gauge, Plug } from "lucide-react"
+import McpConnections from "@/components/settings/McpConnections"
 import { QRCodeSVG } from "qrcode.react"
 import { listAudit } from "@/api/audit"
 import {
@@ -869,6 +870,16 @@ export default function Settings() {
     </Section>
   )
 
+  const connectedAppsSection = (
+    <Section
+      icon={Plug}
+      title="Connected applications"
+      description="Connect your own AI (Claude, ChatGPT, Cursor) to manage your servers by chat."
+    >
+      <McpConnections />
+    </Section>
+  )
+
   const aiSection = (
     <Section
       icon={Sparkles}
@@ -988,6 +999,7 @@ export default function Settings() {
           {allyModeSection}
           {accountSection}
           {usageSection}
+          {connectedAppsSection}
           {memorySection}
           {SHOW_AI_PROVIDER_SETTINGS && aiSection}
         </div>
