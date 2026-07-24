@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
@@ -35,6 +36,7 @@ from app.database import AsyncSessionLocal
 from app.models.alert import ServerMetric
 from app.models.backup import Backup
 from app.models.mission import Mission
+from app.models.oauth import OAuthClient
 from app.models.playbook import Playbook, PlaybookRun
 from app.models.security_scan import SecurityScan
 from app.models.server import Server
@@ -47,6 +49,7 @@ from app.services import (
     file_service,
     fleet_service,
     hosting_service,
+    mcp_activity_service,
     mission_service,
     safety_service,
     security_service,
@@ -816,6 +819,69 @@ async def serverally_read_file(
     return f"# {path} on {srv.name} ({note})\n\n```\n{content}\n```"
 
 
+# ── MCP activity feed (docs/MCP-SERVER-PLAN.md) ───────────────────────────────
+# Record every ACTION (run_command + the write tools) as a live running→finish row so the
+# user can watch, in the app, what their connected AI does on their servers. Best-effort by
+# construction — a recording failure never breaks a tool. Passive reads are NOT tracked, so
+# the feed reads as "what the AI changed", not chatter.
+
+class _ActivityHandle:
+    """Outcome sink for a tracked action — the tool sets the result, _track records it."""
+
+    def __init__(self) -> None:
+        self.id: str | None = None
+        self.status = "ok"
+        self.exit_code: int | None = None
+        self.detail: str | None = None
+
+    def set_ok(self, exit_code: int | None = None, detail: str | None = None) -> None:
+        self.status, self.exit_code, self.detail = "ok", exit_code, detail
+
+    def set_blocked(self, detail: str | None = None) -> None:
+        self.status, self.detail = "blocked", detail
+
+    def set_error(self, detail: str | None = None) -> None:
+        self.status, self.detail = "error", detail
+
+
+async def _caller_client(db) -> tuple[str | None, str | None]:
+    """(client_id, client_name) of the connected app, from the bearer token."""
+    from mcp.server.auth.middleware.auth_context import get_access_token
+
+    tok = get_access_token()
+    cid = getattr(tok, "client_id", None) if tok else None
+    if not cid:
+        return None, None
+    row = (await db.execute(select(OAuthClient).where(OAuthClient.client_id == cid))).scalar_one_or_none()
+    return cid, (row.client_name if row else None)
+
+
+@asynccontextmanager
+async def _track(db, user: User, tool: str, srv, *, command: str | None = None):
+    """Record an MCP action live (running → finish). Yields an _ActivityHandle the tool sets
+    the outcome on; defaults to ok, records error on an exception. The 'running' row is
+    committed (own session) before the work runs, so the feed shows it live."""
+    handle = _ActivityHandle()
+    try:
+        cid, cname = await _caller_client(db)
+        handle.id = await mcp_activity_service.start(
+            user_id=user.id, client_id=cid, client_name=cname, tool=tool,
+            server_id=(srv.id if srv is not None else None),
+            server_name=(srv.name if srv is not None else None), command=command,
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("mcp activity start failed", exc_info=True)
+    try:
+        yield handle
+    except Exception:
+        handle.status = "error"
+        raise
+    finally:
+        await mcp_activity_service.finish(
+            handle.id, status=handle.status, exit_code=handle.exit_code, detail=handle.detail
+        )
+
+
 # ── write tools (Phase 3) ─────────────────────────────────────────────────────
 # Every write requires EXECUTE permission (Rule 7 across the boundary — a viewer can
 # never execute). Deterministic — 0 AI actions. No shell, no deletes, no restore (§3).
@@ -866,22 +932,24 @@ async def serverally_run_security_scan(server: str, response_format: ResponseFor
         if err:
             return err
         srv = acc.server
-        result = await security_service.run_scan(srv)  # inline SSH scan (mirrors the router)
-        counts = result["counts"]
-        db.add(SecurityScan(
-            server_id=srv.id, user_id=user.id, score=result["score"], grade=result["grade"],
-            status=result["status"], error=result.get("error"), duration_ms=result.get("duration_ms"),
-            critical_count=counts.get("critical", 0), high_count=counts.get("high", 0),
-            medium_count=counts.get("medium", 0), low_count=counts.get("low", 0),
-            pass_count=counts.get("pass", 0), info_count=counts.get("info", 0),
-            findings=json.dumps(result["findings"]),
-        ))
-        await db.commit()
-        await _audit(db, user, "run_security_scan", srv.id)
-        data = {
-            "server": srv.name, "grade": result["grade"], "score": result["score"], "counts": counts,
-            "findings": [_scan_finding_public(f) for f in result["findings"] if isinstance(f, dict)],
-        }
+        async with _track(db, user, "run_security_scan", srv) as act:
+            result = await security_service.run_scan(srv)  # inline SSH scan (mirrors the router)
+            counts = result["counts"]
+            db.add(SecurityScan(
+                server_id=srv.id, user_id=user.id, score=result["score"], grade=result["grade"],
+                status=result["status"], error=result.get("error"), duration_ms=result.get("duration_ms"),
+                critical_count=counts.get("critical", 0), high_count=counts.get("high", 0),
+                medium_count=counts.get("medium", 0), low_count=counts.get("low", 0),
+                pass_count=counts.get("pass", 0), info_count=counts.get("info", 0),
+                findings=json.dumps(result["findings"]),
+            ))
+            await db.commit()
+            await _audit(db, user, "run_security_scan", srv.id)
+            act.set_ok(detail=f"grade {result['grade']} ({result['score']}/100)")
+            data = {
+                "server": srv.name, "grade": result["grade"], "score": result["score"], "counts": counts,
+                "findings": [_scan_finding_public(f) for f in result["findings"] if isinstance(f, dict)],
+            }
     if response_format == ResponseFormat.JSON:
         return json.dumps(data, indent=2)
     lines = [f"# {data['server']} security scan — grade {data['grade']} ({data['score']}/100)", f"Findings: {data['counts']}", ""]
@@ -907,22 +975,24 @@ async def serverally_run_threat_scan(server: str, response_format: ResponseForma
         if err:
             return err
         srv = acc.server
-        result = await threat_service.run_scan(srv)
-        counts = result["counts"]
-        db.add(ThreatScan(
-            server_id=srv.id, user_id=user.id, verdict=result["verdict"],
-            status=result["status"], error=result.get("error"), duration_ms=result.get("duration_ms"),
-            critical_count=counts.get("critical", 0), high_count=counts.get("high", 0),
-            medium_count=counts.get("medium", 0), low_count=counts.get("low", 0),
-            pass_count=counts.get("pass", 0), info_count=counts.get("info", 0),
-            findings=json.dumps(result["findings"]),
-        ))
-        await db.commit()
-        await _audit(db, user, "run_threat_scan", srv.id)
-        data = {
-            "server": srv.name, "verdict": result["verdict"], "counts": counts,
-            "findings": [_scan_finding_public(f) for f in result["findings"] if isinstance(f, dict)],
-        }
+        async with _track(db, user, "run_threat_scan", srv) as act:
+            result = await threat_service.run_scan(srv)
+            counts = result["counts"]
+            db.add(ThreatScan(
+                server_id=srv.id, user_id=user.id, verdict=result["verdict"],
+                status=result["status"], error=result.get("error"), duration_ms=result.get("duration_ms"),
+                critical_count=counts.get("critical", 0), high_count=counts.get("high", 0),
+                medium_count=counts.get("medium", 0), low_count=counts.get("low", 0),
+                pass_count=counts.get("pass", 0), info_count=counts.get("info", 0),
+                findings=json.dumps(result["findings"]),
+            ))
+            await db.commit()
+            await _audit(db, user, "run_threat_scan", srv.id)
+            act.set_ok(detail=f"verdict: {result['verdict']}")
+            data = {
+                "server": srv.name, "verdict": result["verdict"], "counts": counts,
+                "findings": [_scan_finding_public(f) for f in result["findings"] if isinstance(f, dict)],
+            }
     if response_format == ResponseFormat.JSON:
         return json.dumps(data, indent=2)
     lines = [f"# {data['server']} threat scan — {data['verdict']}", f"Findings: {data['counts']}", ""]
@@ -1277,17 +1347,22 @@ async def serverally_run_command(
         # Absolute safety floor: refuse catastrophic commands (the same blocklist Ally uses).
         os_family = "windows" if srv.connection_type == "winrm" or (srv.shell or "") == "powershell" else "linux"
         verdict = safety_service.validate_command(command, os_family)
-        if verdict.status == "blocked":
-            await _audit(db, user, "run_command_blocked", srv.id)
-            return (
-                f"⛔ Refused on {sname}: this command is on ServerAlly's absolute safety "
-                "blocklist because it could irreversibly destroy the server. Nothing was run."
-            )
-        await _audit(db, user, "run_command", srv.id)  # the call is audited; the command text is not, to never log a secret
-        try:
-            stdout, stderr, exit_code = await connection_manager.execute(srv, command)
-        except Exception as exc:  # noqa: BLE001
-            return f"Error running the command on {sname}: {type(exc).__name__}: {exc}"[:300]
+        # Track the action live (running → finish) so the user sees it in the app's feed.
+        async with _track(db, user, "run_command", srv, command=command) as act:
+            if verdict.status == "blocked":
+                act.set_blocked("On ServerAlly's absolute blocklist — refused.")
+                await _audit(db, user, "run_command_blocked", srv.id)
+                return (
+                    f"⛔ Refused on {sname}: this command is on ServerAlly's absolute safety "
+                    "blocklist because it could irreversibly destroy the server. Nothing was run."
+                )
+            await _audit(db, user, "run_command", srv.id)  # the call is audited; the command text is not, to never log a secret
+            try:
+                stdout, stderr, exit_code = await connection_manager.execute(srv, command)
+            except Exception as exc:  # noqa: BLE001
+                act.set_error(type(exc).__name__)
+                return f"Error running the command on {sname}: {type(exc).__name__}: {exc}"[:300]
+            act.set_ok(exit_code=exit_code)  # the exit code shows as its own chip; no redundant detail
 
     stdout, stderr = stdout or "", stderr or ""
     truncated = len(stdout) + len(stderr) > _CMD_OUTPUT_CAP

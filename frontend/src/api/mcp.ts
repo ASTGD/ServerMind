@@ -32,3 +32,24 @@ export async function listMcpConnections(): Promise<McpConnection[]> {
 export async function revokeMcpConnection(grantId: string): Promise<void> {
   await apiClient.delete(`/api/mcp/connections/${grantId}`)
 }
+
+/** One action a connected AI took over MCP. `status` runs running → ok|blocked|error. */
+export interface McpActivityItem {
+  id: string
+  client_name: string
+  tool: string
+  server_name: string | null
+  status: "running" | "ok" | "blocked" | "error"
+  label: string
+  command: string | null
+  exit_code: number | null
+  detail: string | null
+  started_at: string
+  finished_at: string | null
+}
+
+/** Recent MCP actions, newest first. Poll (~2s) to watch activity live. */
+export async function listMcpActivity(): Promise<McpActivityItem[]> {
+  const res = await apiClient.get<McpActivityItem[]>("/api/mcp/activity")
+  return res.data
+}

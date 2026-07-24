@@ -20,7 +20,7 @@ from app.dependencies.auth import get_current_user
 from app.mcp.oauth_provider import mcp_enabled_for
 from app.models.oauth import OAuthClient, OAuthTokenRecord
 from app.models.user import User
-from app.services import audit_service
+from app.services import audit_service, mcp_activity_service
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
@@ -37,6 +37,33 @@ class MCPConnection(BaseModel):
     scopes: list[str]
     connected_at: str
     last_active: str
+
+
+class MCPActivityItem(BaseModel):
+    id: str
+    client_name: str
+    tool: str
+    server_name: str | None
+    status: str          # running | ok | blocked | error
+    label: str
+    command: str | None  # run_command text, secret-redacted
+    exit_code: int | None
+    detail: str | None
+    started_at: str
+    finished_at: str | None
+
+
+@router.get("/activity", response_model=list[MCPActivityItem])
+async def list_activity(
+    limit: int = 60,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[MCPActivityItem]:
+    """Recent actions your connected AI clients took over MCP, newest first. Poll this to
+    watch activity live — each action shows ``running`` then flips to its result. Scoped to
+    your own account; credential-free (the command text is already secret-redacted)."""
+    rows = await mcp_activity_service.recent(db, current_user.id, min(max(limit, 1), 200))
+    return [MCPActivityItem(**mcp_activity_service.serialize(r)) for r in rows]
 
 
 @router.get("/info", response_model=MCPInfo)
