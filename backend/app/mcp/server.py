@@ -1267,10 +1267,11 @@ async def serverally_run_command(
         if err:
             return err
         srv = acc.server
+        sname = srv.name  # capture now — _audit commits below (expires ORM attrs), and we format after the session closes
         # A shell needs a command channel — SSH or WinRM only (hosting/RDP have none).
         if srv.connection_type not in ("ssh", "winrm"):
             return (
-                f"{srv.name}: running commands needs an SSH or Windows (WinRM) server "
+                f"{sname}: running commands needs an SSH or Windows (WinRM) server "
                 f"(this one is '{srv.connection_type}', which has no command channel)."
             )
         # Absolute safety floor: refuse catastrophic commands (the same blocklist Ally uses).
@@ -1279,14 +1280,14 @@ async def serverally_run_command(
         if verdict.status == "blocked":
             await _audit(db, user, "run_command_blocked", srv.id)
             return (
-                f"⛔ Refused on {srv.name}: this command is on ServerAlly's absolute safety "
+                f"⛔ Refused on {sname}: this command is on ServerAlly's absolute safety "
                 "blocklist because it could irreversibly destroy the server. Nothing was run."
             )
         await _audit(db, user, "run_command", srv.id)  # the call is audited; the command text is not, to never log a secret
         try:
             stdout, stderr, exit_code = await connection_manager.execute(srv, command)
         except Exception as exc:  # noqa: BLE001
-            return f"Error running the command on {srv.name}: {type(exc).__name__}: {exc}"[:300]
+            return f"Error running the command on {sname}: {type(exc).__name__}: {exc}"[:300]
 
     stdout, stderr = stdout or "", stderr or ""
     truncated = len(stdout) + len(stderr) > _CMD_OUTPUT_CAP
@@ -1295,10 +1296,10 @@ async def serverally_run_command(
         stderr = stderr[: max(0, _CMD_OUTPUT_CAP - len(stdout))]
     if response_format == ResponseFormat.JSON:
         return json.dumps({
-            "server": srv.name, "command": command, "exit_code": exit_code,
+            "server": sname, "command": command, "exit_code": exit_code,
             "stdout": stdout, "stderr": stderr, "truncated": truncated,
         }, indent=2)
-    out = [f"# `{command}` on {srv.name} — exit {exit_code}" + (" · output truncated" if truncated else "")]
+    out = [f"# `{command}` on {sname} — exit {exit_code}" + (" · output truncated" if truncated else "")]
     if stdout.strip():
         out.append(f"\n**stdout**\n```\n{stdout.rstrip()}\n```")
     if stderr.strip():
