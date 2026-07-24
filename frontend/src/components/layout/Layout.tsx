@@ -5,6 +5,7 @@ import TopBar from "./TopBar"
 import VerifyBanner from "./VerifyBanner"
 import AssistantDrawer from "./AssistantDrawer"
 import TerminalWorkspace from "@/components/terminal/TerminalWorkspace"
+import McpActivityDrawer from "@/components/mcp/McpActivityDrawer"
 import { useAssistantStore } from "@/store/assistantStore"
 import { useTerminalStore } from "@/store/terminalStore"
 
@@ -73,6 +74,7 @@ export default function Layout() {
       </div>
       <AssistantDrawer />
       <TerminalWorkspace />
+      <McpActivityDrawer />
     </div>
   )
 }

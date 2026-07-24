@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Copy, Check, Trash2, Plug, Loader2 } from "lucide-react"
 import { getMcpInfo, listMcpConnections, revokeMcpConnection } from "@/api/mcp"
 import { Button } from "@/components/ui"
-import McpActivity from "./McpActivity"
 
 function timeAgo(iso: string): string {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
@@ -151,7 +150,6 @@ export default function McpConnections() {
             })}
           </ul>
         )}
-        <McpActivity />
       </div>
     </div>
   )
