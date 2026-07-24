@@ -43,10 +43,12 @@ from app.models.user import User
 from app.services import (
     audit_service,
     backup_service,
+    connection_manager,
     file_service,
     fleet_service,
     hosting_service,
     mission_service,
+    safety_service,
     security_service,
     team_service,
     threat_service,
@@ -1199,3 +1201,108 @@ async def serverally_create_database(
     if response_format == ResponseFormat.JSON:
         return json.dumps(data, indent=2)
     return f"✅ Created database **{db_name}** (user {db_user}) on {srv.name}."
+
+
+# ── admin tool: run_command (Full power / mcp:admin) ──────────────────────────
+# "Full power" adds a real shell: the caller's own AI runs arbitrary commands and gets
+# stdout/stderr. This deliberately crosses the "no shell over MCP" line (§3), at the
+# user's EXPLICIT opt-in on the consent page. The floor that ALWAYS holds: every command
+# passes the same absolute blocklist Ally uses (catastrophic commands refused), execution
+# needs execute permission (Rule 7), and every call is audit-logged. ServerAlly's HIGHER
+# safety layers (skills, verify-gate, step approval, injection framing) do NOT wrap this —
+# over MCP the caller's AI is the reasoner. See the Decisions Log (2026-07-24).
+
+_CMD_OUTPUT_CAP = 30_000  # cap stdout+stderr returned to the caller
+_ADMIN = {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True}
+
+
+async def _admin_executor(db, user: User, ref: str):
+    """Resolve a server the caller may run ARBITRARY COMMANDS on. Requires the mcp:admin
+    scope (Full power) AND execute permission (Rule 7). Returns ``(Access, None)`` or
+    ``(None, message)``."""
+    from mcp.server.auth.middleware.auth_context import get_access_token
+    from app.mcp.oauth_provider import SCOPE_ADMIN
+
+    token = get_access_token()
+    if token is not None and SCOPE_ADMIN not in (token.scopes or []):
+        return None, (
+            "This connection can't run commands. Reconnect from ServerAlly → Settings → "
+            "Connected applications and choose 'Full power' to enable running commands."
+        )
+    acc = await _resolve_server(db, user, ref)
+    if acc is None:
+        return None, await _unknown_server(db, user, ref)
+    if not acc.can_execute:
+        return None, (
+            f"You don't have permission to run commands on {acc.server.name} — this needs "
+            "execute access, which your role doesn't grant."
+        )
+    return acc, None
+
+
+@mcp_server.tool(name="serverally_run_command", annotations={"title": "Run a shell command", **_ADMIN})
+async def serverally_run_command(
+    server: str, command: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN
+) -> str:
+    """Run a shell command on a server and return its stdout, stderr, and exit code.
+
+    FULL POWER — needs a connection made with 'Full power' access (the mcp:admin scope).
+    Runs on Linux servers (bash, over SSH) and Windows servers (PowerShell, over WinRM).
+    ``server`` is a name or id; ``command`` is the exact command line to run.
+
+    Safety: every command is first checked against ServerAlly's absolute blocklist, so
+    catastrophic commands (e.g. ``rm -rf /``, ``mkfs``, fork bombs) are REFUSED. Everything
+    else runs as-is — there is no confirmation prompt and no undo. This is a real terminal;
+    every call is audit-logged. Prefer read-only commands (``docker logs``, ``systemctl
+    status``, ``df -h``) unless you intend to change the server.
+    """
+    command = (command or "").strip()
+    if not command:
+        return "No command was given."
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        acc, err = await _admin_executor(db, user, server)
+        if err:
+            return err
+        srv = acc.server
+        # A shell needs a command channel — SSH or WinRM only (hosting/RDP have none).
+        if srv.connection_type not in ("ssh", "winrm"):
+            return (
+                f"{srv.name}: running commands needs an SSH or Windows (WinRM) server "
+                f"(this one is '{srv.connection_type}', which has no command channel)."
+            )
+        # Absolute safety floor: refuse catastrophic commands (the same blocklist Ally uses).
+        os_family = "windows" if srv.connection_type == "winrm" or (srv.shell or "") == "powershell" else "linux"
+        verdict = safety_service.validate_command(command, os_family)
+        if verdict.status == "blocked":
+            await _audit(db, user, "run_command_blocked", srv.id)
+            return (
+                f"⛔ Refused on {srv.name}: this command is on ServerAlly's absolute safety "
+                "blocklist because it could irreversibly destroy the server. Nothing was run."
+            )
+        await _audit(db, user, "run_command", srv.id)  # the call is audited; the command text is not, to never log a secret
+        try:
+            stdout, stderr, exit_code = await connection_manager.execute(srv, command)
+        except Exception as exc:  # noqa: BLE001
+            return f"Error running the command on {srv.name}: {type(exc).__name__}: {exc}"[:300]
+
+    stdout, stderr = stdout or "", stderr or ""
+    truncated = len(stdout) + len(stderr) > _CMD_OUTPUT_CAP
+    if truncated:
+        stdout = stdout[:_CMD_OUTPUT_CAP]
+        stderr = stderr[: max(0, _CMD_OUTPUT_CAP - len(stdout))]
+    if response_format == ResponseFormat.JSON:
+        return json.dumps({
+            "server": srv.name, "command": command, "exit_code": exit_code,
+            "stdout": stdout, "stderr": stderr, "truncated": truncated,
+        }, indent=2)
+    out = [f"# `{command}` on {srv.name} — exit {exit_code}" + (" · output truncated" if truncated else "")]
+    if stdout.strip():
+        out.append(f"\n**stdout**\n```\n{stdout.rstrip()}\n```")
+    if stderr.strip():
+        out.append(f"\n**stderr**\n```\n{stderr.rstrip()}\n```")
+    if not stdout.strip() and not stderr.strip():
+        out.append("\n_(no output)_")
+    return "\n".join(out)

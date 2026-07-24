@@ -45,13 +45,31 @@ from app.models.oauth import OAuthAuthorizationCode, OAuthClient, OAuthTokenReco
 
 logger = logging.getLogger(__name__)
 
-# Scopes (Phase 4): read tools need mcp:read, write tools need mcp:write. A "Read-only"
-# connection carries just mcp:read (the safe first-connection default); "Full" carries both.
+# Scopes: read tools need mcp:read, write tools need mcp:write, and the run_command shell
+# tool needs mcp:admin. Three consent tiers, each additive:
+#   Read-only  → [mcp:read]                       (safe first-connection default)
+#   Full access→ [mcp:read, mcp:write]            (the bounded write tools)
+#   Full power → [mcp:read, mcp:write, mcp:admin] (also run arbitrary commands — a shell)
+# mcp:admin is a deliberate opt-in that crosses the "no shell over MCP" line
+# (docs/MCP-SERVER-PLAN.md §3) — the caller's own AI drives, so ServerAlly's higher
+# safety layers (skills, verify-gate, approval) don't wrap the call; only the absolute
+# command blocklist does. See the Decisions Log (2026-07-24).
 SCOPE_READ = "mcp:read"
 SCOPE_WRITE = "mcp:write"
-ALL_SCOPES = [SCOPE_READ, SCOPE_WRITE]
+SCOPE_ADMIN = "mcp:admin"
+ALL_SCOPES = [SCOPE_READ, SCOPE_WRITE, SCOPE_ADMIN]  # every requestable scope (DCR valid_scopes + metadata)
 DEFAULT_SCOPES = [SCOPE_READ]  # read-only by default — the safe first connection
 SCOPE = SCOPE_READ  # back-compat alias (the base scope every connection has)
+
+
+def scopes_for_access_level(level: str) -> list[str]:
+    """Map a consent-page access level to the scopes granted (each tier includes the ones
+    below it). Unknown/blank levels fall back to the safe read-only default."""
+    if level == "admin":  # "Full power"
+        return [SCOPE_READ, SCOPE_WRITE, SCOPE_ADMIN]
+    if level == "full":   # "Full access"
+        return [SCOPE_READ, SCOPE_WRITE]
+    return [SCOPE_READ]   # "Read-only" (default)
 
 _TXN_TTL_SECONDS = 600  # signed consent transaction — 10 minutes
 _TXN_TYPE = "mcp_consent"

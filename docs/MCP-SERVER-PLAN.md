@@ -104,9 +104,19 @@ The rule survives on a sharper basis:**
 **Ploi's MCP is also bounded** — "deploy sites, inspect logs, manage databases", not a
 shell. That is the precedent and it is the right one.
 
-**Deferred, not rejected:** a guarded `run_command` behind a per-server opt-in +
-`safety_service.validate_command()` + audit + read-only-by-default. Revisit on real
-customer demand, as its own dated decision.
+**~~Deferred, not rejected~~ → SHIPPED 2026-07-24 (the dated decision this paragraph asked
+for).** On real customer demand (the first MCP user asked for "everything Ally can do over
+API"), `run_command` was added as a **deliberate opt-in third scope, `mcp:admin` ("Full
+power")** — a real shell returning stdout/stderr, chosen on the consent page alongside
+Read-only and Full access. The honest trade, made with eyes open: a shell is UNBOUNDED, so
+the only code gate that constrains it is the **absolute blocklist** (`validate_command` →
+catastrophic commands like `rm -rf /` refused) — plus **Rule-7 execute permission** and an
+**audit log** of every call. ServerAlly's higher (prompt-level) safety — skills, verify-gate,
+step approval, injection framing — does NOT wrap it, because over MCP the caller's own AI is
+the reasoner. It is off by default (Read-only), never granted unless the user explicitly picks
+"Full power", and shown amber in Settings → Connected applications. The bounded tools below
+remain the recommended path; `run_command` is the escape hatch for power users who accept the
+trade. See the Decisions Log (2026-07-24) and §6.
 
 ## 3a. What actually transfers (the PM's question, answered)
 
@@ -298,8 +308,14 @@ credential-free, **0 AI actions** (deterministic — no model call).
 | `create_site`, `issue_ssl`, `create_database` | CyberPanel CLI ops |
 | `run_backup` | Existing backup job only — no ad-hoc definitions |
 
-**Not exposed in v1:** `run_command`, restore-from-backup (destructive), credential
-mutation, team/billing management, anything that deletes.
+### Full power (mcp:admin — 2026-07-24, opt-in shell)
+| Tool | Notes |
+|---|---|
+| `run_command` | **Arbitrary shell**, returns stdout/stderr/exit code. Needs the `mcp:admin` scope ("Full power" on the consent page) + execute permission (Rule 7). Every command passes the absolute blocklist (`validate_command`) first — catastrophic commands refused — and every call is audited (the command text is NOT logged, to never store a secret). SSH/WinRM servers only. See §3 + the Decisions Log. |
+
+**Still not exposed:** restore-from-backup (destructive), credential mutation, team/billing
+management, anything that deletes. `run_command` is now the ONE unbounded tool, and only
+behind the explicit "Full power" opt-in.
 
 ## 7. Platform constraints (design around these)
 

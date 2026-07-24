@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
-from app.mcp.oauth_provider import ALL_SCOPES, DEFAULT_SCOPES, mcp_enabled_for, oauth_provider, verify_txn
+from app.mcp.oauth_provider import mcp_enabled_for, oauth_provider, scopes_for_access_level, verify_txn
 from app.models.user import User
 from app.services import audit_service, auth_service, totp_service
 
@@ -118,6 +118,8 @@ def _page(*, client_name: str, txn: str, error: str = "", email: str = "", need_
         <span><strong>Read-only</strong> — see status, metrics, security &amp; sites <em>(recommended)</em></span></label>
       <label class="lvl"><input type="radio" name="access_level" value="full" />
         <span><strong>Full access</strong> — also run scans &amp; playbooks, create sites &amp; databases</span></label>
+      <label class="lvl"><input type="radio" name="access_level" value="admin" />
+        <span><strong>Full power</strong> — also run <strong>any command</strong> on your servers, like a terminal <em>(most powerful — only for a client you trust)</em></span></label>
     </div>
     {err_html}
     <label>Email
@@ -195,8 +197,8 @@ async def consent_submit(
                 status_code=403,
             )
 
-        # Access level the user chose: Full = read + write; Read-only = read only (default).
-        scopes = ALL_SCOPES if access_level == "full" else DEFAULT_SCOPES
+        # Access level the user chose → granted scopes (read-only / full / full-power).
+        scopes = scopes_for_access_level(access_level)
         redirect_url = await oauth_provider.create_authorization_code(data, str(user.id), scopes=scopes)
         await audit_service.audit(
             db, user, "mcp.oauth.approve", request=request,

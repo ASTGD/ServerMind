@@ -16,6 +16,16 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
+/** Friendly label + tint for a connection's granted scopes. "Full power" (mcp:admin, the
+ * run-any-command shell) is tinted amber so a powerful connection is visible at a glance. */
+function scopeBadge(scopes: string[]): { label: string; className: string } {
+  if (scopes.includes("mcp:admin"))
+    return { label: "Full power", className: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400" }
+  if (scopes.includes("mcp:write"))
+    return { label: "Full access", className: "bg-muted text-muted-foreground" }
+  return { label: "Read-only", className: "bg-muted text-muted-foreground" }
+}
+
 /** A copyable code line. */
 function CodeBox({ text }: { text: string }) {
   return (
@@ -113,9 +123,14 @@ export default function McpConnections() {
                     <div className="flex items-center gap-2">
                       <Plug size={14} className="shrink-0 text-primary" />
                       <span className="truncate text-sm font-medium">{name}</span>
-                      <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        {c.scopes.join(" ") || "mcp"}
-                      </span>
+                      {(() => {
+                        const b = scopeBadge(c.scopes)
+                        return (
+                          <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${b.className}`}>
+                            {b.label}
+                          </span>
+                        )
+                      })()}
                     </div>
                     <div className="mt-0.5 text-xs text-muted-foreground">
                       Connected {timeAgo(c.connected_at)} · active {timeAgo(c.last_active)}
