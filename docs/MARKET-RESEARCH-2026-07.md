@@ -175,8 +175,15 @@ and §8 argues we should deliberately *not* build them.
    connection, whole fleet — versus their inevitably per-server scope.
 
 **Also worth knowing:** Rocket.net already gives every customer a free MCP server. **"We
-have MCP" is no longer a differentiator.** And **servermind.dev is a non-competitor** —
-4 stars, 0 forks, one release, solo side project.
+have MCP" is no longer a differentiator.**
+
+⚠️ **servermind.dev — corrected 2026-07-25.** This doc (and COMPETITOR-LANDSCAPE) judged it
+from its GitHub repo (4 stars, solo, one release) and called it a non-competitor. Read off
+the **product site** it is far more developed: fleet management via dial-out agents, live
+dashboard, custom commands, alerts incl. **expiring TLS certificates**, daily health emails,
+a desktop app, WireGuard mesh — **completely free (MIT), with free Gemini AI, no paid tier**.
+It is not a revenue rival, but it **sets the free floor we must price against**. See
+[PRO-FEATURES-PLAN.md](PRO-FEATURES-PLAN.md) §2.
 
 ---
 
@@ -293,18 +300,25 @@ clone · FTP account management · reseller/account hierarchy.
 
 ### 8.2 The ranked build list
 
+> ⚠️ **REVISED 2026-07-25 — see [PRO-FEATURES-PLAN.md](PRO-FEATURES-PLAN.md) §1.** The owner
+> confirmed ServerAlly is *not* a control-panel replacement. Two items below (**a sites
+> model** and **PHP version management**) are panel features and are **dropped**; SSH-key and
+> firewall managers are **deferred**. The three shipped items — offsite backups, uptime
+> monitoring, log viewer — are operator features and stand. Pro-tier work now follows
+> PRO-FEATURES-PLAN.md.
+
 **Wave 1 — stop being disqualified.** These are the gaps a buyer notices in the first hour.
 
-1. **A real sites model for plain servers** — vhost create/list/edit/delete, doc roots,
-   domains. Unlocks almost everything below. *(Today this works only on CyberPanel.)*
+1. ~~**A real sites model for plain servers**~~ — **DROPPED**: a panel's job, not ours.
 2. **Offsite backups** (S3/R2/B2/SFTP) — our single biggest functional gap, and a *safety*
    feature, so it must stay ungated.
 3. **Uptime / HTTP monitoring + "site is down" alerts** — we currently cannot alert on the
    one thing every owner actually cares about.
-4. **PHP/Node version management per site** — Tier 1, we only detect.
+4. ~~**PHP/Node version management per site**~~ — **DROPPED**: a panel's job, not ours.
 5. **Server log viewer** (nginx/php-fpm/journald tail + search) — also the **#1 requested AI
    capability** in this market, and it makes Ally visibly better.
-6. **SSH key manager + firewall rule manager** — Tier 2, and we already have the primitives.
+6. **SSH key manager + firewall rule manager** — **DEFERRED**: borderline panel territory;
+   revisit only on customer demand.
 
 **Wave 2 — compete on equal terms.**
 
