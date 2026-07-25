@@ -1,5 +1,19 @@
 # Competitor landscape — who is actually competing with us
 
+> ## ⚠️ SUPERSEDED 2026-07-25 — read [MARKET-RESEARCH-2026-07.md](MARKET-RESEARCH-2026-07.md) first
+>
+> The owner has **answered §6's open question**: ServerAlly expands beyond operate-and-repair
+> to cover what the established market offers. Two things in this doc are therefore void:
+>
+> - **§5's rule ("do not tear down another build-and-deploy panel") no longer applies** — it
+>   assumed we would never build those features. We now need exactly that detail.
+> - **§1's "nobody chooses between us" framing is no longer a reason to skip feature
+>   borrowing.** We are deliberately entering their column.
+>
+> Still correct and worth keeping: the servermind.dev assessment (§2, re-verified — 4 stars,
+> solo side project), Panelica as a genuine head-to-head, and "the human sysadmin is the real
+> incumbent."
+>
 > **Created 2026-07-17.** Corrects a framing error: the Ploi teardown
 > ([COMPETITOR-PLOI-TEARDOWN.md](COMPETITOR-PLOI-TEARDOWN.md)) called Ploi *"our closest
 > per-server competitor."* **That is wrong** and led to over-weighted conclusions. This

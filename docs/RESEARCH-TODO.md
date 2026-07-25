@@ -1,6 +1,13 @@
 # Research TODO — standing tasks
 
 > Captured 2026-07-23. Open research items to work through (not urgent; deliberate deep dives).
+>
+> ## ✅ DONE 2026-07-25 — items 1, 2 and 3 are answered by [MARKET-RESEARCH-2026-07.md](MARKET-RESEARCH-2026-07.md)
+>
+> That doc covers the deep competitor teardown (24 vendors across 4 segments, primary
+> sources), re-verifies servermind.dev (**4 stars, 0 forks, solo side project — not a
+> threat**), and sets out the feature + pricing conclusions. Raw per-vendor reports are in
+> [research/](research/). **What remains open is the PM decision list in that doc's §9.**
 
 ---
 
