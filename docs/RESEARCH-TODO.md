@@ -38,3 +38,23 @@ app in Google search — **verify what it is:**
 > Note: infra identifiers (DB name/user `servermind`, container names, repo folder
 > `ServerMind`) were deliberately kept on rename to avoid breakage — that is expected, not
 > a leftover to "fix".
+
+## 3. Pricing & positioning rework — "the product is bigger than Ally"
+
+**Direction the user set (2026-07-24):** ServerAlly is no longer positioned as *the Ally
+product* — Ally is **one capability among many** (missions, MCP connector, terminal,
+playbooks, monitoring, backups, hosting, RDP…). The UI already reflects this first step:
+Ask Ally was demoted from a gradient hero button to a plain sidebar link, sitting as a peer
+with Terminal under a "Tools" group (this change).
+
+**To design after the Ploi + competitor research (item 1):**
+- **Re-tier pricing on server quantity** (the market's actual value metric — see the
+  verified research in [docs/PRICING-METRIC-RESEARCH.md] and [docs/PRICING-V3.md]: Ploi/
+  RunCloud/Forge all price per server, not per AI-usage). Revisit the "two meters / actions"
+  model against this.
+- **Define the Pro feature set** independent of Ally (which features gate on plan vs. are
+  open to all) — the current stance is "open features, two meters" (Decisions Log 2026-07-03);
+  reconsider given the broader-product framing.
+- **Reposition the marketing/onboarding** so Ally is a headline *feature*, not the whole
+  pitch. Reconcile with the "Ally companion" tagline + [docs/PRICING-V3.md] Layer 1/Layer 2
+  split (platform priced per server; AI is a separate, chosen layer).

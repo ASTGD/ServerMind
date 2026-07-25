@@ -1,19 +1,16 @@
 import { useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { Terminal as TerminalIcon, History, Menu, Activity } from "lucide-react"
+import { History, Menu, Activity } from "lucide-react"
 import Breadcrumbs from "./Breadcrumbs"
 import NotificationBell from "./NotificationBell"
 import UserMenu from "./UserMenu"
-import { useTerminalStore } from "@/store/terminalStore"
 import { useMcpDrawerStore } from "@/store/mcpDrawerStore"
 import { useMcpActivity } from "@/hooks/useMcpActivity"
 import { listMcpConnections } from "@/api/mcp"
 
 export default function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
   const navigate = useNavigate()
-  const termCount = useTerminalStore((s) => s.sessions.length)
-  const toggleTerminal = useTerminalStore((s) => s.toggle)
 
   // MCP activity — a top-bar icon that pulses when a connected AI is running something, and
   // toggles the floating activity drawer. Only shown to users who've connected an AI client.
@@ -80,29 +77,6 @@ export default function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
             </span>
           </button>
         )}
-        {/* Terminal — a small launcher icon (Ally now lives only in the sidebar). A green
-            dot on the icon means live shell sessions are running; jump in from any page (⌘`). */}
-        <button
-          onClick={toggleTerminal}
-          title={termCount > 0 ? `${termCount} terminal ${termCount === 1 ? "session" : "sessions"} running (⌘\`)` : "Terminal (⌘\`)"}
-          className={`relative flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
-            termCount > 0
-              ? "text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground"
-          }`}
-        >
-          <span className="relative flex items-center justify-center">
-            {termCount > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-              </span>
-            )}
-            <TerminalIcon size={16} />
-          </span>
-          <span className="hidden sm:inline">Terminal</span>
-        </button>
-        <div className="mx-1 h-6 w-px bg-border" />
         <button
           onClick={() => navigate("/logs")}
           title="Activity log"

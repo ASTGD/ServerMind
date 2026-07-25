@@ -5,12 +5,13 @@ import { useTranslation } from "react-i18next"
 import type { LucideIcon } from "lucide-react"
 import {
   LayoutDashboard, Boxes, BookOpen, FileCode, Users, Settings, Sparkles,
-  Rocket, FileText, FlaskConical, ArrowUpRight, Sun, Moon, Monitor,
+  Rocket, FileText, FlaskConical, ArrowUpRight, Sun, Moon, Monitor, Terminal as TerminalIcon,
 } from "lucide-react"
 import Logo from "@/components/brand/Logo"
 import UpgradeModal from "./UpgradeModal"
 import { Card, Button, Badge } from "@/components/ui"
 import { useAssistantStore } from "@/store/assistantStore"
+import { useTerminalStore } from "@/store/terminalStore"
 import { useAuthStore } from "@/store/authStore"
 import { useThemeStore, type Theme } from "@/store/themeStore"
 import { getMyUsage } from "@/api/usage"
@@ -75,6 +76,51 @@ function SectionLabel({ children }: { children: ReactNode }) {
   )
 }
 
+/** A launcher row (Ask Ally, Terminal) — styled exactly like a NavItem link, but it toggles
+ *  a floating window instead of navigating. An optional green dot marks live activity. */
+function ToolItem({
+  icon: Icon, label, onClick, active, dot, shortcut, title,
+}: {
+  icon: LucideIcon; label: string; onClick: () => void
+  active?: boolean; dot?: boolean; shortcut?: string; title?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={cn(
+        "group relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] transition-colors",
+        active
+          ? "bg-accent font-medium text-accent-foreground"
+          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+      )}
+    >
+      <span className="relative flex h-[17px] w-[17px] shrink-0 items-center justify-center">
+        <Icon
+          size={17}
+          className={cn(
+            "transition-colors",
+            active ? "text-primary" : "text-muted-foreground/70 group-hover:text-foreground",
+          )}
+        />
+        {dot && (
+          <span className="absolute -right-1.5 -top-1 flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          </span>
+        )}
+      </span>
+      <span className="flex-1 truncate text-left">{label}</span>
+      {shortcut && (
+        <kbd className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground/70">
+          {shortcut}
+        </kbd>
+      )}
+    </button>
+  )
+}
+
 const THEME_OPTIONS: { value: Theme; icon: LucideIcon; label: string }[] = [
   { value: "light", icon: Sun, label: "Light" },
   { value: "dark", icon: Moon, label: "Dark" },
@@ -119,6 +165,9 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
       (m) => m.role === "assistant" && m.kind === "mission" && (m.mission.status === "running" || m.mission.status === "blocked"),
     ),
   )
+  const terminalOpen = useTerminalStore((s) => s.open)
+  const toggleTerminal = useTerminalStore((s) => s.toggle)
+  const termCount = useTerminalStore((s) => s.sessions.length)
 
   const { data: usage } = useQuery({ queryKey: ["usage"], queryFn: getMyUsage, staleTime: 60_000 })
   const { data: missions = [] } = useQuery({ queryKey: ["missions"], queryFn: () => listMissions(), refetchInterval: 60_000 })
@@ -128,6 +177,10 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
 
   const openAlly = () => {
     toggleAssistant()
+    onClose?.()
+  }
+  const openTerminal = () => {
+    toggleTerminal()
     onClose?.()
   }
 
@@ -168,30 +221,35 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
           {isAdmin && <NavItem to="/dev" icon={FlaskConical} label="Dev" onClick={onClose} />}
         </nav>
 
-        {/* Pinned to the bottom — Ask Ally (the hero) sits just above the plan card. The
-            floating window grows out of / flies back into this button. */}
+        {/* Pinned to the bottom — the tool launchers (Ally + Terminal) as simple links, then
+            the plan card. Ally is one capability among many now, not a hero button. Each
+            floating window still grows from / flies back into its link. */}
         <div className="mt-auto flex flex-col gap-3 pt-4">
-          <button
-            onClick={openAlly}
-            title={assistantOpen ? "Minimize Ally" : "Ask Ally (⌘K)"}
-            className={cn(
-              "flex w-full items-center gap-2.5 rounded-xl bg-brand-gradient px-3 py-2.5 text-white shadow-md shadow-primary/20 transition hover:opacity-95",
-              assistantOpen && "ring-2 ring-primary/40",
-            )}
-          >
-            <span className="relative flex h-6 w-6 items-center justify-center">
-              <Sparkles size={17} />
-              {missionActive && (
-                <span className="absolute -right-1 -top-1 flex h-2.5 w-2.5">
-                  {/* Fixed emerald on the fixed gradient — same contrast in both themes. */}
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full border-2 border-indigo-500 bg-emerald-400" />
-                </span>
-              )}
-            </span>
-            <span className="flex-1 text-left text-sm font-medium">Ask Ally</span>
-            <kbd className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-medium tracking-wide">⌘K</kbd>
-          </button>
+          <div className="flex flex-col gap-0.5">
+            <SectionLabel>Tools</SectionLabel>
+            <ToolItem
+              icon={Sparkles}
+              label="Ask Ally"
+              onClick={openAlly}
+              active={assistantOpen}
+              dot={missionActive}
+              shortcut="⌘K"
+              title={assistantOpen ? "Minimize Ally" : "Ask Ally (⌘K)"}
+            />
+            <ToolItem
+              icon={TerminalIcon}
+              label="Terminal"
+              onClick={openTerminal}
+              active={terminalOpen}
+              dot={termCount > 0}
+              shortcut="⌘`"
+              title={
+                termCount > 0
+                  ? `${termCount} terminal ${termCount === 1 ? "session" : "sessions"} running (⌘\`)`
+                  : "Terminal (⌘\`)"
+              }
+            />
+          </div>
 
           {/* Plan card — the upgrade CTA with the context of your live usage. */}
           <Card className="bg-background p-3">
