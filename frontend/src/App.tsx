@@ -13,6 +13,7 @@ import Scheduler from "@/routes/Scheduler"
 import FileManager from "@/routes/FileManager"
 import Security from "@/routes/Security"
 import ServerLogs from "./routes/ServerLogs"
+import PublicStatusPage from "./routes/PublicStatus"
 import Backups from "@/routes/Backups"
 import Installed from "@/routes/Installed"
 import Hosting from "@/routes/Hosting"
@@ -42,6 +43,8 @@ export default function App() {
         <Route path="/verify-email" element={<VerifyEmail />} />
         {/* Billing-provisioned accounts (WHMCS) set their first password here. */}
         <Route path="/claim" element={<Claim />} />
+        {/* PUBLIC — no login. Strangers land here; the payload is an allowlist. */}
+        <Route path="/status/:slug" element={<PublicStatusPage />} />
         <Route
           path="/"
           element={

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, History, Check, Loader2, Sparkles, Brain, Trash2, Mail, Send, Gauge, Plug } from "lucide-react"
 import McpConnections from "@/components/settings/McpConnections"
+import StatusPagesPanel from "@/components/monitoring/StatusPagesPanel"
 import { QRCodeSVG } from "qrcode.react"
 import { listAudit } from "@/api/audit"
 import {
@@ -877,6 +878,9 @@ export default function Settings() {
       description="Connect your own AI (Claude, ChatGPT, Cursor) to manage your servers by chat."
     >
       <McpConnections />
+
+      {/* Public status pages — user-level, since they span servers. */}
+      <StatusPagesPanel />
     </Section>
   )
 
