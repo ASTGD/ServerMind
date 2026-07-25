@@ -1250,6 +1250,7 @@ async def _run_mission(
     skill_slug: str | None,
     user_language: str,
     resume: dict | None = None,
+    ally_mode_override: str | None = None,
 ) -> None:
     """The mission loop: plan ONE step → validate → (approve if risky) → execute →
     observe → repeat, until done/blocked/stopped/budget. Stage 2: steps carry their
@@ -1288,7 +1289,13 @@ async def _run_mission(
     home_id = str(home_server.id) if home_server is not None else None
     # Track D: the user's autonomy mode shapes how much Ally assumes and the approval
     # floor (careful → confirm any mutating step). Never lowers the safety floor.
-    ally_mode = ai_service.normalize_mode(getattr(user, "ally_mode", None))
+    #
+    # ``ally_mode_override`` lets an UNATTENDED caller raise that floor. Autopilot passes
+    # "careful" so that EVERY mutating step reaches its policy: without it, a step the
+    # engine considers ordinary (`systemctl restart nginx`, even `rm -f /tmp/x` — both
+    # safety-'ok') would run without ever consulting the policy, and a "look and tell me"
+    # task could still change the server. The override can only ADD approvals.
+    ally_mode = ai_service.normalize_mode(ally_mode_override or getattr(user, "ally_mode", None))
 
     # Quota gate — a mission costs 1 action (§4 of the missions doc); billed to the
     # home server owner's pool, or the acting user's own pool for fleet missions.
@@ -1678,6 +1685,10 @@ async def _run_mission(
                 "index": index, "budget": budget,
                 "cmd": cmd, "description": description, "risk_level": risk,
                 "needs_approval": needs_approval,
+                # WHY approval was asked for. `needs_approval` alone is ambiguous (and in
+                # careful mode it is true for every change), so an unattended policy
+                # caller cannot tell an AI-flagged step from an ordinary one without this.
+                "ai_flagged": bool(step.get("requires_confirmation")),
                 "server_id": str(target.id), "server_name": target.name,
                 # Smart Model Ladder: this step was planned with a stronger brain — either
                 # the loop escalated (mission struggling) or Ally asked for it up front.

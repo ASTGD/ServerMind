@@ -2,6 +2,7 @@ import { useOutletContext } from "react-router-dom"
 import { Monitor } from "lucide-react"
 import ServerMetrics from "@/components/server/ServerMetrics"
 import UptimePanel from "@/components/monitoring/UptimePanel"
+import AutopilotPanel from "@/components/autopilot/AutopilotPanel"
 import InstalledWidget from "@/components/server/widgets/InstalledWidget"
 import SecurityWidget from "@/components/server/widgets/SecurityWidget"
 import BackupsWidget from "@/components/server/widgets/BackupsWidget"
@@ -98,6 +99,8 @@ export default function ServerOverview() {
           {/* Metrics answer "is the box busy"; this answers "is the site up" — the thing
               an owner actually cares about, and checked from outside the server. */}
           <UptimePanel serverId={server.id} />
+          {/* Ally on autopilot — standing instructions that run without you. */}
+          <AutopilotPanel serverId={server.id} />
           <SecurityWidget serverId={server.id} />
           <BackupsWidget serverId={server.id} />
           <SchedulerWidget serverId={server.id} />

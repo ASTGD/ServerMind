@@ -196,3 +196,62 @@ def test_autopilot_never_pins_a_model():
     from app.services.autopilot_service import AutopilotRunner
 
     assert AutopilotRunner(policy=POLICY_REPORT_ONLY).model is None
+
+
+# ── Bugs found by exercising the REAL path, not just decide() ────────────────
+
+def test_autopilot_forces_the_strictest_approval_floor():
+    """THE bug that mattered: `systemctl restart nginx` and even `rm -f /tmp/x` are
+    safety-'ok' and NOT read-only, so the engine runs them WITHOUT asking. That means the
+    approval gate alone cannot enforce "look and tell me" — a report-only task could still
+    change the server, breaking the promise the UI makes.
+
+    Autopilot therefore forces careful mode, which flags every mutating step for approval
+    so the policy actually sees it."""
+    import inspect as _i
+
+    from app.services import autopilot_service as a
+
+    src = _i.getsource(a.run_task_mission)
+    assert 'ally_mode_override="careful"' in src, (
+        "SAFETY REGRESSION: autopilot no longer forces careful mode, so ordinary changes "
+        "would bypass the policy and a report-only task could modify the server"
+    )
+    # And the engine must still accept the override.
+    from app.websocket import terminal
+    assert "ally_mode_override" in _i.signature(terminal._run_mission).parameters
+
+
+def test_ordinary_changes_really_do_bypass_approval_without_the_override():
+    """Pins the premise of the test above, so nobody 'simplifies' the override away."""
+    from app.services import safety_service
+
+    for cmd in ("systemctl restart nginx", "rm -f /tmp/scratch"):
+        assert safety_service.validate_command(cmd, "linux").status == "ok"
+        assert not safety_service.is_read_only_command(cmd)
+
+
+def test_policy_does_not_infer_danger_from_needs_approval():
+    """Second bug: inferring safety_status from `needs_approval` made every step look
+    dangerous, collapsing safe_fixes into report_only. The runner must compute the safety
+    verdict itself and read the AI's flag from the explicit `ai_flagged` field."""
+    import inspect as _i
+
+    from app.services.autopilot_service import AutopilotRunner
+
+    src = _i.getsource(AutopilotRunner.wait_decision)
+    assert "validate_command" in src, "the runner must compute the safety verdict itself"
+    assert 'step.get("ai_flagged")' in src, "the AI flag must be read explicitly"
+    assert 'needs_approval' not in src.split("flagged =")[1].split("\n")[0], (
+        "ai_flagged must not be inferred from needs_approval"
+    )
+
+
+def test_engine_reports_why_it_asked():
+    """The step event must carry `ai_flagged`, or an unattended policy cannot tell an
+    AI-flagged step from an ordinary one in careful mode."""
+    import inspect as _i
+
+    from app.websocket import terminal
+
+    assert '"ai_flagged"' in _i.getsource(terminal._run_mission)

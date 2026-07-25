@@ -135,14 +135,23 @@ class AutopilotRunner:
         from app.services import safety_service
 
         cmd = step.get("cmd") or ""
+        risk = (step.get("risk_level") or "low").lower()
+        # Compute the safety verdict OURSELVES rather than inferring it from
+        # ``needs_approval``. The engine sets that flag for several different reasons, so
+        # treating it as "confirm" made every step look dangerous and collapsed
+        # safe_fixes into report_only. CONFIRM_PATTERNS is OS-agnostic, and 'blocked'
+        # never reaches this point, so checking against linux is complete here.
+        safety_status = safety_service.validate_command(cmd, "linux").status
+        # The engine tells us explicitly whether the AI itself flagged the step. We must
+        # NOT infer this from ``needs_approval``: autopilot forces careful mode, so that
+        # flag is true for every change and would stop even an ordinary repair.
+        flagged = bool(step.get("ai_flagged"))
         verdict = decide(
             policy=self.policy,
-            risk_level=step.get("risk_level"),
-            # The engine already refused 'blocked'; a step reaching approval is
-            # 'confirm' or was flagged by the AI/careful-mode.
-            safety_status="confirm" if step.get("needs_approval") and cmd else "ok",
+            risk_level=risk,
+            safety_status=safety_status,
             is_read_only=safety_service.is_read_only_command(cmd),
-            flagged_by_ai=bool(step.get("needs_approval")) and (step.get("risk_level") == "high"),
+            flagged_by_ai=flagged,
         )
         if verdict.approve:
             self.approved_steps += 1
@@ -186,6 +195,11 @@ async def run_task_mission(task, user, server) -> dict:
             goal=task.goal,
             skill_slug=None,  # let the router match a runbook from the goal, as in chat
             user_language=getattr(user, "preferred_language", None) or "en",
+            # Force the strictest approval floor so EVERY mutating step reaches the
+            # policy. Without this, steps the engine considers ordinary (`systemctl
+            # restart nginx`, even `rm -f /tmp/x`) would run without consulting it, and a
+            # "look and tell me" task could still change the server.
+            ally_mode_override="careful",
         )
     except Exception as exc:  # noqa: BLE001 — one bad run must not stop the scheduler
         logger.warning("Autopilot task %s failed: %s", task.id, exc)
@@ -248,3 +262,133 @@ def should_notify(result: dict, task) -> bool:
     if not task.notify_on_change_only:
         return True
     return result.get("status") != "completed" or bool(result.get("approved_steps"))
+
+
+# ── Scheduling (APScheduler, shared with scheduler_service) ──────────────────
+# Mirrors backup_service: one cron job per task, namespaced job ids, reloaded on startup.
+
+def _job_id(task_id) -> str:
+    return f"autopilot:{task_id}"
+
+
+def schedule_task(task) -> None:
+    """Register (or replace) the cron job for an active task."""
+    from app.services import scheduler_service
+
+    if not (task.is_active and task.cron_expression):
+        unschedule_task(task.id)
+        return
+    try:
+        from apscheduler.triggers.cron import CronTrigger
+
+        scheduler_service.get_scheduler().add_job(
+            _execute_task,
+            trigger=CronTrigger.from_crontab(task.cron_expression, timezone="UTC"),
+            args=[str(task.id)],
+            id=_job_id(task.id),
+            replace_existing=True,
+            max_instances=1,  # a long mission must never overlap its own next run
+        )
+        logger.debug("Scheduled autopilot %s (%s)", task.name, task.cron_expression)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not schedule autopilot %s: %s", task.id, exc)
+
+
+def unschedule_task(task_id) -> None:
+    from app.services import scheduler_service
+
+    try:
+        scheduler_service.get_scheduler().remove_job(_job_id(task_id))
+    except Exception:  # noqa: BLE001 — not scheduled is fine
+        pass
+
+
+async def load_all_tasks() -> None:
+    """Re-register every active task on startup."""
+    from sqlalchemy import select
+
+    from app.database import AsyncSessionLocal
+    from app.models.autopilot import AutopilotTask
+
+    try:
+        async with AsyncSessionLocal() as db:
+            tasks = (await db.execute(
+                select(AutopilotTask).where(AutopilotTask.is_active.is_(True))
+            )).scalars().all()
+        for task in tasks:
+            schedule_task(task)
+        if tasks:
+            logger.info("Autopilot: %d scheduled task(s) loaded", len(tasks))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not load autopilot tasks: %s", exc)
+
+
+async def _execute_task(task_id: str) -> None:
+    """The scheduled job: load the task, run the mission, record and report."""
+    from datetime import datetime, timezone as _tz
+
+    from sqlalchemy import select
+
+    from app.database import AsyncSessionLocal
+    from app.models.autopilot import AutopilotTask
+    from app.models.server import Server
+    from app.models.user import User
+    from app.services import notification_service, scheduler_service
+
+    async with AsyncSessionLocal() as db:
+        task = (await db.execute(
+            select(AutopilotTask).where(AutopilotTask.id == task_id)
+        )).scalar_one_or_none()
+        if task is None or not task.is_active:
+            return
+        user = (await db.execute(select(User).where(User.id == task.user_id))).scalar_one_or_none()
+        server = None
+        if task.server_id:
+            server = (await db.execute(
+                select(Server).where(Server.id == task.server_id)
+            )).scalar_one_or_none()
+        if user is None:
+            logger.warning("Autopilot task %s has no user; skipping", task_id)
+            return
+        # Snapshot what we need — the session closes while the mission runs.
+        name, policy, channel, target = task.name, task.policy, task.channel, task.channel_target
+        notify_changes_only, cron = task.notify_on_change_only, task.cron_expression
+
+    logger.info("Autopilot: running '%s'", name)
+    result = await run_task_mission(task, user, server)
+
+    async with AsyncSessionLocal() as db:
+        task = (await db.execute(
+            select(AutopilotTask).where(AutopilotTask.id == task_id)
+        )).scalar_one_or_none()
+        if task is not None:
+            task.last_run = datetime.now(tz=_tz.utc)
+            task.last_status = result.get("status")
+            try:
+                task.next_run = scheduler_service.compute_next_run(cron)
+            except Exception:  # noqa: BLE001
+                task.next_run = None
+            await db.commit()
+
+    if should_notify(result, _Notifiable(name, policy, channel, target, notify_changes_only)):
+        subject, body = summarise(result, _Notifiable(name, policy, channel, target, notify_changes_only))
+        try:
+            if channel == "email":
+                await notification_service.send_email(target, subject, body)
+            else:
+                await notification_service.send_webhook(
+                    target, {"text": f"{subject}\n{body}", "task": name, "status": result.get("status")}
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Autopilot report for %s could not be sent: %s", task_id, exc)
+
+
+@dataclass
+class _Notifiable:
+    """The few task fields the report helpers need, detached from the DB session."""
+
+    name: str
+    policy: str
+    channel: str | None
+    channel_target: str | None
+    notify_on_change_only: bool

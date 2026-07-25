@@ -20,6 +20,7 @@ from app.routers import files as files_router
 from app.routers import fleet as fleet_router
 from app.routers import hosting as hosting_router
 from app.routers import installed as installed_router
+from app.routers import autopilot as autopilot_router
 from app.routers import logs as logs_router
 from app.routers import missions as missions_router
 from app.routers import monitoring as monitoring_router
@@ -100,6 +101,9 @@ async def _start_background_jobs() -> None:
     scheduler_service.start()
     await scheduler_service.load_all_tasks()
     await backup_service.load_all_backups()
+    # Autopilot — Ally's scheduled missions (docs/PRO-FEATURES-PLAN.md §4 #1+#2).
+    from app.services import autopilot_service
+    await autopilot_service.load_all_tasks()
     # Collect metrics every 5 minutes
     from apscheduler.triggers.interval import IntervalTrigger
     scheduler_service.get_scheduler().add_job(
@@ -243,6 +247,7 @@ app.include_router(usage_router.router)
 app.include_router(cloud_accounts_router.router)
 app.include_router(rdp_router.router)
 app.include_router(memories_router.router)
+app.include_router(autopilot_router.router)  # /api/autopilot — scheduled missions
 app.include_router(logs_router.router)  # /api/servers/{id}/logs — server log viewer
 app.include_router(uptime_router.router)  # /api/uptime — is the site reachable?
 app.include_router(mcp_admin_router.router)  # /api/mcp — Connected applications (Phase 4)
