@@ -57,6 +57,16 @@ class UptimeMonitor(Base):
     last_response_ms: Mapped[int | None] = mapped_column(Integer)
     last_error: Mapped[str | None] = mapped_column(Text)
 
+    # HTTPS certificate expiry, refreshed daily (ssl_service). Only meaningful for an
+    # https:// monitor — a plain-http one simply has no certificate to inspect.
+    cert_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cert_days_left: Mapped[int | None] = mapped_column(Integer)
+    cert_issuer: Mapped[str | None] = mapped_column(String(255))
+    cert_state: Mapped[str | None] = mapped_column(String(12))   # ok|warning|critical|expired|unknown
+    cert_error: Mapped[str | None] = mapped_column(String(300))
+    cert_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cert_warn_days: Mapped[int] = mapped_column(Integer, default=14, nullable=False)
+
     # Where a state change is announced (reuses notification_service).
     channel: Mapped[str | None] = mapped_column(String(20))          # email|webhook|slack
     channel_target: Mapped[str | None] = mapped_column(String(500))

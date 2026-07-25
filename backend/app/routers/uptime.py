@@ -83,6 +83,11 @@ class MonitorOut(BaseModel):
     channel: str | None = None
     channel_target: str | None = None
     created_at: datetime
+    # HTTPS certificate expiry (daily sweep). Null when the monitor is plain http.
+    cert_state: str | None = None
+    cert_days_left: int | None = None
+    cert_expires_at: datetime | None = None
+    cert_issuer: str | None = None
     # Computed
     uptime_24h: float = 100.0
     uptime_30d: float = 100.0

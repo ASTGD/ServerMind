@@ -142,3 +142,82 @@ async def prune_old_checks() -> None:
             await db.commit()
     except Exception as exc:  # noqa: BLE001
         logger.warning("Uptime history prune failed: %s", exc)
+
+
+# ── Certificate expiry (daily) ───────────────────────────────────────────────
+# Certificates change rarely, so this is its own daily job rather than part of the
+# minute-by-minute uptime sweep. Alerts fire only when the state gets WORSE, so a cert
+# 10 days out does not email for 10 days running.
+
+async def _check_cert(monitor_id) -> None:
+    from app.services import ssl_service
+
+    async with AsyncSessionLocal() as db:
+        monitor = (await db.execute(
+            select(UptimeMonitor).where(UptimeMonitor.id == monitor_id)
+        )).scalar_one_or_none()
+        if monitor is None or not monitor.is_active:
+            return
+        target = ssl_service.host_and_port(monitor.url)
+        if target is None:
+            return  # plain http — nothing to inspect, and that is not a problem
+
+        result = await ssl_service.inspect(monitor.url)
+        now = datetime.now(tz=timezone.utc)
+
+        if result.get("expired"):
+            # Verification failed *because* it expired — the case we most need to report.
+            days, state = -1, "expired"
+        else:
+            days = ssl_service.days_left(result.get("expires_at"), now)
+            state = ssl_service.severity(days, monitor.cert_warn_days or ssl_service.DEFAULT_WARN_DAYS)
+
+        previous = monitor.cert_state
+        monitor.cert_expires_at = result.get("expires_at")
+        monitor.cert_days_left = days
+        monitor.cert_issuer = result.get("issuer")
+        monitor.cert_state = state
+        monitor.cert_error = (result.get("error") or None)
+        monitor.cert_checked_at = now
+        await db.commit()
+
+        if ssl_service.should_alert(previous, state) and monitor.channel and monitor.channel_target:
+            host = target[0]
+            subject, body = ssl_service.message(host, days, state)
+            try:
+                if monitor.channel == "email":
+                    await notification_service.send_email(monitor.channel_target, subject, body)
+                else:
+                    await notification_service.send_webhook(
+                        monitor.channel_target,
+                        {"text": f"{subject}\n{body}", "host": host,
+                         "days_left": days, "state": state},
+                    )
+                logger.info("Certificate alert sent for %s (%s, %s days)", host, state, days)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Certificate alert for %s could not be sent: %s", monitor.id, exc)
+
+
+async def check_certificates() -> None:
+    """Refresh certificate expiry for every active HTTPS monitor."""
+    from app.services import ssl_service
+
+    async with AsyncSessionLocal() as db:
+        monitors = (await db.execute(
+            select(UptimeMonitor).where(UptimeMonitor.is_active.is_(True))
+        )).scalars().all()
+
+    https = [m.id for m in monitors if ssl_service.host_and_port(m.url) is not None]
+    if not https:
+        return
+    logger.info("Certificate sweep: checking %d monitor(s)", len(https))
+    sem = asyncio.Semaphore(_CONCURRENCY)
+
+    async def _guarded(mid):
+        async with sem:
+            try:
+                await _check_cert(mid)
+            except Exception as exc:  # noqa: BLE001 — one bad cert can't stop the sweep
+                logger.warning("Certificate check failed for %s: %s", mid, exc)
+
+    await asyncio.gather(*(_guarded(mid) for mid in https))

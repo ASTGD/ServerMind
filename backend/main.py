@@ -144,7 +144,14 @@ async def _start_background_jobs() -> None:
         id="uptime_prune",
         replace_existing=True,
     )
-    logger.info("Uptime monitoring job registered (sweep every 1 min)")
+    scheduler_service.get_scheduler().add_job(
+        uptime_worker.check_certificates,
+        trigger=IntervalTrigger(hours=12),
+        id="cert_expiry",
+        replace_existing=True,
+        max_instances=1,
+    )
+    logger.info("Uptime monitoring job registered (sweep every 1 min, certs every 12 h)")
 
     # Proactive fleet-health digest — a friendly email of what needs attention across
     # the fleet. Runs daily at 08:00 UTC; the worker decides who's due (weekly users on

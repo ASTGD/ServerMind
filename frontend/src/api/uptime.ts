@@ -23,6 +23,11 @@ export interface UptimeMonitor {
   created_at: string
   uptime_24h: number
   uptime_30d: number
+  /** HTTPS certificate expiry, refreshed daily. Null for a plain-http monitor. */
+  cert_state: "ok" | "warning" | "critical" | "expired" | "unknown" | null
+  cert_days_left: number | null
+  cert_expires_at: string | null
+  cert_issuer: string | null
 }
 
 export interface UptimeCheck {

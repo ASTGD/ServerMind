@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { formatDistanceToNow } from "date-fns"
-import { Globe, Plus, Trash2, RefreshCw, Loader2, X, CircleCheck, CircleAlert, CircleDashed } from "lucide-react"
+import { Globe, Plus, Trash2, RefreshCw, Loader2, X, CircleCheck, CircleAlert, CircleDashed, ShieldAlert, ShieldCheck } from "lucide-react"
 import {
   listMonitors, createMonitor, deleteMonitor, checkMonitorNow,
   type UptimeMonitor, type MonitorBody,
@@ -126,6 +126,36 @@ function AddMonitorForm({ serverId, onClose }: { serverId?: string; onClose: () 
   )
 }
 
+/** HTTPS certificate expiry. Quiet when healthy — an owner only needs to know when it
+ *  is close, because that means automatic renewal has already failed. */
+function CertBadge({ monitor }: { monitor: UptimeMonitor }) {
+  const state = monitor.cert_state
+  const days = monitor.cert_days_left
+  if (!state || state === "unknown") return null
+  if (state === "ok") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
+        title={`HTTPS certificate valid${monitor.cert_issuer ? ` — issued by ${monitor.cert_issuer}` : ""}`}>
+        <ShieldCheck size={11} /> {days}d
+      </span>
+    )
+  }
+  const urgent = state === "expired" || state === "critical"
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${
+        urgent
+          ? "bg-red-500/10 text-red-600 dark:text-red-400"
+          : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+      }`}
+      title={monitor.cert_expires_at ? `Expires ${new Date(monitor.cert_expires_at).toLocaleDateString()}` : undefined}
+    >
+      <ShieldAlert size={11} />
+      {state === "expired" ? "certificate expired" : `certificate expires in ${days}d`}
+    </span>
+  )
+}
+
 function MonitorRow({ monitor }: { monitor: UptimeMonitor }) {
   const qc = useQueryClient()
   const refresh = () => qc.invalidateQueries({ queryKey: ["uptime-monitors"] })
@@ -150,6 +180,7 @@ function MonitorRow({ monitor }: { monitor: UptimeMonitor }) {
             )}
           </div>
           <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{monitor.url}</p>
+          <div className="mt-1"><CertBadge monitor={monitor} /></div>
           {down && monitor.last_error && (
             <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{monitor.last_error}</p>
           )}

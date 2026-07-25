@@ -125,7 +125,7 @@ closes a named gap) → **#5 escalation** → **#3 client reports & white-label*
 | 6 | History retention tiers | ⬜ Not started |
 | 7 | Custom runbooks | ⬜ Not started |
 | 8 | API keys + webhooks | ⬜ Not started |
-| 9 | SSL expiry monitoring | ⬜ Not started |
+| 9 | SSL expiry monitoring | ✅ **Shipped 2026-07-25** |
 | — | *Offsite backups* | ✅ Shipped 2026-07-25 (stays free — safety) |
 | — | *Uptime monitoring* | ✅ Shipped 2026-07-25 (free tier; depth is Pro) |
 | — | *Server log viewer* | ✅ Shipped 2026-07-25 (stays free) |
