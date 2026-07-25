@@ -20,6 +20,7 @@ from app.routers import files as files_router
 from app.routers import fleet as fleet_router
 from app.routers import hosting as hosting_router
 from app.routers import installed as installed_router
+from app.routers import logs as logs_router
 from app.routers import missions as missions_router
 from app.routers import monitoring as monitoring_router
 from app.routers import notifications as notifications_router
@@ -242,6 +243,7 @@ app.include_router(usage_router.router)
 app.include_router(cloud_accounts_router.router)
 app.include_router(rdp_router.router)
 app.include_router(memories_router.router)
+app.include_router(logs_router.router)  # /api/servers/{id}/logs — server log viewer
 app.include_router(uptime_router.router)  # /api/uptime — is the site reachable?
 app.include_router(mcp_admin_router.router)  # /api/mcp — Connected applications (Phase 4)
 app.include_router(entitlements_router.router)

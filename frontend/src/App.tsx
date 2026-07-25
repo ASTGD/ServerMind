@@ -12,6 +12,7 @@ import MyScripts from "@/routes/MyScripts"
 import Scheduler from "@/routes/Scheduler"
 import FileManager from "@/routes/FileManager"
 import Security from "@/routes/Security"
+import ServerLogs from "./routes/ServerLogs"
 import Backups from "@/routes/Backups"
 import Installed from "@/routes/Installed"
 import Hosting from "@/routes/Hosting"
@@ -62,6 +63,7 @@ export default function App() {
             <Route index element={<ServerOverview />} />
             <Route path="files" element={<FileManager />} />
             <Route path="security" element={<Security />} />
+            <Route path="logs" element={<ServerLogs />} />
             <Route path="backups" element={<Backups />} />
             <Route path="scheduler" element={<Scheduler />} />
             <Route path="hosting" element={<Hosting />} />
