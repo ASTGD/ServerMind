@@ -74,17 +74,30 @@ def object_key(dest: BackupDestination, backup_name_slug: str, filename: str) ->
 
 
 def _friendly(exc: Exception) -> str:
-    """Turn a botocore error into something a non-technical owner can act on."""
+    """Turn a botocore error into something a non-technical owner can act on.
+
+    Checked in order of specificity: an auth failure and a typo'd endpoint need very
+    different fixes, and "Storage error: SSLError" tells the owner nothing.
+    """
     text = str(exc)
+    name = type(exc).__name__
+
     if "NoSuchBucket" in text or "404" in text:
-        return "That bucket does not exist (check the bucket name and region)."
-    if "InvalidAccessKeyId" in text or "AccessDenied" in text or "403" in text:
-        return "The storage provider rejected these keys, or they lack permission on this bucket."
+        return "That bucket does not exist. Check the bucket name (and the region)."
     if "SignatureDoesNotMatch" in text:
         return "The secret key looks wrong — the provider rejected the signature."
-    if "EndpointConnectionError" in text or "Could not connect" in text:
-        return "Could not reach that endpoint URL. Check it and try again."
-    return f"Storage error: {type(exc).__name__}"
+    if "InvalidAccessKeyId" in text or "AccessDenied" in text or "403" in text:
+        return "The storage provider rejected these keys, or they cannot write to this bucket."
+    # Endpoint problems — by far the most common setup mistake for R2/B2/MinIO.
+    if "SSL" in name or "SSL" in text or "CERTIFICATE" in text.upper():
+        return ("Could not make a secure connection to that endpoint URL. "
+                "Check the address is exactly the one your provider gives you.")
+    if any(k in text for k in ("EndpointConnectionError", "Could not connect", "NameResolution",
+                               "gaierror", "Name or service not known")) or "Endpoint" in name:
+        return "Could not reach that endpoint URL — check it for typos and try again."
+    if "timeout" in text.lower() or "Timeout" in name:
+        return "The storage provider did not respond in time. Try again in a moment."
+    return f"Storage error: {name}"
 
 
 async def verify(dest: BackupDestination) -> None:

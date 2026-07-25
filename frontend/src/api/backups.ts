@@ -20,6 +20,9 @@ export interface Backup {
   last_run: string | null
   last_status: string | null
   next_run: string | null
+  destination_id: string | null
+  destination_name: string | null
+  keep_local: boolean
   created_at: string
 }
 
@@ -32,6 +35,8 @@ export interface BackupRun {
   artifact_path: string | null
   size_bytes: number | null
   output: string | null
+  remote_key: string | null
+  offsite_status: "uploaded" | "failed" | "skipped" | null
   started_at: string
   completed_at: string | null
 }
@@ -47,6 +52,35 @@ export interface BackupCreateBody {
   cron_expression?: string | null
   human_schedule?: string | null
   is_active?: boolean
+  destination_id?: string | null
+  keep_local?: boolean
+}
+
+/** An offsite destination — an S3-compatible bucket. The secret key is never returned. */
+export interface BackupDestination {
+  id: string
+  name: string
+  provider: string
+  bucket: string
+  region: string | null
+  endpoint_url: string | null
+  prefix: string | null
+  access_key_id: string
+  last_status: "ok" | "failed" | null
+  last_error: string | null
+  last_checked: string | null
+  created_at: string
+}
+
+export interface DestinationBody {
+  name: string
+  provider: string
+  bucket: string
+  region?: string | null
+  endpoint_url?: string | null
+  prefix?: string | null
+  access_key_id: string
+  secret_key?: string
 }
 
 export type BackupUpdateBody = Partial<BackupCreateBody>
@@ -89,4 +123,33 @@ export async function restoreBackup(backupId: string, runId?: string): Promise<B
     run_id: runId ?? null,
   })
   return res.data
+}
+
+
+// ── Offsite destinations ───────────────────────────────────────────────────
+
+export async function listDestinations(): Promise<BackupDestination[]> {
+  const res = await apiClient.get<BackupDestination[]>("/api/backup-destinations")
+  return res.data
+}
+
+/** Creates the destination — the server verifies it can WRITE to the bucket first. */
+export async function createDestination(body: DestinationBody): Promise<BackupDestination> {
+  const res = await apiClient.post<BackupDestination>("/api/backup-destinations", body)
+  return res.data
+}
+
+export async function updateDestination(id: string, body: Partial<DestinationBody>): Promise<BackupDestination> {
+  const res = await apiClient.put<BackupDestination>(`/api/backup-destinations/${id}`, body)
+  return res.data
+}
+
+/** Re-check a destination now (keys rotate, buckets get deleted). */
+export async function testDestination(id: string): Promise<BackupDestination> {
+  const res = await apiClient.post<BackupDestination>(`/api/backup-destinations/${id}/test`)
+  return res.data
+}
+
+export async function deleteDestination(id: string): Promise<void> {
+  await apiClient.delete(`/api/backup-destinations/${id}`)
 }

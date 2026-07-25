@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useParams } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import DestinationManager from "@/components/backups/DestinationManager"
 import { formatDistanceToNow } from "date-fns"
 import {
   Database,
@@ -20,6 +21,7 @@ import {
   ChevronRight,
   X,
   CalendarClock,
+  Cloud,
 } from "lucide-react"
 import {
   listBackups,
@@ -29,6 +31,7 @@ import {
   runBackup,
   backupHistory,
   restoreBackup,
+  listDestinations,
   type Backup,
   type BackupRun,
   type BackupType,
@@ -73,6 +76,8 @@ interface FormState {
   db_password: string
   retention: number
   schedule: string
+  destination_id: string
+  keep_local: boolean
 }
 
 function BackupModal({
@@ -97,6 +102,13 @@ function BackupModal({
     db_password: "",
     retention: initial?.retention ?? 7,
     schedule: initial?.human_schedule ?? "",
+    destination_id: initial?.destination_id ?? "",
+    keep_local: initial?.keep_local ?? true,
+  })
+  // Offsite destinations are user-level, so the picker shares the manager's cache.
+  const { data: destinations = [] } = useQuery({
+    queryKey: ["backup-destinations"],
+    queryFn: listDestinations,
   })
   const [cron, setCron] = useState<string | null>(initial?.cron_expression ?? null)
   const [cronDesc, setCronDesc] = useState<string | null>(null)
@@ -138,6 +150,8 @@ function BackupModal({
       backup_type: form.backup_type,
       source: form.source.trim(),
       dest_dir: form.dest_dir.trim() || "/var/backups/servermind",
+      destination_id: form.destination_id || null,
+      keep_local: form.keep_local,
       retention: form.retention,
       cron_expression: form.schedule.trim() ? cron : null,
       human_schedule: form.schedule.trim() || null,
@@ -217,6 +231,31 @@ function BackupModal({
             <input type="number" min={1} max={365} className={input} value={form.retention}
               onChange={(e) => setForm({ ...form, retention: Math.max(1, Number(e.target.value) || 1) })} />
           </div>
+          <div className="sm:col-span-2">
+            <label className={label}>Offsite copy</label>
+            <select className={input} value={form.destination_id}
+              onChange={(e) => setForm({ ...form, destination_id: e.target.value })}>
+              <option value="">Keep on this server only</option>
+              {destinations.map((d) => (
+                <option key={d.id} value={d.id}>Also copy to {d.name} ({d.bucket})</option>
+              ))}
+            </select>
+            {!destinations.length && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Add offsite storage below to send copies off the server.
+              </p>
+            )}
+            {form.destination_id && (
+              <label className="mt-2 flex items-start gap-2 text-xs text-muted-foreground">
+                <input type="checkbox" className="mt-0.5" checked={!form.keep_local}
+                  onChange={(e) => setForm({ ...form, keep_local: !e.target.checked })} />
+                <span>
+                  Delete the local copy after a successful upload — saves disk space. The local file is
+                  only removed once the upload is confirmed.
+                </span>
+              </label>
+            )}
+          </div>
         </div>
 
         <div>
@@ -267,6 +306,16 @@ function HistoryPanel({ backupId }: { backupId: string }) {
           <span className="flex items-center gap-2">
             <span className={`rounded px-1.5 py-0.5 text-[10px] uppercase ${r.action === "restore" ? "bg-violet-500/10 text-violet-400" : "bg-muted text-muted-foreground"}`}>{r.action}</span>
             <StatusPill status={r.status} />
+            {r.offsite_status === "uploaded" && (
+              <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-600 dark:text-emerald-400">
+                <Cloud className="h-2.5 w-2.5" />offsite
+              </span>
+            )}
+            {(r.offsite_status === "failed" || r.offsite_status === "skipped") && (
+              <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                <Cloud className="h-2.5 w-2.5" />offsite {r.offsite_status}
+              </span>
+            )}
             <span className="text-muted-foreground">{formatDistanceToNow(new Date(r.started_at), { addSuffix: true })}</span>
           </span>
           <span className="text-muted-foreground font-mono">{fmtBytes(r.size_bytes)}</span>
@@ -442,6 +491,8 @@ export default function Backups() {
           <Plus className="h-4 w-4" />New Backup
         </Button>
       </div>
+
+      <DestinationManager />
 
       {isLoading && (
         <div className="flex items-center gap-2 py-12 text-muted-foreground text-sm">

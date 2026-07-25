@@ -117,3 +117,28 @@ def test_single_put_limit_is_the_s3_maximum():
 def test_presign_ttl_is_short():
     """A leaked URL should expire quickly."""
     assert 0 < offsite_service.PRESIGN_TTL_SECONDS <= 3600
+
+
+# ── Error messages must tell the owner what to fix ───────────────────────────
+
+def test_friendly_errors_name_the_actual_fix():
+    """Live testing produced "Storage error: SSLError" for a typo'd endpoint, which tells
+    the owner nothing. Each class of failure must name its own fix."""
+    import ssl
+
+    f = offsite_service._friendly
+    assert "bucket" in f(Exception("NoSuchBucket: the bucket does not exist")).lower()
+    assert "secret key" in f(Exception("SignatureDoesNotMatch")).lower()
+    assert "keys" in f(Exception("InvalidAccessKeyId")).lower()
+    # A bad endpoint is the most common setup mistake — it must point at the URL.
+    assert "endpoint" in f(ssl.SSLError("bad handshake")).lower()
+    assert "endpoint" in f(Exception("Could not connect to the endpoint URL")).lower()
+    assert "secure connection" in f(ssl.SSLCertVerificationError("cert")).lower()
+    # Unknown errors still degrade gracefully rather than leaking a stack trace.
+    assert f(ValueError("weird")) == "Storage error: ValueError"
+
+
+def test_auth_failure_is_not_mistaken_for_a_missing_bucket():
+    """A 403 mentions neither word, but must not fall through to the 404 branch."""
+    msg = offsite_service._friendly(Exception("An error occurred (403) when calling PutObject"))
+    assert "reject" in msg.lower() or "cannot write" in msg.lower()
