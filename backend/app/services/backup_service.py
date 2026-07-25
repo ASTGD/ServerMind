@@ -7,6 +7,11 @@ chosen archive back through ``tar -x`` / ``mysql`` / ``psql``.
 
 Optional database passwords are passed via environment variables (``MYSQL_PWD`` /
 ``PGPASSWORD``) so they never appear in the process argument list.
+
+A job may also carry an **offsite destination** (S3-compatible bucket). After a successful
+local backup the archive is uploaded straight from the server to that bucket using a
+short-lived presigned URL — the bucket credentials never reach the server. See
+:mod:`app.services.offsite_service`.
 """
 from __future__ import annotations
 
@@ -20,8 +25,10 @@ from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
 from app.models.backup import Backup, BackupRun
+from app.models.backup_destination import BackupDestination
 from app.models.server import Server
-from app.services import connection_manager, crypto_service, scheduler_service
+from app.services import connection_manager, crypto_service, offsite_service, scheduler_service
+from app.services.offsite_service import OffsiteError
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +156,120 @@ def _clean_output(stdout: str, stderr: str) -> str:
     return text[:_OUTPUT_CAP]
 
 
+# ── Offsite copy ────────────────────────────────────────────────────────────
+
+async def _load_destination(db, backup: Backup) -> BackupDestination | None:
+    if not backup.destination_id:
+        return None
+    return (await db.execute(
+        select(BackupDestination).where(BackupDestination.id == backup.destination_id)
+    )).scalar_one_or_none()
+
+
+async def _copy_offsite(
+    db, server: Server, backup: Backup, archive: str, size: int | None
+) -> tuple[str, str, str | None]:
+    """Upload a finished archive to the job's offsite bucket.
+
+    Returns ``(offsite_status, note, remote_key)`` where status is
+    ``uploaded`` | ``failed`` | ``skipped``. Never raises — the caller decides what a
+    failure means for the run. The local archive is deleted ONLY after a confirmed
+    upload and only when ``keep_local`` is off, so a failed upload can never lose data.
+    """
+    dest = await _load_destination(db, backup)
+    if dest is None:
+        return "failed", "Offsite copy skipped: the destination was deleted. Re-select one on this job.", None
+
+    if size is not None and size > offsite_service.MAX_SINGLE_PUT_BYTES:
+        gb = size / (1024 ** 3)
+        return (
+            "skipped",
+            f"Offsite copy skipped: this archive is {gb:.1f} GB and the 5 GB single-upload "
+            "limit applies. The archive is still on the server.",
+            None,
+        )
+
+    filename = archive.rsplit("/", 1)[-1]
+    key = offsite_service.object_key(dest, _slug(backup.name), filename)
+    try:
+        url = await offsite_service.presign_put(dest, key)
+    except OffsiteError as exc:
+        return "failed", f"Offsite copy failed: {exc} The archive is still on the server.", None
+
+    try:
+        stdout, stderr, code = await connection_manager.execute(
+            server, offsite_service.build_upload_command(archive, url)
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Offsite upload failed for backup %s: %s", backup.id, exc)
+        return "failed", f"Offsite copy failed: {type(exc).__name__}. The archive is still on the server.", None
+
+    http_code = offsite_service.parse_upload_code(stdout)
+    if code != 0 or http_code != 200:
+        detail = offsite_service.scrub_urls(_clean_output(stdout, stderr))[:300]
+        return (
+            "failed",
+            f"Offsite copy failed (HTTP {http_code or '?'}). The archive is still on the "
+            f"server. {detail}".strip(),
+            None,
+        )
+
+    note = f"Offsite copy uploaded to {dest.name}."
+
+    # Local cleanup only now that the remote copy is confirmed.
+    if not backup.keep_local:
+        try:
+            await connection_manager.execute(server, f"rm -f {_q(archive)}")
+            note += " Local archive removed (keep-local is off)."
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not remove local archive for backup %s: %s", backup.id, exc)
+
+    # Retention applies offsite too, or the bucket grows forever.
+    try:
+        prefix = offsite_service.object_key(dest, _slug(backup.name), "")
+        removed = await offsite_service.prune_remote(dest, prefix, max(1, backup.retention))
+        if removed:
+            note += f" Pruned {removed} old copy/copies offsite."
+    except OffsiteError as exc:
+        logger.warning("Offsite prune failed for backup %s: %s", backup.id, exc)
+        note += f" (Could not prune old offsite copies: {exc})"
+
+    return "uploaded", note, key
+
+
+async def _ensure_local_archive(
+    db, server: Server, backup: Backup, source_run: BackupRun, archive: str
+) -> str:
+    """Make sure ``archive`` exists on the server before a restore reads it.
+
+    With ``keep_local`` off — or after local retention pruned it — the only surviving copy
+    is offsite, so fetch it back. Returns a note for the run output ('' when the local file
+    was already there). Raises OffsiteError if the archive is only offsite and unreachable.
+    """
+    if not source_run.remote_key:
+        return ""
+
+    try:
+        _out, _err, code = await connection_manager.execute(server, f"test -f {_q(archive)}")
+        if code == 0:
+            return ""  # local copy is still there — nothing to do
+    except Exception:  # noqa: BLE001 — fall through and try the offsite copy
+        pass
+
+    dest = await _load_destination(db, backup)
+    if dest is None:
+        raise OffsiteError("the destination for this job no longer exists")
+
+    url = await offsite_service.presign_get(dest, source_run.remote_key)
+    stdout, stderr, code = await connection_manager.execute(
+        server, offsite_service.build_download_command(url, archive)
+    )
+    if code != 0:
+        detail = offsite_service.scrub_urls(_clean_output(stdout, stderr))[:300]
+        raise OffsiteError(f"download from {dest.name} failed. {detail}".strip())
+    return f"Fetched the archive back from {dest.name}."
+
+
 # ── Core execution ──────────────────────────────────────────────────────────
 
 async def perform_backup(db, server: Server, backup: Backup) -> BackupRun:
@@ -178,9 +299,21 @@ async def perform_backup(db, server: Server, backup: Backup) -> BackupRun:
         logger.warning("Backup %s failed: %s", backup.id, exc)
         output = f"Could not connect to the server: {exc}"
 
+    # ── Offsite copy ─────────────────────────────────────────────────────────
+    # Only after a good local archive. A configured-but-failed upload marks the whole run
+    # failed (the job's goal was "a copy somewhere else", and it wasn't met) and NEVER
+    # deletes the local archive — so a failure loses nothing.
+    if status == "success" and backup.destination_id:
+        offsite_status, note, key = await _copy_offsite(db, server, backup, archive, size)
+        run.remote_key = key
+        run.offsite_status = offsite_status
+        if offsite_status != "uploaded":
+            status = "failed"
+        output = (output + "\n" + note).strip() if output else note
+
     run.status = status
     run.size_bytes = size
-    run.output = output or None
+    run.output = offsite_service.scrub_urls(output) or None
     run.completed_at = datetime.now(tz=timezone.utc)
 
     backup.last_run = now
@@ -219,10 +352,17 @@ async def perform_restore(db, server: Server, backup: Backup, source_run: Backup
         output = "Source run has no artifact to restore."
     else:
         try:
+            # The archive may live only offsite (keep_local off, or it was pruned locally).
+            # Fetch it back before restoring.
+            fetch_note = await _ensure_local_archive(db, server, backup, source_run, archive)
+            if fetch_note:
+                output = fetch_note
             cmd = _build_restore_command(backup, archive)
             stdout, stderr, code = await connection_manager.execute(server, cmd)
-            output = _clean_output(stdout, stderr)
+            output = (output + "\n" + _clean_output(stdout, stderr)).strip()
             status = "success" if code == 0 else "failed"
+        except OffsiteError as exc:
+            output = f"Could not fetch the backup from offsite storage: {exc}"
         except NotImplementedError:
             output = f"Restore for '{server.connection_type}' connections is not supported yet."
         except Exception as exc:  # noqa: BLE001
@@ -230,7 +370,7 @@ async def perform_restore(db, server: Server, backup: Backup, source_run: Backup
             output = f"Could not connect to the server: {exc}"
 
     run.status = status
-    run.output = output or None
+    run.output = offsite_service.scrub_urls(output) or None
     run.completed_at = datetime.now(tz=timezone.utc)
     await db.commit()
     await db.refresh(run)

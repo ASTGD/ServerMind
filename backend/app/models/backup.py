@@ -44,6 +44,15 @@ class Backup(Base):
     db_user: Mapped[str | None] = mapped_column(String(255))
     encrypted_db_cred: Mapped[str | None] = mapped_column(Text)  # AES-256-GCM, optional
 
+    # Offsite copy (optional). When set, the archive is uploaded to the destination's
+    # bucket via a presigned URL after a successful backup. ``keep_local`` False deletes
+    # the on-server archive once the upload succeeds — a backup stored only on the server
+    # it protects is not really a backup.
+    destination_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("backup_destinations.id", ondelete="SET NULL"), index=True
+    )
+    keep_local: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
     retention: Mapped[int] = mapped_column(Integer, default=7)
 
     cron_expression: Mapped[str | None] = mapped_column(String(100))
@@ -85,6 +94,11 @@ class BackupRun(Base):
     artifact_path: Mapped[str | None] = mapped_column(String(1024))
     size_bytes: Mapped[int | None] = mapped_column(BigInteger)
     output: Mapped[str | None] = mapped_column(Text)
+
+    # Offsite copy: the object key in the destination bucket, and how that leg went.
+    # ``offsite_status`` is None when the job has no destination configured.
+    remote_key: Mapped[str | None] = mapped_column(String(1024))
+    offsite_status: Mapped[str | None] = mapped_column(String(20))  # uploaded | failed | skipped
 
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,17 +14,23 @@ from app.database import get_db
 from app.dependencies.access import resolve_server
 from app.dependencies.auth import get_current_user
 from app.models.backup import Backup, BackupRun
+from app.models.backup_destination import BackupDestination
 from app.models.server import Server
 from app.models.user import User
 from app.schemas.backup import (
     BACKUP_TYPES,
+    PROVIDERS,
     BackupCreate,
     BackupOut,
     BackupRunOut,
     BackupUpdate,
+    DestinationCreate,
+    DestinationOut,
+    DestinationUpdate,
     RestoreBody,
 )
-from app.services import backup_service, crypto_service, scheduler_service
+from app.services import backup_service, crypto_service, offsite_service, scheduler_service
+from app.services.offsite_service import OffsiteError
 
 router = APIRouter(prefix="/api", tags=["backups"])
 logger = logging.getLogger(__name__)
@@ -58,7 +65,7 @@ async def _get_backup(backup_id: str, user: User, db: AsyncSession) -> Backup:
     return backup
 
 
-def _to_out(backup: Backup) -> BackupOut:
+def _to_out(backup: Backup, dest_name: str | None = None) -> BackupOut:
     return BackupOut(
         id=backup.id,
         server_id=backup.server_id,
@@ -75,8 +82,41 @@ def _to_out(backup: Backup) -> BackupOut:
         last_run=backup.last_run,
         last_status=backup.last_status,
         next_run=backup.next_run,
+        destination_id=backup.destination_id,
+        destination_name=dest_name,
+        keep_local=backup.keep_local,
         created_at=backup.created_at,
     )
+
+
+async def _dest_names(db, backups: list[Backup]) -> dict:
+    """Map destination_id → name for a set of jobs, in one query (no N+1)."""
+    ids = {b.destination_id for b in backups if b.destination_id}
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(BackupDestination.id, BackupDestination.name).where(BackupDestination.id.in_(ids))
+    )).all()
+    return {r[0]: r[1] for r in rows}
+
+
+async def _get_destination(dest_id, user: User, db: AsyncSession) -> BackupDestination:
+    """Resolve a destination the caller owns. Own-scoped, so one user can never point a
+    backup at another user's bucket."""
+    row = await db.execute(
+        select(BackupDestination).where(
+            BackupDestination.id == dest_id, BackupDestination.user_id == user.id
+        )
+    )
+    dest = row.scalar_one_or_none()
+    if not dest:
+        raise HTTPException(status_code=404, detail="Destination not found")
+    return dest
+
+
+def _validate_provider(provider: str | None) -> None:
+    if provider and provider not in PROVIDERS:
+        raise HTTPException(status_code=422, detail=f"provider must be one of {sorted(PROVIDERS)}")
 
 
 def _validate_type(backup_type: str) -> None:
@@ -105,7 +145,9 @@ async def list_backups(
     rows = await db.execute(
         select(Backup).where(Backup.server_id == server.id).order_by(Backup.created_at.desc())
     )
-    return [_to_out(b) for b in rows.scalars().all()]
+    backups = list(rows.scalars().all())
+    names = await _dest_names(db, backups)
+    return [_to_out(b, names.get(b.destination_id)) for b in backups]
 
 
 @router.post("/servers/{server_id}/backups", response_model=BackupOut, status_code=201)
@@ -119,6 +161,10 @@ async def create_backup(
     server = await _get_server(server_id, current_user, db, need_execute=True)
     _validate_type(body.backup_type)
     _validate_cron(body.cron_expression)
+    # Ownership check: you may only send a backup to a bucket you own.
+    dest_name = None
+    if body.destination_id:
+        dest_name = (await _get_destination(body.destination_id, current_user, db)).name
 
     backup = Backup(
         server_id=server.id,
@@ -133,6 +179,8 @@ async def create_backup(
         cron_expression=body.cron_expression,
         human_schedule=body.human_schedule,
         is_active=body.is_active,
+        destination_id=body.destination_id,
+        keep_local=body.keep_local,
     )
     if backup.cron_expression:
         try:
@@ -145,7 +193,7 @@ async def create_backup(
     await db.refresh(backup)
 
     backup_service.schedule_backup(backup)
-    return _to_out(backup)
+    return _to_out(backup, dest_name)
 
 
 @router.put("/backups/{backup_id}", response_model=BackupOut)
@@ -170,6 +218,10 @@ async def update_backup(
         pw = data.pop("db_password")
         backup.encrypted_db_cred = crypto_service.encrypt(pw) if pw else None
 
+    # Ownership check on a re-pointed destination (None clears it).
+    if data.get("destination_id"):
+        await _get_destination(data["destination_id"], current_user, db)
+
     for field, value in data.items():
         setattr(backup, field, value)
 
@@ -186,7 +238,8 @@ async def update_backup(
 
     # Re-register (or remove) the schedule to reflect changes.
     backup_service.schedule_backup(backup)
-    return _to_out(backup)
+    names = await _dest_names(db, [backup])
+    return _to_out(backup, names.get(backup.destination_id))
 
 
 @router.delete("/backups/{backup_id}", status_code=204)
@@ -275,3 +328,102 @@ async def restore_backup(
 
     run = await backup_service.perform_restore(db, server, backup, source_run)
     return BackupRunOut.model_validate(run)
+
+
+# ── Offsite destinations ─────────────────────────────────────────────────────
+# A destination is user-owned and reusable across backup jobs. The secret key is
+# AES-256-GCM encrypted at rest and is never returned by any endpoint here.
+
+@router.get("/backup-destinations", response_model=list[DestinationOut])
+async def list_destinations(db: DBDep, user: CurrentUser) -> list[DestinationOut]:
+    """Your offsite storage destinations."""
+    rows = (await db.execute(
+        select(BackupDestination)
+        .where(BackupDestination.user_id == user.id)
+        .order_by(BackupDestination.created_at.desc())
+    )).scalars().all()
+    return [DestinationOut.model_validate(r) for r in rows]
+
+
+@router.post("/backup-destinations", response_model=DestinationOut, status_code=201)
+async def create_destination(body: DestinationCreate, db: DBDep, user: CurrentUser) -> DestinationOut:
+    """Add a bucket. We verify we can actually WRITE to it before saving — a list-only
+    check would pass on a read-only key and then fail at 2am during a real backup."""
+    _validate_provider(body.provider)
+    dest = BackupDestination(
+        user_id=user.id,
+        name=body.name,
+        provider=body.provider,
+        bucket=body.bucket,
+        region=body.region,
+        endpoint_url=body.endpoint_url,
+        prefix=body.prefix,
+        access_key_id=body.access_key_id,
+        encrypted_secret_key=crypto_service.encrypt(body.secret_key),
+    )
+    try:
+        await offsite_service.verify(dest)
+    except OffsiteError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    dest.last_status = "ok"
+    dest.last_checked = datetime.now(tz=timezone.utc)
+    db.add(dest)
+    await db.commit()
+    await db.refresh(dest)
+    return DestinationOut.model_validate(dest)
+
+
+@router.put("/backup-destinations/{dest_id}", response_model=DestinationOut)
+async def update_destination(
+    dest_id: str, body: DestinationUpdate, db: DBDep, user: CurrentUser
+) -> DestinationOut:
+    """Update a destination. Omit ``secret_key`` to keep the stored one. Re-verified
+    before saving, so a broken edit can't be persisted."""
+    dest = await _get_destination(_uuid(dest_id, "Destination"), user, db)
+    _validate_provider(body.provider)
+
+    for field in ("name", "provider", "bucket", "region", "endpoint_url", "prefix", "access_key_id"):
+        value = getattr(body, field)
+        if value is not None:
+            setattr(dest, field, value)
+    if body.secret_key:
+        dest.encrypted_secret_key = crypto_service.encrypt(body.secret_key)
+
+    try:
+        await offsite_service.verify(dest)
+    except OffsiteError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    dest.last_status = "ok"
+    dest.last_error = None
+    dest.last_checked = datetime.now(tz=timezone.utc)
+    await db.commit()
+    await db.refresh(dest)
+    return DestinationOut.model_validate(dest)
+
+
+@router.post("/backup-destinations/{dest_id}/test", response_model=DestinationOut)
+async def test_destination(dest_id: str, db: DBDep, user: CurrentUser) -> DestinationOut:
+    """Re-check a destination now (keys rotate, buckets get deleted, permissions change)."""
+    dest = await _get_destination(_uuid(dest_id, "Destination"), user, db)
+    try:
+        await offsite_service.verify(dest)
+        dest.last_status, dest.last_error = "ok", None
+    except OffsiteError as exc:
+        dest.last_status, dest.last_error = "failed", str(exc)
+    dest.last_checked = datetime.now(tz=timezone.utc)
+    await db.commit()
+    await db.refresh(dest)
+    return DestinationOut.model_validate(dest)
+
+
+@router.delete("/backup-destinations/{dest_id}", status_code=204)
+async def delete_destination(dest_id: str, db: DBDep, user: CurrentUser) -> None:
+    """Remove a destination. Jobs pointing at it keep their history and fall back to
+    local-only backups (the FK is ON DELETE SET NULL) — we never delete a customer's
+    stored archives."""
+    dest = await _get_destination(_uuid(dest_id, "Destination"), user, db)
+    await db.delete(dest)
+    await db.commit()
