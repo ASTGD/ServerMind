@@ -35,6 +35,7 @@ from app.routers import settings as settings_router
 from app.routers import entitlements as entitlements_router
 from app.routers import memories as memories_router
 from app.routers import mcp_admin as mcp_admin_router
+from app.routers import uptime as uptime_router
 from app.routers import team as team_router
 from app.routers import usage as usage_router
 from app.services import backup_service, playbook_service, scheduler_service
@@ -119,6 +120,25 @@ async def _start_background_jobs() -> None:
         replace_existing=True,
     )
     logger.info("Threat monitoring job registered (every 12 h)")
+
+    # Uptime monitoring — probe each site FROM ServerAlly (not from the server, which
+    # would pass while DNS/firewall/the whole box is unreachable). Sweeps every minute;
+    # each monitor is only probed when its own interval has elapsed.
+    from app.workers import uptime_worker
+    scheduler_service.get_scheduler().add_job(
+        uptime_worker.check_due_monitors,
+        trigger=IntervalTrigger(minutes=1),
+        id="uptime_checks",
+        replace_existing=True,
+        max_instances=1,  # a slow sweep must never overlap itself
+    )
+    scheduler_service.get_scheduler().add_job(
+        uptime_worker.prune_old_checks,
+        trigger=IntervalTrigger(hours=24),
+        id="uptime_prune",
+        replace_existing=True,
+    )
+    logger.info("Uptime monitoring job registered (sweep every 1 min)")
 
     # Proactive fleet-health digest — a friendly email of what needs attention across
     # the fleet. Runs daily at 08:00 UTC; the worker decides who's due (weekly users on
@@ -222,6 +242,7 @@ app.include_router(usage_router.router)
 app.include_router(cloud_accounts_router.router)
 app.include_router(rdp_router.router)
 app.include_router(memories_router.router)
+app.include_router(uptime_router.router)  # /api/uptime — is the site reachable?
 app.include_router(mcp_admin_router.router)  # /api/mcp — Connected applications (Phase 4)
 app.include_router(entitlements_router.router)
 app.include_router(ws_handlers.router)
