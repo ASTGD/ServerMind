@@ -214,3 +214,110 @@ def plain_summary(report: dict) -> list[str]:
     if work["completed_count"]:
         lines.append(f"We completed {work['completed_count']} piece(s) of work on this server.")
     return lines
+
+
+# ── Delivering it ────────────────────────────────────────────────────────────
+#
+# The email is what the agency's CLIENT actually receives, so it carries the agency's
+# branding, not ours. Branding strings were validated at the write boundary
+# (branding_service), but they are escaped again here: an HTML email is a second consumer
+# and must not depend on another module's validation still being correct.
+
+_TONE = {
+    "good": ("#059669", "#ecfdf5", "#a7f3d0"),
+    "warn": ("#b45309", "#fffbeb", "#fde68a"),
+    "bad": ("#b91c1c", "#fef2f2", "#fecaca"),
+}
+
+
+def _esc(value) -> str:
+    import html as _html
+    return _html.escape(str(value))
+
+
+def render_email(report: dict, branding: dict, server_label: str,
+                 recipient_name: str | None = None) -> dict:
+    """Render the client report as ``{subject, text, html}``.
+
+    Pure — takes an already-built report and an already-public branding dict, so it can be
+    tested without a database and reused by both the scheduled worker and a manual send.
+    """
+    company = branding.get("company_name") or "Your hosting team"
+    color = branding.get("primary_color") or "#4f46e5"
+    tone = report.get("tone", "good")
+    headline = report.get("headline", "Your monthly report")
+    summary = report.get("summary") or plain_summary(report)
+    period = report.get("period_days", DEFAULT_PERIOD_DAYS)
+    greeting = f"Hi {recipient_name.split()[0]}," if recipient_name else "Hi,"
+
+    subject = f"{company} — {server_label}: your {period}-day report"
+
+    # ── plain text (always the fallback) ─────────────────────────────────────
+    lines = [greeting, "", headline, ""]
+    lines += [f"• {s}" for s in summary]
+    work = report.get("work", {})
+    if work.get("completed"):
+        lines += ["", "What we did:"]
+        lines += [f"  - {item}" for item in work["completed"][:10]]
+    if branding.get("support_url") or branding.get("support_email"):
+        lines += ["", f"Questions? {branding.get('support_url') or branding.get('support_email')}"]
+    lines += ["", f"— {company}"]
+    if branding.get("footer_text"):
+        lines.append(branding["footer_text"])
+    if branding.get("show_credit", True):
+        lines.append(f"Monitored by {branding.get('app_name') or 'ServerAlly'}")
+    text = "\n".join(lines)
+
+    # ── HTML ─────────────────────────────────────────────────────────────────
+    fg, bg, border = _TONE.get(tone, _TONE["good"])
+    logo = (
+        f'<img src="{_esc(branding["logo_url"])}" alt="" '
+        f'style="height:28px;width:auto;max-width:160px;display:block;margin-bottom:8px;">'
+        if branding.get("logo_url") else ""
+    )
+    bullets = "".join(
+        f'<li style="margin:6px 0;font-size:14px;color:#374151;">{_esc(s)}</li>' for s in summary
+    )
+    did = ""
+    if work.get("completed"):
+        items = "".join(
+            f'<li style="margin:4px 0;font-size:13.5px;color:#374151;">{_esc(item)}</li>'
+            for item in work["completed"][:10]
+        )
+        did = (
+            '<h3 style="font-size:14px;margin:20px 0 6px;color:#111827;">What we did</h3>'
+            f'<ul style="margin:0;padding-left:18px;">{items}</ul>'
+        )
+    support = ""
+    link = branding.get("support_url") or (
+        f'mailto:{branding["support_email"]}' if branding.get("support_email") else None
+    )
+    if link:
+        support = (
+            f'<a href="{_esc(link)}" style="display:inline-block;margin-top:18px;'
+            f'background:{_esc(color)};color:#fff;text-decoration:none;font-weight:600;'
+            f'padding:10px 18px;border-radius:10px;font-size:14px;">Get in touch →</a>'
+        )
+    credit = (
+        f'<br>Monitored by {_esc(branding.get("app_name") or "ServerAlly")}'
+        if branding.get("show_credit", True) else ""
+    )
+
+    html = f"""\
+<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;color:#111827;">
+  {logo}
+  <p style="font-size:13px;color:{_esc(color)};font-weight:600;margin:0 0 14px;">{_esc(company)}</p>
+  <p style="font-size:15px;margin:0 0 2px;">{_esc(greeting)}</p>
+  <p style="color:#6b7280;font-size:13px;margin:0 0 14px;">
+    Here is how <strong>{_esc(server_label)}</strong> did over the last {period} days.</p>
+  <div style="background:{bg};border:1px solid {border};border-radius:12px;padding:12px 16px;">
+    <strong style="color:{fg};font-size:15px;">{_esc(headline)}</strong>
+  </div>
+  <ul style="margin:16px 0 0;padding-left:18px;">{bullets}</ul>
+  {did}
+  {support}
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:22px 0 10px;">
+  <p style="color:#9ca3af;font-size:12px;">{_esc(branding.get("footer_text") or f"— {company}")}{credit}</p>
+</div>"""
+
+    return {"subject": subject, "text": text, "html": html}

@@ -119,7 +119,7 @@ closes a named gap) → **#5 escalation** → **#3 client reports & white-label*
 |---|---|---|
 | 1 | Ally on autopilot (scheduled missions) | ✅ **Shipped 2026-07-25** |
 | 2 | Auto-fix policy | ✅ **Shipped 2026-07-25** (same feature) |
-| 3 | Client reports & white-label | ✅ **Shipped 2026-07-26** (report API + white-label; scheduled delivery is a follow-up) |
+| 3 | Client reports & white-label | ✅ **Shipped 2026-07-26** (white-label, report page with PDF/Markdown export, scheduled monthly delivery) |
 | 4 | Public status pages | ✅ **Shipped 2026-07-25** |
 | 5 | On-call escalation | ⬜ Not started |
 | 6 | History retention tiers | ⬜ Not started |

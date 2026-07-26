@@ -21,6 +21,7 @@ import Logs from "@/routes/Logs"
 import Missions from "@/routes/Missions"
 import Reports from "@/routes/Reports"
 import ServerReportView from "@/routes/ServerReportView"
+import ClientReportView from "@/routes/ClientReportView"
 import Team from "@/routes/Team"
 import AcceptInvite from "@/routes/AcceptInvite"
 import Settings from "@/routes/Settings"
@@ -83,6 +84,7 @@ export default function App() {
           <Route path="missions/:id" element={<Missions />} />
           <Route path="reports" element={<Reports />} />
           <Route path="reports/server/:serverId" element={<ServerReportView />} />
+          <Route path="reports/client/:serverId" element={<ClientReportView />} />
           {/* A report opens inside the Reports page's detail pane (master-detail). */}
           <Route path="reports/:id" element={<Reports />} />
           <Route path="team" element={<Team />} />

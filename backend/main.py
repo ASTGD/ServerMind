@@ -167,6 +167,18 @@ async def _start_background_jobs() -> None:
     )
     logger.info("Fleet-health digest job registered (daily 08:00 UTC)")
 
+    # Monthly client reports — the branded "here is what we did for you" email an agency
+    # sends its own client. Checked daily at 09:00 UTC; the worker sends only the
+    # subscriptions whose send day is today and that have not already gone out this month.
+    from app.workers import client_report_worker
+    scheduler_service.get_scheduler().add_job(
+        client_report_worker.send_due_reports,
+        trigger=CronTrigger(hour=9, minute=0, timezone="UTC"),
+        id="client_reports",
+        replace_existing=True,
+    )
+    logger.info("Client report delivery job registered (daily 09:00 UTC)")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

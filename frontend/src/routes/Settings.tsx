@@ -4,6 +4,7 @@ import { User as UserIcon, Globe, Lock, BadgeCheck, ShieldCheck, History, Check,
 import McpConnections from "@/components/settings/McpConnections"
 import StatusPagesPanel from "@/components/monitoring/StatusPagesPanel"
 import BrandingPanel from "@/components/settings/BrandingPanel"
+import ClientReportsPanel from "@/components/settings/ClientReportsPanel"
 import { QRCodeSVG } from "qrcode.react"
 import { listAudit } from "@/api/audit"
 import {
@@ -882,6 +883,8 @@ export default function Settings() {
 
       {/* White-label — applies to everything a client sees. */}
       <BrandingPanel />
+
+      <ClientReportsPanel />
 
       {/* Public status pages — user-level, since they span servers. */}
       <StatusPagesPanel />

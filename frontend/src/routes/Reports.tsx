@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { formatDistanceToNow } from "date-fns"
-import { FileText, Globe, Search, ShieldCheck, ShieldAlert, Hand, Flag, Square, Sparkles, ArrowLeft } from "lucide-react"
+import { ArrowLeft, FileText, Flag, Globe, Hand, Search, ShieldAlert, ShieldCheck, Sparkles, Square, UserRound } from "lucide-react"
 import { listReports, reportVerdict, reportSubject, type Verdict } from "@/api/reports"
 import { listServers } from "@/api/servers"
 import { cn } from "@/lib/utils"
@@ -126,12 +126,21 @@ export default function Reports() {
             </select>
           </div>
           {serverId && (
-            <Link
-              to={`/reports/server/${serverId}`}
-              className="mb-3 flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              <Sparkles className="h-4 w-4" /> Whole-server report
-            </Link>
+            <div className="mb-3 space-y-2">
+              <Link
+                to={`/reports/server/${serverId}`}
+                className="flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Sparkles className="h-4 w-4" /> Whole-server report
+              </Link>
+              {/* Deterministic and free — the routine monthly one an agency sends on. */}
+              <Link
+                to={`/reports/client/${serverId}`}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+              >
+                <UserRound className="h-4 w-4" /> Client report
+              </Link>
+            </div>
           )}
 
           {isLoading ? (
