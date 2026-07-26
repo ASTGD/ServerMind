@@ -131,7 +131,7 @@ The category makes the roadmap arguments decide themselves:
 
 | Question | Answer, given the category |
 |---|---|
-| Build a Sites section? | **Yes — the discover-and-operate version.** Seeing every site you run is the mechanic's job. Creating one is the garage's. |
+| Build a Sites section? | ✅ **Shipped 2026-07-26** — the discover-and-operate version. Seeing every site you run is the mechanic's job; creating one is the garage's. |
 | Build deploy-from-git? | Not yet. That is launching, not running. Revisit only if paying customers ask. |
 | Build DNS, PHP switching, email, phpMyAdmin? | **No.** Panel work. |
 | Build cloud server creation? | No. Someone else's setup step. |

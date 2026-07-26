@@ -1,0 +1,271 @@
+import { useMemo, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  Globe, Search, Loader2, RefreshCw, CircleCheck, CircleAlert, CircleDashed,
+  ShieldCheck, ShieldAlert, Server as ServerIcon, Sparkles, EyeOff,
+} from "lucide-react"
+import { listSites, scanServerSites, APP_LABEL, type Site } from "@/api/sites"
+import { listServers } from "@/api/servers"
+import { Button, EmptyState } from "@/components/ui"
+import { useAssistantStore } from "@/store/assistantStore"
+import { cn } from "@/lib/utils"
+
+/** Up/down comes from the uptime monitor, which checks from outside — where a visitor is. */
+function StatusDot({ site }: { site: Site }) {
+  const status = site.uptime?.status
+  if (!site.uptime)
+    return (
+      <span title="No uptime monitor for this site yet">
+        <CircleDashed size={15} className="shrink-0 text-muted-foreground/60" />
+      </span>
+    )
+  if (status === "up")
+    return <CircleCheck size={15} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+  if (status === "down")
+    return <CircleAlert size={15} className="shrink-0 text-red-600 dark:text-red-400" />
+  return <CircleDashed size={15} className="shrink-0 text-muted-foreground" />
+}
+
+/** The certificate a visitor actually receives, not the one named in the config. */
+function CertChip({ site }: { site: Site }) {
+  const days = site.uptime?.cert_days_left
+  const state = site.uptime?.cert_state
+  if (state === "expired")
+    return (
+      <span className="flex items-center gap-1 rounded-full bg-red-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:text-red-300">
+        <ShieldAlert size={9} /> Certificate expired
+      </span>
+    )
+  if (typeof days === "number" && days <= 14)
+    return (
+      <span className="flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+        <ShieldAlert size={9} /> HTTPS expires in {days}d
+      </span>
+    )
+  if (typeof days === "number")
+    return (
+      <span className="flex items-center gap-1 text-[10.5px] text-muted-foreground">
+        <ShieldCheck size={9} /> {days}d
+      </span>
+    )
+  if (site.has_ssl)
+    return (
+      <span className="flex items-center gap-1 text-[10.5px] text-muted-foreground"
+        title="The server is configured for HTTPS. Add an uptime monitor to track expiry.">
+        <ShieldCheck size={9} /> HTTPS set up
+      </span>
+    )
+  return null
+}
+
+function SiteRow({ site }: { site: Site }) {
+  const askAlly = useAssistantStore((s) => s.askAlly)
+  const down = site.uptime?.status === "down"
+
+  return (
+    <li className={cn(
+      "rounded-xl border bg-card p-3",
+      down ? "border-red-500/40 bg-red-500/[0.03]" : "border-border",
+      !site.is_present && "opacity-60",
+    )}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex min-w-0 gap-2.5">
+          <span className="mt-0.5"><StatusDot site={site} /></span>
+          <div className="min-w-0">
+            <p className="flex flex-wrap items-center gap-2">
+              <a
+                href={`https://${site.domain}`} target="_blank" rel="noopener noreferrer"
+                className="truncate text-[14px] font-medium text-foreground hover:underline"
+              >
+                {site.domain}
+              </a>
+              <CertChip site={site} />
+              {!site.is_present && (
+                <span className="flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  <EyeOff size={9} /> No longer found
+                </span>
+              )}
+            </p>
+            <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11.5px] text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <ServerIcon size={10} /> {site.server_name ?? "—"}
+              </span>
+              <span>
+                {APP_LABEL[site.app_type] ?? site.app_type}
+                {site.app_version ? ` ${site.app_version}` : ""}
+              </span>
+              {site.aliases.length > 0 && <span>also {site.aliases.slice(0, 2).join(", ")}</span>}
+              {down && site.uptime?.error && (
+                <span className="text-red-600 dark:text-red-400">{site.uptime.error}</span>
+              )}
+            </p>
+          </div>
+        </div>
+
+        <Button
+          size="sm" variant="ghost"
+          onClick={() => askAlly(
+            down
+              ? `${site.domain} on ${site.server_name} is down — find out why and fix it`
+              : `Check ${site.domain} on ${site.server_name} and tell me if anything needs attention`,
+          )}
+        >
+          <Sparkles size={13} /> Ask Ally
+        </Button>
+      </div>
+    </li>
+  )
+}
+
+/**
+ * Sites — every website across the fleet, searchable by domain.
+ *
+ * Deliberately joins data we already collect (uptime, certificate expiry, what each site runs)
+ * rather than introducing a new kind. Creating or configuring a site is a control panel's job;
+ * knowing what is running and whether it is healthy is ours.
+ */
+export default function Sites() {
+  const qc = useQueryClient()
+  const [q, setQ] = useState("")
+  const [serverId, setServerId] = useState("")
+  const [includeGone, setIncludeGone] = useState(false)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["sites", serverId, includeGone],
+    queryFn: () => listSites({
+      server_id: serverId || undefined,
+      include_gone: includeGone || undefined,
+    }),
+  })
+  const { data: servers = [] } = useQuery({ queryKey: ["servers"], queryFn: listServers })
+
+  const scan = useMutation({
+    mutationFn: scanServerSites,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sites"] }),
+  })
+
+  // Filtering client-side keeps typing instant on a fleet-sized list; the server-side `q` is
+  // there for when a list outgrows one request.
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    const all = data?.sites ?? []
+    if (!needle) return all
+    return all.filter((s) =>
+      s.domain.toLowerCase().includes(needle)
+      || s.aliases.some((a) => a.toLowerCase().includes(needle))
+      || (s.server_name ?? "").toLowerCase().includes(needle))
+  }, [data, q])
+
+  const scannable = servers.filter((s) => s.connection_type === "ssh")
+  const down = shown.filter((s) => s.uptime?.status === "down").length
+
+  return (
+    <div>
+      <header className="mb-4">
+        <h1 className="flex items-center gap-2 text-h1 text-foreground">
+          <Globe className="h-5 w-5 text-primary" /> Sites
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Every website across your servers. Search by domain — you don’t need to know which
+          server it’s on.
+          {down > 0 && (
+            <span className="ml-1 font-medium text-red-600 dark:text-red-400">
+              {down} {down === 1 ? "site is" : "sites are"} down.
+            </span>
+          )}
+        </p>
+      </header>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={q} onChange={(e) => setQ(e.target.value)}
+            placeholder="acmeshop.com"
+            className="w-full rounded-lg border border-border bg-background py-1.5 pl-8 pr-3 text-sm outline-none focus:border-primary"
+          />
+        </div>
+        <select
+          value={serverId} onChange={(e) => setServerId(e.target.value)}
+          className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
+        >
+          <option value="">All servers</option>
+          {servers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <label className="flex cursor-pointer items-center gap-1.5 text-[11.5px] text-muted-foreground">
+          <input type="checkbox" checked={includeGone}
+            onChange={(e) => setIncludeGone(e.target.checked)} />
+          Show ones we no longer find
+        </label>
+      </div>
+
+      {/* A server we have never looked at has no sites recorded — say that, rather than
+          letting an empty list imply the fleet has no websites. */}
+      {(data?.never_scanned.length ?? 0) > 0 && (
+        <div className="mb-3 rounded-xl border border-dashed border-border bg-muted/30 p-3">
+          <p className="text-[13px] font-medium text-foreground">
+            {data!.never_scanned.length} server{data!.never_scanned.length === 1 ? "" : "s"} not
+            looked at yet
+          </p>
+          <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+            We read the web server’s own config to find the sites. Nothing is changed.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {data!.never_scanned.map((s) => (
+              <Button key={s.id} size="sm" variant="outline"
+                disabled={scan.isPending && scan.variables === s.id}
+                onClick={() => scan.mutate(s.id)}>
+                {scan.isPending && scan.variables === s.id
+                  ? <Loader2 size={13} className="animate-spin" />
+                  : <RefreshCw size={13} />}
+                {s.name}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
+      ) : shown.length === 0 ? (
+        <EmptyState
+          icon={Globe}
+          title={q ? `Nothing matches “${q}”` : "No sites found yet"}
+          description={q
+            ? "Try part of the domain, or the server's name."
+            : "Scan a server and we'll list the websites it serves — read from the web server's own configuration."}
+          action={!q && scannable.length > 0 ? (
+            <Button size="sm" disabled={scan.isPending}
+              onClick={() => scan.mutate(scannable[0].id)}>
+              {scan.isPending ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              Scan {scannable[0].name}
+            </Button>
+          ) : undefined}
+        />
+      ) : (
+        <>
+          <ul className="space-y-2">
+            {shown.map((site) => <SiteRow key={site.id} site={site} />)}
+          </ul>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11.5px] text-muted-foreground">
+              {shown.length} site{shown.length === 1 ? "" : "s"} across{" "}
+              {data?.servers_scanned ?? 0} scanned server
+              {(data?.servers_scanned ?? 0) === 1 ? "" : "s"}
+            </p>
+            {serverId && (
+              <Button size="sm" variant="outline" disabled={scan.isPending}
+                onClick={() => scan.mutate(serverId)}>
+                {scan.isPending ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                Rescan this server
+              </Button>
+            )}
+          </div>
+          {scan.data?.note && (
+            <p className="mt-2 text-[11.5px] text-amber-700 dark:text-amber-400">{scan.data.note}</p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}

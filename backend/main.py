@@ -41,6 +41,7 @@ from app.routers import escalation as escalation_router
 from app.routers import api_v1 as api_v1_router
 from app.routers import integrations as integrations_router
 from app.routers import runbooks as runbooks_router
+from app.routers import sites as sites_router
 from app.routers import memories as memories_router
 from app.routers import mcp_admin as mcp_admin_router
 from app.routers import uptime as uptime_router
@@ -324,6 +325,7 @@ app.include_router(escalation_router.router)  # /api/escalation — on-call pagi
 app.include_router(integrations_router.router)  # /api/api-keys, /api/webhooks — browser-only
 app.include_router(api_v1_router.router)  # /api/v1 — API-key only, bounded on purpose
 app.include_router(runbooks_router.router)  # /api/runbooks — the account's own procedures
+app.include_router(sites_router.router)  # /api/sites — every website across the fleet
 app.include_router(mcp_admin_router.router)  # /api/mcp — Connected applications (Phase 4)
 app.include_router(entitlements_router.router)
 app.include_router(ws_handlers.router)
