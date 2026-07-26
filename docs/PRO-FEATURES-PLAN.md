@@ -123,7 +123,7 @@ closes a named gap) → **#5 escalation** → **#3 client reports & white-label*
 | 4 | Public status pages | ✅ **Shipped 2026-07-25** |
 | 5 | On-call escalation | ✅ **Shipped 2026-07-26** (policies, incidents, SMS/Telegram, acknowledge link) |
 | 6 | History retention tiers | ⬜ Not started |
-| 7 | Custom runbooks | ⬜ Not started |
+| 7 | Custom runbooks | ✅ **Shipped 2026-07-26** (guide + mission runbooks, owner-authored, match tester) |
 | 8 | API keys + webhooks | ✅ **Shipped 2026-07-26** (scoped keys, bounded /api/v1, signed webhooks with retries) |
 | 9 | SSL expiry monitoring | ✅ **Shipped 2026-07-25** |
 | — | *Offsite backups* | ✅ Shipped 2026-07-25 (stays free — safety) |

@@ -21,7 +21,7 @@ from app.models.server import Server
 from app.models.user import User
 from app.services import ai_context_service, ai_service, connection_manager, llm_service, safety_service
 from app.services import file_service, live_look_service, memory_service, metering_service, scout_service, skill_service
-from app.services import mission_service
+from app.services import mission_service, runbook_service
 from app.websocket import mission_runner
 from app.services import ssh_service, team_service, terminal_session_service
 from app.services.rate_limit_service import check_command_rate
@@ -1315,7 +1315,15 @@ async def _run_mission(
         }))
         return None
 
-    skill = skill_service.get(skill_slug) if skill_slug else None
+    # A mission may be driven by one of the account's own runbooks, so its library has to be
+    # in scope here too — otherwise a custom mission would start with no procedure at all.
+    if skill_slug:
+        async with AsyncSessionLocal() as _db:
+            skill = skill_service.get(skill_slug, extra=await runbook_service.load_for(_db, user))
+            if skill is not None:
+                await runbook_service.record_use(_db, skill)
+    else:
+        skill = None
     budget = skill_service.resolve_mission_budget(skill)  # per-skill; default for ad-hoc
     steps: list[dict] = []
     verify_attempts = 0  # times the verifier sent the executor back to close a gap
@@ -1797,6 +1805,20 @@ async def _replay_mission_to(ws: WebSocket, m) -> None:
         }))
 
 
+async def _load_runbooks(acting_user_id: str | None, server: Server) -> list:
+    """The account's own runbooks, as Skills. Best-effort: if this fails, Ally falls back to
+    its built-in procedures rather than the conversation breaking."""
+    try:
+        async with AsyncSessionLocal() as db:
+            user = await db.get(User, acting_user_id or server.user_id)
+            if user is None:
+                return []
+            return await runbook_service.load_for(db, user)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not load custom runbooks: %s", exc)
+        return []
+
+
 async def _handle_message(
     ws: WebSocket,
     server: Server,
@@ -1816,9 +1838,13 @@ async def _handle_message(
 
     Also matches an Ally Skill (Phase A): a deterministic trigger match picks the
     expert procedure for this kind of task; the slug is tagged on the ledger rows."""
-    skill = skill_service.match(user_input, server.os_type)
+    # The account's own runbooks (Pro #7) are considered alongside the built-in skills, and
+    # win a tie — that is what "teach Ally YOUR procedures" has to mean.
+    runbooks = await _load_runbooks(acting_user_id, server)
+    skill = skill_service.match(user_input, server.os_type, extra=runbooks)
     if skill:
-        logger.info("ally skill matched: %s (server=%s)", skill.slug, server.id)
+        logger.info("ally skill matched: %s%s (server=%s)", skill.slug,
+                    " [custom]" if skill_service.is_custom(skill) else "", server.id)
     # The inner handler may upgrade the skill via the Phase B menu hop — it reports the
     # effective skill back through this holder so the ledger attributes correctly.
     meta = {"skill": skill.slug if skill else None}
@@ -1868,7 +1894,7 @@ async def _handle_message_inner(
     # byte-identical prompts. Best-effort throughout — a failed piece degrades to None and
     # never blocks the chat (Phase 3/5, Track A/B, Context C1 all live inside it now).
     ctx = await ai_context_service.build_chat_context(
-        server, user_input, acting_user_id=acting_user_id, skill=skill
+        server, user_input, acting_user_id=acting_user_id, skill=skill, runbooks=runbooks,
     )
 
     try:
@@ -1887,7 +1913,7 @@ async def _handle_message_inner(
     # (one hop max; the slug must exist and fit this OS, otherwise the reply stands).
     requested = plan.get("use_skill")
     if skill is None and isinstance(requested, str) and requested.strip():
-        picked = skill_service.get_for_os(requested.strip(), server.os_type)
+        picked = skill_service.get_for_os(requested.strip(), server.os_type, extra=runbooks)
         if picked is not None:
             logger.info("ally skill requested via menu: %s (server=%s)", picked.slug, server.id)
             skill = picked

@@ -6,6 +6,7 @@ import Servers from "@/routes/Servers"
 import ServerDetail from "@/routes/ServerDetail"
 import ServerOverview from "@/routes/ServerOverview"
 import Playbooks from "@/routes/Playbooks"
+import Runbooks from "@/routes/Runbooks"
 import PlaybookDetail from "@/routes/PlaybookDetail"
 import ScriptGenerator from "@/routes/ScriptGenerator"
 import MyScripts from "@/routes/MyScripts"
@@ -78,6 +79,7 @@ export default function App() {
             <Route path="installed" element={<Installed />} />
           </Route>
           <Route path="playbooks" element={<Playbooks />} />
+          <Route path="runbooks" element={<Runbooks />} />
           <Route path="playbooks/:id" element={<PlaybookDetail />} />
           <Route path="scripts/generate" element={<ScriptGenerator />} />
           <Route path="scripts" element={<MyScripts />} />

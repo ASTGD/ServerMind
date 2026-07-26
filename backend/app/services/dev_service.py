@@ -21,10 +21,12 @@ from app.models.ai_usage import AiUsage
 from app.models.dev_eval_case import DevEvalCase
 from app.models.server import Server
 from app.models.user import User
+from app.database import AsyncSessionLocal
 from app.services import (
     ai_context_service,
     ai_service,
     metering_service,
+    runbook_service,
     skill_service,
 )
 
@@ -75,11 +77,17 @@ async def dry_run(server: Server, message: str, *, acting_user: User) -> dict:
     real chat) and asks the model to plan, but NEVER runs a planned command.
     """
     language = acting_user.preferred_language or "en"
-    skill = skill_service.match(message, server.os_type)
+
+    # The account's own runbooks have to be in scope here too. Without them the Inspector
+    # would show a prompt that differs from the one chat actually sends — which is precisely
+    # the drift the Dev Door exists to rule out.
+    async with AsyncSessionLocal() as _db:
+        runbooks = await runbook_service.load_for(_db, acting_user)
+    skill = skill_service.match(message, server.os_type, extra=runbooks)
 
     # Same assembly the live WS handler uses → the dry-run sees exactly what chat sees.
     ctx = await ai_context_service.build_chat_context(
-        server, message, acting_user_id=str(acting_user.id), skill=skill
+        server, message, acting_user_id=str(acting_user.id), skill=skill, runbooks=runbooks,
     )
 
     trace: dict = {}

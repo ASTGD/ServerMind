@@ -303,6 +303,7 @@ async def build_chat_context(
     *,
     acting_user_id: str | None = None,
     skill=None,  # skill_service.Skill | None
+    runbooks: list | None = None,  # the account's own runbooks, as Skills (Pro #7)
     want_scout: bool = True,
     want_live: bool = True,
 ) -> ChatContext:
@@ -325,7 +326,8 @@ async def build_chat_context(
     )
 
     ctx = ChatContext(
-        skill_menu=skill_service.menu_for(server.os_type) if skill is None else None,
+        skill_menu=(skill_service.menu_for(server.os_type, extra=runbooks)
+                    if skill is None else None),
     )
     owner_id = acting_user_id or server.user_id
     other_roster: list[Server] = []

@@ -3,10 +3,7 @@ import { NavLink } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
 import type { LucideIcon } from "lucide-react"
-import {
-  LayoutDashboard, Boxes, BookOpen, FileCode, Users, Settings, Sparkles,
-  Rocket, FileText, FlaskConical, ArrowUpRight, Sun, Moon, Monitor, Terminal as TerminalIcon,
-} from "lucide-react"
+import { ArrowUpRight, BookMarked, BookOpen, Boxes, FileCode, FileText, FlaskConical, LayoutDashboard, Monitor, Moon, Rocket, Settings, Sparkles, Sun, Terminal as TerminalIcon, Users } from "lucide-react"
 import Logo from "@/components/brand/Logo"
 import UpgradeModal from "./UpgradeModal"
 import { Card, Button, Badge } from "@/components/ui"
@@ -213,6 +210,7 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
           <NavItem to="/missions" icon={Rocket} label={t("nav.missions")} badge={needsYou || undefined} onClick={onClose} />
           <NavItem to="/reports" icon={FileText} label={t("nav.reports")} onClick={onClose} />
           <NavItem to="/playbooks" icon={BookOpen} label={t("nav.playbooks")} onClick={onClose} />
+          <NavItem to="/runbooks" icon={BookMarked} label="Runbooks" onClick={onClose} />
           <NavItem to="/scripts" icon={FileCode} label={t("nav.scripts")} onClick={onClose} />
 
           <SectionLabel>Account</SectionLabel>
