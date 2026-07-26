@@ -21,6 +21,7 @@ from app.routers import fleet as fleet_router
 from app.routers import hosting as hosting_router
 from app.routers import installed as installed_router
 from app.routers import autopilot as autopilot_router
+from app.routers import branding as branding_router
 from app.routers import status_pages as status_pages_router
 from app.routers import logs as logs_router
 from app.routers import missions as missions_router
@@ -255,6 +256,7 @@ app.include_router(usage_router.router)
 app.include_router(cloud_accounts_router.router)
 app.include_router(rdp_router.router)
 app.include_router(memories_router.router)
+app.include_router(branding_router.router)  # /api/branding + client reports
 app.include_router(status_pages_router.router)  # /api/status-pages + public /api/public/status/{slug}
 app.include_router(autopilot_router.router)  # /api/autopilot — scheduled missions
 app.include_router(logs_router.router)  # /api/servers/{id}/logs — server log viewer

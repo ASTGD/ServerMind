@@ -22,10 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies.auth import get_current_user
+from app.models.branding import Branding
 from app.models.status_page import StatusPage, StatusPageItem
 from app.models.uptime import UptimeMonitor
 from app.models.user import User
-from app.services import status_page_service
+from app.services import branding_service, status_page_service
 from app.services.rate_limit_service import limiter
 
 router = APIRouter(prefix="/api", tags=["status-pages"])
@@ -253,7 +254,13 @@ async def public_status(slug: str, request: Request, db: DBDep) -> dict:
     status = status_page_service.overall_status(items)
     down = sum(1 for i in items if i["status"] == "down")
 
+    # White-label: the page belongs to the owner's brand, not ours.
+    branding = (await db.execute(
+        select(Branding).where(Branding.user_id == page.user_id)
+    )).scalar_one_or_none()
+
     return {
+        "branding": branding_service.public_branding(branding),
         "title": page.title,
         "description": page.description,
         "support_url": page.support_url,

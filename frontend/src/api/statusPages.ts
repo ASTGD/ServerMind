@@ -1,4 +1,5 @@
 import { apiClient } from "./client"
+import type { PublicBranding } from "./branding"
 
 export interface StatusPageItem {
   monitor_id: string
@@ -28,6 +29,7 @@ export interface StatusPageBody {
 
 /** What a VISITOR sees — deliberately contains no URL, server or error detail. */
 export interface PublicStatus {
+  branding: PublicBranding
   title: string
   description: string | null
   support_url: string | null

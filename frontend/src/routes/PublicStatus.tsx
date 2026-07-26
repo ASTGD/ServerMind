@@ -76,11 +76,27 @@ export default function PublicStatusPage() {
   }
 
   const t = tone(data.status)
+  const brand = data.branding
+  // The owner's colour, when set, tints the headings a client sees.
+  const brandColor = brand?.primary_color || undefined
 
   return (
     <div className="min-h-screen bg-background px-4 py-10 sm:px-6">
       <div className="mx-auto w-full max-w-2xl">
         <header className="mb-6">
+          {(brand?.logo_url || brand?.company_name) && (
+            <div className="mb-3 flex items-center gap-2">
+              {brand.logo_url && (
+                <img src={brand.logo_url} alt="" className="h-7 w-auto max-w-[160px] object-contain"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }} />
+              )}
+              {brand.company_name && (
+                <span className="text-sm font-semibold" style={{ color: brandColor }}>
+                  {brand.company_name}
+                </span>
+              )}
+            </div>
+          )}
           <h1 className="text-h1 text-foreground">{data.title}</h1>
           {data.description && (
             <p className="mt-1 text-sm text-muted-foreground">{data.description}</p>
@@ -128,17 +144,23 @@ export default function PublicStatusPage() {
             Updated {new Date(data.checked_at).toLocaleString()}
           </span>
           <span className="flex items-center gap-3">
-            {data.support_url && (
+            {(data.support_url || brand?.support_url) && (
               <a
-                href={data.support_url}
+                href={data.support_url || brand?.support_url || "#"}
                 className="inline-flex items-center gap-1 text-[11px] text-muted-foreground underline hover:text-foreground"
               >
                 Get help <ExternalLink size={10} />
               </a>
             )}
-            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              Monitored by <LogoMark size={13} /> ServerAlly
-            </span>
+            {brand?.footer_text && (
+              <span className="text-[11px] text-muted-foreground">{brand.footer_text}</span>
+            )}
+            {/* White-label: the owner can remove our credit entirely. */}
+            {brand?.show_credit !== false && (
+              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                Monitored by <LogoMark size={13} /> {brand?.app_name || "ServerAlly"}
+              </span>
+            )}
           </span>
         </footer>
       </div>
