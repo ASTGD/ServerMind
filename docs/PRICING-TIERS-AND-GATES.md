@@ -94,11 +94,58 @@ be someone's daily driver.
 |---|---|---|---|
 | **Ally requests included** | 20/month | 50/month | 150/month |
 | **Bring your own AI** | ✅ unlimited | ✅ unlimited | ✅ unlimited |
-| **More requests** | — | +$19/mo per 150, stackable | +$19/mo per 150, stackable |
 
 These allowances are **sized backwards from our real cost**, not picked for the marketing
 page. At $0.096/request they leave a positive margin on both paid tiers, which the first
 draft of this plan did not — see §4.
+
+### 3.2a DECIDED: AI stays inside the tier at launch, sold separately only if the data demands it
+
+The owner asked directly: *"should we also add Ally action or we keep this as separate?"*
+
+**Decision: one price per tier, with the AI allowance included as fair use. No separate AI
+product at launch. Bring-your-own stays available on every tier from day one.**
+
+Three reasons, in order of weight.
+
+**1. A second product doubles a money path that has never run once.** The whole billing
+integration is built on a single field — `users.plan` — moved between two values, and each
+WHMCS event maps to one plan string. Adding a third tier costs nothing: it is one more value
+in the same field. Adding a *separate AI subscription* means a second field, a second WHMCS
+product with its own create/suspend/unsuspend/terminate lifecycle, a second thing for the
+nightly reconciliation to check, and a state space that goes from 2 to 8 (Pro-but-AI-lapsed,
+Free-but-AI-active, and so on) — every combination needing a test. The billing path has not
+yet executed a single time in production. **Do not double it before proving it once.**
+
+**2. A published request number becomes a comparison axis we lose on.** If the plan table
+says *"Pro — 50 AI requests"*, buyers will compare that against Panelica's undisclosed limit
+and against Ploi handing AI over for free. We look worse on a number that is not our real
+value. Keep the comparison on **servers and features**, where RunCloud-at-50-servers is the
+bar and our feature list is genuinely stronger. So the allowance exists, is visible **inside
+the app** on the usage card, and is described on the pricing page as fair use — not as a
+headline figure to be shopped against.
+
+**3. Bring-your-own already carries the financial risk.** It is built (the MCP connector
+shipped 2026-07-23), it costs us nothing, and it is self-selecting: the heaviest users are
+the most technical, so the most likely to already own a Claude subscription. *The customers
+we cannot afford are exactly the ones who do not need our AI.* That is the pressure valve,
+and it works without a second invoice.
+
+**What this changes about [PRICING-V3](PRICING-V3.md):** v3's two-layer *reasoning* is kept
+in full — AI cost stays isolated and re-priceable. What changes is the *packaging*: Layer 2(b)
+is not a separate line item at launch, it is a fair-use allowance inside Layer 1. The split
+becomes a lever we can pull later rather than a launch requirement.
+
+**When to revisit — write the trigger down now, so it is a measurement and not an argument:**
+
+| Trigger | Then |
+|---|---|
+| Real cost/request from beta customers stays **above ~$0.06** | Split AI out as a paid add-on |
+| A meaningful share of paying users exceed their allowance every month | Sell a top-up pack (+150 requests) |
+| Cost/request comes in **under ~$0.04** | Do nothing — raise the included allowances instead and keep one price |
+
+The third row is the most likely outcome, and it is the reason not to build the add-on
+yet.
 
 **Shown as requests, never as tokens or credits.** This is v3's one hard rule and it is not
 negotiable: the Cursor and Replit blow-ups happened because the metered unit was driven by
@@ -181,7 +228,7 @@ bundled into a $5 platform price.
 | Free | $0 | 20 | $1.92 | −$1.92 — **acquisition cost, accepted** |
 | **Pro** | **$9** | 50 | $4.80 | **$4.20 (47%)** |
 | **Pro+** | **$29** | 150 | $14.40 | **$14.60 (50%)** |
-| Add-on | +$19/mo | +150, stackable | $14.40 | $4.60 (24%) |
+| *(deferred)* top-up | +$19/mo | +150, stackable | $14.40 | $4.60 (24%) — **not at launch, see §3.2a** |
 
 Both paid tiers now have real margin, and we are still cheaper than the market: RunCloud is
 $19 for 50 servers, Ploi €13, Forge $19.
@@ -276,4 +323,5 @@ duplicating the rules.
 | ✅ BYO AI available on every tier | v3 |
 | ⚠️ Actual prices | **PM decision.** Recommended $0/$9/$29 — see §4 |
 | ⚠️ Included request counts | Sized to today's measured cost; re-check on beta data |
+| ✅ AI included as fair use, no separate product at launch | Decided — §3.2a |
 | ⚠️ Whether MCP is Free-tier or Pro-and-up | Open (Ploi gates it at Pro) |
