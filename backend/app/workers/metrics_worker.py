@@ -179,12 +179,12 @@ async def _refresh_reachability(server: Server) -> bool:
 
 
 async def _prune_old_metrics() -> None:
-    """Delete metric rows older than RETENTION_HOURS to prevent unbounded growth."""
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(hours=RETENTION_HOURS)
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            sa_delete(ServerMetric).where(ServerMetric.recorded_at < cutoff)
-        )
-        if result.rowcount:
-            logger.info("Pruned %d old metric rows (older than %dh)", result.rowcount, RETENTION_HOURS)
-        await db.commit()
+    """Prune metric history according to each account's plan.
+
+    Delegates to ``retention_worker``, which is the single owner of deletion. A second
+    tier-blind deleter here would quietly undo the longer window a Pro account paid for — the
+    exact bug this indirection exists to prevent.
+    """
+    from app.workers import retention_worker
+
+    await retention_worker.sweep("metrics")

@@ -177,12 +177,15 @@ async def check_due_monitors() -> None:
 
 
 async def prune_old_checks() -> None:
-    """Drop check history beyond the retention window."""
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=CHECK_RETENTION_DAYS)
+    """Drop check history beyond each account's retention window.
+
+    Delegates to ``retention_worker`` — the single owner of deletion — so a Pro account's
+    longer window is not silently undone by a second tier-blind sweep here.
+    """
+    from app.workers import retention_worker
+
     try:
-        async with AsyncSessionLocal() as db:
-            await db.execute(delete(UptimeCheck).where(UptimeCheck.checked_at < cutoff))
-            await db.commit()
+        await retention_worker.sweep("uptime")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Uptime history prune failed: %s", exc)
 

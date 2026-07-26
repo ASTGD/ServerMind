@@ -128,13 +128,13 @@ async def run_deliveries(now: datetime | None = None) -> int:
 
 
 async def prune_deliveries() -> None:
-    """Drop delivery history beyond the retention window."""
-    from datetime import timedelta
+    """Drop delivery history beyond each account's retention window.
 
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=DELIVERY_RETENTION_DAYS)
+    Delegates to ``retention_worker`` — the single owner of deletion.
+    """
+    from app.workers import retention_worker
+
     try:
-        async with AsyncSessionLocal() as db:
-            await db.execute(delete(WebhookDelivery).where(WebhookDelivery.created_at < cutoff))
-            await db.commit()
+        await retention_worker.sweep("webhooks")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Webhook delivery prune failed: %s", exc)

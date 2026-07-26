@@ -213,6 +213,19 @@ async def _start_background_jobs() -> None:
     )
     logger.info("Webhook delivery job registered (every 1 min)")
 
+    # History retention — the only scheduled job that deletes customer data, so it runs once a
+    # day at a quiet hour and logs what it removed. While ENFORCE_PLAN_LIMITS is off it only
+    # ever applies the most generous window, so it takes nothing away from anyone.
+    from app.workers import retention_worker
+    scheduler_service.get_scheduler().add_job(
+        retention_worker.run_retention,
+        trigger=CronTrigger(hour=4, minute=30, timezone="UTC"),
+        id="history_retention",
+        replace_existing=True,
+        max_instances=1,
+    )
+    logger.info("History retention job registered (daily 04:30 UTC)")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

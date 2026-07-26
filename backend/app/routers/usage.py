@@ -41,3 +41,15 @@ async def my_usage(
         servers_used=sg.used,
         servers_limit=sg.limit,
     )
+
+
+@router.get("/retention")
+async def my_retention(current_user: User = Depends(get_current_user)) -> dict:
+    """How long this account's history is kept, and what Pro keeps.
+
+    Includes the Pro figures so the comparison is honest, and the never-deleted list so
+    retention does not read as "we throw your records away".
+    """
+    from app.services import retention_service
+
+    return retention_service.describe(current_user.plan)

@@ -18,3 +18,26 @@ export async function getMyUsage(): Promise<MyUsage> {
   const res = await apiClient.get<MyUsage>("/api/usage/me")
   return res.data
 }
+
+export interface RetentionKind {
+  kind: string
+  label: string
+  /** What THIS account keeps today. */
+  days: number
+  free_days: number
+  pro_days: number
+}
+
+export interface MyRetention {
+  /** False while plan limits are dormant — in which case everyone keeps the long window. */
+  enforced: boolean
+  plan: string
+  kinds: RetentionKind[]
+  /** Tables retention never touches: reports, forensics, audit trail, billing. */
+  kept_forever: string[]
+}
+
+export async function getMyRetention(): Promise<MyRetention> {
+  const res = await apiClient.get<MyRetention>("/api/usage/retention")
+  return res.data
+}

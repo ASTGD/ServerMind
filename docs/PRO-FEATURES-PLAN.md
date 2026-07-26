@@ -83,7 +83,7 @@ cannot match it.
 | **3** | **Client reports & white-label** | We already generate incident/server reports — this is packaging. Agencies **resell** it | Multi-tenant + branding |
 | **4** | **Public status pages** | Market-standard Pro feature; we now have the uptime data | Needs a public hosted endpoint |
 | **5** | **On-call escalation** — SMS / Slack / Telegram, repeat until acknowledged (Free = email only) | The difference between "an email you missed" and "you woke up" | Needs our infrastructure + paid SMS |
-| **6** | **History retention** — 7 days free vs 12 months Pro (metrics, uptime, logs, scans) | Trend, evidence, and proof over time | Honest: storage genuinely costs us |
+| **6** | **History retention** — Pro keeps a year of charts/uptime; Free keeps the windows the product already had. **Scans, missions and the audit trail are never pruned on any plan** | Trend and proof over time | Honest: storage genuinely costs us |
 | **7** | **Custom runbooks** — teach Ally *your* procedures | Deep moat; very sticky for agencies | Needs our skill engine |
 | **8** | **API keys + webhooks** | The market gates this (RunCloud puts API behind $49) | — (parity feature) |
 | **9** | **SSL expiry monitoring** | A real gap — servermind.dev has it, we do not. Cheap | — (parity feature) |
@@ -122,7 +122,7 @@ closes a named gap) → **#5 escalation** → **#3 client reports & white-label*
 | 3 | Client reports & white-label | ✅ **Shipped 2026-07-26** (white-label, report page with PDF/Markdown export, scheduled monthly delivery) |
 | 4 | Public status pages | ✅ **Shipped 2026-07-25** |
 | 5 | On-call escalation | ✅ **Shipped 2026-07-26** (policies, incidents, SMS/Telegram, acknowledge link) |
-| 6 | History retention tiers | ⬜ Not started |
+| 6 | History retention tiers | ✅ **Shipped 2026-07-26** (Pro gets a longer window; Free unchanged, evidence never pruned) |
 | 7 | Custom runbooks | ✅ **Shipped 2026-07-26** (guide + mission runbooks, owner-authored, match tester) |
 | 8 | API keys + webhooks | ✅ **Shipped 2026-07-26** (scoped keys, bounded /api/v1, signed webhooks with retries) |
 | 9 | SSL expiry monitoring | ✅ **Shipped 2026-07-25** |

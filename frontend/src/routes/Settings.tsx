@@ -7,6 +7,7 @@ import BrandingPanel from "@/components/settings/BrandingPanel"
 import ClientReportsPanel from "@/components/settings/ClientReportsPanel"
 import OnCallPanel from "@/components/escalation/OnCallPanel"
 import ApiKeysPanel from "@/components/integrations/ApiKeysPanel"
+import RetentionPanel from "@/components/settings/RetentionPanel"
 import WebhooksPanel from "@/components/integrations/WebhooksPanel"
 import PagingChannelsPanel from "@/components/escalation/PagingChannelsPanel"
 import { QRCodeSVG } from "qrcode.react"
@@ -886,6 +887,8 @@ export default function Settings() {
       <McpConnections />
 
       {/* White-label — applies to everything a client sees. */}
+      <RetentionPanel />
+
       <ApiKeysPanel />
 
       <WebhooksPanel />
