@@ -30,7 +30,7 @@ from app.models.mission import Mission
 from app.models.server import Server
 from app.models.user import User
 from app.services import metering_service
-from app.services.entitlements import PLANS
+from app.services.entitlements import PLANS, limits_for_plan
 
 # "Active" = did anything with Ally in the last 7 days. Cheap and honest: it comes from
 # the ledger we already write, rather than a new last_seen column to keep in sync.
@@ -38,7 +38,13 @@ ACTIVE_DAYS = 7
 
 
 def _limits(plan: str | None) -> dict:
-    return PLANS.get((plan or "free").lower(), PLANS["free"])
+    """Delegates, so the console shows the limits that are actually ENFORCED.
+
+    This used to reimplement the lookup and fall back to Free, which meant an operator
+    investigating a broken plan would be shown Free limits while the app was really granting
+    the generous ones — the console lying about the very thing it exists to reveal.
+    """
+    return limits_for_plan(plan)
 
 
 async def overview(db: AsyncSession) -> dict:

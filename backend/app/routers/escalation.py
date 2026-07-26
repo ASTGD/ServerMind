@@ -30,7 +30,7 @@ from app.models.escalation import (
 from app.models.server import Server
 from app.models.user import User
 from app.services import escalation_service as esc
-from app.services import incident_service, paging_service
+from app.services import entitlements, incident_service, paging_service
 from app.services.rate_limit_service import limiter
 
 router = APIRouter(prefix="/api", tags=["escalation"])
@@ -81,7 +81,18 @@ class ProviderIn(BaseModel):
     monthly_limit: int | None = Field(default=None, ge=0, le=10_000)
 
 
-def _validate_channel(channel: str) -> None:
+# Channels that cost real money per message, and are therefore a paid feature.
+_PAID_CHANNELS = ("sms", "telegram")
+
+
+def _validate_channel(channel: str, user: User | None = None) -> None:
+    """Check the channel exists, and that the plan includes it.
+
+    Gated here rather than only at provider setup: a step pointing at a channel the account
+    cannot use would fail at 3am, which is the worst possible moment to discover a plan limit.
+    """
+    if user is not None and channel in _PAID_CHANNELS:
+        entitlements.require(user, entitlements.SMS_ALERTS)
     if channel not in CHANNELS:
         raise HTTPException(
             status_code=422,
@@ -143,10 +154,11 @@ async def _policy_out(db: AsyncSession, policy: EscalationPolicy) -> dict:
     }
 
 
-async def _replace_steps(db: AsyncSession, policy: EscalationPolicy, steps: list[StepIn]) -> None:
+async def _replace_steps(db: AsyncSession, policy: EscalationPolicy,
+                         steps: list[StepIn], user: User) -> None:
     await db.execute(delete(EscalationStep).where(EscalationStep.policy_id == policy.id))
     for position, step in enumerate(steps[:esc.MAX_STEPS]):
-        _validate_channel(step.channel)
+        _validate_channel(step.channel, user)
         db.add(EscalationStep(
             policy_id=policy.id, position=position,
             after_minutes=step.after_minutes, channel=step.channel,
@@ -184,7 +196,7 @@ async def create_policy(body: PolicyIn, db: DBDep, current_user: CurrentUser) ->
     )
     db.add(policy)
     await db.flush()
-    await _replace_steps(db, policy, body.steps)
+    await _replace_steps(db, policy, body.steps, current_user)
     if body.is_default:
         await _clear_other_defaults(db, current_user, policy.id)
     await db.commit()
@@ -202,7 +214,7 @@ async def update_policy(policy_id: str, body: PolicyPatch, db: DBDep, current_us
         if field in data and data[field] is not None:
             setattr(policy, field, data[field].strip() if field == "name" else data[field])
     if body.steps is not None:
-        await _replace_steps(db, policy, body.steps)
+        await _replace_steps(db, policy, body.steps, current_user)
     if data.get("is_default"):
         await _clear_other_defaults(db, current_user, policy.id)
 
@@ -344,6 +356,7 @@ async def set_provider(
     provider: str, body: ProviderIn, db: DBDep, current_user: CurrentUser
 ) -> dict:
     """Store provider credentials, encrypted. Returns only the public view."""
+    entitlements.require(current_user, entitlements.SMS_ALERTS)
     if provider not in ("twilio", "telegram"):
         raise HTTPException(status_code=422, detail=f"Unknown provider '{provider}'.")
 

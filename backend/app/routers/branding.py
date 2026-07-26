@@ -23,6 +23,7 @@ from app.models.client_report import ClientReportSubscription
 from app.models.server import Server
 from app.models.user import User
 from app.services import branding_service, client_report_service
+from app.services import entitlements
 
 router = APIRouter(prefix="/api", tags=["branding"])
 logger = logging.getLogger(__name__)
@@ -86,6 +87,12 @@ async def update_branding(body: BrandingBody, db: DBDep, current_user: CurrentUs
                 detail=f"{field.replace('_', ' ').title()} must be a full http(s) address.",
             )
 
+    # Only the switch that REMOVES our name is gated. Logo, colour and footer stay open on
+    # every plan, so a Pro customer can still brand their status page — the line that matters
+    # commercially is whether they can hide us entirely.
+    if data.get("hide_serverally_branding"):
+        entitlements.require(current_user, entitlements.WHITE_LABEL)
+
     for field, value in data.items():
         setattr(branding, field, value)
     if branding.primary_color:
@@ -106,6 +113,7 @@ async def client_report(
     Deterministic: every number comes from data we already store, so it costs nothing to
     generate and cannot hallucinate.
     """
+    entitlements.require(current_user, entitlements.CLIENT_REPORTS)
     server = await resolve_server(server_id, current_user, db)
     report = await client_report_service.build(db, server, days)
     branding = (await db.execute(
@@ -186,6 +194,7 @@ async def add_report_recipient(
     ``resolve_server`` is the access check — a recipient can only ever be attached to a
     server the caller may actually see.
     """
+    entitlements.require(current_user, entitlements.CLIENT_REPORTS)
     await resolve_server(str(body.server_id), current_user, db)
     sub = ClientReportSubscription(
         user_id=current_user.id,

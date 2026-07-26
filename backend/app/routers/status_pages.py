@@ -17,7 +17,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -26,7 +26,7 @@ from app.models.branding import Branding
 from app.models.status_page import StatusPage, StatusPageItem
 from app.models.uptime import UptimeMonitor
 from app.models.user import User
-from app.services import branding_service, status_page_service
+from app.services import branding_service, entitlements, status_page_service
 from app.services.rate_limit_service import limiter
 
 router = APIRouter(prefix="/api", tags=["status-pages"])
@@ -159,6 +159,16 @@ async def list_pages(db: DBDep, current_user: CurrentUser) -> list[PageOut]:
 
 @router.post("/status-pages", response_model=PageOut, status_code=201)
 async def create_page(body: PageCreate, db: DBDep, current_user: CurrentUser) -> PageOut:
+    existing = (await db.execute(
+        select(func.count()).select_from(StatusPage).where(StatusPage.user_id == current_user.id)
+    )).scalar() or 0
+    allowed, limit = entitlements.count_gate(current_user, "max_status_pages", existing)
+    if not allowed:
+        raise HTTPException(
+            status_code=402,
+            detail=entitlements.count_message(current_user, "status pages", limit),
+        )
+
     slug = body.slug.strip().lower()
     _validate_slug(slug)
     if (await db.execute(select(StatusPage).where(StatusPage.slug == slug))).scalar_one_or_none():

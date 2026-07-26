@@ -53,3 +53,16 @@ async def my_retention(current_user: User = Depends(get_current_user)) -> dict:
     from app.services import retention_service
 
     return retention_service.describe(current_user.plan)
+
+
+@router.get("/entitlements")
+async def my_entitlements(current_user: User = Depends(get_current_user)) -> dict:
+    """What this plan includes, so the UI can show a lock BEFORE a form is filled in.
+
+    Served from ``entitlements.describe`` rather than duplicated in the frontend, so changing
+    a plan never needs a matching frontend edit — and a lock can never disagree with the gate
+    that actually refuses the request.
+    """
+    from app.services import entitlements
+
+    return entitlements.describe(current_user)

@@ -25,7 +25,7 @@ from app.models.runbook import (
 )
 from app.models.team import TeamMember
 from app.models.user import User
-from app.services import runbook_service, skill_service
+from app.services import entitlements, runbook_service, skill_service
 
 router = APIRouter(prefix="/api/runbooks", tags=["runbooks"])
 logger = logging.getLogger(__name__)
@@ -153,11 +153,20 @@ async def _can_edit(db: AsyncSession, user: User) -> bool:
 @router.post("", status_code=201)
 async def create_runbook(body: RunbookIn, db: DBDep, current_user: CurrentUser) -> dict:
     account_id = await _require_author(db, current_user)
+    entitlements.require(current_user, entitlements.CUSTOM_RUNBOOKS)
     _validate(body.title, body.body, body.triggers, body.mode, body.os_family)
 
     count = (await db.execute(
         select(func.count()).select_from(Runbook).where(Runbook.user_id == account_id)
     )).scalar() or 0
+    # Two separate ceilings, for two different reasons: the plan's allowance, and the hard
+    # technical cap that exists because every runbook rides in the prompt on every message.
+    allowed, plan_limit = entitlements.count_gate(current_user, "max_runbooks", count)
+    if not allowed:
+        raise HTTPException(
+            status_code=402,
+            detail=entitlements.count_message(current_user, "runbooks", plan_limit),
+        )
     if count >= MAX_RUNBOOKS:
         raise HTTPException(
             status_code=422,

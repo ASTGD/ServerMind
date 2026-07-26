@@ -23,6 +23,7 @@ from app.models.integration import (
 )
 from app.models.user import User
 from app.services import api_key_service, crypto_service, outbound_guard, webhook_service
+from app.services import entitlements
 
 router = APIRouter(prefix="/api", tags=["integrations"])
 logger = logging.getLogger(__name__)
@@ -51,6 +52,8 @@ async def list_keys(db: DBDep, current_user: CurrentUser) -> list[dict]:
 @router.post("/api-keys", status_code=201)
 async def create_key(body: KeyCreate, db: DBDep, current_user: CurrentUser) -> dict:
     """Mint a key. The full secret is in this response and nowhere else, ever."""
+    # Gate CREATING only — an existing key or webhook keeps working after a downgrade.
+    entitlements.require(current_user, entitlements.API_ACCESS)
     unknown = [s for s in body.scopes if s not in API_SCOPES]
     if unknown:
         raise HTTPException(
@@ -180,6 +183,8 @@ async def available_events() -> dict:
 
 @router.post("/webhooks", status_code=201)
 async def create_webhook(body: EndpointCreate, db: DBDep, current_user: CurrentUser) -> dict:
+    # Gate CREATING only — an existing key or webhook keeps working after a downgrade.
+    entitlements.require(current_user, entitlements.API_ACCESS)
     url = _check_url(body.url)
     events = _check_events(body.events)
     secret = webhook_service.generate_secret()

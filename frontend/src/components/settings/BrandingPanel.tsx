@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Palette, Loader2, Check } from "lucide-react"
+import { Palette, Loader2, Check, Lock } from "lucide-react"
 import { getBranding, updateBranding, type Branding } from "@/api/branding"
 import { Button } from "@/components/ui"
+import { useFeature } from "@/components/plan/FeatureLock"
 
 const input =
   "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
@@ -14,6 +15,9 @@ const label = "mb-1 block text-xs font-medium text-muted-foreground"
  */
 export default function BrandingPanel() {
   const qc = useQueryClient()
+  // Only removing OUR name is a paid switch; the rest of the branding stays open on every
+  // plan, so a Pro customer can still brand their status page.
+  const whiteLabel = useFeature("white_label")
   const { data } = useQuery({ queryKey: ["branding"], queryFn: getBranding })
   const [form, setForm] = useState<Partial<Branding>>({})
   const [saved, setSaved] = useState(false)
@@ -93,14 +97,25 @@ export default function BrandingPanel() {
         </div>
       </div>
 
-      <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border border-border p-3">
+      <label className={`mt-3 flex items-start gap-2.5 rounded-lg border border-border p-3 ${
+        whiteLabel.allowed ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}>
         <input type="checkbox" className="mt-0.5"
+          disabled={!whiteLabel.allowed}
           checked={!!form.hide_serverally_branding}
           onChange={(e) => setForm({ ...form, hide_serverally_branding: e.target.checked })} />
         <span>
-          <span className="block text-[13px] font-medium">Remove “Monitored by ServerAlly”</span>
+          <span className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium">
+            Remove “Monitored by ServerAlly”
+            {!whiteLabel.allowed && (
+              <span className="flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                <Lock size={9} /> {whiteLabel.requiredPlan}
+              </span>
+            )}
+          </span>
           <span className="block text-[11.5px] text-muted-foreground">
-            Your clients see only your brand on status pages and reports.
+            {whiteLabel.allowed
+              ? "Your clients see only your brand on status pages and reports."
+              : `Included in ${whiteLabel.requiredPlan}. Everything else here works on your plan.`}
           </span>
         </span>
       </label>

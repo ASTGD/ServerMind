@@ -8,6 +8,7 @@ import ClientReportsPanel from "@/components/settings/ClientReportsPanel"
 import OnCallPanel from "@/components/escalation/OnCallPanel"
 import ApiKeysPanel from "@/components/integrations/ApiKeysPanel"
 import RetentionPanel from "@/components/settings/RetentionPanel"
+import FeatureLock from "@/components/plan/FeatureLock"
 import WebhooksPanel from "@/components/integrations/WebhooksPanel"
 import PagingChannelsPanel from "@/components/escalation/PagingChannelsPanel"
 import { QRCodeSVG } from "qrcode.react"
@@ -889,17 +890,25 @@ export default function Settings() {
       {/* White-label — applies to everything a client sees. */}
       <RetentionPanel />
 
-      <ApiKeysPanel />
+      <FeatureLock feature="api_access">
+        <ApiKeysPanel />
+      </FeatureLock>
 
-      <WebhooksPanel />
+      <FeatureLock feature="api_access">
+        <WebhooksPanel />
+      </FeatureLock>
 
       <OnCallPanel />
 
-      <PagingChannelsPanel />
+      <FeatureLock feature="sms_alerts">
+        <PagingChannelsPanel />
+      </FeatureLock>
 
       <BrandingPanel />
 
-      <ClientReportsPanel />
+      <FeatureLock feature="client_reports">
+        <ClientReportsPanel />
+      </FeatureLock>
 
       {/* Public status pages — user-level, since they span servers. */}
       <StatusPagesPanel />

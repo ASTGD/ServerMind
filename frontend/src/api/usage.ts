@@ -41,3 +41,31 @@ export async function getMyRetention(): Promise<MyRetention> {
   const res = await apiClient.get<MyRetention>("/api/usage/retention")
   return res.data
 }
+
+export interface FeatureEntitlement {
+  allowed: boolean
+  label: string
+  /** The cheapest plan that includes it — used in the lock text. */
+  required_plan: string
+}
+
+export interface MyEntitlements {
+  plan: string
+  plan_label: string
+  /** False while plan limits are dormant — every feature reads as allowed. */
+  enforced: boolean
+  limits: {
+    servers: number
+    actions: number
+    runbooks: number
+    status_pages: number
+    team_members: number
+  }
+  features: Record<string, FeatureEntitlement>
+  never_gated: string[]
+}
+
+export async function getMyEntitlements(): Promise<MyEntitlements> {
+  const res = await apiClient.get<MyEntitlements>("/api/usage/entitlements")
+  return res.data
+}

@@ -22,6 +22,7 @@ from app.dependencies.auth import get_current_user
 from app.models.autopilot import POLICIES, POLICY_REPORT_ONLY, AutopilotTask
 from app.models.user import User
 from app.services import autopilot_service, scheduler_service
+from app.services import entitlements
 
 router = APIRouter(prefix="/api", tags=["autopilot"])
 logger = logging.getLogger(__name__)
@@ -116,6 +117,8 @@ async def list_tasks(db: DBDep, current_user: CurrentUser) -> list[TaskOut]:
 @router.post("/autopilot/tasks", response_model=TaskOut, status_code=201)
 async def create_task(body: TaskCreate, db: DBDep, current_user: CurrentUser) -> TaskOut:
     """Create a task. A server-bound task needs EXECUTE access — autopilot will act there."""
+    # Gate CREATING only — an existing task keeps running if the plan changes.
+    entitlements.require(current_user, entitlements.AUTOPILOT)
     _validate(body.policy, body.cron_expression)
     if body.server_id:
         await resolve_server(str(body.server_id), current_user, db, need_execute=True)

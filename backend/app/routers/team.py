@@ -19,6 +19,7 @@ from app.schemas.team import (
     TeamMemberUpdate,
 )
 from app.services import audit_service, team_service
+from app.services import entitlements
 
 router = APIRouter(prefix="/api/team", tags=["team"])
 logger = logging.getLogger(__name__)
@@ -52,6 +53,14 @@ async def invite_member(
     current_user: CurrentUser,
 ) -> TeamMemberOut:
     """Invite someone by email with a role. Returns the invite (incl. token)."""
+    entitlements.require(current_user, entitlements.TEAM)
+    seats = len(await team_service.list_members(db, current_user))
+    allowed, limit = entitlements.count_gate(current_user, "max_team_members", seats)
+    if not allowed:
+        raise HTTPException(
+            status_code=402,
+            detail=entitlements.count_message(current_user, "team logins", limit),
+        )
     _validate_role(body.role)
     email = body.email.strip().lower()
     member = await team_service.invite(db, current_user, email, body.role)

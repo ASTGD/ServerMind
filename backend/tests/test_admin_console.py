@@ -133,15 +133,29 @@ async def test_user_detail_404s_for_an_unknown_user(admin_client):
 
 
 def test_plan_limits_come_from_the_plan_map():
-    """The console must never invent its own numbers — the plan map is the one source."""
-    assert admin_service._limits("pro")["max_servers"] == 15
-    assert admin_service._limits("free")["actions_per_month"] == 30
-    # An unknown/None plan must fall back to free, never to unlimited.
-    for bad in (None, "", "enterprise", "PRO "):
-        lim = admin_service._limits(bad)
-        assert lim["max_servers"] in (2, 15)
-        if bad in (None, "", "enterprise"):
-            assert lim == admin_service.PLANS["free"]
+    """The console must never invent its own numbers — the plan map is the one source.
+
+    Strengthened 2026-07-26 with the three-tier plans: ``_limits`` used to reimplement the
+    lookup and fall back to Free for an unknown plan. That made the console *lie about the
+    thing it exists to reveal* — an operator investigating a broken plan would be shown Free
+    limits while the app was really granting the generous ones. It now delegates, so the
+    console and the gate cannot disagree.
+    """
+    from app.services import entitlements
+
+    assert admin_service._limits("pro")["max_servers"] == 10
+    assert admin_service._limits("free")["actions_per_month"] == 20
+    assert admin_service._limits("pro_plus")["max_servers"] == 50
+
+    # Identity, not equality: the console must be reading the very same map, not a copy that
+    # could drift.
+    for plan in (None, "", "enterprise", "PRO ", "free", "pro", "agency"):
+        assert admin_service._limits(plan) is entitlements.limits_for_plan(plan)
+
+    # An unrecognised plan shows the MOST generous limits, matching what is enforced — see
+    # entitlements rule 2. Showing Free here would misreport a paying customer.
+    for bad in (None, "", "enterprise"):
+        assert admin_service._limits(bad) is entitlements.PLANS[entitlements.PRO_PLUS]
 
 
 async def test_list_users_is_empty_safe(admin_client):
