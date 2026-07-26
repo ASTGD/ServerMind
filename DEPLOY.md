@@ -53,6 +53,26 @@ git clone <your-repo> servermind && cd servermind
 cp .env.example .env.prod
 ```
 
+**Authenticate the server to GitHub with a read-only deploy key**, so it can pull but a
+compromise of the server can never push to the repository:
+
+```bash
+ssh-keygen -t ed25519 -N "" -C "serverally-prod-deploy-readonly" -f /root/.ssh/github_deploy
+cat >> /root/.ssh/config <<'EOF'
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile /root/.ssh/github_deploy
+    IdentitiesOnly yes
+EOF
+chmod 600 /root/.ssh/config
+cat /root/.ssh/github_deploy.pub    # add this in GitHub → Settings → Deploy keys, WITHOUT write access
+```
+
+`IdentitiesOnly yes` matters: without it SSH offers every key it can find and GitHub may
+answer as the wrong account. Confirm the key is read-only by checking that a push is
+refused — `git push --dry-run origin main` should fail.
+
 Edit `.env.prod`. **Generate fresh secrets** (do NOT reuse dev values):
 
 ```bash
@@ -213,6 +233,9 @@ docker compose -f docker-compose.prod.yml logs -f frontend
 # Apply new migrations (also runs automatically on backend start)
 docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
 
+# Which version is running?
+git rev-parse --short HEAD && git log --format='%s (%cr)' -1
+
 # Deploy an update
 git pull
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
@@ -221,6 +244,24 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml restart backend
 docker compose -f docker-compose.prod.yml down
 ```
+
+> **Back up the database before any deploy that includes a migration**, because a migration
+> cannot be undone by redeploying the old code:
+> `docker compose -f docker-compose.prod.yml exec -T postgres pg_dump -U servermind servermind | gzip > ~/serverally-backups/db-$(date +%F-%H%M).sql.gz`
+
+### The live deployment
+
+| | |
+|---|---|
+| URL | `https://serverally.firevps.net` |
+| Host | `192.3.193.50` |
+| Directory | `/opt/serverally` — a **tracked git checkout** of `main`, so `git pull` works |
+| Env file | `/opt/serverally/.env.prod` — **untracked and gitignored**; the only file not in git |
+| Datastores | Postgres, Redis and guacd all run **inside** this compose stack (§6 layout) |
+| Health | `curl https://serverally.firevps.net/health` → `{"status":"ok","app":"ServerAlly"}` |
+
+`git status` on the server should be clean. If it ever shows modified files, someone edited
+production by hand — reconcile that into the repo before deploying over it.
 
 ### Scaling note
 The backend runs as a **single process** so the in-process APScheduler (scheduled
