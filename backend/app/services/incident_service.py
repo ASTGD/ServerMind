@@ -36,7 +36,7 @@ from app.models.escalation import (
     EscalationPolicy, EscalationStep, Incident,
 )
 from app.models.server import Server
-from app.services import crypto_service, escalation_service as esc
+from app.services import crypto_service, escalation_service as esc, webhook_service
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +163,7 @@ async def raise_for(
         return None
     await db.refresh(incident)
     logger.info("Incident opened: %s (%s, %s)", incident.title, source, severity)
+    await webhook_service.emit(db, user_id, "incident.opened", _event(incident))
     return incident, token
 
 
@@ -195,6 +196,7 @@ async def acknowledge(db: AsyncSession, incident: Incident, by: str) -> Incident
         await db.commit()
         await db.refresh(incident)
         logger.info("Incident %s acknowledged by %s", incident.id, by)
+        await webhook_service.emit(db, incident.user_id, "incident.acknowledged", _event(incident))
     return incident
 
 
@@ -228,6 +230,7 @@ async def resolve(db: AsyncSession, incident: Incident, *, auto: bool, by: str =
         await db.commit()
         await db.refresh(incident)
         logger.info("Incident %s resolved (%s)", incident.id, "automatically" if auto else by)
+        await webhook_service.emit(db, incident.user_id, "incident.resolved", _event(incident))
     return incident
 
 
@@ -250,6 +253,25 @@ async def resolve_key(db: AsyncSession, user_id: uuid.UUID, dedup_key: str) -> I
 
 
 # ── Reading ──────────────────────────────────────────────────────────────────
+
+def _event(incident: Incident) -> dict:
+    """The webhook body for an incident.
+
+    Deliberately narrower than ``serialize``: a webhook goes to a third-party endpoint, so it
+    carries what is needed to react (what, where, how bad) and nothing more.
+    """
+    return {
+        "incident_id": str(incident.id),
+        "title": incident.title,
+        "severity": incident.severity,
+        "status": incident.status,
+        "source": incident.source,
+        "server_id": str(incident.server_id) if incident.server_id else None,
+        "acknowledged_by": incident.acknowledged_by,
+        "auto_resolved": incident.auto_resolved,
+        "created_at": incident.created_at.isoformat() if incident.created_at else None,
+    }
+
 
 def serialize(incident: Incident, *, server_name: str | None = None) -> dict:
     """An incident for the API.

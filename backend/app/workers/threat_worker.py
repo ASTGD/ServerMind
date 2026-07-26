@@ -19,7 +19,7 @@ from app.models.server import Server
 from app.models.threat_scan import ThreatScan
 from app.models.user import User
 from app.services import threat_service
-from app.services import incident_service
+from app.services import incident_service, webhook_service
 from app.services.notification_service import send_email
 
 logger = logging.getLogger(__name__)
@@ -93,6 +93,13 @@ async def _notify(server: Server, result: dict) -> None:
     verdict_word = "may be compromised" if result["verdict"] == "compromised" else "may be at risk"
 
     async with AsyncSessionLocal() as db:
+        await webhook_service.emit(db, server.user_id, "threat.detected", {
+            "server_id": str(server.id), "server_name": server.name,
+            "verdict": result["verdict"], "headline": headline,
+            # Counts, not the findings themselves: a finding can quote a file path or a
+            # command line from the customer's own server.
+            "finding_counts": {k: v for k, v in (result.get("counts") or {}).items()},
+        })
         db.add(Notification(
             user_id=server.user_id, type="threat", status=result["verdict"],
             title=f"Security alert: {server.name} {verdict_word}",

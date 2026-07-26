@@ -20,7 +20,7 @@ from sqlalchemy import delete, select
 from app.database import AsyncSessionLocal
 from app.models.server import Server
 from app.models.uptime import UptimeCheck, UptimeMonitor
-from app.services import incident_service, notification_service, uptime_service
+from app.services import incident_service, notification_service, uptime_service, webhook_service
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +135,14 @@ async def _check_one(monitor_id) -> None:
                         db, monitor.user_id, f"uptime:{monitor.id}")
             except Exception as exc:  # noqa: BLE001 — escalation must not break the sweep
                 logger.warning("Uptime escalation for %s failed: %s", monitor.id, exc)
+            # A webhook fires on the transition regardless of escalation — it is the
+            # customer's own integration, not a notification we might have replaced.
+            await webhook_service.emit(
+                db, monitor.user_id, "uptime.down" if went_down else "uptime.up",
+                {"monitor_id": str(monitor.id), "name": monitor.name, "url": monitor.url,
+                 "status": new_status, "error": monitor.last_error,
+                 "response_ms": monitor.last_response_ms},
+            )
             if not escalated:
                 await _announce(monitor, went_down=went_down)
 
@@ -242,6 +250,11 @@ async def _check_cert(monitor_id) -> None:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Certificate escalation for %s failed: %s", monitor.id, exc)
 
+            await webhook_service.emit(
+                db, monitor.user_id, "certificate.expiring",
+                {"monitor_id": str(monitor.id), "name": monitor.name, "host": host,
+                 "days_left": days, "state": state, "issuer": monitor.cert_issuer},
+            )
             if escalated or not (monitor.channel and monitor.channel_target):
                 return
             try:

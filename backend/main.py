@@ -38,6 +38,8 @@ from app.routers import servers as servers_router
 from app.routers import settings as settings_router
 from app.routers import entitlements as entitlements_router
 from app.routers import escalation as escalation_router
+from app.routers import api_v1 as api_v1_router
+from app.routers import integrations as integrations_router
 from app.routers import memories as memories_router
 from app.routers import mcp_admin as mcp_admin_router
 from app.routers import uptime as uptime_router
@@ -193,6 +195,23 @@ async def _start_background_jobs() -> None:
     )
     logger.info("On-call escalation job registered (every 1 min)")
 
+    # Webhook delivery — posts queued events to the customer's endpoints, with backoff.
+    from app.workers import webhook_worker
+    scheduler_service.get_scheduler().add_job(
+        webhook_worker.run_deliveries,
+        trigger=IntervalTrigger(minutes=1),
+        id="webhook_deliveries",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler_service.get_scheduler().add_job(
+        webhook_worker.prune_deliveries,
+        trigger=IntervalTrigger(hours=24),
+        id="webhook_prune",
+        replace_existing=True,
+    )
+    logger.info("Webhook delivery job registered (every 1 min)")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -288,6 +307,8 @@ app.include_router(autopilot_router.router)  # /api/autopilot — scheduled miss
 app.include_router(logs_router.router)  # /api/servers/{id}/logs — server log viewer
 app.include_router(uptime_router.router)
 app.include_router(escalation_router.router)  # /api/escalation — on-call paging
+app.include_router(integrations_router.router)  # /api/api-keys, /api/webhooks — browser-only
+app.include_router(api_v1_router.router)  # /api/v1 — API-key only, bounded on purpose
 app.include_router(mcp_admin_router.router)  # /api/mcp — Connected applications (Phase 4)
 app.include_router(entitlements_router.router)
 app.include_router(ws_handlers.router)

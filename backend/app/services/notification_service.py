@@ -16,6 +16,7 @@ from email.mime.text import MIMEText
 import requests as _requests
 
 from app.config import settings
+from app.services import outbound_guard
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,20 @@ async def send_email(to: str, subject: str, body: str, html: str | None = None) 
 # ── Webhook / Slack ───────────────────────────────────────────────────────────
 
 def _send_webhook_sync(url: str, payload: dict) -> None:
-    """Blocking HTTP POST — runs in a thread pool."""
+    """Blocking HTTP POST — runs in a thread pool.
+
+    The URL comes from the customer (an alert channel, an escalation step), so it is
+    SSRF-checked immediately before the request rather than only when it was saved — see
+    ``outbound_guard``. Without this, an alert target of
+    ``http://169.254.169.254/latest/meta-data/`` would make our own server fetch cloud
+    credentials, and ``http://postgres:5432/`` would reach the internal Docker network.
+    """
+    try:
+        outbound_guard.check_url(url)
+    except outbound_guard.BlockedURL as exc:
+        logger.error("Refusing to send a webhook to %s: %s", url, exc)
+        raise
+
     try:
         resp = _requests.post(url, json=payload, timeout=10)
         resp.raise_for_status()

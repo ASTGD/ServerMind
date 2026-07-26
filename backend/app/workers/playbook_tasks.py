@@ -114,6 +114,19 @@ async def _execute(run_id: str, server_id: str, script: str) -> None:
             from app.services.notification_service import create_run_notification
             await create_run_notification(db, uuid.UUID(run_id))
 
+            # Tell the customer's own systems it finished. This is what makes the API
+            # usable from CI without polling: start the run, get the webhook, move on.
+            from app.models.playbook import PlaybookRun as _Run
+            from app.services import webhook_service
+            run = await db.get(_Run, uuid.UUID(run_id))
+            if run is not None:
+                await webhook_service.emit(db, run.user_id, "playbook.finished", {
+                    "run_id": run_id,
+                    "server_id": str(run.server_id),
+                    "status": status,
+                    "failure_reason": failure_reason,
+                })
+
         await _emit(redis, key, {"type": "complete", "run_id": run_id, "status": status})
     finally:
         await redis.aclose()
