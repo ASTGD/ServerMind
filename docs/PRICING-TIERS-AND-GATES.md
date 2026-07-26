@@ -64,6 +64,9 @@ previous cap of 15 on Pro was uncompetitive ([v3 §7](PRICING-V3.md)).
 |---|---|---|---|
 | **Servers** | 2 | 10 | 50, then $1/month each |
 
+At Pro+ this is deliberately level with RunCloud's 50-servers-for-$19, so a buyer comparing
+the two is comparing features rather than counts.
+
 Free stays at **2**, not 1 — the current documented figure, and two servers is what lets
 someone see the fleet view work at all. Never reduce it.
 
@@ -88,11 +91,11 @@ be someone's daily driver.
 | Option | Cost to customer | Cost to us |
 |---|---|---|
 | **Bring your own AI** — connect their Claude/ChatGPT account (MCP), or their own API key | $0 | **$0** |
-| **Ally subscription** — our hosted AI, added to any tier | +$19/month per 150 requests | we pay inference |
+| **Ally subscription** — our hosted AI, added to any tier *(deferred, §3.2a)* | +$15/month per 100 requests | we pay inference |
 
 | | Free | Pro | Pro+ |
 |---|---|---|---|
-| **Ally requests included** | 20/month | 50/month | 150/month |
+| **Ally requests included** | 20/month | 50/month | 100/month |
 | **Bring your own AI** | ✅ unlimited | ✅ unlimited | ✅ unlimited |
 
 These allowances are **sized backwards from our real cost**, not picked for the marketing
@@ -187,9 +190,9 @@ complaint.
 
 | | **Free** | **Pro** | **Pro+** |
 |---|---|---|---|
-| Price *(recommended — see §4)* | $0 | $9 | $29 |
+| Price *(recommended — see §4)* | $0 | $9 | $19 |
 | Servers | 2 | 10 | 50 + $1 each |
-| Ally requests/month | 20 | 50 | 150 |
+| Ally requests/month | 20 | 50 | 100 |
 | Bring your own AI | ✅ | ✅ | ✅ |
 | Safety features | ✅ all | ✅ all | ✅ all |
 | Ally on a schedule | — | ✅ | ✅ |
@@ -227,11 +230,17 @@ bundled into a $5 platform price.
 |---|---|---|---|---|
 | Free | $0 | 20 | $1.92 | −$1.92 — **acquisition cost, accepted** |
 | **Pro** | **$9** | 50 | $4.80 | **$4.20 (47%)** |
-| **Pro+** | **$29** | 150 | $14.40 | **$14.60 (50%)** |
-| *(deferred)* top-up | +$19/mo | +150, stackable | $14.40 | $4.60 (24%) — **not at launch, see §3.2a** |
+| **Pro+** | **$19** | 100 | $9.60 | **$9.40 (49%)** |
+| *(deferred)* top-up | +$15/mo | +100, stackable | $9.60 | $5.40 (36%) — **not at launch, see §3.2a** |
 
-Both paid tiers now have real margin, and we are still cheaper than the market: RunCloud is
-$19 for 50 servers, Ploi €13, Forge $19.
+Both paid tiers now have real margin, and we are still cheaper than the market.
+
+**Pro+ reduced from $29 to $19 (owner, 2026-07-26: "Pro+ is too high").** $19 is the better
+number for a second reason beyond feeling cheaper: it is **exactly RunCloud's price for
+exactly 50 servers**, so the comparison is like-for-like and we win it on features. It also
+undercuts Ploi's €30 top tier by about $14. Dropping the price required dropping the
+allowance from 150 to 100 requests — at 150 the margin would have collapsed to 24% — so the
+change is a real trade, not a free discount.
 
 ### Two things that could move all of this
 
@@ -246,7 +255,7 @@ $19 for 50 servers, Ploi €13, Forge $19.
 
 ### Recommendation
 
-**Launch at Free $0 / Pro $9 / Pro+ $29 with the allowances above, labelled "early access",
+**Launch at Free $0 / Pro $9 / Pro+ $19 with the allowances above, labelled "early access",
 and grandfather the beta cohort.** Revisit the allowances — not the prices — once we have a
 real cost number from real customers.
 
@@ -321,7 +330,7 @@ duplicating the rules.
 | ✅ Client reports + white-label + team = Pro+ | Decided here |
 | ✅ AI shown as requests, never tokens/credits | v3 hard rule |
 | ✅ BYO AI available on every tier | v3 |
-| ⚠️ Actual prices | **PM decision.** Recommended $0/$9/$29 — see §4 |
+| ⚠️ Actual prices | **PM decision.** Recommended $0/$9/$19 — see §4 |
 | ⚠️ Included request counts | Sized to today's measured cost; re-check on beta data |
 | ✅ AI included as fair use, no separate product at launch | Decided — §3.2a |
 | ⚠️ Whether MCP is Free-tier or Pro-and-up | Open (Ploi gates it at Pro) |
