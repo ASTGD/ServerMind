@@ -37,6 +37,7 @@ from app.routers import security as security_router
 from app.routers import servers as servers_router
 from app.routers import settings as settings_router
 from app.routers import entitlements as entitlements_router
+from app.routers import escalation as escalation_router
 from app.routers import memories as memories_router
 from app.routers import mcp_admin as mcp_admin_router
 from app.routers import uptime as uptime_router
@@ -179,6 +180,19 @@ async def _start_background_jobs() -> None:
     )
     logger.info("Client report delivery job registered (daily 09:00 UTC)")
 
+    # On-call escalation — climbs each open incident's ladder until somebody acknowledges.
+    # Every minute, because the point of the feature is that a 5-minute step fires at 5
+    # minutes. All the judgement is in the pure escalation_service; this only sends.
+    from app.workers import escalation_worker
+    scheduler_service.get_scheduler().add_job(
+        escalation_worker.run_escalations,
+        trigger=IntervalTrigger(minutes=1),
+        id="escalation",
+        replace_existing=True,
+        max_instances=1,
+    )
+    logger.info("On-call escalation job registered (every 1 min)")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -272,7 +286,8 @@ app.include_router(branding_router.router)  # /api/branding + client reports
 app.include_router(status_pages_router.router)  # /api/status-pages + public /api/public/status/{slug}
 app.include_router(autopilot_router.router)  # /api/autopilot — scheduled missions
 app.include_router(logs_router.router)  # /api/servers/{id}/logs — server log viewer
-app.include_router(uptime_router.router)  # /api/uptime — is the site reachable?
+app.include_router(uptime_router.router)
+app.include_router(escalation_router.router)  # /api/escalation — on-call paging
 app.include_router(mcp_admin_router.router)  # /api/mcp — Connected applications (Phase 4)
 app.include_router(entitlements_router.router)
 app.include_router(ws_handlers.router)

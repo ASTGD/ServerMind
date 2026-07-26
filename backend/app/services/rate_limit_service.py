@@ -23,7 +23,20 @@ logger = logging.getLogger(__name__)
 # HTTP limiter. NOTE: behind a reverse proxy, configure trusted X-Forwarded-For
 # so the client IP (not the proxy IP) is the key; for prod multi-worker, pass
 # storage_uri=settings.REDIS_URL for a shared window.
-limiter = Limiter(key_func=get_remote_address, enabled=settings.RATE_LIMIT_ENABLED)
+#
+# key_style="endpoint" is load-bearing, not a preference. slowapi defaults to "url", which
+# puts the *request URL* in the bucket key — so on a route with a path parameter, every
+# distinct value gets its own bucket. That silently removes all protection from exactly the
+# attack these limits exist to stop: guessing an acknowledge token or enumerating status-page
+# slugs uses a DIFFERENT value on every request. Found live: 35 POSTs to
+# /api/public/ack/{token} with 35 different tokens never hit the 30/minute limit, while 35
+# with the same token did. Bucketing by endpoint function makes the limit per-route-per-IP,
+# which is what every `@limiter.limit(...)` in this codebase means.
+limiter = Limiter(
+    key_func=get_remote_address,
+    enabled=settings.RATE_LIMIT_ENABLED,
+    key_style="endpoint",
+)
 
 
 async def check_command_rate(user_id: str, server_id: str) -> bool:

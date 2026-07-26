@@ -11,6 +11,7 @@ import FleetHealthPanel from "@/components/dashboard/FleetHealthPanel"
 import FleetComposition from "@/components/dashboard/FleetComposition"
 import QuickActions from "@/components/dashboard/QuickActions"
 import RunningTasks from "@/components/dashboard/RunningTasks"
+import ActiveIncidentsBanner from "@/components/escalation/ActiveIncidentsBanner"
 import SubscriptionCard from "@/components/dashboard/SubscriptionCard"
 import { SectionHeader, EmptyState, buttonVariants } from "@/components/ui"
 import { cn } from "@/lib/utils"
@@ -83,6 +84,11 @@ export default function Dashboard() {
         <>
           {/* Running now — slim, auto-hides when nothing is running */}
           <RunningTasks />
+
+          {/* Anything escalating right now, above everything else — an incident with the
+              phone still ringing is the only thing more urgent than fleet health.
+              Self-hides when there is nothing open. */}
+          <ActiveIncidentsBanner />
 
           {/* KPI strip */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

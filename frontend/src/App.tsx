@@ -14,6 +14,7 @@ import FileManager from "@/routes/FileManager"
 import Security from "@/routes/Security"
 import ServerLogs from "./routes/ServerLogs"
 import PublicStatusPage from "./routes/PublicStatus"
+import Acknowledge from "./routes/Acknowledge"
 import Backups from "@/routes/Backups"
 import Installed from "@/routes/Installed"
 import Hosting from "@/routes/Hosting"
@@ -46,6 +47,9 @@ export default function App() {
         <Route path="/claim" element={<Claim />} />
         {/* PUBLIC — no login. Strangers land here; the payload is an allowlist. */}
         <Route path="/status/:slug" element={<PublicStatusPage />} />
+        {/* The link inside a page — unauthenticated, so it works from a phone that has
+            never signed in. */}
+        <Route path="/ack/:token" element={<Acknowledge />} />
         <Route
           path="/"
           element={

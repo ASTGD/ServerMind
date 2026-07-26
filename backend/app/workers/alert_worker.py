@@ -23,7 +23,7 @@ async def check_alerts_for_server(server_id: str) -> None:
 
     Fires a notification when a threshold is breached and the cooldown has elapsed.
     """
-    from app.services import notification_service
+    from app.services import incident_service, notification_service
 
     server_uuid = uuid.UUID(server_id)
 
@@ -62,6 +62,12 @@ async def check_alerts_for_server(server_id: str) -> None:
                 continue
 
             if not _breached(current_value, str(alert.condition), float(alert.threshold)):
+                # Back inside the threshold — close any incident this rule opened, so a
+                # disk that was cleared stops paging without anyone having to acknowledge.
+                try:
+                    await incident_service.resolve_key(db, alert.user_id, f"metric:{alert.id}")
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Metric incident close failed for %s: %s", alert.id, exc)
                 continue
 
             # Cooldown check — skip if we already fired within COOLDOWN_SECONDS
@@ -88,7 +94,25 @@ async def check_alerts_for_server(server_id: str) -> None:
             )
 
             try:
-                await notification_service.fire_alert(alert, server.name, current_value)
+                # A metric threshold is a warning by nature — the disk is filling, not the
+                # site is down — so it escalates only if the user's policy asks to be paged
+                # about warnings. Otherwise it stays the ordinary one-shot alert.
+                escalated = False
+                try:
+                    escalated = await incident_service.raise_for(
+                        db, user_id=alert.user_id, server=server, source="metric",
+                        dedup_key=f"metric:{alert.id}",
+                        title=f"{server.name}: {str(alert.metric).upper()} is "
+                              f"{current_value:.0f}%",
+                        message=(f"{str(alert.metric).upper()} is {current_value:.1f}%, which "
+                                 f"is past your {float(alert.threshold):.0f}% threshold."),
+                        severity="warning",
+                    ) is not None
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Metric escalation failed for alert %s: %s", alert.id, exc)
+
+                if not escalated:
+                    await notification_service.fire_alert(alert, server.name, current_value)
                 await db.execute(
                     sa_update(Alert)
                     .where(Alert.id == alert.id)

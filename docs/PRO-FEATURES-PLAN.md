@@ -121,7 +121,7 @@ closes a named gap) → **#5 escalation** → **#3 client reports & white-label*
 | 2 | Auto-fix policy | ✅ **Shipped 2026-07-25** (same feature) |
 | 3 | Client reports & white-label | ✅ **Shipped 2026-07-26** (white-label, report page with PDF/Markdown export, scheduled monthly delivery) |
 | 4 | Public status pages | ✅ **Shipped 2026-07-25** |
-| 5 | On-call escalation | ⬜ Not started |
+| 5 | On-call escalation | ✅ **Shipped 2026-07-26** (policies, incidents, SMS/Telegram, acknowledge link) |
 | 6 | History retention tiers | ⬜ Not started |
 | 7 | Custom runbooks | ⬜ Not started |
 | 8 | API keys + webhooks | ⬜ Not started |

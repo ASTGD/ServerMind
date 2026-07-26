@@ -18,8 +18,9 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, select
 
 from app.database import AsyncSessionLocal
+from app.models.server import Server
 from app.models.uptime import UptimeCheck, UptimeMonitor
-from app.services import notification_service, uptime_service
+from app.services import incident_service, notification_service, uptime_service
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,26 @@ logger = logging.getLogger(__name__)
 CHECK_RETENTION_DAYS = 30
 # Probe at most this many monitors concurrently, so a big fleet can't exhaust sockets.
 _CONCURRENCY = 10
+
+
+async def _escalate_down(db, monitor: UptimeMonitor) -> bool:
+    """Open an on-call incident for a downed monitor.
+
+    Returns True when escalation took over, in which case the plain one-shot email is
+    skipped — the ladder's first step already tells the owner, and sending both would
+    double-notify for the same outage.
+    """
+    server = await db.get(Server, monitor.server_id) if monitor.server_id else None
+    raised = await incident_service.raise_for(
+        db, user_id=monitor.user_id, server=server, source="uptime",
+        dedup_key=f"uptime:{monitor.id}",
+        title=f"{monitor.name} is down",
+        message=(f"{monitor.url}\nProblem: {monitor.last_error or 'not responding'}\n\n"
+                 "ServerAlly checks this from outside your server, so this is what a "
+                 "visitor sees."),
+        severity="critical",
+    )
+    return raised is not None
 
 
 async def _announce(monitor: UptimeMonitor, went_down: bool) -> None:
@@ -101,7 +122,21 @@ async def _check_one(monitor_id) -> None:
 
         if changed:
             logger.info("Uptime: %s is now %s", monitor.name, new_status)
-            await _announce(monitor, went_down=(new_status == "down"))
+            went_down = new_status == "down"
+            escalated = False
+            try:
+                if went_down:
+                    escalated = await _escalate_down(db, monitor)
+                else:
+                    # The site is back. Close the incident so nobody is paged about a
+                    # problem that has already fixed itself — the single fastest way to
+                    # lose trust in an alerting system.
+                    await incident_service.resolve_key(
+                        db, monitor.user_id, f"uptime:{monitor.id}")
+            except Exception as exc:  # noqa: BLE001 — escalation must not break the sweep
+                logger.warning("Uptime escalation for %s failed: %s", monitor.id, exc)
+            if not escalated:
+                await _announce(monitor, went_down=went_down)
 
 
 async def check_due_monitors() -> None:
@@ -181,9 +216,34 @@ async def _check_cert(monitor_id) -> None:
         monitor.cert_checked_at = now
         await db.commit()
 
-        if ssl_service.should_alert(previous, state) and monitor.channel and monitor.channel_target:
+        if state == "ok":
+            # Renewed. Close any open certificate incident rather than leaving a solved
+            # problem sitting in the owner's list.
+            try:
+                await incident_service.resolve_key(db, monitor.user_id, f"ssl:{monitor.id}")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Certificate incident close failed for %s: %s", monitor.id, exc)
+
+        if ssl_service.should_alert(previous, state):
             host = target[0]
             subject, body = ssl_service.message(host, days, state)
+            escalated = False
+            try:
+                # "expired" and "critical" (<=3 days) are outages in waiting; a plain
+                # "warning" stays an email, because paging someone about routine renewal
+                # is how people learn to ignore pages.
+                if state in ("expired", "critical"):
+                    server = await db.get(Server, monitor.server_id) if monitor.server_id else None
+                    escalated = await incident_service.raise_for(
+                        db, user_id=monitor.user_id, server=server, source="ssl",
+                        dedup_key=f"ssl:{monitor.id}", title=subject.replace("[ServerAlly] ", ""),
+                        message=body, severity="critical" if state == "expired" else "high",
+                    ) is not None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Certificate escalation for %s failed: %s", monitor.id, exc)
+
+            if escalated or not (monitor.channel and monitor.channel_target):
+                return
             try:
                 if monitor.channel == "email":
                     await notification_service.send_email(monitor.channel_target, subject, body)

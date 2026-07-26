@@ -19,6 +19,7 @@ from app.models.server import Server
 from app.models.threat_scan import ThreatScan
 from app.models.user import User
 from app.services import threat_service
+from app.services import incident_service
 from app.services.notification_service import send_email
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,14 @@ async def _scan_and_alert(server: Server) -> None:
     # user gets one clear heads-up per new incident, not a nag every cycle.
     if result["verdict"] in _ALERTING and prev not in _ALERTING:
         await _notify(server, result)
+    elif result["verdict"] not in _ALERTING and prev in _ALERTING:
+        # The server came back clean — close the incident rather than leaving a solved
+        # problem paging (or sitting) in the owner's list.
+        try:
+            async with AsyncSessionLocal() as db:
+                await incident_service.resolve_key(db, server.user_id, f"threat:{server.id}")
+        except Exception:  # noqa: BLE001
+            logger.warning("Threat incident close failed for %s", server.id, exc_info=True)
 
 
 async def _notify(server: Server, result: dict) -> None:
@@ -91,6 +100,27 @@ async def _notify(server: Server, result: dict) -> None:
             server_id=server.id,
         ))
         await db.commit()
+
+    # A compromised server is the strongest case for waking somebody. If an on-call policy
+    # covers it, the ladder replaces the single email — otherwise the email below still goes,
+    # so nothing gets quieter than before.
+    try:
+        async with AsyncSessionLocal() as db:
+            fresh = await db.get(Server, server.id)
+            raised = await incident_service.raise_for(
+                db, user_id=server.user_id, server=fresh, source="threat",
+                dedup_key=f"threat:{server.id}",
+                title=f"{server.name} {verdict_word}",
+                message=(f"{headline}\n\n" + "\n".join(
+                    f"- [{f['severity']}] {f['title']}: {f['detail'] or ''}" for f in top[:6]
+                ) + "\n\nServerAlly did NOT change anything — detection only. Open the "
+                    "server's Security tab to respond."),
+                severity="critical" if result["verdict"] == "compromised" else "high",
+            )
+            if raised is not None:
+                return
+    except Exception:  # noqa: BLE001 — escalation must not swallow the email fallback
+        logger.warning("Threat escalation failed for %s", server.id, exc_info=True)
 
     try:
         async with AsyncSessionLocal() as db:

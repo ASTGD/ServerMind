@@ -5,6 +5,8 @@ import McpConnections from "@/components/settings/McpConnections"
 import StatusPagesPanel from "@/components/monitoring/StatusPagesPanel"
 import BrandingPanel from "@/components/settings/BrandingPanel"
 import ClientReportsPanel from "@/components/settings/ClientReportsPanel"
+import OnCallPanel from "@/components/escalation/OnCallPanel"
+import PagingChannelsPanel from "@/components/escalation/PagingChannelsPanel"
 import { QRCodeSVG } from "qrcode.react"
 import { listAudit } from "@/api/audit"
 import {
@@ -882,6 +884,10 @@ export default function Settings() {
       <McpConnections />
 
       {/* White-label — applies to everything a client sees. */}
+      <OnCallPanel />
+
+      <PagingChannelsPanel />
+
       <BrandingPanel />
 
       <ClientReportsPanel />

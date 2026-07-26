@@ -27,6 +27,10 @@ class Server(Base):
     category: Mapped[str | None] = mapped_column(String(20))                 # 'bare_metal'|'vps'|'hosting'|'windows'|'cloud'
     # Set when this asset was imported from a Cloud Account (Phase C); links back + dedupes.
     cloud_account_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("cloud_accounts.id", ondelete="SET NULL"))
+    # Which on-call policy pages for this server. NULL = the user's default policy.
+    escalation_policy_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("escalation_policies.id", ondelete="SET NULL")
+    )
     cloud_instance_id: Mapped[str | None] = mapped_column(String(255))
     encrypted_cred: Mapped[str] = mapped_column(Text, nullable=False)
     fingerprint: Mapped[str | None] = mapped_column(Text)
