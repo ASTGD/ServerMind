@@ -298,7 +298,11 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
    column against the reference's 686px, because the split was the other half of the
    problem. The visual bleeds to the viewport edge regardless, so it loses nothing. */
 .hero-grid {
-  display: grid; grid-template-columns: 50fr 50fr; gap: 48px; align-items: center;
+  /* 56/44 gives the copy 753px, up from 672. Measured trade-off: 52/48 (699px) is the
+     widest split that still breaks the headline over three lines; past that it sets in
+     two and the hero loses 44px of height. Widened deliberately at the PM's request —
+     revert to 52fr 48fr if the three-line headline is wanted back. */
+  display: grid; grid-template-columns: 56fr 44fr; gap: 48px; align-items: center;
   padding-block: 92px 104px; min-height: 640px;
 }
 .hero-copy {
