@@ -2,7 +2,7 @@
 <html lang="en" class="no-js" data-theme="dark"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ServerAlly — Manage any server in plain English</title>
+<title>ServerAlly — Manage any server in natural language</title>
 <meta name="description" content="ServerAlly is your AI companion for Linux, Windows, hosting panels, and cloud. Tell it what you want — it plans the steps, runs them safely, and explains what it did.">
 <link rel="icon" type="image/svg+xml" href="site/asset-be24472a.svg">
 <link rel="stylesheet" href="/site/site.css">
@@ -52,7 +52,7 @@
   <div class="container hero-grid">
     <div class="hero-copy">
       <span class="badge-early" style="background: rgba(13,20,46,.6); border-color: rgba(148,163,184,.28); color:#C0C8DC;"><span class="dot"></span>Early access</span>
-      <h1>Manage any server in plain English.</h1>
+      <h1>Manage <span class="rot" data-rot="any server|any control panel|any website|any cloud"><span class="rot-w">any server</span></span><br>in natural language.</h1>
       <p class="hero-sub">ServerAlly is your AI companion for Linux, Windows, hosting panels, and cloud. Tell it what you want — it plans the steps, runs them safely, and explains what it did. No terminal required.</p>
       <div class="hero-ctas">
         <a class="btn btn-fill btn-lg" href="/auth">Try for Free
@@ -698,6 +698,61 @@
 
 
 <script src="site/asset-de18b6eb.js"></script>
+<script>
+/* Rotating word in the hero headline.
+   Two things make this pattern go wrong, and both are handled here.
+   1) WIDTH. The word sits mid-sentence, so a longer one would shove everything after
+      it sideways on every tick. The container's width is measured off-screen for each
+      incoming word and transitioned, so the line grows and shrinks smoothly instead of
+      snapping — and the <br> keeps the following line pinned regardless.
+   2) MOTION PREFERENCE. If the visitor asked for reduced motion we never start: the
+      first word stays as authored. Same for a single-word list or a missing element,
+      so a copy edit can't throw. */
+(function () {
+  var el = document.querySelector('.rot');
+  if (!el) return;
+  var words = (el.getAttribute('data-rot') || '').split('|').map(function (w) { return w.trim(); })
+              .filter(Boolean);
+  if (words.length < 2) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  var word = el.querySelector('.rot-w');
+  if (!word) return;
+
+  // Off-screen twin, styled identically, used only to measure. Cheaper and more
+  // reliable than canvas text metrics, which ignore letter-spacing and font synthesis.
+  var ghost = document.createElement('span');
+  ghost.className = 'rot-w';
+  ghost.setAttribute('aria-hidden', 'true');
+  ghost.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;pointer-events:none';
+  el.appendChild(ghost);
+  function widthOf(text) { ghost.textContent = text; return ghost.getBoundingClientRect().width; }
+
+  el.style.width = widthOf(words[0]) + 'px';
+  // OUT is short on purpose. While the word is gone the headline momentarily reads
+  // "Manage in natural language", which is nonsense — the shorter that window, the
+  // more it reads as one wipe rather than a word disappearing and another arriving.
+  var i = 0, OUT = 190, HOLD = 2800;
+
+  function tick() {
+    var next = words[(i + 1) % words.length];
+    el.classList.add('is-out');
+    setTimeout(function () {
+      word.textContent = next;
+      el.style.width = widthOf(next) + 'px';
+      el.classList.remove('is-out');
+      el.classList.add('is-in');
+      // one frame later, release to the resting state
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { el.classList.remove('is-in'); });
+      });
+      i = (i + 1) % words.length;
+    }, OUT);
+  }
+  setInterval(tick, HOLD);
+})();
+</script>
+
 
 
 </body></html>
