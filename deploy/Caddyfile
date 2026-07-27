@@ -1,0 +1,35 @@
+serverally.firevps.net {
+	# The marketing site owns EXACTLY these paths — an allowlist, never a catch-all.
+	# Anything not listed falls through to the product app unchanged, which is what keeps
+	# /auth, /dashboard, /api, /ws, /mcp, /.well-known (the AI connection's discovery
+	# endpoints) and customers' public /status/... pages working exactly as before.
+	# `path /` matches only the bare root, not everything beneath it.
+	@marketing path / /pricing /how-it-works /trust /proof /site/*
+	handle @marketing {
+		root * /opt/serverally/marketing-site
+		try_files {path} {path}.html
+
+		# no-cache means "keep a copy, but ASK before reusing it" — not "never store".
+		# With the ETag Caddy already sends, that check costs one 304 with no body.
+		# Without this header a browser invents its own expiry, which is why anyone who
+		# visited this address before the marketing site existed still gets served the
+		# old app page from cache and is bounced to /auth. It also means an edit to the
+		# site would reach some visitors hours late. The stylesheet is not
+		# content-hashed, so it must revalidate in step with the HTML or a visitor can
+		# land on new markup wearing old styling.
+		header Cache-Control "no-cache"
+		file_server
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 20MB
+			roll_keep 3
+		}
+		format json
+	}
+}

@@ -249,6 +249,33 @@ docker compose -f docker-compose.prod.yml down
 > cannot be undone by redeploying the old code:
 > `docker compose -f docker-compose.prod.yml exec -T postgres pg_dump -U servermind servermind | gzip > ~/serverally-backups/db-$(date +%F-%H%M).sql.gz`
 
+### Web server routing (Caddy)
+
+Caddy terminates HTTPS and splits one hostname between two things:
+
+- **The marketing site** owns exactly `/`, `/pricing`, `/how-it-works`, `/trust`, `/proof`
+  and `/site/*`, served as static files from `marketing-site/` in this repo.
+- **Everything else** proxies to the app — `/auth`, `/dashboard`, `/api`, `/ws`, `/mcp`,
+  `/.well-known/*` and customers' public `/status/...` pages.
+
+It is an **allowlist**, not a catch-all: a path that is not named goes to the app, so adding
+a marketing page means adding it to the matcher. `path /` matches only the bare root.
+
+The live config is mirrored at [`deploy/Caddyfile`](deploy/Caddyfile) — copy it to
+`/etc/caddy/Caddyfile`, then **always validate before reloading**, because a bad config on a
+live site is a outage:
+
+```bash
+caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
+```
+
+Marketing responses carry `Cache-Control: no-cache`, which means "keep a copy but ask before
+reusing it" — not "never store". With Caddy's ETag that check costs one 304 with no body.
+Without it a browser invents its own expiry, and anyone who visited this address before the
+marketing site existed keeps getting the old app page from cache. The stylesheet is not
+content-hashed, so it must revalidate in step with the HTML or a visitor lands on new markup
+wearing old styling.
+
 ### The live deployment
 
 | | |
