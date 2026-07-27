@@ -64,6 +64,19 @@
         </a>
       </div>
 
+      <!-- Fills the space the evidence strip left, and answers the first question a
+           visitor actually has: will it work with MINE? Names only — no claims to
+           verify, nothing that goes stale, and true of the product today. -->
+      <div class="hero-works">
+        <p class="hero-works-cap">Works with the servers you already have</p>
+        <ul class="hero-works-list">
+          <li>Ubuntu</li><li>Debian</li><li>AlmaLinux</li><li>Rocky</li>
+          <li>Windows Server</li><li>CyberPanel</li><li>cPanel</li><li>Plesk</li>
+          <li>AWS</li><li>DigitalOcean</li><li>Hetzner</li>
+          <li class="is-more">+ more</li>
+        </ul>
+      </div>
+
     </div>
 
     <!-- The collage: light drawn panels on dark ground, ambient drift, cropping off the edge -->
@@ -80,11 +93,24 @@
               <stop offset="0" stop-color="#241C7A"></stop>
               <stop offset="1" stop-color="#0C0A2B"></stop>
             </linearGradient>
+            <!-- The curve is widest at the top, which is exactly where it swallowed a
+                 whole panel. This mask thins it there so panels read THROUGH the shape
+                 as they pass, and returns it to full strength lower down where the
+                 headline sits and legibility matters more than the glimpse. -->
+            <linearGradient id="carvefade" x1="0" y1="0" x2="0" y2="840" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#fff" stop-opacity="0.55"></stop>
+              <stop offset="0.18" stop-color="#fff" stop-opacity="0.82"></stop>
+              <stop offset="0.34" stop-color="#fff" stop-opacity="1"></stop>
+              <stop offset="1" stop-color="#fff" stop-opacity="1"></stop>
+            </linearGradient>
+            <mask id="carvemask">
+              <rect x="0" y="0" width="353" height="840" fill="url(#carvefade)"></rect>
+            </mask>
           </defs>
           <path d="M0 840 V0 H353
                    C330 26 268 88 196 152
                    C116 236 126 368 126 558
-                   C126 714 60 796 0 840 Z" fill="url(#carveg)"></path>
+                   C126 714 60 796 0 840 Z" fill="url(#carveg)" mask="url(#carvemask)"></path>
         </svg>
       </div>
       <div class="hero-glow"></div>

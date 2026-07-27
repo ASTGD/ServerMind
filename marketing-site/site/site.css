@@ -307,7 +307,7 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
      sits clear. (52/48 is the widest split that keeps a three-line headline, if that
      is ever wanted back.) */
   display: grid; grid-template-columns: 64fr 36fr; gap: 48px; align-items: center;
-  padding-block: 92px 104px; min-height: 640px;
+  padding-block: 104px 116px; min-height: 700px;
 }
 .hero-copy {
   display: grid; gap: 26px; justify-items: start;
@@ -317,6 +317,27 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
 .hero-copy h1 { color: #F4F6FB; }
 .hero-sub { font-size: 17px; line-height: 1.6; color: #A7B0C8; max-width: 46ch; }
 .hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; }
+
+/* "Works with" — the honest replacement for the customer-logo row a launch page
+   usually carries. We have no customers to name yet, but the platforms are real and
+   they answer the visitor's first question before they have to ask it. */
+.hero-works { margin-top: 6px; }
+.hero-works-cap {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+  color: #7F8AA6; margin-bottom: 12px;
+}
+.hero-works-list {
+  display: flex; flex-wrap: wrap; gap: 8px 10px;
+  list-style: none; margin: 0; padding: 0;
+}
+.hero-works-list li {
+  font-size: 13px; font-weight: 500; color: #B9C2D6;
+  padding: 5px 11px; border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.20);
+  background: rgba(148, 163, 184, 0.06);
+  white-space: nowrap;
+}
+.hero-works-list .is-more { border-style: dashed; color: #8B96AD; background: none; }
 
 /* Evidence strip — our replacement for a logo strip (we have no customers; these are real) */
 .evidence { display: grid; gap: 12px; margin-top: 14px; }
