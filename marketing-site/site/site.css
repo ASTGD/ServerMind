@@ -746,16 +746,25 @@ html:not(.no-js) .chat-msg:not(.shown) { display: none; }
      close enough to leave the panels bright. The first attempt used a 220% circle,
      which put the apex at 64% and swallowed the field. */
   top: 50%;
-  left: -58%;
-  width: 78%;
+  left: -62%;
+  width: 92%;   /* larger than the 78% geometric fit: the outer ~20% is now fade,
+                   so the circle must grow for the solid core to still seat the copy */
   aspect-ratio: 1;
   transform: translateY(-50%);
   border-radius: 50%;
   pointer-events: none;
   z-index: 1;
-  background: #0C0A2B;
-  /* the light rim that makes it read as carved rather than merely overlapping */
-  box-shadow:
-    inset -1px 0 0 rgba(196, 181, 253, 0.22),
-    22px 0 48px -26px rgba(139, 92, 246, 0.55);
+  /* The fill does the softening, NOT a blur — that is the whole trick, and it took
+     two wrong attempts to find. A blur filter destroys the curve's definition (attempt
+     one); a flat colour plus a 1px inset rim gives a hard opaque cut with no
+     transparency at all (attempt two). A radial gradient on a circular element fades
+     ALONG the arc: solid where the copy sits, then a soft translucent band that lets
+     the panels show through as they pass beneath, reaching zero exactly at the circle's
+     edge. The curve stays legible because the falloff follows its geometry. */
+  background: radial-gradient(closest-side,
+              #0C0A2B 62%,
+              rgba(12, 10, 43, 0.94) 76%,
+              rgba(12, 10, 43, 0.70) 86%,
+              rgba(12, 10, 43, 0.32) 94%,
+              rgba(12, 10, 43, 0) 100%);
 }
