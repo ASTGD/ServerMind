@@ -727,21 +727,35 @@ html:not(.no-js) .chat-msg:not(.shown) { display: none; }
           mask-image: linear-gradient(to right, transparent 0, #000 92px, #000 100%);
 }
 
-/* The carved cut. In the reference this curve is baked into their flat hero image;
-   ours has to be drawn, because our panels are live DOM. A single large blurred
-   ellipse, offset left and taller than the hero, gives the same soft arc sweeping
-   top-left to bottom-right — and it doubles as the gradient that keeps the headline
-   legible over whatever panel happens to be passing underneath it. */
+/* The carved cut. Compared side by side with the reference, the first attempt was
+   wrong in two ways: it DARKENED the panels into mud, and its edge was a 26px blur
+   with no defined line. The reference has a crisp arc — solid ground on the copy's
+   side, a clean curved boundary, and a faint light rim where the two meet.
+
+   Built as one enormous circle whose right edge is the only part that crosses the
+   hero. A circle that large reads as a gentle arc bulging right at the middle and
+   falling away top and bottom, which is exactly the reference's sweep, and its edge
+   stays razor sharp at any zoom because it is real geometry rather than a gradient
+   pretending to be one. No blur filter: the crispness IS the effect. */
 .hero-carve {
   position: absolute;
-  inset: -58% auto -58% -40%;
-  width: 74%;
+  /* Sized from the reference's own geometry rather than by eye. Its arc bulges about
+     200px across a 720px-tall hero; for a circular arc that is a radius of roughly
+     424px (R = c²/8s + s/2), i.e. a diameter near 78% of the field's width. Placing
+     the left edge at -58% puts the apex at 20% across — far enough to seat the copy,
+     close enough to leave the panels bright. The first attempt used a 220% circle,
+     which put the apex at 64% and swallowed the field. */
+  top: 50%;
+  left: -58%;
+  width: 78%;
+  aspect-ratio: 1;
+  transform: translateY(-50%);
+  border-radius: 50%;
   pointer-events: none;
   z-index: 1;
-  border-radius: 50%;
-  background: radial-gradient(closest-side,
-              rgba(12, 10, 43, 0.98) 42%,
-              rgba(12, 10, 43, 0.80) 68%,
-              rgba(12, 10, 43, 0) 100%);
-  filter: blur(26px);
+  background: #0C0A2B;
+  /* the light rim that makes it read as carved rather than merely overlapping */
+  box-shadow:
+    inset -1px 0 0 rgba(196, 181, 253, 0.22),
+    22px 0 48px -26px rgba(139, 92, 246, 0.55);
 }
