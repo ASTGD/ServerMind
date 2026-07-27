@@ -20,11 +20,12 @@
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
   --r-sm: 8px; --r-md: 12px; --r-lg: 16px;
-  /* 1152px left 281px of dead space each side on a 1728px screen and squeezed the
-     headline into a 497px column. The reference we match uses 1280px; 1320px gives
-     a little more without letting body text run to unreadable line lengths (the
-     text blocks keep their own narrower caps). Measured, not guessed. */
-  --container: 1320px;
+  /* Sized against the PM's actual 1920px screen, not my 1728px test window — the
+     difference matters: 1152px left 384px of dead space each side there, which is
+     what "too tight" meant. 1440px brings that to 233px and gives the headline a
+     672px column, within a hair of the 686px the reference we match uses. Body text
+     keeps its own narrower caps, so nothing stretches to an unreadable line. */
+  --container: 1440px;
 }
 
 /* Dark is the primary surface */
