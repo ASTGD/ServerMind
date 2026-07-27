@@ -329,6 +329,12 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
 .hero-works-list {
   display: flex; flex-wrap: wrap; gap: 8px 10px;
   list-style: none; margin: 0; padding: 0;
+  /* Capped well inside the copy column, NOT at its full 860px. The column is only the
+     layout box; the dark ground actually ends where the curve begins, which at this
+     height is ~190px sooner. Left to fill the column the row ran to 1101 while the
+     ground stopped at 1048, so the last pill sat on the curve. This also evens the
+     wrap to 6 and 6 instead of a lopsided 8 and 4. */
+  max-width: 680px;
 }
 .hero-works-list li {
   display: inline-flex; align-items: center; gap: 7px;
