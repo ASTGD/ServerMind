@@ -298,11 +298,15 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
    column against the reference's 686px, because the split was the other half of the
    problem. The visual bleeds to the viewport edge regardless, so it loses nothing. */
 .hero-grid {
-  /* 56/44 gives the copy 753px, up from 672. Measured trade-off: 52/48 (699px) is the
-     widest split that still breaks the headline over three lines; past that it sets in
-     two and the hero loses 44px of height. Widened deliberately at the PM's request —
-     revert to 52fr 48fr if the three-line headline is wanted back. */
-  display: grid; grid-template-columns: 56fr 44fr; gap: 48px; align-items: center;
+  /* 64/36. The headline's own length is fixed — it ends at the same x whatever this
+     split says, so widening the column does nothing for the text by itself. What it
+     moves is the panel field, and with it the curve. At 56/44 the curve began at 733
+     while the headline ran to 956, so the title's tail sat ON the curve's transition:
+     that is what read as cramped, not the column width. At 64/36 the curve begins at
+     890 and the dark ground extends past the headline at its own height, so the title
+     sits clear. (52/48 is the widest split that keeps a three-line headline, if that
+     is ever wanted back.) */
+  display: grid; grid-template-columns: 64fr 36fr; gap: 48px; align-items: center;
   padding-block: 92px 104px; min-height: 640px;
 }
 .hero-copy {
