@@ -278,11 +278,13 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
 
 /* ---------- Hero ---------- */
 .hero {
-  position: relative; overflow: hidden;
-  background:
-    radial-gradient(1100px 520px at 78% 18%, rgba(99, 102, 241, 0.16), transparent 62%),
-    radial-gradient(900px 600px at 12% 92%, rgba(59, 50, 176, 0.22), transparent 60%),
-    linear-gradient(178deg, #0B1020 4%, #0D0F2E 52%, #12123A 100%);
+  /* Measured on the reference: a FLAT deep indigo (#0D033B), no gradient wash at all.
+     Ours had two radial glows plus a linear gradient, which read as a soft haze where
+     the reference reads as a solid stage. Same idea in our own palette rather than
+     their exact hex — the pattern is the thing we are matching, not their brand. */
+  position: relative;
+  overflow: hidden;
+  background: #0C0A2B;
   color: #E7EBF5;
 }
 .hero .eyebrow { color: #A7B0C8; }
@@ -315,7 +317,27 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
 .evidence-item .ok { color: #4ADE80; }
 
 /* The collage — bleeds to the viewport's right edge; .hero{overflow:hidden} crops it */
-.hero-visual { position: relative; height: 620px; min-width: 0; margin-right: calc(50% - 50vw); }
+.hero-visual {
+  /* The reference's single biggest structural move, and the one we were missing: the
+     visual half is its OWN block — measured 953x720 starting at x=953 on a 1920 screen,
+     a translucent lighter tint, overflow hidden. It gives the hero a clean vertical
+     edge down the middle and makes the panels read as a product stage rather than
+     cards floating loose on the page background. */
+  position: relative;
+  min-width: 0;
+  /* Full-bleed on three sides. The reference's block touches the top and bottom of
+     the hero and runs off the right edge; ours floated with a gap above and below,
+     which made it read as a card rather than a stage. align-self:stretch fills the
+     grid row, and the negative block margins cancel the hero's own vertical padding. */
+  align-self: stretch;
+  min-height: 620px;
+  margin-block: -92px -104px;
+  margin-right: calc(50% - 50vw);
+  background: rgba(99, 102, 241, 0.10);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 92px, #000 100%);
+          mask-image: linear-gradient(to right, transparent 0, #000 92px, #000 100%);
+}
 .hero-glow {
   position: absolute; inset: -16% -28% -16% -10%; pointer-events: none;
   background:
@@ -327,11 +349,11 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
 .hero-arc { position: absolute; inset: 0; pointer-events: none; opacity: 0.8; }
 .collage { position: relative; flex: 0 0 var(--collage-w); width: var(--collage-w); height: 100%; }
 .collage .panel { position: absolute; will-change: transform; }
-.cp-chat   { width: 330px; left: 0;     top: 36px;  z-index: 3; rotate: -2deg;   animation: drift-b 75s linear infinite; }
-.cp-mission{ width: 350px; left: 212px; top: 206px; z-index: 4; rotate: 1.2deg;  animation: drift-a 45s linear infinite; }
-.cp-result { width: 336px; right: -112px; top: -14px; z-index: 2; rotate: 2.4deg;  animation: drift-c 60s linear infinite; }
-.cp-donut  { width: 226px; left: 56px;  top: 414px; z-index: 2; rotate: 1.8deg;  animation: drift-d 90s linear infinite; }
-.cp-table  { width: 408px; right: -148px; top: 452px; z-index: 3; rotate: -1.6deg; animation: drift-c 82s linear infinite reverse; }
+.cp-chat   { width: 330px; left: 0;     top: 36px;  z-index: 3;   animation: drift-b 75s linear infinite; }
+.cp-mission{ width: 350px; left: 212px; top: 206px; z-index: 4;  animation: drift-a 45s linear infinite; }
+.cp-result { width: 336px; right: -112px; top: -14px; z-index: 2;  animation: drift-c 60s linear infinite; }
+.cp-donut  { width: 226px; left: 56px;  top: 414px; z-index: 2;  animation: drift-d 90s linear infinite; }
+.cp-table  { width: 408px; right: -148px; top: 452px; z-index: 3; animation: drift-c 82s linear infinite reverse; }
 
 /* The whole collage glides diagonally — the OpenReplay move (60s · linear · infinite),
    as a closed lens-shaped loop so there is no seam and no visible reversal. */
@@ -638,6 +660,10 @@ html:not(.no-js) .chat-msg:not(.shown) { display: none; }
    `linear` matters as much as the duration: with any easing the eye sees it
    start and stop, and the spell breaks. Each panel keeps its own slow drift on
    top of this, which is the depth a single flat image cannot give.            */
+/* Tried scaling the copy 1.22x to match the reference's larger panels. It looked worse:
+   the composition became wider than the visible half, so fewer panels fit and a bare
+   patch crossed the frame. The reference reads the way it does because of the tinted
+   block and the axis-aligned panels, not the panel size. Density wins. */
 :root { --collage-w: 940px; }   /* content spans 967px, so copies overlap ~27px
                                    and the density never dips as one copy hands
                                    over to the next. Tuned live, not guessed. */
