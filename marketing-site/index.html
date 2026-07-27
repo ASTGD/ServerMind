@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js" data-theme="dark"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ServerAlly — Manage any server in plain English</title>
+<meta name="description" content="ServerAlly is your AI companion for Linux, Windows, hosting panels, and cloud. Tell it what you want — it plans the steps, runs them safely, and explains what it did.">
+<link rel="icon" type="image/svg+xml" href="site/asset-be24472a.svg">
+<link rel="stylesheet" href="/site/site.css">
+<script>try{document.documentElement.setAttribute('data-theme',localStorage.getItem('sa-theme')==='light'?'light':'dark')}catch(e){}</script>
+</head>
+<body>
+
+<header class="site-nav">
+  <div class="container nav-inner">
+    <a class="brand" href="/" aria-label="ServerAlly home">
+      <img class="mark" src="site/asset-be24472a.svg" alt="" width="32" height="32">
+      <span class="word">Server<b>Ally</b></span>
+    </a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="/" aria-current="page">Home</a>
+      <a href="/how-it-works">How it works</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/trust">Security</a>
+      <a href="/proof">Proof</a>
+    </nav>
+    <div class="nav-actions">
+      <button class="icon-btn" type="button" data-theme-toggle="" aria-label="Toggle light and dark theme">
+        <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"></path></svg>
+        <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"></path></svg>
+      </button>
+      <a class="btn btn-ghost" href="/how-it-works">See how it works</a>
+      <a class="btn btn-fill" href="/auth">Try for Free</a>
+      <button class="icon-btn nav-burger" type="button" aria-expanded="false" aria-label="Open menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+      </button>
+    </div>
+  </div>
+  <nav class="mobile-menu container" aria-label="Mobile">
+    <a href="/">Home</a>
+    <a href="/how-it-works">How it works</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/trust">Security</a>
+    <a href="/proof">Proof</a>
+    <a href="/auth"><strong>Try for Free</strong></a>
+  </nav>
+</header>
+
+<main>
+
+<!-- ============ HERO ============ -->
+<section class="hero on-dark">
+  <div class="container hero-grid">
+    <div class="hero-copy">
+      <span class="badge-early" style="background: rgba(13,20,46,.6); border-color: rgba(148,163,184,.28); color:#C0C8DC;"><span class="dot"></span>Early access</span>
+      <h1>Manage any server in plain English.</h1>
+      <p class="hero-sub">ServerAlly is your AI companion for Linux, Windows, hosting panels, and cloud. Tell it what you want — it plans the steps, runs them safely, and explains what it did. No terminal required.</p>
+      <div class="hero-ctas">
+        <a class="btn btn-fill btn-lg" href="/auth">Try for Free
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+        </a>
+        <a class="btn btn-ghost btn-lg" href="/how-it-works">
+          <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"></path></svg>
+          See how it works
+        </a>
+      </div>
+      <div class="evidence">
+        <p class="evidence-cap">Tested against real, actively-compromised production servers</p>
+        <div class="evidence-row">
+          <span class="evidence-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="12" rx="2"></rect><path d="M3 8l2-4h14l2 4M12 12v4"></path></svg>13 webshells quarantined — moved, never deleted</span>
+          <span class="evidence-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="3.5"></circle><path d="M4 20c0-3.3 2.7-6 6-6s6 2.7 6 6M17 5l4 4M21 5l-4 4"></path></svg>5 fake admin accounts found — one posing as root</span>
+          <span class="evidence-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2"></circle><path d="M12 4a8 8 0 0 1 8 8M12 8a4 4 0 0 1 4 4"></path></svg>Caught a live crypto-miner calling home</span>
+          <span class="evidence-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 6l12 12"></path></svg>Refused a live prompt-injection attempt</span>
+          <span class="evidence-item"><svg class="ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>Every mission independently verified</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- The collage: light drawn panels on dark ground, ambient drift, cropping off the edge -->
+    <div class="hero-visual" aria-hidden="true">
+      <div class="hero-glow"></div>
+      <svg class="hero-arc" viewBox="0 0 700 620" fill="none" preserveAspectRatio="xMidYMid slice" style="filter: blur(26px);">
+        <defs>
+          <linearGradient id="arcg" x1="0" y1="620" x2="700" y2="0" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#3B32B0" stop-opacity="0"></stop>
+            <stop offset="0.45" stop-color="#8B5CF6" stop-opacity="0.6"></stop>
+            <stop offset="1" stop-color="#A855F7" stop-opacity="0.2"></stop>
+          </linearGradient>
+        </defs>
+        <path d="M-60 580 Q 280 480 420 230 Q 500 90 800 30" stroke="url(#arcg)" stroke-width="170" stroke-linecap="round"></path>
+      </svg>
+
+      <div class="collage">
+        <!-- Ally chat -->
+        <div class="panel cp-chat">
+          <div class="panel-head">
+            <span class="ally-avatar"><svg viewBox="0 0 24 24" fill="#fff"><path d="M12 3l1.9 7.1L21 12l-7.1 1.9L12 21l-1.9-7.1L3 12l7.1-1.9z"></path></svg></span>
+            Ally
+            <span class="spacer"></span>
+            <span class="p-chip p-chip-server"><span class="dot"></span>web-01</span>
+          </div>
+          <div class="panel-pad" style="display:grid; gap:8px;">
+            <div class="bubble-user">Help! I think my website got hacked 😩</div>
+            <div class="bubble-ally">I've got you. First I'll take a safe look around — I won't change a single thing yet, just investigate.</div>
+            <div class="bubble-ally">You're right — someone got in. There's a hidden malicious file in your uploads folder and a scheduled task left behind to reinfect you.</div>
+          </div>
+        </div>
+
+        <!-- Mission card -->
+        <div class="panel cp-mission">
+          <div class="panel-head">
+            Mission
+            <span class="p-chip p-chip-runbook">incident-response</span>
+            <span class="spacer"></span>
+            <span class="muted-ink" style="font-size:11px;">4 steps</span>
+          </div>
+          <div class="panel-pad">
+            <p style="font-weight:600; margin-bottom:8px;">Clean the malware on northwind-shop.com — quarantine, never delete.</p>
+            <div class="mission-step"><span class="step-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span>Scout read-only for webshell signatures</span></div>
+            <div class="mission-step"><span class="step-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span>Save an evidence copy of every suspect file</span></div>
+            <div class="mission-step"><span class="step-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span>Quarantine 13 items with <span class="mono">mv</span> — never <span class="mono">rm</span></span></div>
+            <div class="mission-step running-row"><span class="step-run"></span><span style="color:#4338CA; font-weight:500;">Re-scan and load the site to verify the fix…</span></div>
+          </div>
+        </div>
+
+        <!-- Result card -->
+        <div class="panel cp-result">
+          <div class="panel-head">
+            Mission result
+            <span class="spacer"></span>
+            <span class="p-chip p-chip-verify land"><svg style="width:11px;height:11px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>Verified</span>
+          </div>
+          <div class="panel-pad" style="display:grid; gap:10px;">
+            <div>
+              <span class="p-chip" style="background:#FEF2F2;border-color:#FECACA;color:#B91C1C;">Found</span>
+              <ul class="result-list">
+                <li><span class="k" style="background:#EF4444;"></span>11 webshell copies + 2 malware folders</li>
+                <li><span class="k" style="background:#EF4444;"></span>5 fake admin accounts — one posing as <span class="mono">root</span></li>
+              </ul>
+            </div>
+            <div>
+              <span class="p-chip" style="background:#F5F3FF;border-color:#DDD6FE;color:#6D28D9;">Ally did</span>
+              <ul class="result-list">
+                <li><span class="k" style="background:#8B5CF6;"></span>Moved all 13 items to a locked quarantine — reversible</li>
+                <li><span class="k" style="background:#8B5CF6;"></span>Re-checked the site: loads clean, HTTP 200</li>
+              </ul>
+            </div>
+            <div>
+              <span class="p-chip">Left for you</span>
+              <ul class="result-list">
+                <li><span class="k" style="background:#94A3B8;"></span>Rotate passwords · approve removing the fake admins</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fleet donut -->
+        <div class="panel cp-donut">
+          <div class="panel-head">Fleet health</div>
+          <div class="panel-pad" style="display:grid; justify-items:center; gap:10px;">
+            <svg width="128" height="128" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="44" fill="none" stroke="#EEF2F7" stroke-width="13"></circle>
+              <circle cx="60" cy="60" r="44" fill="none" stroke="#22C55E" stroke-width="13" stroke-linecap="butt" stroke-dasharray="138.2 276.5" transform="rotate(-90 60 60)"></circle>
+              <circle cx="60" cy="60" r="44" fill="none" stroke="#F59E0B" stroke-width="13" stroke-linecap="butt" stroke-dasharray="69.1 276.5" transform="rotate(90 60 60)"></circle>
+              <circle cx="60" cy="60" r="44" fill="none" stroke="#EF4444" stroke-width="13" stroke-linecap="butt" stroke-dasharray="69.1 276.5" transform="rotate(180 60 60)"></circle>
+              <text x="60" y="58" text-anchor="middle" font-family="Avenir Next, Segoe UI, system-ui, sans-serif" font-size="26" font-weight="800" fill="#0F172A">72</text>
+              <text x="60" y="76" text-anchor="middle" font-family="Avenir Next, Segoe UI, system-ui, sans-serif" font-size="10" fill="#64748B">avg score</text>
+            </svg>
+            <div style="display:flex; gap:10px; font-size:11px; color:#475569;">
+              <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#22C55E;display:inline-block;"></span>2 healthy</span>
+              <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#F59E0B;display:inline-block;"></span>1 fair</span>
+              <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#EF4444;display:inline-block;"></span>1 at-risk</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quarantine table -->
+        <div class="panel cp-table">
+          <div class="panel-head">
+            Quarantined webshell files
+            <span class="spacer"></span>
+            <span class="p-chip p-chip-ok">13 items · moved, never deleted</span>
+          </div>
+          <div class="panel-pad" style="padding-top:6px;">
+            <table class="p-table">
+              <thead><tr><th>Item</th><th>Type</th><th>Original location</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">cjkcawqr.php</td><td>webshell</td><td class="mono">~/public_html/</td></tr>
+                <tr><td class="mono">8f3a2c.php</td><td>webshell</td><td class="mono">~/public_html/uploads/</td></tr>
+                <tr><td class="mono">a41c9/</td><td>malware folder</td><td class="mono">~/public_html/</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HOW IT WORKS (3 steps) ============ -->
+<section class="section">
+  <div class="container">
+    <div class="section-head" data-reveal="">
+      <span class="eyebrow">How it works</span>
+      <h2>Three steps. No terminal.</h2>
+    </div>
+    <div class="cards-3">
+      <div class="card" data-reveal="">
+        <span class="step-num">1</span>
+        <h3>Connect your server.</h3>
+        <p class="muted">Add a Linux box, a Windows server, a cPanel/CyberPanel account, or a whole cloud account. Your login is encrypted — Ally connects, you never touch a config file.</p>
+      </div>
+      <div class="card" data-reveal="">
+        <span class="step-num">2</span>
+        <h3>Just ask.</h3>
+        <p class="muted">Type what you want ("install WordPress," "my site is down," "set up nightly backups"). Ally reads the server, proposes a plan, and shows you before it runs anything.</p>
+      </div>
+      <div class="card" data-reveal="">
+        <span class="step-num">3</span>
+        <h3>Approve & relax.</h3>
+        <p class="muted">Ally does the work step-by-step, checks that it actually worked, and explains it in plain English. Risky steps always wait for your OK.</p>
+      </div>
+    </div>
+    <p class="small muted" style="margin-top:28px;" data-reveal="">Watch the whole thing, message by message → <a href="/how-it-works">See how Ally works</a></p>
+  </div>
+</section>
+
+<!-- ============ FEATURES ============ -->
+<section class="section" style="padding-top:24px;">
+  <div class="container">
+    <div class="feature-row" data-reveal="">
+      <div class="fr-copy">
+        <span class="eyebrow">Plain English in</span>
+        <h3 style="font-size:28px;">Talk to your server like a person</h3>
+        <p>Forget SSH, man pages, and Stack Overflow. Ally understands "why is my site slow?" the same way a sysadmin would — it looks at the real server, finds the cause, and fixes it with your approval. Answers in your language (8 supported).</p>
+      </div>
+      <div class="fr-visual">
+        <div class="panel fx" style="max-width:420px; margin-inline:auto;">
+          <div class="panel-head">
+            <span class="ally-avatar"><svg viewBox="0 0 24 24" fill="#fff"><path d="M12 3l1.9 7.1L21 12l-7.1 1.9L12 21l-1.9-7.1L3 12l7.1-1.9z"></path></svg></span>
+            Ally <span class="spacer"></span><span class="p-chip p-chip-server"><span class="dot"></span>shop-vps</span>
+          </div>
+          <div class="panel-pad" style="display:flex; flex-direction:column; gap:10px; animation: demoFade 12s linear infinite;">
+            <div style="display:flex; justify-content:flex-end; animation: kW4 12s linear infinite;">
+              <div class="bubble-user">My website is showing an error and customers can't check out 😫</div>
+            </div>
+            <div style="position:relative;">
+              <div class="fx-dots" style="position:absolute; left:0; top:2px; display:inline-flex; gap:4px; background:#F1F5F9; border-radius:12px; padding:11px 14px; animation: kDots 12s linear infinite;">
+                <span style="width:6px;height:6px;border-radius:50%;background:#94A3B8; animation: kBounce 0.7s ease-in-out infinite;"></span>
+                <span style="width:6px;height:6px;border-radius:50%;background:#94A3B8; animation: kBounce 0.7s ease-in-out 0.15s infinite;"></span>
+                <span style="width:6px;height:6px;border-radius:50%;background:#94A3B8; animation: kBounce 0.7s ease-in-out 0.3s infinite;"></span>
+              </div>
+              <div class="bubble-ally" style="animation: kW24 12s linear infinite;">Let me take a live look right now… it's returning a "500" error, and your site can't reach its database — the saved password doesn't match. That's the cause.</div>
+            </div>
+            <div class="bubble-ally" style="animation: kW34 12s linear infinite;">It's a safe fix and I'll test the site right after. Go ahead?</div>
+            <div style="display:flex; gap:8px; animation: kW40 12s linear infinite;">
+              <span class="fx-btn" style="animation: kFillA 12s linear infinite;">Approve fix</span>
+              <span class="fx-ghost">Not now</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:7px; animation: kW62 12s linear infinite;">
+              <span class="step-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+              <span style="font-size:12.5px; font-weight:500; color:#16A34A;">Fixed & verified — your site and checkout are back.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-row" data-reveal="">
+      <div class="fr-visual">
+        <div class="panel fx" style="max-width:420px; margin-inline:auto;">
+          <div class="panel-head">Mission <span class="p-chip p-chip-runbook">host-website</span><span class="spacer"></span><span class="p-chip">Web-01</span></div>
+          <div class="panel-pad" style="animation: demoFade 12s linear infinite;">
+            <p style="font-weight:600; margin-bottom:10px;">Set up a WordPress blog at blog.mysite.com</p>
+            <div style="height:6px; border-radius:999px; background:#F1F5F9; overflow:hidden;">
+              <div style="height:100%; border-radius:999px; background:linear-gradient(90deg,#6366F1,#8B5CF6,#A855F7); animation: kProg 12s linear infinite;"></div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:12px; margin-top:16px;">
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span style="position:relative; width:19px; height:19px; flex:none;">
+                  <span style="position:absolute; inset:0; border:2px solid #C7D2FE; border-top-color:#5048E5; border-radius:999px; animation: spin 0.8s linear infinite, kSpinW1 12s linear infinite;"></span>
+                  <span style="position:absolute; inset:0; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; background:#DCFCE7; color:#16A34A; animation: kW17 12s linear infinite;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+                </span>
+                <span style="font-size:13px; color:#334155;">Create the site & its database</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span style="position:relative; width:19px; height:19px; flex:none;">
+                  <span style="position:absolute; inset:0; border:2px solid #C7D2FE; border-top-color:#5048E5; border-radius:999px; animation: spin 0.8s linear infinite, kSpinW2 12s linear infinite;"></span>
+                  <span style="position:absolute; inset:0; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; background:#DCFCE7; color:#16A34A; animation: kW34 12s linear infinite;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+                </span>
+                <span style="font-size:13px; color:#334155;">Install WordPress</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span style="position:relative; width:19px; height:19px; flex:none;">
+                  <span style="position:absolute; inset:0; border:2px solid #C7D2FE; border-top-color:#5048E5; border-radius:999px; animation: spin 0.8s linear infinite, kSpinW3 12s linear infinite;"></span>
+                  <span style="position:absolute; inset:0; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; background:#DCFCE7; color:#16A34A; animation: kW51 12s linear infinite;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+                </span>
+                <span style="font-size:13px; color:#334155;">Switch on the secure padlock (HTTPS)</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span style="position:relative; width:19px; height:19px; flex:none;">
+                  <span style="position:absolute; inset:0; border:2px solid #C7D2FE; border-top-color:#5048E5; border-radius:999px; animation: spin 0.8s linear infinite, kSpinW4 12s linear infinite;"></span>
+                  <span style="position:absolute; inset:0; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; background:#DCFCE7; color:#16A34A; animation: kW68 12s linear infinite;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+                </span>
+                <span style="font-size:13px; color:#334155;"><strong>Verify:</strong> open the homepage & the login page</span>
+              </div>
+            </div>
+            <div style="display:inline-flex; align-items:center; gap:7px; margin-top:16px; font-size:12.5px; font-weight:600; color:#16A34A; background:#F0FDF4; border:1px solid #BBF7D0; border-radius:999px; padding:6px 14px; animation: kW74 12s linear infinite;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+              Verified — live at blog.mysite.com with HTTPS
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="fr-copy">
+        <span class="eyebrow">Whole jobs, not commands</span>
+        <h3 style="font-size:28px;">It does the whole job — not just one command</h3>
+        <p>Ask Ally to <em>host a WordPress site</em> or <em>clean up a hacked server</em> and it runs the entire job: plan a step, do it, check the result, decide the next one. It won't tell you "done" until it has <strong>proof</strong> the job actually worked.</p>
+      </div>
+    </div>
+
+    <div class="feature-row" data-reveal="">
+      <div class="fr-copy">
+        <span class="eyebrow">Safety built in</span>
+        <h3 style="font-size:28px;">Safe by design — and un-trickable</h3>
+        <p>Ally blocks dangerous commands, asks before anything it can't undo, and verifies its own work. It treats everything it reads on your server as information, not orders — so even a compromised server can't trick it into running malware. Your credentials are encrypted and never shown back.</p>
+        <p class="small"><a href="/trust">Read the security model →</a></p>
+      </div>
+      <div class="fr-visual">
+        <div class="panel fx" style="max-width:420px; margin-inline:auto;">
+          <div class="panel-head">Threat scan — web-01 <span class="spacer"></span><span class="p-chip" style="background:#EEF2FF;border-color:#C7D2FE;color:#5048E5;">read-only</span></div>
+          <div class="panel-pad" style="animation: demoFade 12s linear infinite;">
+            <div style="position:relative; border:1px solid #F1F5F9; border-radius:12px; padding:6px 0; overflow:hidden;">
+              <div style="position:absolute; left:0; right:0; top:6px; height:26px; background:linear-gradient(180deg, rgba(99,102,241,0.12), rgba(99,102,241,0)); border-top:2px solid rgba(99,102,241,0.45); animation: kBeamW 12s linear infinite;">
+                <div style="width:100%; height:100%; animation: kBeam 2.4s linear infinite;"></div>
+              </div>
+              <div style="display:flex; align-items:center; gap:9px; padding:8px 14px; animation: kW4 12s linear infinite;">
+                <span style="width:6px;height:6px;border-radius:50%;background:#94A3B8;flex:none;"></span>
+                <span class="mono" style="font-size:11.5px; color:#64748B;">scanning /var/www · cron · auth.log · processes…</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:9px; padding:8px 14px; animation: kW24 12s linear infinite;">
+                <span style="width:6px;height:6px;border-radius:50%;background:#EF4444;flex:none;"></span>
+                <span class="mono" style="font-size:11.5px; color:#B91C1C;">uploads/cjkcawqr.php — webshell signature found</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:9px; padding:8px 14px; animation: kW40 12s linear infinite;">
+                <span style="width:6px;height:6px;border-radius:50%;background:#F59E0B;flex:none;"></span>
+                <span style="font-size:12.5px; color:#92400E;">Waiting for your approval to quarantine</span>
+                <span class="fx-btn" style="margin-left:auto; border-radius:8px; padding:4px 11px; font-size:11.5px; animation: kFillA 12s linear infinite;">Approve</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:9px; padding:8px 14px; animation: kW57 12s linear infinite;">
+                <span style="display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:999px; background:#DCFCE7; color:#16A34A; flex:none;"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+                <span style="font-size:12.5px; color:#166534;">Quarantined — evidence preserved, nothing deleted</span>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; margin-top:14px; animation: kW74 12s linear infinite;">
+              <span style="display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:10px; background:linear-gradient(135deg,#6366F1,#8B5CF6); color:#fff; flex:none;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 7.7-7 9.5-4-1.8-7-4.9-7-9.5V6z"></path><path d="m9 12 2 2 4-4"></path></svg></span>
+              <div>
+                <p style="font-size:13px; font-weight:600; color:#0F172A;">Server secured</p>
+                <p style="font-size:11.5px; color:#64748B;">Incident report written in plain English — no jargon</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-row" data-reveal="">
+      <div class="fr-visual">
+        <div class="fx" style="max-width:460px; margin-inline:auto; background:#0F172A; border:1px solid #1E293B; border-radius:14px; box-shadow: 0 1px 2px rgba(2,8,23,.2), 0 28px 70px -28px rgba(2,8,23,.65); overflow:hidden;">
+          <div style="display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid #1E293B;">
+            <span style="width:10px;height:10px;border-radius:50%;background:#334155;"></span>
+            <span style="width:10px;height:10px;border-radius:50%;background:#334155;"></span>
+            <span style="width:10px;height:10px;border-radius:50%;background:#334155;"></span>
+            <span class="mono" style="margin-left:8px; font-size:12px; color:#64748B;">ssh · Web-01</span>
+            <span style="margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:500; color:#8B9CF9; background:rgba(139,156,249,0.12); border-radius:999px; padding:3px 9px; white-space:nowrap;">Ally is typing for you</span>
+          </div>
+          <div class="mono" style="padding:18px; font-size:12.5px; line-height:1.9; animation: demoFade 12s linear infinite;">
+            <div style="display:inline-flex; align-items:center; gap:7px; font-family:var(--font-body); font-size:12px; color:#C7D2FE; background:rgba(99,102,241,0.16); border:1px solid rgba(99,102,241,0.32); border-radius:999px; padding:5px 12px; margin-bottom:12px; animation: kW4 12s linear infinite;">
+              <img src="site/asset-be24472a.svg" alt="" style="width:14px; height:14px; display:block;">
+              You asked: "Set up a firewall on Web-01"
+            </div>
+            <p style="color:#E2E8F0; white-space:nowrap; overflow:hidden; animation: tT1 12s linear infinite;"><span style="color:#8B9CF9;">ally@web-01:~$</span> sudo apt-get install ufw -y</p>
+            <p style="color:#64748B; animation: kW17 12s linear infinite;">ufw installed <span style="color:#4ADE80;">✓</span></p>
+            <p style="color:#E2E8F0; white-space:nowrap; overflow:hidden; animation: tT2 12s linear infinite;"><span style="color:#8B9CF9;">ally@web-01:~$</span> sudo ufw allow 22,80,443/tcp</p>
+            <p style="color:#64748B; animation: kW34 12s linear infinite;">Rules updated</p>
+            <p style="color:#E2E8F0; white-space:nowrap; overflow:hidden; animation: tT3 12s linear infinite;"><span style="color:#8B9CF9;">ally@web-01:~$</span> sudo ufw enable</p>
+            <p style="color:#64748B; animation: kW45 12s linear infinite;">Firewall is active and enabled on system startup</p>
+            <p style="color:#4ADE80; animation: kW57 12s linear infinite;">✓ Verified — only ports 22, 80 and 443 are open</p>
+            <p style="color:#E2E8F0; animation: kW68 12s linear infinite;"><span style="color:#8B9CF9;">ally@web-01:~$</span> <span style="display:inline-block; width:8px; height:15px; background:#8B9CF9; vertical-align:text-bottom; animation: kBlink 1.1s steps(1) infinite;"></span></p>
+          </div>
+        </div>
+      </div>
+      <div class="fr-copy">
+        <span class="eyebrow">Under the hood</span>
+        <h3 style="font-size:28px;">Real SSH hands — no terminal required</h3>
+        <p>Ally connects over SSH, WinRM, or your panel's own API and does the typing for you — real commands, live output, and a plain-English explanation of every step.</p>
+        <p class="small muted">And when you want to look under the hood yourself, a full browser terminal is one click away.</p>
+      </div>
+    </div>
+
+    <div class="cards-2" style="margin-top:56px;">
+      <div class="card" data-reveal="">
+        <span class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"></path></svg></span>
+        <h3>It watches your servers so you don't have to</h3>
+        <p class="muted">ServerAlly quietly checks your fleet for health problems and signs of a hack, scores each server, and emails you what needs attention — with a one-click fix. You hear about the disk filling up <em>before</em> the site goes down.</p>
+      </div>
+      <div class="card" data-reveal="">
+        <span class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="7" rx="2"></rect><rect x="3" y="13" width="18" height="7" rx="2"></rect><path d="M7 7.5h.01M7 16.5h.01"></path></svg></span>
+        <h3>One companion for every kind of server</h3>
+        <p class="muted">Linux VPS, bare metal, Windows Server, cPanel / CyberPanel / Plesk hosting, or an entire AWS, DigitalOcean, Hetzner, Google Cloud, or Azure account. Add them all to one dashboard and let Ally manage them together.</p>
+        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:16px;">
+          <span class="chip">Linux</span><span class="chip">Windows Server</span><span class="chip">cPanel</span><span class="chip">CyberPanel</span><span class="chip">Plesk</span><span class="chip">AWS</span><span class="chip">DigitalOcean</span><span class="chip">Hetzner</span><span class="chip">Google Cloud</span><span class="chip">Azure</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SAFETY BAND ============ -->
+<section class="band-dark section on-dark">
+  <div class="container">
+    <div class="section-head" data-reveal="">
+      <span class="eyebrow" style="color:#A7B0C8;">Safety, always</span>
+      <h2>Root access, treated like it matters.</h2>
+      <p class="lede">Four promises, enforced in the product — not in the marketing.</p>
+    </div>
+    <div class="cards-4">
+      <div class="card" data-reveal="">
+        <span class="icon-tile" style="background:rgba(139,92,246,.16); color:#B7A6FB;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"></path><circle cx="12" cy="12" r="2.8"></circle></svg></span>
+        <h3 style="font-size:18px;">Looks before it touches</h3>
+        <p class="small">Investigates read-only first — changes nothing until you say so.</p>
+      </div>
+      <div class="card" data-reveal="">
+        <span class="icon-tile" style="background:rgba(139,92,246,.16); color:#B7A6FB;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="12" rx="2"></rect><path d="M3 8l2-4h14l2 4M12 12v4"></path></svg></span>
+        <h3 style="font-size:18px;">Never deletes</h3>
+        <p class="small">Moves things to a safe quarantine you can undo. No shredding.</p>
+      </div>
+      <div class="card" data-reveal="">
+        <span class="icon-tile" style="background:rgba(139,92,246,.16); color:#B7A6FB;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 7.7-7 9.5-4-1.8-7-4.9-7-9.5V6z"></path><path d="M12 10v3.5M12 16.5h.01"></path></svg></span>
+        <h3 style="font-size:18px;">Asks before anything risky</h3>
+        <p class="small">You approve; it never guesses on a dangerous step.</p>
+      </div>
+      <div class="card" data-reveal="">
+        <span class="icon-tile" style="background:rgba(34,197,94,.14); color:#4ADE80;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+        <h3 style="font-size:18px;">Proves it's done</h3>
+        <p class="small">Re-checks its own work and only shows ✓ Verified when it's truly fixed.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PROOF TEASER ============ -->
+<section class="section">
+  <div class="container">
+    <div class="feature-row" style="border:0; padding-block:0;" data-reveal="">
+      <div class="fr-copy">
+        <span class="eyebrow">Proven, not promised</span>
+        <h2 style="font-size:clamp(28px,3vw,38px);">We aimed Ally at a real hacked server. Here's what happened.</h2>
+        <p class="lede measure">A live production site, actively infected. Ally found the webshells, quarantined 13 items without deleting a single file, and verified the site came back clean — HTTP 200.</p>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:8px;">
+          <a class="btn btn-fill" href="/proof">Read the case study
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+          </a>
+        </div>
+      </div>
+      <div class="fr-visual">
+        <div style="display:grid; gap:12px; max-width:420px; margin-inline:auto;">
+          <div class="card" style="padding:18px 20px; display:flex; gap:14px; align-items:center;">
+            <strong class="num" style="font-family:var(--font-display); font-size:30px; letter-spacing:-0.02em;">404</strong>
+            <span class="small muted">automated safety tests guard every command before it can run</span>
+          </div>
+          <div class="card" style="padding:18px 20px; display:flex; gap:14px; align-items:center;">
+            <strong class="num" style="font-family:var(--font-display); font-size:30px; letter-spacing:-0.02em;">0</strong>
+            <span class="small muted">destructive actions taken during a full break-it red-team — including live hackers' hidden instructions</span>
+          </div>
+          <div class="card" style="padding:18px 20px; display:flex; gap:14px; align-items:center;">
+            <strong class="num" style="font-family:var(--font-display); font-size:30px; letter-spacing:-0.02em;"><$2</strong>
+            <span class="small muted">of AI spend for the entire break-it test campaign — careful <em>and</em> cheap</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CLOSING CTA ============ -->
+<section class="band-dark section on-dark" style="text-align:center;">
+  <div class="container" style="display:grid; justify-items:center; gap:22px;">
+    <h2 data-reveal="" style="font-size:clamp(34px,4.4vw,56px);">Your server, <span class="grad-text">handled.</span></h2>
+    <p class="lede measure" data-reveal="">Stop Googling commands and hoping for the best. Add your server, tell Ally what you need, and get back to your actual work.</p>
+    <div class="hero-ctas" data-reveal="" style="justify-content:center;">
+      <a class="btn btn-fill btn-lg" href="/auth">Try for Free
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+      </a>
+    </div>
+    <p class="small" style="color:#7E88A3;" data-reveal="">no credit card to try</p>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="/" aria-label="ServerAlly home">
+          <img class="mark" src="site/asset-be24472a.svg" alt="" width="28" height="28" style="width:28px;height:28px;">
+          <span class="word" style="font-size:18px;">Server<b>Ally</b></span>
+        </a>
+        <p class="small muted">Your AI companion to manage, automate, and secure any server — without the expertise.</p>
+      </div>
+      <div class="footer-links">
+        <div class="col">
+          <strong>Product</strong>
+          <a href="/how-it-works">How it works</a>
+          <a href="/pricing">Pricing</a>
+          <a href="/auth">Early access</a>
+        </div>
+        <div class="col">
+          <strong>Trust</strong>
+          <a href="/trust">Security</a>
+          <a href="/proof">Proof</a>
+          <a href="/pricing#promise">Our billing promise</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© <span data-year="">2026</span> ServerAlly · Early access</span>
+      <span>No cookies, no trackers, no third-party requests — this page phones no one.</span>
+    </div>
+  </div>
+</footer>
+
+
+
+<script src="site/asset-de18b6eb.js"></script>
+
+
+</body></html>

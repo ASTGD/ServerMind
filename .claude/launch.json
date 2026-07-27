@@ -19,6 +19,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["/Users/shafin/Documents/ServerMind/design-handoff/static-server.mjs"],
       "port": 8931
+    },
+    {
+      "name": "marketing-site",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/shafin/Documents/ServerMind/marketing-site/static-server.mjs"],
+      "port": 8932
     }
   ]
 }
