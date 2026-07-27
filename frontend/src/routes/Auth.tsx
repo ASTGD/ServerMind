@@ -84,9 +84,13 @@ export default function Auth() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm space-y-6">
-        {/* Logo */}
+        {/* Logo — links back to the marketing site. A plain <a>, not a react-router
+            <Link>: "/" is served by the marketing site, not by this app's router, so a
+            client-side navigation would be handled internally and go nowhere. */}
         <div className="flex justify-center">
-          <Logo size="lg" />
+          <a href="/" aria-label="ServerAlly home" className="rounded-lg transition-opacity hover:opacity-80">
+            <Logo size="lg" />
+          </a>
         </div>
 
         {/* Card */}
