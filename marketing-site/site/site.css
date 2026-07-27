@@ -1,3 +1,31 @@
+/* ---------- Self-hosted type -------------------------------------------------
+   Cabinet Grotesk + Switzer, the two families the marketing brief specified. Served
+   from our own origin, never a font CDN: this page fronts a product that holds root
+   credentials, and the standing rule is that it makes no external requests at all —
+   a font host would otherwise see every visitor's IP.
+
+   Both are free for commercial use under the ITF Free Font License (fontshare.com).
+
+   Until now the site loaded NO webfont and asked for "Avenir Next", which exists only
+   on macOS. Windows and Android visitors — most of the audience — were seeing an
+   entirely different headline from the one being designed and approved.
+
+   swap, not block: the text paints immediately in the fallback and upgrades when the
+   font arrives, so a slow connection never gets a blank hero. The two faces that set
+   the first screen are preloaded in the document head to keep that swap brief.      */
+@font-face { font-family: "Cabinet Grotesk"; font-weight: 700; font-style: normal;
+             font-display: swap; src: url("/site/fonts/cabinet-grotesk-700.woff2") format("woff2"); }
+@font-face { font-family: "Cabinet Grotesk"; font-weight: 800; font-style: normal;
+             font-display: swap; src: url("/site/fonts/cabinet-grotesk-800.woff2") format("woff2"); }
+@font-face { font-family: "Switzer"; font-weight: 400; font-style: normal;
+             font-display: swap; src: url("/site/fonts/switzer-400.woff2") format("woff2"); }
+@font-face { font-family: "Switzer"; font-weight: 500; font-style: normal;
+             font-display: swap; src: url("/site/fonts/switzer-500.woff2") format("woff2"); }
+@font-face { font-family: "Switzer"; font-weight: 600; font-style: normal;
+             font-display: swap; src: url("/site/fonts/switzer-600.woff2") format("woff2"); }
+@font-face { font-family: "Switzer"; font-weight: 700; font-style: normal;
+             font-display: swap; src: url("/site/fonts/switzer-700.woff2") format("woff2"); }
+
 /* ServerAlly marketing site — one shared stylesheet.
    Tokens from marketing-brief/03-brand.md. No external requests. */
 
@@ -15,8 +43,8 @@
   --navy-2: #12123A;
   --ink: #020817;
 
-  --font-display: "Avenir Next", Avenir, "Segoe UI Variable Display", Seravek, "Helvetica Neue", Helvetica, system-ui, -apple-system, sans-serif;
-  --font-body: "Avenir Next", Avenir, "Segoe UI Variable Text", "Segoe UI", Seravek, "Helvetica Neue", Helvetica, system-ui, -apple-system, sans-serif;
+  --font-display: "Cabinet Grotesk", "Avenir Next", Avenir, "Segoe UI Variable Display", Seravek, "Helvetica Neue", Helvetica, system-ui, -apple-system, sans-serif;
+  --font-body: "Switzer", "Avenir Next", Avenir, "Segoe UI Variable Text", "Segoe UI", Seravek, "Helvetica Neue", Helvetica, system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
   --r-sm: 8px; --r-md: 12px; --r-lg: 16px;
@@ -92,10 +120,15 @@ h1 {
      every fourth tick. Rather than drop the variant (control panels are a real part of
      what we manage) the type comes down, which also lands nearer the 60px the
      reference uses. 64px rather than 66: at 66 the longest variant cleared by only
-     11px, and with no webfont loaded a Windows visitor renders this in a different
-     typeface whose metrics could easily eat that. 64 leaves ~37px. Self-hosting a
-     font would make the metrics identical everywhere and let this go back up. */
-  font-size: clamp(40px, 4.6vw, 64px); font-weight: 800;
+     11px, and with no webfont loaded a Windows visitor rendered this in a different
+     typeface whose metrics could easily eat that.
+
+     Back up to 74px now that Cabinet Grotesk is self-hosted. Two things changed: the
+     metrics are identical on every machine, so a small margin is genuinely enough
+     rather than a guess; and Cabinet Grotesk is far narrower than the old macOS
+     fallback — the longest variant measures 685px against the fallback's 823px at
+     the same size. 74px puts it at 792px in an 860px column, ~68px clear. */
+  font-size: clamp(44px, 5.4vw, 74px); font-weight: 800;
   line-height: 0.98; letter-spacing: -0.025em;
 }
 h2 { font-size: clamp(30px, 3.6vw, 46px); font-weight: 800; line-height: 1.04; letter-spacing: -0.02em; }
