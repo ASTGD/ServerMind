@@ -727,44 +727,38 @@ html:not(.no-js) .chat-msg:not(.shown) { display: none; }
           mask-image: linear-gradient(to right, transparent 0, #000 92px, #000 100%);
 }
 
-/* The carved cut. Compared side by side with the reference, the first attempt was
-   wrong in two ways: it DARKENED the panels into mud, and its edge was a 26px blur
-   with no defined line. The reference has a crisp arc — solid ground on the copy's
-   side, a clean curved boundary, and a faint light rim where the two meet.
+/* The carved cut — TWO layers, which is how the reference actually does it. I read
+   its DOM rather than guessing a third time.
 
-   Built as one enormous circle whose right edge is the only part that crosses the
-   hero. A circle that large reads as a gentle arc bulging right at the middle and
-   falling away top and bottom, which is exactly the reference's sweep, and its edge
-   stays razor sharp at any zoom because it is real geometry rather than a gradient
-   pretending to be one. No blur filter: the crispness IS the effect. */
-.hero-carve {
+   My circle could never have worked. A circle is symmetric: widest at the middle,
+   falling away evenly above and below. Theirs is an S — widest at the TOP, pinched
+   to about a third of the way across through the MIDDLE, then flaring back out at
+   the BOTTOM. That is the opposite behaviour at every height, so no arc reproduces
+   it; it has to be a real path.
+
+   Layer 1 (.hero-veil) is a plain horizontal gradient over the left half — it dims
+   the panels progressively and has nothing to do with the curve.
+   Layer 2 (.hero-carve) is the path itself, brighter along its own edge, which is
+   what reads as "carved" rather than merely overlaid. */
+.hero-veil {
   position: absolute;
-  /* Sized from the reference's own geometry rather than by eye. Its arc bulges about
-     200px across a 720px-tall hero; for a circular arc that is a radius of roughly
-     424px (R = c²/8s + s/2), i.e. a diameter near 78% of the field's width. Placing
-     the left edge at -58% puts the apex at 20% across — far enough to seat the copy,
-     close enough to leave the panels bright. The first attempt used a 220% circle,
-     which put the apex at 64% and swallowed the field. */
-  top: 50%;
-  left: -62%;
-  width: 92%;   /* larger than the 78% geometric fit: the outer ~20% is now fade,
-                   so the circle must grow for the solid core to still seat the copy */
-  aspect-ratio: 1;
-  transform: translateY(-50%);
-  border-radius: 50%;
+  inset: 0 auto 0 0;
+  width: 52%;
   pointer-events: none;
   z-index: 1;
-  /* The fill does the softening, NOT a blur — that is the whole trick, and it took
-     two wrong attempts to find. A blur filter destroys the curve's definition (attempt
-     one); a flat colour plus a 1px inset rim gives a hard opaque cut with no
-     transparency at all (attempt two). A radial gradient on a circular element fades
-     ALONG the arc: solid where the copy sits, then a soft translucent band that lets
-     the panels show through as they pass beneath, reaching zero exactly at the circle's
-     edge. The curve stays legible because the falloff follows its geometry. */
-  background: radial-gradient(closest-side,
-              #0C0A2B 62%,
-              rgba(12, 10, 43, 0.94) 76%,
-              rgba(12, 10, 43, 0.70) 86%,
-              rgba(12, 10, 43, 0.32) 94%,
-              rgba(12, 10, 43, 0) 100%);
+  background: linear-gradient(to right, rgba(44, 34, 116, 0.92) 0%, rgba(44, 34, 116, 0) 100%);
 }
+.hero-carve {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  /* Measured against the reference's own proportions: its curve peaks ~28% across the
+     field, pinches to ~8%, and returns to the left edge. At 42% ours peaked at 38.8%
+     and pinched at 11.8% — the right shape at the wrong scale. 31% lands it on theirs. */
+  width: 31%;
+  min-width: 240px;
+  margin-left: -52px;      /* the path's flare must clear the left edge */
+  pointer-events: none;
+  z-index: 1;
+}
+.hero-carve svg { width: 100%; height: 100%; display: block; }

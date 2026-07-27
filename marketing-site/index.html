@@ -68,7 +68,25 @@
 
     <!-- The collage: light drawn panels on dark ground, ambient drift, cropping off the edge -->
     <div class="hero-visual" aria-hidden="true">
-      <div class="hero-carve"></div>
+      <div class="hero-veil"></div>
+      <div class="hero-carve">
+        <!-- The S-curve, authored to the same character the reference uses: widest at
+             the top, pinched to about a third across through the middle, flaring back
+             to the edge at the bottom. preserveAspectRatio="none" lets it stretch to
+             whatever height the hero ends up, so the shape never letterboxes. -->
+        <svg viewBox="0 0 353 840" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+          <defs>
+            <linearGradient id="carveg" x1="353" y1="90" x2="0" y2="150" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#241C7A"></stop>
+              <stop offset="1" stop-color="#0C0A2B"></stop>
+            </linearGradient>
+          </defs>
+          <path d="M0 840 V0 H353
+                   C330 26 268 88 196 152
+                   C116 236 126 368 126 558
+                   C126 714 60 796 0 840 Z" fill="url(#carveg)"></path>
+        </svg>
+      </div>
       <div class="hero-glow"></div>
       <svg class="hero-arc" viewBox="0 0 700 620" fill="none" preserveAspectRatio="xMidYMid slice" style="filter: blur(26px);">
         <defs>
