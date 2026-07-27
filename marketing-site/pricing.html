@@ -1,10 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" class="no-js" data-theme="dark"><head>
+<html lang="en" class="no-js" data-theme="dark">
+<head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pricing — ServerAlly</title>
-<meta name="description" content="ServerAlly is your AI companion for Linux, Windows, hosting panels, and cloud. Tell it what you want — it plans the steps, runs them safely, and explains what it did.">
-<link rel="icon" type="image/svg+xml" href="site/asset-be24472a.svg">
+<meta name="description" content="Free for 2 servers. Pro $9/mo for 10. Pro+ $19/mo for 50. Every plan includes Ally, every safety feature, and the option to bring your own AI.">
+<link rel="icon" type="image/svg+xml" href="/site/serverally-mark.svg">
+<link rel="preload" href="/site/fonts/cabinet-grotesk-800.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/site/fonts/switzer-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/site/site.css">
 <script>try{document.documentElement.setAttribute('data-theme',localStorage.getItem('sa-theme')==='light'?'light':'dark')}catch(e){}</script>
 </head>
@@ -13,18 +16,18 @@
 <header class="site-nav">
   <div class="container nav-inner">
     <a class="brand" href="/" aria-label="ServerAlly home">
-      <img class="mark" src="site/asset-be24472a.svg" alt="" width="32" height="32">
+      <img class="mark" src="/site/serverally-mark.svg" alt="" width="32" height="32">
       <span class="word">Server<b>Ally</b></span>
     </a>
     <nav class="nav-links" aria-label="Main">
-      <a href="/" aria-current="page">Home</a>
+      <a href="/">Home</a>
       <a href="/how-it-works">How it works</a>
       <a href="/pricing" aria-current="page">Pricing</a>
       <a href="/trust">Security</a>
       <a href="/proof">Proof</a>
     </nav>
     <div class="nav-actions">
-      <button class="icon-btn" type="button" data-theme-toggle="" aria-label="Toggle light and dark theme">
+      <button class="icon-btn" type="button" data-theme-toggle aria-label="Toggle light and dark theme">
         <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"></path></svg>
         <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"></path></svg>
       </button>
@@ -38,31 +41,153 @@
   <nav class="mobile-menu container" aria-label="Mobile">
     <a href="/">Home</a>
     <a href="/how-it-works">How it works</a>
-    <a href="/pricing" aria-current="page">Pricing</a>
+    <a href="/pricing">Pricing</a>
     <a href="/trust">Security</a>
     <a href="/proof">Proof</a>
     <a href="/auth"><strong>Try for Free</strong></a>
   </nav>
-</header><main>
-  <section class="section">
-    <div class="wrap" style="max-width:760px">
-      <p class="eyebrow">ServerAlly</p>
-      <h1 style="font-size:clamp(34px,5vw,54px);line-height:1.05;margin:.35em 0 .5em">Pricing</h1>
-      <p class="lede">Free, Pro and Pro+. Every safety feature on every plan, including free.</p>
-      <p class="muted" style="margin-top:2.5rem">
-        This page is being written. In the meantime,
-        <a href="/">the overview is on the home page</a>.
-      </p>
-      <p style="margin-top:2rem"><a class="btn btn-primary" href="/auth">Try for Free →</a></p>
+</header>
+
+<main>
+
+<section class="section-tight" style="padding-bottom:32px;">
+  <div class="container" style="display:grid; gap:18px; justify-items:start;">
+    <span class="badge-early"><span class="dot"></span>Early access — pricing may be refined before launch</span>
+    <h1 style="font-size:clamp(36px,4.6vw,60px); max-width:14ch;">Priced per server. <span class="grad-text">Your AI, your choice.</span></h1>
+    <p class="lede measure">The platform is priced by servers — the unit you already think in. The AI that powers Ally is a separate, honest choice: bring your own for free, or add ours.</p>
+  </div>
+</section>
+
+<section class="section-tight">
+  <div class="container">
+    <div class="section-head" style="margin-bottom:36px;">
+      <span class="eyebrow">Layer 1 · The platform</span>
+      <h2 style="font-size:clamp(24px,2.8vw,34px);">Three plans, per server.</h2>
     </div>
-  </section>
+    <div class="plans">
+      <div class="card plan" data-reveal>
+        <div><h3>Free</h3><p class="small muted">Try it for real — no credit card.</p></div>
+        <p class="price num">$0</p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span><strong>2 servers</strong></span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span><strong>20 Ally requests a month</strong></span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>Every server type — Linux, Windows, panels, cloud</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>Missions with approval + ✓ verification</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>Bring your own AI at no cost</span></li>
+        </ul>
+        <a class="btn btn-ghost" href="#early-access">Try for Free</a>
+      </div>
+      <div class="card plan plan-featured" data-reveal>
+        <span class="plan-flag">For most teams</span>
+        <div><h3>Pro</h3><p class="small muted">Room for a real fleet.</p></div>
+        <p class="price num">$9<small> /month</small></p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span><strong>10 servers</strong></span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span><strong>50 Ally requests a month</strong></span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>Everything in Free</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>One dashboard for the whole fleet</span></li>
+        </ul>
+        <a class="btn btn-fill" href="#early-access">Start with Pro</a>
+      </div>
+      <div class="card plan" data-reveal>
+        <div><h3>Pro+</h3><p class="small muted">For the people who run everyone else&rsquo;s servers.</p></div>
+        <p class="price num">$19<small> /month</small></p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span><strong>50 servers</strong></span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span><strong>100 Ally requests a month</strong></span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>Everything in Pro</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>Team roles — view, operate, or admin per server</span></li>
+        </ul>
+        <a class="btn btn-ghost" href="#early-access">Start with Pro+</a>
+      </div>
+    </div>
+    <div class="card" style="margin-top:20px; display:flex; flex-wrap:wrap; gap:10px 24px; align-items:center;" data-reveal>
+      <strong style="font-size:14px;">Every plan includes</strong>
+      <span class="chip">Plain-English control</span>
+      <span class="chip">Approval + ✓ verification on every job</span>
+      <span class="chip">Quarantine — never delete</span>
+      <span class="chip">Fleet health checks &amp; email alerts</span>
+      <span class="chip">AES-256-GCM credential encryption</span>
+      <span class="chip">8 languages</span>
+    </div>
+  </div>
+</section>
+
+<section class="section-tight">
+  <div class="container">
+    <div class="section-head" style="margin-bottom:36px;">
+      <span class="eyebrow">Layer 2 · The AI</span>
+      <h2 style="font-size:clamp(24px,2.8vw,34px);">Ally runs on an AI. You pick whose.</h2>
+      <p class="muted measure">Both lanes get the same Ally — the same safety model, the same verification. The only difference is whose AI account does the thinking.</p>
+    </div>
+    <div class="ai-lanes">
+      <div class="card plan" data-reveal>
+        <div><span class="chip chip-brand" style="margin-bottom:12px;">Bring your own</span>
+        <h3>Your AI, your account</h3></div>
+        <p class="price num">$0<small> · unlimited · your fuel</small></p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>Connect Claude or ChatGPT via <strong>MCP</strong></span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>Or paste your own API key</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>Use it as much as you like — it's your account</span></li>
+        </ul>
+      </div>
+      <div class="card plan" data-reveal>
+        <div><span class="chip chip-brand" style="margin-bottom:12px;">Ally included</span>
+        <h3>Our hosted AI, set up for you</h3></div>
+        <p class="price" style="font-size:26px;">Coming with early access</p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>Zero setup — it just works</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>One flat subscription · fair use</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg><span>Priced when early access opens — you'll see it before you pay it</span></li>
+        </ul>
+        <a class="btn btn-ghost" href="#early-access">Join the early-access list</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section-tight" id="promise">
+  <div class="container">
+    <div class="promise" data-reveal>
+      <span>"We will never send you a bill you didn't choose."</span>
+    </div>
+    <p class="small muted" style="text-align:center; margin-top:14px;">You pick the plan. You pick the AI. Nothing else ever appears on a bill.</p>
+  </div>
+</section>
+
+<section class="section-tight" id="early-access">
+  <div class="container">
+    <div class="card" style="display:grid; gap:16px; justify-items:center; text-align:center; padding:44px 28px;" data-reveal>
+      <span class="badge-early"><span class="dot"></span>Early access</span>
+      <h2 style="font-size:clamp(24px,3vw,34px);">Start free with 2 servers.</h2>
+      <p class="muted measure">No credit card to try. Add a server, ask Ally for something real, and watch it ask permission before anything risky.</p>
+      <a class="btn btn-fill btn-lg" href="/auth">Open ServerAlly <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+    </div>
+  </div>
+</section>
+
+<section class="section" style="padding-top:40px;">
+  <div class="container">
+    <div class="section-head"><span class="eyebrow">Questions</span><h2 style="font-size:clamp(24px,2.8vw,34px);">Fair questions, straight answers.</h2></div>
+    <div class="faq">
+      <details><summary>Do I need to know Linux or the command line?</summary><p class="a">No. That's the whole point. You describe what you want in plain English and Ally handles the commands. It explains everything it does in language anyone can follow.</p></details>
+      <details><summary>Is it safe to let an AI run commands on my server?</summary><p class="a">Yes — safety is built in, not bolted on. Ally blocks destructive commands, asks for your approval before anything risky, and verifies its own work before finishing. It also treats anything it reads on your server as data, not instructions, so a hacked server can't trick it. <a href="/trust">Read the security model →</a></p></details>
+      <details><summary>What kinds of servers does it work with?</summary><p class="a">Linux servers (Ubuntu, Debian, AlmaLinux, and more) over SSH, Windows Server over WinRM, hosting panels (CyberPanel, cPanel, Plesk, DirectAdmin), and cloud accounts (AWS, DigitalOcean, Hetzner, Google Cloud, Azure).</p></details>
+      <details><summary>How does Ally connect to my server?</summary><p class="a">You add your server once with its login details, which are encrypted (AES-256-GCM) before they're stored. Ally connects over the standard secure protocols (SSH / WinRM / the panel's own API). Your credentials are never shown back to you or anyone else after you save them.</p></details>
+      <details><summary>Can my team use it too?</summary><p class="a">Yes. Invite teammates and give each person access to specific servers with a role (view, operate, or admin). People with view-only access can never run commands.</p></details>
+      <details><summary>What does it cost?</summary><p class="a">There&rsquo;s a free plan to try it on a couple of servers, and Pro and Pro+ plans for managing more. Ally is included in every plan with a monthly allowance of requests &mdash; and you can connect your own AI account instead if you prefer.</p></details>
+    </div>
+  </div>
+</section>
+
 </main>
+
 <footer class="site-footer">
   <div class="container">
     <div class="footer-grid">
       <div class="footer-brand">
         <a class="brand" href="/" aria-label="ServerAlly home">
-          <img class="mark" src="site/asset-be24472a.svg" alt="" width="28" height="28" style="width:28px;height:28px;">
+          <img class="mark" src="/site/serverally-mark.svg" alt="" width="28" height="28" style="width:28px;height:28px;">
           <span class="word" style="font-size:18px;">Server<b>Ally</b></span>
         </a>
         <p class="small muted">Your AI companion to manage, automate, and secure any server — without the expertise.</p>
@@ -83,15 +208,30 @@
       </div>
     </div>
     <div class="footer-bottom">
-      <span>© <span data-year="">2026</span> ServerAlly · Early access</span>
+      <span>© <span data-year>2026</span> ServerAlly · Early access</span>
       <span>No cookies, no trackers, no third-party requests — this page phones no one.</span>
     </div>
   </div>
 </footer>
 
 
+<template id="__bundler_thumbnail" data-bg-color="#0B1020">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="tg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#6366F1"></stop>
+        <stop offset="1" stop-color="#A855F7"></stop>
+      </linearGradient>
+    </defs>
+    <rect width="1200" height="800" fill="#0B1020"></rect>
+    <g transform="translate(600 400) scale(11) translate(-20 -20)">
+      <rect x="2" y="2" width="36" height="36" rx="11" fill="url(#tg)"></rect>
+      <path d="M12 11 Q12 10 13 10 L27 10 Q28 10 28 11 V19 Q28 25.5 20 31 Q12 25.5 12 19 Z" fill="#FFFFFF"></path>
+      <path d="M20 13 Q20.5 17.3 24.3 18.3 Q20.5 19.3 20 23.5 Q19.5 19.3 15.7 18.3 Q20.5 17.3 20 13 Z" fill="#7C3AED"></path>
+    </g>
+  </svg>
+</template>
 
-<script src="site/asset-de18b6eb.js"></script>
-
-
-</body></html>
+<script src="/site/site.js"></script>
+</body>
+</html>

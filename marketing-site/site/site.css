@@ -910,3 +910,26 @@ html:not(.no-js) .chat-msg:not(.shown) { display: none; }
   transform: translateY(0.42em); opacity: 0;
   transition: none;
 }
+
+/* ---------- Feature-row cards --------------------------------------------------
+   These sit in a 668px column but were capped at 420px inline, filling 63% of it and
+   leaving the product text at 11-13px — small enough that the thing the section is
+   trying to show could not comfortably be read. The cap is now 600px and the type
+   inside steps up with it.
+
+   Every rule here is scoped to .feature-row on purpose. The hero collage uses the
+   same .panel classes, and its sizing is deliberately tuned to the travelling field
+   and the curve — a global bump would have broken the hero, which is explicitly not
+   to be touched. */
+.feature-row .panel { font-size: 15px; }
+.feature-row .panel .panel-head { font-size: 15px; padding: 13px 17px; }
+.feature-row .panel .panel-pad { font-size: 15px; padding: 19px; }
+.feature-row .panel .p-chip { font-size: 12.5px; }
+.feature-row .panel .fx-btn,
+.feature-row .panel .fx-ghost { font-size: 14px; padding: 8px 17px; }
+.feature-row .panel .bubble-user,
+.feature-row .panel .bubble-ally { font-size: 15px; line-height: 1.55; }
+.feature-row .panel .mono { font-size: 13.5px; }
+.feature-row .panel .ally-avatar { width: 26px; height: 26px; }
+/* the small green/grey status lines under the cards */
+.feature-row .panel [style*="font-size:12.5px"] { font-size: 14px !important; }
