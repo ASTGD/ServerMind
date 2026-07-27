@@ -26,6 +26,12 @@
      672px column, within a hair of the 686px the reference we match uses. Body text
      keeps its own narrower caps, so nothing stretches to an unreadable line. */
   --container: 1440px;
+  --panel-gap: 16px;
+  /* One copy of the panel field. Content spans 967px, so 940 makes consecutive
+     copies overlap ~27px and the density never dips at the handover. Declared HERE,
+     with the other tokens, so the responsive overrides further down can win — a
+     media query adds no specificity, so a later plain :root beats it every time. */
+  --collage-w: 940px;
 }
 
 /* Dark is the primary surface */
@@ -295,7 +301,11 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
   display: grid; grid-template-columns: 50fr 50fr; gap: 48px; align-items: center;
   padding-block: 92px 104px; min-height: 640px;
 }
-.hero-copy { display: grid; gap: 26px; justify-items: start; }
+.hero-copy {
+  display: grid; gap: 26px; justify-items: start;
+  position: relative; z-index: 2;      /* above the panel field it now overlaps */
+  transform: translateY(-26px);        /* sits slightly high, as in the reference */
+}
 .hero-copy h1 { color: #F4F6FB; }
 .hero-sub { font-size: 17px; line-height: 1.6; color: #A7B0C8; max-width: 46ch; }
 .hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; }
@@ -318,25 +328,20 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
 
 /* The collage — bleeds to the viewport's right edge; .hero{overflow:hidden} crops it */
 .hero-visual {
-  /* The reference's single biggest structural move, and the one we were missing: the
-     visual half is its OWN block — measured 953x720 starting at x=953 on a 1920 screen,
-     a translucent lighter tint, overflow hidden. It gives the hero a clean vertical
-     edge down the middle and makes the panels read as a product stage rather than
-     cards floating loose on the page background. */
+  /* The panels pass BEHIND the text column rather than starting at the midline —
+     that is what makes the reference read as one continuous field of screens with
+     the copy laid over it, instead of two boxes side by side. The grid cell keeps
+     its 50% share for layout, but the field itself is pulled left underneath. */
   position: relative;
   min-width: 0;
-  /* Full-bleed on three sides. The reference's block touches the top and bottom of
-     the hero and runs off the right edge; ours floated with a gap above and below,
-     which made it read as a card rather than a stage. align-self:stretch fills the
-     grid row, and the negative block margins cancel the hero's own vertical padding. */
   align-self: stretch;
   min-height: 620px;
   margin-block: -92px -104px;
+  margin-left: -46%;
   margin-right: calc(50% - 50vw);
   background: rgba(99, 102, 241, 0.10);
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 92px, #000 100%);
-          mask-image: linear-gradient(to right, transparent 0, #000 92px, #000 100%);
+  z-index: 0;
 }
 .hero-glow {
   position: absolute; inset: -16% -28% -16% -10%; pointer-events: none;
@@ -347,13 +352,32 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
   filter: blur(44px);
 }
 .hero-arc { position: absolute; inset: 0; pointer-events: none; opacity: 0.8; }
-.collage { position: relative; flex: 0 0 var(--collage-w); width: var(--collage-w); height: 100%; }
-.collage .panel { position: absolute; will-change: transform; }
-.cp-chat   { width: 330px; left: 0;     top: 36px;  z-index: 3;   animation: drift-b 75s linear infinite; }
-.cp-mission{ width: 350px; left: 212px; top: 206px; z-index: 4;  animation: drift-a 45s linear infinite; }
-.cp-result { width: 336px; right: -112px; top: -14px; z-index: 2;  animation: drift-c 60s linear infinite; }
-.cp-donut  { width: 226px; left: 56px;  top: 414px; z-index: 2;  animation: drift-d 90s linear infinite; }
-.cp-table  { width: 408px; right: -148px; top: 452px; z-index: 3; animation: drift-c 82s linear infinite reverse; }
+.collage {
+  /* A two-column masonry, not five hand-placed cards. The reference's panels share
+     left edges and one consistent gutter; ours were positioned individually, so every
+     edge was its own accident — which is exactly the "distracted" look. Letting the
+     browser flow them into columns makes alignment structural rather than something
+     to maintain by hand. */
+  position: relative;
+  flex: 0 0 var(--collage-w);
+  width: var(--collage-w);
+  height: auto;
+  columns: 2;
+  column-gap: var(--panel-gap);
+  /* balance, not auto: `auto` fills each column to the container height before
+     starting the next, which spilled the fifth panel into a third column and made
+     the copy wider than the field. `balance` splits the panels evenly into exactly
+     two, and letting the height grow past the hero lets the field bleed off the top
+     and bottom the way the reference does. */
+  column-fill: balance;
+}
+.collage .panel {
+  position: static;
+  width: 100%;
+  margin: 0 0 var(--panel-gap);
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+}
 
 /* The whole collage glides diagonally — the OpenReplay move (60s · linear · infinite),
    as a closed lens-shaped loop so there is no seam and no visible reversal. */
@@ -436,16 +460,34 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
 .land { animation: chip-land 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.2) 0.9s both; }
 
 @media (max-width: 1100px) {
+  /* Stacked layout: the copy sits ABOVE the panel field rather than on top of it, so
+     every overlap trick from the wide layout has to be undone. Leaving margin-left
+     alone dragged the field off the left edge and put panel slivers behind the
+     buttons; leaving the negative block margins alone let it climb into the copy. */
   .hero-grid { grid-template-columns: 1fr; gap: 20px; padding-block: 72px 0; min-height: 0; }
-  .hero-visual { height: 620px; margin-right: -24px; }
+  .hero-visual {
+    align-self: auto;
+    height: 620px; min-height: 0;
+    margin-block: 0;
+    margin-left: 0;
+    margin-right: -24px;
+  }
+  .hero-copy { transform: none; }
+  .hero-carve { display: none; }   /* nothing to carve when they no longer overlap */
+  /* The copy width also sets the panel width, since each panel fills its column.
+     940px was sized for a half-viewport field; on a stacked layout that is wider
+     than the screen, so the panels ran off the edge. */
+  :root { --collage-w: 700px; }
 }
 @media (max-width: 640px) {
-  .hero-visual { height: 470px; }
-  .collage { transform: scale(0.66); transform-origin: top left; }
-  .cp-chat { left: -10px; }
-  .cp-mission { left: 180px; top: 210px; }
-  .cp-result { right: auto; left: 400px; }
-  .cp-table { right: auto; left: 330px; top: 470px; }
+  :root { --collage-w: 300px; }
+  .hero-visual {
+    height: 470px;
+    /* a 92px fade eats a third of a phone screen — keep the softness proportional */
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 28px, #000 100%);
+            mask-image: linear-gradient(to right, transparent 0, #000 28px, #000 100%);
+  }
+  .collage { columns: 1; }         /* one column at phone width — two would be unreadable */
 }
 
 /* ---------- Generic sections ---------- */
@@ -664,12 +706,10 @@ html:not(.no-js) .chat-msg:not(.shown) { display: none; }
    the composition became wider than the visible half, so fewer panels fit and a bare
    patch crossed the frame. The reference reads the way it does because of the tinted
    block and the axis-aligned panels, not the panel size. Density wins. */
-:root { --collage-w: 940px; }   /* content spans 967px, so copies overlap ~27px
-                                   and the density never dips as one copy hands
-                                   over to the next. Tuned live, not guessed. */
 .collage-track {
   position: absolute; inset: 0;
   display: flex; width: max-content;
+  align-items: center;
   animation: collage-travel 78s linear infinite;
   will-change: transform;
 }
@@ -685,4 +725,23 @@ html:not(.no-js) .chat-msg:not(.shown) { display: none; }
   overflow: hidden;
   -webkit-mask-image: linear-gradient(to right, transparent 0, #000 92px, #000 100%);
           mask-image: linear-gradient(to right, transparent 0, #000 92px, #000 100%);
+}
+
+/* The carved cut. In the reference this curve is baked into their flat hero image;
+   ours has to be drawn, because our panels are live DOM. A single large blurred
+   ellipse, offset left and taller than the hero, gives the same soft arc sweeping
+   top-left to bottom-right — and it doubles as the gradient that keeps the headline
+   legible over whatever panel happens to be passing underneath it. */
+.hero-carve {
+  position: absolute;
+  inset: -58% auto -58% -40%;
+  width: 74%;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side,
+              rgba(12, 10, 43, 0.98) 42%,
+              rgba(12, 10, 43, 0.80) 68%,
+              rgba(12, 10, 43, 0) 100%);
+  filter: blur(26px);
 }
