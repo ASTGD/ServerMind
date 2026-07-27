@@ -1,13 +1,15 @@
 <!DOCTYPE html>
-<html lang="en" class="no-js" data-theme="dark"><head>
+<html lang="en" class="no-js" data-theme="dark">
+<head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Proof — ServerAlly</title>
-<meta name="description" content="ServerAlly is your AI companion for Linux, Windows, hosting panels, and cloud. Tell it what you want — it plans the steps, runs them safely, and explains what it did.">
-<link rel="icon" type="image/svg+xml" href="site/asset-be24472a.svg">
+<title>Proof — Ally cleans a really hacked production server</title>
+<meta name="description" content="A live infected WordPress site: 13 webshell items quarantined (moved, never deleted), 5 fake admins found, site verified HTTP 200. With the unedited recording.">
+<link rel="icon" type="image/svg+xml" href="/site/serverally-mark.svg">
 <link rel="preload" href="/site/fonts/cabinet-grotesk-800.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/site/fonts/switzer-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/site/site.css">
+<meta name="ext-resource-dependency" content="/site/media/ally-malware-02-quarantine.gif" data-resource-id="quarantineGif">
 <script>try{document.documentElement.setAttribute('data-theme',localStorage.getItem('sa-theme')==='light'?'light':'dark')}catch(e){}</script>
 </head>
 <body>
@@ -15,18 +17,18 @@
 <header class="site-nav">
   <div class="container nav-inner">
     <a class="brand" href="/" aria-label="ServerAlly home">
-      <img class="mark" src="site/asset-be24472a.svg" alt="" width="32" height="32">
+      <img class="mark" src="/site/serverally-mark.svg" alt="" width="32" height="32">
       <span class="word">Server<b>Ally</b></span>
     </a>
     <nav class="nav-links" aria-label="Main">
-      <a href="/" aria-current="page">Home</a>
+      <a href="/">Home</a>
       <a href="/how-it-works">How it works</a>
       <a href="/pricing">Pricing</a>
       <a href="/trust">Security</a>
       <a href="/proof" aria-current="page">Proof</a>
     </nav>
     <div class="nav-actions">
-      <button class="icon-btn" type="button" data-theme-toggle="" aria-label="Toggle light and dark theme">
+      <button class="icon-btn" type="button" data-theme-toggle aria-label="Toggle light and dark theme">
         <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"></path></svg>
         <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"></path></svg>
       </button>
@@ -42,29 +44,130 @@
     <a href="/how-it-works">How it works</a>
     <a href="/pricing">Pricing</a>
     <a href="/trust">Security</a>
-    <a href="/proof" aria-current="page">Proof</a>
+    <a href="/proof">Proof</a>
     <a href="/auth"><strong>Try for Free</strong></a>
   </nav>
-</header><main>
-  <section class="section">
-    <div class="wrap" style="max-width:760px">
-      <p class="eyebrow">ServerAlly</p>
-      <h1 style="font-size:clamp(34px,5vw,54px);line-height:1.05;margin:.35em 0 .5em">Proof</h1>
-      <p class="lede">Ally aimed at a real, actively-compromised production server — and what it found, moved and verified.</p>
-      <p class="muted" style="margin-top:2.5rem">
-        This page is being written. In the meantime,
-        <a href="/">the overview is on the home page</a>.
-      </p>
-      <p style="margin-top:2rem"><a class="btn btn-primary" href="/auth">Try for Free →</a></p>
+</header>
+
+<main>
+
+<section class="section-tight" style="padding-bottom:36px;">
+  <div class="container" style="display:grid; gap:18px; justify-items:start;">
+    <span class="eyebrow">Proof</span>
+    <h1 style="font-size:clamp(36px,4.6vw,60px); max-width:15ch;">A real cleanup, on a <span class="grad-text">really hacked</span> server.</h1>
+    <p class="lede measure">No staged demo. In July 2026 a production WordPress site was actively infected. We pointed Ally at it and recorded what happened. Nothing below is invented — and nothing was deleted.</p>
+    <div style="display:flex; flex-wrap:wrap; gap:8px;">
+      <span class="chip">Production CyberPanel server · 90 live sites</span>
+      <span class="chip">Actively infected WordPress site</span>
+      <span class="chip">July 14, 2026</span>
     </div>
-  </section>
+  </div>
+</section>
+
+<section class="section-tight">
+  <div class="container" style="max-width:880px;">
+    <div class="timeline">
+      <div class="tl-item" data-reveal>
+        <span class="tl-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"></path><circle cx="12" cy="12" r="2.8"></circle></svg></span>
+        <div class="tl-body">
+          <span class="chip chip-brand" style="width:fit-content;">1 · Investigate — read-only</span>
+          <h3>One sentence in. No changes yet.</h3>
+          <p>The owner typed one line: <em>"scan the site for malware and clean up anything you find."</em> Ally's pre-mission scout — read-only — immediately surfaced the suspect files (<span class="mono">8f3a2c.php</span>, <span class="mono">b71d40.php</span>, two malware folders) and proposed an investigation plan. Only after approval did it stream a live malware scan into the workspace.</p>
+        </div>
+      </div>
+      <div class="tl-item" data-reveal>
+        <span class="tl-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="12" rx="2"></rect><path d="M3 8l2-4h14l2 4M12 12v4"></path></svg></span>
+        <div class="tl-body">
+          <span class="chip chip-brand" style="width:fit-content;">2 · Quarantine — never delete</span>
+          <h3>13 items moved. Zero deleted. Site back: HTTP 200.</h3>
+          <p>The webshell had replicated across the whole account. Ally quarantined all 13 items — 11 webshell copies and 2 malware folders — with <span class="mono">mv</span>, never <span class="mono">rm</span>, so every move could be undone. It read the webshell's actual content to classify it (a file-upload backdoor with a fake "Nyanpasu!!!" upload form), confirmed the site's folder was clean, then loaded the site itself: <strong style="color:var(--text);">HTTP 200.</strong> The recording below is that exact moment, unedited.</p>
+        </div>
+      </div>
+      <div class="tl-item" data-reveal>
+        <span class="tl-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 7.7-7 9.5-4-1.8-7-4.9-7-9.5V6z"></path><path d="M12 10v3.5M12 16.5h.01"></path></svg></span>
+        <div class="tl-body">
+          <span class="chip chip-brand" style="width:fit-content;">3 · The deeper hunt</span>
+          <h3>It kept digging — and then it stopped to ask.</h3>
+          <p>A full incident-response mission (eleven read-only recon steps) traced the deeper compromise: three more malicious files — including a 9&nbsp;MB backdoor disguised as a WordPress file — and <strong style="color:var(--text);">5 fake admin accounts</strong> an attacker had planted, one posing as <span class="mono">root</span>. Then the important part: Ally <strong style="color:var(--text);">paused for approval before deleting anything</strong>. Evidence preserved, destructive decisions handed to the human.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section-tight">
+  <div class="container" style="max-width:880px;">
+    <div class="gif-frame" data-reveal>
+      <button class="gif-poster" type="button" data-gif="/site/media/ally-malware-02-quarantine.gif" data-gif-res="quarantineGif" data-gif-alt="Screen recording: Ally quarantines 13 webshell items with mv, confirms the folder is clean, and loads the site — HTTP 200." aria-label="Play the screen recording of the quarantine" style="aspect-ratio:1568/660; width:100%;">
+        <span style="position:absolute; inset:0; display:grid; place-items:center; padding:24px;">
+          <span class="panel" style="width:min(560px, 86%); opacity:0.95;">
+            <span class="panel-head" style="display:flex;">Quarantined webshell files <span class="spacer"></span><span class="p-chip p-chip-ok">13 items · mv, never rm</span></span>
+            <span style="display:block; padding:10px 14px; font-family:var(--font-mono); font-size:11.5px; color:#334155; line-height:1.9;">
+              mv 8f3a2c.php → quarantine_20260713/<br>
+              mv b71d40.php → quarantine_20260713/<br>
+              curl -I northwind-shop.com → <span style="color:#16A34A; font-weight:700;">HTTP 200 ✓</span>
+            </span>
+          </span>
+        </span>
+        <span class="gif-play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"></path></svg></span>
+      </button>
+      <div class="gif-meta">
+        <span><strong style="color:var(--text);">Unedited screen capture</strong> — the live quarantine, then the site loading clean.</span>
+        <span class="spacer" style="margin-left:auto;"></span>
+        <span class="mono">GIF · 2.4 MB · loads only when you press play</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section-tight">
+  <div class="container sec-grid" style="max-width:880px;">
+    <div class="card" data-reveal>
+      <h3>The honest footnote</h3>
+      <p class="muted small" style="margin-top:8px;">One finding in the deeper hunt was a false positive: Ally flagged repeated logins from an IP that turned out to be <em>our own scanner</em>. What matters is what happened next — with uncertainty present, Ally <strong style="color:var(--text);">handed the destructive cleanup back to the human</strong> instead of acting. That's the safety model doing its job, and we're keeping the note here because trust is the product.</p>
+    </div>
+    <div class="card" data-reveal>
+      <h3>Where it stands today</h3>
+      <p class="muted small" style="margin-top:8px;">The 13 quarantined items sit in a locked folder on the server — reversible, evidence intact — and the site verified clean with HTTP 200. The deeper findings (3 files, 5 fake admins) are surfaced and documented, <strong style="color:var(--text);">awaiting the owner's decision</strong>. Ally doesn't delete on its own. Ever.</p>
+    </div>
+  </div>
+</section>
+
+<section class="band-dark section on-dark">
+  <div class="container">
+    <div class="section-head" data-reveal>
+      <span class="eyebrow" style="color:#A7B0C8;">Proven, not promised</span>
+      <h2>Numbers we can stand behind.</h2>
+      <p class="lede">Pre-launch means no customer counts and no uptime graphs. These are the numbers we actually have — all from documented tests.</p>
+    </div>
+    <div class="cards-4">
+      <div class="card" data-reveal><strong class="num" style="font-family:var(--font-display); font-size:34px;">13</strong><p class="small" style="margin-top:6px;">webshell items quarantined on a live production site — moved, never deleted</p></div>
+      <div class="card" data-reveal><strong class="num" style="font-family:var(--font-display); font-size:34px;">5</strong><p class="small" style="margin-top:6px;">fake admin accounts uncovered — including one posing as root</p></div>
+      <div class="card" data-reveal><strong class="num" style="font-family:var(--font-display); font-size:34px;">404</strong><p class="small" style="margin-top:6px;">automated safety tests guard every command before it can run</p></div>
+      <div class="card" data-reveal><strong class="num" style="font-family:var(--font-display); font-size:34px;">&lt;$2</strong><p class="small" style="margin-top:6px;">of AI spend for the entire break-it red-team campaign</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" style="text-align:center;">
+  <div class="container" style="display:grid; justify-items:center; gap:20px;">
+    <h2 data-reveal>Point it at your server next.</h2>
+    <p class="lede measure" data-reveal>Two servers free. It will look before it touches — and ask before anything risky.</p>
+    <div style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center;" data-reveal>
+      <a class="btn btn-fill btn-lg" href="/auth">Try for Free <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+      <a class="btn btn-ghost btn-lg" href="/how-it-works">Watch how it works</a>
+    </div>
+  </div>
+</section>
+
 </main>
+
 <footer class="site-footer">
   <div class="container">
     <div class="footer-grid">
       <div class="footer-brand">
         <a class="brand" href="/" aria-label="ServerAlly home">
-          <img class="mark" src="site/asset-be24472a.svg" alt="" width="28" height="28" style="width:28px;height:28px;">
+          <img class="mark" src="/site/serverally-mark.svg" alt="" width="28" height="28" style="width:28px;height:28px;">
           <span class="word" style="font-size:18px;">Server<b>Ally</b></span>
         </a>
         <p class="small muted">Your AI companion to manage, automate, and secure any server — without the expertise.</p>
@@ -85,15 +188,30 @@
       </div>
     </div>
     <div class="footer-bottom">
-      <span>© <span data-year="">2026</span> ServerAlly · Early access</span>
+      <span>© <span data-year>2026</span> ServerAlly · Early access</span>
       <span>No cookies, no trackers, no third-party requests — this page phones no one.</span>
     </div>
   </div>
 </footer>
 
 
+<template id="__bundler_thumbnail" data-bg-color="#0B1020">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="tg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#6366F1"></stop>
+        <stop offset="1" stop-color="#A855F7"></stop>
+      </linearGradient>
+    </defs>
+    <rect width="1200" height="800" fill="#0B1020"></rect>
+    <g transform="translate(600 400) scale(11) translate(-20 -20)">
+      <rect x="2" y="2" width="36" height="36" rx="11" fill="url(#tg)"></rect>
+      <path d="M12 11 Q12 10 13 10 L27 10 Q28 10 28 11 V19 Q28 25.5 20 31 Q12 25.5 12 19 Z" fill="#FFFFFF"></path>
+      <path d="M20 13 Q20.5 17.3 24.3 18.3 Q20.5 19.3 20 23.5 Q19.5 19.3 15.7 18.3 Q20.5 17.3 20 13 Z" fill="#7C3AED"></path>
+    </g>
+  </svg>
+</template>
 
-<script src="site/asset-de18b6eb.js"></script>
-
-
-</body></html>
+<script src="/site/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 40 40" fill="none" role="img" aria-label="ServerAlly">
+  <defs>
+    <linearGradient id="g" x1="4" y1="3" x2="36" y2="37" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6366F1"></stop>
+      <stop offset="0.55" stop-color="#8B5CF6"></stop>
+      <stop offset="1" stop-color="#A855F7"></stop>
+    </linearGradient>
+    <linearGradient id="h" x1="20" y1="2" x2="20" y2="26" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.24"></stop>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"></stop>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="36" height="36" rx="11" fill="url(#g)"></rect>
+  <rect x="2" y="2" width="36" height="36" rx="11" fill="url(#h)"></rect>
+  <path d="M12 11 Q12 10 13 10 L27 10 Q28 10 28 11 V19 Q28 25.5 20 31 Q12 25.5 12 19 Z" fill="#FFFFFF"></path>
+  <path d="M20 13 Q20.5 17.3 24.3 18.3 Q20.5 19.3 20 23.5 Q19.5 19.3 15.7 18.3 Q20.5 17.3 20 13 Z" fill="#7C3AED"></path>
+</svg>

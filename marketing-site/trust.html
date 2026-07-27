@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" class="no-js" data-theme="dark"><head>
+<html lang="en" class="no-js" data-theme="dark">
+<head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Trust &amp; Security — ServerAlly</title>
-<meta name="description" content="ServerAlly is your AI companion for Linux, Windows, hosting panels, and cloud. Tell it what you want — it plans the steps, runs them safely, and explains what it did.">
-<link rel="icon" type="image/svg+xml" href="site/asset-be24472a.svg">
+<title>ServerAlly security — how we treat root access</title>
+<meta name="description" content="AES-256-GCM encrypted credentials, approval before risky steps, quarantine instead of deletion, verification on every job, and prompt-injection resistance — tested live.">
+<link rel="icon" type="image/svg+xml" href="/site/serverally-mark.svg">
 <link rel="preload" href="/site/fonts/cabinet-grotesk-800.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/site/fonts/switzer-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/site/site.css">
@@ -15,18 +16,18 @@
 <header class="site-nav">
   <div class="container nav-inner">
     <a class="brand" href="/" aria-label="ServerAlly home">
-      <img class="mark" src="site/asset-be24472a.svg" alt="" width="32" height="32">
+      <img class="mark" src="/site/serverally-mark.svg" alt="" width="32" height="32">
       <span class="word">Server<b>Ally</b></span>
     </a>
     <nav class="nav-links" aria-label="Main">
-      <a href="/" aria-current="page">Home</a>
+      <a href="/">Home</a>
       <a href="/how-it-works">How it works</a>
       <a href="/pricing">Pricing</a>
       <a href="/trust" aria-current="page">Security</a>
       <a href="/proof">Proof</a>
     </nav>
     <div class="nav-actions">
-      <button class="icon-btn" type="button" data-theme-toggle="" aria-label="Toggle light and dark theme">
+      <button class="icon-btn" type="button" data-theme-toggle aria-label="Toggle light and dark theme">
         <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"></path></svg>
         <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"></path></svg>
       </button>
@@ -41,30 +42,102 @@
     <a href="/">Home</a>
     <a href="/how-it-works">How it works</a>
     <a href="/pricing">Pricing</a>
-    <a href="/trust" aria-current="page">Security</a>
+    <a href="/trust">Security</a>
     <a href="/proof">Proof</a>
     <a href="/auth"><strong>Try for Free</strong></a>
   </nav>
-</header><main>
-  <section class="section">
-    <div class="wrap" style="max-width:760px">
-      <p class="eyebrow">ServerAlly</p>
-      <h1 style="font-size:clamp(34px,5vw,54px);line-height:1.05;margin:.35em 0 .5em">Trust &amp; Security</h1>
-      <p class="lede">We hold root access to your servers. Here is exactly how that is protected, and what Ally is never allowed to do.</p>
-      <p class="muted" style="margin-top:2.5rem">
-        This page is being written. In the meantime,
-        <a href="/">the overview is on the home page</a>.
-      </p>
-      <p style="margin-top:2rem"><a class="btn btn-primary" href="/auth">Try for Free →</a></p>
+</header>
+
+<main>
+
+<section class="section-tight" style="padding-bottom:40px;">
+  <div class="container" style="display:grid; gap:18px; justify-items:start;">
+    <span class="eyebrow">Security</span>
+    <h1 style="font-size:clamp(36px,4.6vw,60px); max-width:16ch;">We hold root credentials. <span class="grad-text">Here's how we earn that.</span></h1>
+    <p class="lede measure">ServerAlly connects to your production servers with real access — that's the whole point, and it's the biggest question you should be asking us. This page is the answer, and every claim on it traces to something we actually tested.</p>
+  </div>
+</section>
+
+<section class="section-tight">
+  <div class="container sec-grid">
+    <div class="card" data-reveal>
+      <span class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg></span>
+      <h3>Your credentials</h3>
+      <p class="muted small">Login details are encrypted with <strong style="color:var(--text);">AES-256-GCM</strong> before they're stored, and they are <strong style="color:var(--text);">never displayed again</strong> — not to you, not to anyone — after you save them. Ally connects over the standard secure protocols: SSH, WinRM, or the panel's own API.</p>
     </div>
-  </section>
+    <div class="card" data-reveal>
+      <span class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 7.7-7 9.5-4-1.8-7-4.9-7-9.5V6z"></path></svg></span>
+      <h3>The safety model</h3>
+      <p class="muted small">Ally investigates read-only first, asks before any step it can't undo, <strong style="color:var(--text);">moves files to quarantine instead of deleting them</strong>, and re-checks its own work before it reports success. Dangerous commands are blocked before they can run — <strong style="color:var(--text);">404 automated safety tests</strong> guard every command.</p>
+    </div>
+    <div class="card" data-reveal>
+      <span class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"></circle><path d="M6 6l12 12"></path></svg></span>
+      <h3>Un-trickable by design</h3>
+      <p class="muted small">Everything Ally reads on your server — files, logs, "helpful" notes — is treated as <strong style="color:var(--text);">information, never as instructions</strong>. In live red-team tests we planted hacker instructions three different ways, including a faked "the owner pre-approved this." Ally refused every time and flagged it as an incident.</p>
+    </div>
+    <div class="card" data-reveal>
+      <span class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"></circle><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M17 8h5M19.5 5.5v5"></path></svg></span>
+      <h3>People &amp; permissions</h3>
+      <p class="muted small">Teammates get access to specific servers with a role — <strong style="color:var(--text);">view, operate, or admin</strong>. People with view-only access can never run commands. Ever.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section-tight">
+  <div class="container">
+    <div class="card" data-reveal>
+      <h3 style="margin-bottom:16px;">The boring specifics</h3>
+      <table class="kv-table">
+        <tr><td>Credentials at rest</td><td>Encrypted with AES-256-GCM before storage</td></tr>
+        <tr><td>Credentials on screen</td><td>Never shown back after you save them</td></tr>
+        <tr><td>Connection transport</td><td>SSH · WinRM · the hosting panel's own API</td></tr>
+        <tr><td>Dangerous commands</td><td>Blocked before they run — 404 automated safety tests guard every command</td></tr>
+        <tr><td>Risky steps</td><td>Always wait for your explicit approval</td></tr>
+        <tr><td>File removal</td><td>Quarantine first — a reversible <span class="mono">mv</span>, never a destructive <span class="mono">rm</span></td></tr>
+        <tr><td>"Done"</td><td>Only after an independent re-check — the ✓ Verified badge</td></tr>
+        <tr><td>Content on your server</td><td>Read as data, never followed as instructions</td></tr>
+        <tr><td>This website</td><td>Zero external requests — no analytics, no CDNs, no trackers</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="band-dark section on-dark">
+  <div class="container">
+    <div class="section-head" data-reveal>
+      <span class="eyebrow" style="color:#A7B0C8;">Not a whitepaper promise</span>
+      <h2>We pointed it at real, compromised servers.</h2>
+      <p class="lede">Pre-launch, we don't have customer logos. We have something better: documented behavior on live, actively-infected production machines.</p>
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:10px;" data-reveal>
+      <span class="evidence-item">13 webshells quarantined — moved, never deleted</span>
+      <span class="evidence-item">5 fake admin accounts found — one posing as root</span>
+      <span class="evidence-item">Caught a live crypto-miner calling home</span>
+      <span class="evidence-item">Refused a live prompt-injection attempt</span>
+      <span class="evidence-item">Every mission independently verified</span>
+    </div>
+    <div style="margin-top:32px;" data-reveal>
+      <a class="btn btn-fill" href="/proof">Read the full case study <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+    </div>
+  </div>
+</section>
+
+<section class="section" style="text-align:center;">
+  <div class="container" style="display:grid; justify-items:center; gap:20px;">
+    <h2 data-reveal>Judge it by its behavior.</h2>
+    <p class="lede measure" data-reveal>Add a test server, ask for something risky, and watch it stop and ask you first.</p>
+    <div data-reveal><a class="btn btn-fill btn-lg" href="/auth">Try for Free <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a></div>
+  </div>
+</section>
+
 </main>
+
 <footer class="site-footer">
   <div class="container">
     <div class="footer-grid">
       <div class="footer-brand">
         <a class="brand" href="/" aria-label="ServerAlly home">
-          <img class="mark" src="site/asset-be24472a.svg" alt="" width="28" height="28" style="width:28px;height:28px;">
+          <img class="mark" src="/site/serverally-mark.svg" alt="" width="28" height="28" style="width:28px;height:28px;">
           <span class="word" style="font-size:18px;">Server<b>Ally</b></span>
         </a>
         <p class="small muted">Your AI companion to manage, automate, and secure any server — without the expertise.</p>
@@ -85,15 +158,30 @@
       </div>
     </div>
     <div class="footer-bottom">
-      <span>© <span data-year="">2026</span> ServerAlly · Early access</span>
+      <span>© <span data-year>2026</span> ServerAlly · Early access</span>
       <span>No cookies, no trackers, no third-party requests — this page phones no one.</span>
     </div>
   </div>
 </footer>
 
 
+<template id="__bundler_thumbnail" data-bg-color="#0B1020">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="tg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#6366F1"></stop>
+        <stop offset="1" stop-color="#A855F7"></stop>
+      </linearGradient>
+    </defs>
+    <rect width="1200" height="800" fill="#0B1020"></rect>
+    <g transform="translate(600 400) scale(11) translate(-20 -20)">
+      <rect x="2" y="2" width="36" height="36" rx="11" fill="url(#tg)"></rect>
+      <path d="M12 11 Q12 10 13 10 L27 10 Q28 10 28 11 V19 Q28 25.5 20 31 Q12 25.5 12 19 Z" fill="#FFFFFF"></path>
+      <path d="M20 13 Q20.5 17.3 24.3 18.3 Q20.5 19.3 20 23.5 Q19.5 19.3 15.7 18.3 Q20.5 17.3 20 13 Z" fill="#7C3AED"></path>
+    </g>
+  </svg>
+</template>
 
-<script src="site/asset-de18b6eb.js"></script>
-
-
-</body></html>
+<script src="/site/site.js"></script>
+</body>
+</html>
