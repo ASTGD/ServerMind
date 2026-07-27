@@ -331,11 +331,24 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
   list-style: none; margin: 0; padding: 0;
 }
 .hero-works-list li {
-  font-size: 13px; font-weight: 500; color: #B9C2D6;
-  padding: 5px 11px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13px; font-weight: 500; color: #C7D0E2;
+  padding: 6px 12px 6px 9px; border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.20);
   background: rgba(148, 163, 184, 0.06);
   white-space: nowrap;
+  transition: border-color .18s ease, background-color .18s ease, color .18s ease;
+}
+/* Each pill carries its own --brand, so the logo, the hover tint and the border all
+   come from one value per row of markup rather than eleven near-duplicate rules. */
+.hero-works-list li svg {
+  width: 14px; height: 14px; flex: none;
+  fill: var(--brand, currentColor);
+}
+.hero-works-list li:hover {
+  color: #E7EBF5;
+  border-color: color-mix(in oklab, var(--brand, #94A3B8) 55%, transparent);
+  background: color-mix(in oklab, var(--brand, #94A3B8) 12%, transparent);
 }
 .hero-works-list .is-more { border-style: dashed; color: #8B96AD; background: none; }
 
@@ -714,7 +727,8 @@ html:not(.no-js) .chat-msg:not(.shown) { display: none; }
 /* ---------- Reduced motion: freeze the ambience, keep the composition ---------- */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .collage, .collage-track, .collage .panel, .step-run, .running-row, .land, .typing-dots i { animation: none !important; }
+  .collage, .collage-track, .collage .panel, .step-run, .running-row, .land, .typing-dots i,
+    .hero-copy > * { animation: none !important; }
   .fx, .fx * { animation: none !important; }
   .fx .fx-dots { display: none; }
   .land { opacity: 1; }
@@ -791,3 +805,23 @@ html:not(.no-js) .chat-msg:not(.shown) { display: none; }
   z-index: 1;
 }
 .hero-carve svg { width: 100%; height: 100%; display: block; }
+
+/* ---------- Hero entrance ----------------------------------------------------
+   A one-time staggered rise as the page loads. Deliberately NOT per-letter or
+   per-word: this headline is the page's single most important sentence, and
+   splitting it into spans is what breaks text selection, translation and screen
+   readers. Whole blocks, 90ms apart, is the same premium feel with none of that.
+   `backwards` fill matters — without it each block flashes at full opacity for one
+   frame before its delay starts, which reads as a stutter on slower machines.     */
+@keyframes hero-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: none; }
+}
+.hero-copy > * {
+  animation: hero-rise 0.72s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+}
+.hero-copy > :nth-child(1) { animation-delay: 0.05s; }
+.hero-copy > :nth-child(2) { animation-delay: 0.14s; }
+.hero-copy > :nth-child(3) { animation-delay: 0.23s; }
+.hero-copy > :nth-child(4) { animation-delay: 0.32s; }
+.hero-copy > :nth-child(5) { animation-delay: 0.41s; }
