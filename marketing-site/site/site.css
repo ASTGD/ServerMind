@@ -317,7 +317,7 @@ html[data-theme="light"] .theme-icon-moon { display: block; }
   filter: blur(44px);
 }
 .hero-arc { position: absolute; inset: 0; pointer-events: none; opacity: 0.8; }
-.collage { position: absolute; inset: 0; animation: collage-pan 60s linear infinite; will-change: transform; }
+.collage { position: relative; flex: 0 0 var(--collage-w); width: var(--collage-w); height: 100%; }
 .collage .panel { position: absolute; will-change: transform; }
 .cp-chat   { width: 330px; left: 0;     top: 36px;  z-index: 3; rotate: -2deg;   animation: drift-b 75s linear infinite; }
 .cp-mission{ width: 350px; left: 212px; top: 206px; z-index: 4; rotate: 1.2deg;  animation: drift-a 45s linear infinite; }
@@ -613,11 +613,42 @@ html:not(.no-js) .chat-msg:not(.shown) { display: none; }
 /* ---------- Reduced motion: freeze the ambience, keep the composition ---------- */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .collage, .collage .panel, .step-run, .running-row, .land, .typing-dots i { animation: none !important; }
+  .collage, .collage-track, .collage .panel, .step-run, .running-row, .land, .typing-dots i { animation: none !important; }
   .fx, .fx * { animation: none !important; }
   .fx .fx-dots { display: none; }
   .land { opacity: 1; }
   [data-reveal] { opacity: 1; transform: none; transition: none; }
   .chat-msg.shown { animation: none; }
   * { scroll-behavior: auto !important; }
+}
+
+/* ── Hero collage travel (the OpenReplay pattern) ────────────────────────────
+   The reference pans a flat background image 0,0 → 100%,100% over 60s, linear,
+   forever. Ours are real DOM panels, so instead we run two identical copies in a
+   flex track and translate it by exactly one copy width. When copy A has fully
+   left, copy B is precisely where A started, so there is no loop point to catch.
+   `linear` matters as much as the duration: with any easing the eye sees it
+   start and stop, and the spell breaks. Each panel keeps its own slow drift on
+   top of this, which is the depth a single flat image cannot give.            */
+:root { --collage-w: 940px; }   /* content spans 967px, so copies overlap ~27px
+                                   and the density never dips as one copy hands
+                                   over to the next. Tuned live, not guessed. */
+.collage-track {
+  position: absolute; inset: 0;
+  display: flex; width: max-content;
+  animation: collage-travel 78s linear infinite;
+  will-change: transform;
+}
+@keyframes collage-travel {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(calc(-1 * var(--collage-w)), 0, 0); }
+}
+/* Clip on both sides: panels crop off the right edge (the reference's look) and
+   never slide over the headline. The left edge is FADED rather than hard-cut —
+   a straight cut leaves thin floating slivers of a panel mid-sentence, which
+   reads as a rendering fault; a fade reads as depth. */
+.hero-visual {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 92px, #000 100%);
+          mask-image: linear-gradient(to right, transparent 0, #000 92px, #000 100%);
 }

@@ -89,7 +89,8 @@
         <path d="M-60 580 Q 280 480 420 230 Q 500 90 800 30" stroke="url(#arcg)" stroke-width="170" stroke-linecap="round"></path>
       </svg>
 
-      <div class="collage">
+      <div class="collage-track">
+<div class="collage">
         <!-- Ally chat -->
         <div class="panel cp-chat">
           <div class="panel-head">
@@ -191,6 +192,110 @@
             </table>
           </div>
         </div>
+      </div>
+<div class="collage" data-clone="true">
+        <!-- Ally chat -->
+        <div class="panel cp-chat">
+          <div class="panel-head">
+            <span class="ally-avatar"><svg viewBox="0 0 24 24" fill="#fff"><path d="M12 3l1.9 7.1L21 12l-7.1 1.9L12 21l-1.9-7.1L3 12l7.1-1.9z"></path></svg></span>
+            Ally
+            <span class="spacer"></span>
+            <span class="p-chip p-chip-server"><span class="dot"></span>web-01</span>
+          </div>
+          <div class="panel-pad" style="display:grid; gap:8px;">
+            <div class="bubble-user">Help! I think my website got hacked 😩</div>
+            <div class="bubble-ally">I've got you. First I'll take a safe look around — I won't change a single thing yet, just investigate.</div>
+            <div class="bubble-ally">You're right — someone got in. There's a hidden malicious file in your uploads folder and a scheduled task left behind to reinfect you.</div>
+          </div>
+        </div>
+
+        <!-- Mission card -->
+        <div class="panel cp-mission">
+          <div class="panel-head">
+            Mission
+            <span class="p-chip p-chip-runbook">incident-response</span>
+            <span class="spacer"></span>
+            <span class="muted-ink" style="font-size:11px;">4 steps</span>
+          </div>
+          <div class="panel-pad">
+            <p style="font-weight:600; margin-bottom:8px;">Clean the malware on northwind-shop.com — quarantine, never delete.</p>
+            <div class="mission-step"><span class="step-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span>Scout read-only for webshell signatures</span></div>
+            <div class="mission-step"><span class="step-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span>Save an evidence copy of every suspect file</span></div>
+            <div class="mission-step"><span class="step-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span>Quarantine 13 items with <span class="mono">mv</span> — never <span class="mono">rm</span></span></div>
+            <div class="mission-step running-row"><span class="step-run"></span><span style="color:#4338CA; font-weight:500;">Re-scan and load the site to verify the fix…</span></div>
+          </div>
+        </div>
+
+        <!-- Result card -->
+        <div class="panel cp-result">
+          <div class="panel-head">
+            Mission result
+            <span class="spacer"></span>
+            <span class="p-chip p-chip-verify land"><svg style="width:11px;height:11px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>Verified</span>
+          </div>
+          <div class="panel-pad" style="display:grid; gap:10px;">
+            <div>
+              <span class="p-chip" style="background:#FEF2F2;border-color:#FECACA;color:#B91C1C;">Found</span>
+              <ul class="result-list">
+                <li><span class="k" style="background:#EF4444;"></span>11 webshell copies + 2 malware folders</li>
+                <li><span class="k" style="background:#EF4444;"></span>5 fake admin accounts — one posing as <span class="mono">root</span></li>
+              </ul>
+            </div>
+            <div>
+              <span class="p-chip" style="background:#F5F3FF;border-color:#DDD6FE;color:#6D28D9;">Ally did</span>
+              <ul class="result-list">
+                <li><span class="k" style="background:#8B5CF6;"></span>Moved all 13 items to a locked quarantine — reversible</li>
+                <li><span class="k" style="background:#8B5CF6;"></span>Re-checked the site: loads clean, HTTP 200</li>
+              </ul>
+            </div>
+            <div>
+              <span class="p-chip">Left for you</span>
+              <ul class="result-list">
+                <li><span class="k" style="background:#94A3B8;"></span>Rotate passwords · approve removing the fake admins</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fleet donut -->
+        <div class="panel cp-donut">
+          <div class="panel-head">Fleet health</div>
+          <div class="panel-pad" style="display:grid; justify-items:center; gap:10px;">
+            <svg width="128" height="128" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="44" fill="none" stroke="#EEF2F7" stroke-width="13"></circle>
+              <circle cx="60" cy="60" r="44" fill="none" stroke="#22C55E" stroke-width="13" stroke-linecap="butt" stroke-dasharray="138.2 276.5" transform="rotate(-90 60 60)"></circle>
+              <circle cx="60" cy="60" r="44" fill="none" stroke="#F59E0B" stroke-width="13" stroke-linecap="butt" stroke-dasharray="69.1 276.5" transform="rotate(90 60 60)"></circle>
+              <circle cx="60" cy="60" r="44" fill="none" stroke="#EF4444" stroke-width="13" stroke-linecap="butt" stroke-dasharray="69.1 276.5" transform="rotate(180 60 60)"></circle>
+              <text x="60" y="58" text-anchor="middle" font-family="Avenir Next, Segoe UI, system-ui, sans-serif" font-size="26" font-weight="800" fill="#0F172A">72</text>
+              <text x="60" y="76" text-anchor="middle" font-family="Avenir Next, Segoe UI, system-ui, sans-serif" font-size="10" fill="#64748B">avg score</text>
+            </svg>
+            <div style="display:flex; gap:10px; font-size:11px; color:#475569;">
+              <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#22C55E;display:inline-block;"></span>2 healthy</span>
+              <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#F59E0B;display:inline-block;"></span>1 fair</span>
+              <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:#EF4444;display:inline-block;"></span>1 at-risk</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quarantine table -->
+        <div class="panel cp-table">
+          <div class="panel-head">
+            Quarantined webshell files
+            <span class="spacer"></span>
+            <span class="p-chip p-chip-ok">13 items · moved, never deleted</span>
+          </div>
+          <div class="panel-pad" style="padding-top:6px;">
+            <table class="p-table">
+              <thead><tr><th>Item</th><th>Type</th><th>Original location</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">cjkcawqr.php</td><td>webshell</td><td class="mono">~/public_html/</td></tr>
+                <tr><td class="mono">8f3a2c.php</td><td>webshell</td><td class="mono">~/public_html/uploads/</td></tr>
+                <tr><td class="mono">a41c9/</td><td>malware folder</td><td class="mono">~/public_html/</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
       </div>
     </div>
   </div>
