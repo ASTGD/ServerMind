@@ -2,9 +2,13 @@ import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Globe, Search, Loader2, RefreshCw, CircleCheck, CircleAlert, CircleDashed,
-  ShieldCheck, ShieldAlert, Server as ServerIcon, Sparkles, EyeOff,
+  ShieldCheck, ShieldAlert, Server as ServerIcon, Sparkles, EyeOff, Plus,
 } from "lucide-react"
-import { listSites, scanServerSites, APP_LABEL, type Site } from "@/api/sites"
+import {
+  listSites, scanServerSites, addSite, watchSites, APP_LABEL, type Site,
+} from "@/api/sites"
+import RunRecipeModal from "@/components/recipes/RunRecipeModal"
+import { listRecipes } from "@/api/recipes"
 import { listServers } from "@/api/servers"
 import { Button, EmptyState } from "@/components/ui"
 import { useAssistantStore } from "@/store/assistantStore"
@@ -156,7 +160,30 @@ export default function Sites() {
       || (s.server_name ?? "").toLowerCase().includes(needle))
   }, [data, q])
 
+  const [adding, setAdding] = useState(false)
+  const [newDomain, setNewDomain] = useState("")
+  const [creating, setCreating] = useState(false)
+  const [note, setNote] = useState("")
+
+  // The website recipe is a mission Ally runs — we are only opening the door from the
+  // page where someone is actually looking for it.
+  const { data: recipes = [] } = useQuery({ queryKey: ["recipes"], queryFn: () => listRecipes() })
+  const siteRecipe = recipes.find((r) => r.slug === "cyberpanel-host-website")
+
+  const add = useMutation({
+    mutationFn: () => addSite({ domain: newDomain, watch: true }),
+    onSuccess: (r) => {
+      setNote(r.message); setNewDomain(""); setAdding(false)
+      qc.invalidateQueries({ queryKey: ["sites"] })
+    },
+  })
+  const watchAll = useMutation({
+    mutationFn: () => watchSites(),
+    onSuccess: (r) => { setNote(r.message); qc.invalidateQueries({ queryKey: ["sites"] }) },
+  })
+
   const scannable = servers.filter((s) => s.connection_type === "ssh")
+  const unwatched = (data?.sites ?? []).filter((s) => !s.uptime).length
   const down = shown.filter((s) => s.uptime?.status === "down").length
 
   return (
@@ -175,6 +202,65 @@ export default function Sites() {
           )}
         </p>
       </header>
+
+      {/* Two doors, on the page where someone looks for a website. "I already have one"
+          is ours alone — no competitor can track a site on a host it did not build.
+          "Create one" hands the job to Ally rather than templating a vhost ourselves. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={() => { setAdding(!adding); setNote("") }}>
+          <Plus size={13} />Add a website
+        </Button>
+        {siteRecipe && (
+          <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
+            <Sparkles size={13} />Create a new website
+          </Button>
+        )}
+        {unwatched > 0 && (
+          <Button size="sm" variant="ghost" disabled={watchAll.isPending}
+            onClick={() => watchAll.mutate()}>
+            {watchAll.isPending
+              ? <Loader2 size={13} className="animate-spin" />
+              : <CircleCheck size={13} />}
+            Watch {unwatched} unwatched site{unwatched === 1 ? "" : "s"}
+          </Button>
+        )}
+      </div>
+
+      {adding && (
+        <div className="mb-3 rounded-xl border border-border bg-card p-3">
+          <p className="text-[12.5px] text-muted-foreground">
+            Any website you own — it does not have to be on a server we manage. We will
+            check it every five minutes from outside and tell you if it stops loading.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <input value={newDomain} onChange={(e) => setNewDomain(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && newDomain.trim()) add.mutate() }}
+              placeholder="shop.example.com"
+              className="min-w-[220px] flex-1 rounded-lg border border-border bg-background
+                         px-3 py-2 text-sm outline-none focus:border-primary" />
+            <Button size="sm" disabled={!newDomain.trim() || add.isPending}
+              onClick={() => add.mutate()}>
+              {add.isPending && <Loader2 size={13} className="animate-spin" />}Add
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
+          </div>
+          {(add.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail && (
+            <p className="mt-2 text-[12.5px] text-red-600 dark:text-red-400">
+              {(add.error as { response?: { data?: { detail?: string } } }).response!.data!.detail}
+            </p>
+          )}
+        </div>
+      )}
+
+      {note && (
+        <p className="mb-3 rounded-lg bg-muted/50 px-3 py-2 text-[12.5px] text-foreground">
+          {note}
+        </p>
+      )}
+
+      {creating && siteRecipe && (
+        <RunRecipeModal recipe={siteRecipe} onClose={() => setCreating(false)} />
+      )}
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="relative min-w-[200px] flex-1">

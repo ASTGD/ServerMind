@@ -70,3 +70,23 @@ export const APP_LABEL: Record<string, string> = {
   static: "Static files",
   unknown: "Unknown",
 }
+
+/** Track a website the customer owns — optionally one on a host we do not manage. */
+export async function addSite(
+  body: { domain: string; server_id?: string | null; watch?: boolean },
+): Promise<{ site: Site; watching: boolean; message: string }> {
+  const { data } = await apiClient.post("/api/sites", body)
+  return data
+}
+
+/** Start checking sites we already know about. Empty list means "all of them". */
+export async function watchSites(
+  siteIds: string[] = [],
+): Promise<{ watching: number; message: string }> {
+  const { data } = await apiClient.post("/api/sites/watch", { site_ids: siteIds })
+  return data
+}
+
+export async function forgetSite(siteId: string): Promise<void> {
+  await apiClient.delete(`/api/sites/${siteId}`)
+}

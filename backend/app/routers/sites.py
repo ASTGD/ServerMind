@@ -16,6 +16,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -179,3 +180,116 @@ async def server_sites(server_id: str, db: DBDep, current_user: CurrentUser) -> 
         ],
         "count": len(rows),
     }
+
+
+# ── the customer's own list, not just what we discovered ─────────────────────
+class AddSiteBody(BaseModel):
+    domain: str = Field(max_length=300)
+    server_id: str | None = None      # optional — a site can live somewhere we do not manage
+    watch: bool = True
+
+
+class WatchBody(BaseModel):
+    """Which sites to start checking. Empty means every site that is not watched yet."""
+    site_ids: list[str] = Field(default_factory=list, max_length=500)
+
+
+async def _make_monitor(db: AsyncSession, user, domain: str, server_id=None) -> UptimeMonitor:
+    monitor = UptimeMonitor(user_id=user.id, server_id=server_id,
+                            **site_service.monitor_defaults(domain))
+    db.add(monitor)
+    return monitor
+
+
+@router.post("/sites", status_code=201)
+async def add_site(body: AddSiteBody, db: DBDep, current_user: CurrentUser) -> dict:
+    """Track a website the customer already owns.
+
+    The point of the whole feature: a competitor can only show sites on servers it built.
+    An agency's most important site is often on a host nobody manages — a client's old
+    cPanel, someone else's box. This is the only way that site gets watched.
+    """
+    try:
+        domain = site_service.clean_domain(body.domain)
+    except site_service.InvalidDomain as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    server = None
+    if body.server_id:
+        server = await resolve_server(body.server_id, current_user, db)
+
+    existing = (await db.execute(
+        select(Site).where(Site.user_id == current_user.id, Site.domain == domain)
+    )).scalar_one_or_none()
+    if existing:
+        # Not an error worth stopping for: they wanted it watched, so make sure it is.
+        if not existing.is_present:
+            existing.is_present = True
+        site = existing
+    else:
+        site = Site(user_id=current_user.id, server_id=server.id if server else None,
+                    domain=domain, aliases=[], source="added", app_type="unknown")
+        db.add(site)
+
+    watched = False
+    if body.watch:
+        hosts = {_monitor_key(m.url) for m in (await db.execute(
+            select(UptimeMonitor).where(UptimeMonitor.user_id == current_user.id)
+        )).scalars().all()}
+        if domain not in hosts:
+            await _make_monitor(db, current_user, domain, site.server_id)
+            watched = True
+
+    await db.commit()
+    await db.refresh(site)
+    return {"site": site_service.serialize(site,
+                                           server_name=server.name if server else None),
+            "watching": watched,
+            "message": (f"{domain} is on your list"
+                        + (" and we are checking it now." if watched else "."))}
+
+
+@router.post("/sites/watch")
+async def watch_sites(body: WatchBody, db: DBDep, current_user: CurrentUser) -> dict:
+    """Start checking sites we already know about.
+
+    Discovery finds 77 sites; without this, a customer would have to create 77 monitors by
+    hand, so nobody would — and the up/down column that makes the page worth opening would
+    stay empty forever.
+    """
+    q = select(Site).where(Site.user_id == current_user.id, Site.is_present.is_(True))
+    if body.site_ids:
+        try:
+            q = q.where(Site.id.in_([uuid.UUID(x) for x in body.site_ids]))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Bad site id.") from exc
+    sites = (await db.execute(q)).scalars().all()
+
+    already = {_monitor_key(m.url) for m in (await db.execute(
+        select(UptimeMonitor).where(UptimeMonitor.user_id == current_user.id)
+    )).scalars().all()}
+
+    added = 0
+    for site in sites:
+        if site.domain in already:
+            continue
+        await _make_monitor(db, current_user, site.domain, site.server_id)
+        already.add(site.domain)
+        added += 1
+    await db.commit()
+    return {"watching": added,
+            "message": (f"Now checking {added} site{'' if added == 1 else 's'} every five "
+                        "minutes. You will be told if one stops loading."
+                        if added else "Every site is already being checked.")}
+
+
+@router.delete("/sites/{site_id}", status_code=204)
+async def forget_site(site_id: str, db: DBDep, current_user: CurrentUser) -> None:
+    """Stop tracking a site. Its monitor is left alone — it may be watched deliberately."""
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+    await db.delete(site)
+    await db.commit()

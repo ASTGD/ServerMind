@@ -315,7 +315,9 @@ def serialize(site, *, server_name: str | None = None, uptime: dict | None = Non
         "id": str(site.id),
         "domain": site.domain,
         "aliases": list(site.aliases or []),
-        "server_id": str(site.server_id),
+        # Nullable now — a site added by hand has no server, and str(None)
+        # would send the literal text "None" to the browser.
+        "server_id": str(site.server_id) if site.server_id else None,
         "server_name": server_name,
         "doc_root": site.doc_root,
         "source": site.source,
@@ -335,3 +337,68 @@ def app_label(app_type: str, version: str | None = None) -> str:
              "static": "Static files", "unknown": "Unknown"}
     label = names.get(app_type, app_type)
     return f"{label} {version}" if version else label
+
+
+# ── sites the customer tells us about, and watching them ──────────────────────
+#
+# Discovery answers "what is on my servers". This answers "what do I care about" — and
+# those are not the same list. A customer's most important website is often on a host we
+# do not manage at all: a client's old cPanel, a Shopify store, a site another agency
+# built. No competitor can track that, because every one of them only knows about servers
+# they provisioned themselves.
+
+_HOST_RE = re.compile(r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$")
+
+
+class InvalidDomain(ValueError):
+    """Not something we can watch."""
+
+
+def clean_domain(value: str) -> str:
+    """A bare hostname, from whatever the customer pasted.
+
+    People paste a full address, with or without a scheme, sometimes with a path. Taking
+    the hostname out is kinder than refusing, and it is unambiguous — but anything that is
+    still not a hostname is refused rather than guessed at, because we are about to make
+    HTTP requests to it.
+    """
+    raw = (value or "").strip().lower()
+    if not raw:
+        raise InvalidDomain("Type the website address.")
+    raw = re.sub(r"^[a-z][a-z0-9+.-]*://", "", raw)     # scheme
+    raw = raw.split("/")[0].split("?")[0]               # path, query
+    raw = raw.split("@")[-1]                            # user:pass@
+    raw = raw.split(":")[0]                             # port
+    raw = raw.rstrip(".")
+    if raw.startswith("www."):
+        # Keep the address people actually type; the monitor follows redirects anyway.
+        pass
+    if len(raw) > 253 or not _HOST_RE.match(raw):
+        raise InvalidDomain(
+            f"“{value}” does not look like a website address. Try something like "
+            "example.com or shop.example.com.")
+    if not is_real_domain(raw):
+        raise InvalidDomain(
+            f"“{raw}” is not a public website address, so we could not check it from "
+            "outside.")
+    return raw
+
+
+def monitor_defaults(domain: str, *, https: bool = True) -> dict:
+    """How a newly watched site gets checked.
+
+    Deliberately plain: address, 200, five minutes, two failures before we call it down.
+    A keyword check is better but only the customer can supply the words, so it is offered
+    later rather than guessed at now — a wrong keyword would report a healthy site as down,
+    which destroys trust in every other alert we send.
+    """
+    return {
+        "name": domain,
+        "url": f"{'https' if https else 'http'}://{domain}",
+        "method": "GET",
+        "expected_status": 200,
+        "interval_seconds": 300,
+        "timeout_seconds": 15,
+        "failure_threshold": 2,
+        "is_active": True,
+    }

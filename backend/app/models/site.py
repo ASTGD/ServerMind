@@ -36,8 +36,12 @@ class Site(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
-    server_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("servers.id", ondelete="CASCADE"), index=True, nullable=False
+    # Nullable: a customer's website is a real thing whether or not we can log into the
+    # machine behind it. A site added by hand — on a host we do not manage — has no server,
+    # and that is the case no competitor can serve at all.
+    server_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("servers.id", ondelete="SET NULL"), index=True,
+        nullable=True
     )
 
     domain: Mapped[str] = mapped_column(String(253), nullable=False, index=True)
