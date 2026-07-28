@@ -134,19 +134,21 @@ async def _start_background_jobs() -> None:
     )
     logger.info("Threat monitoring job registered (every 12 h)")
 
+    # Service monitoring — every 2 minutes, slower than uptime because a stopped service
+    # is not a second-by-second race and each sweep costs one SSH round trip per server.
+    from app.workers import service_monitor_worker
+    scheduler_service.get_scheduler().add_job(
+        service_monitor_worker.sweep,
+        trigger=IntervalTrigger(minutes=2),
+        id="service_monitors",
+        replace_existing=True,
+        max_instances=1,  # an SSH sweep must never overlap itself
+    )
+    logger.info("Service monitoring job registered (every 2 min)")
+
     # Uptime monitoring — probe each site FROM ServerAlly (not from the server, which
     # would pass while DNS/firewall/the whole box is unreachable). Sweeps every minute;
     # each monitor is only probed when its own interval has elapsed.
-    # Services are checked every 2 minutes. Slower than uptime (1 min) because a stopped
-    # service is not usually a second-by-second race, and each sweep is one SSH round
-    # trip per server — worth being frugal with on a large fleet.
-    from app.workers import service_monitor_worker
-    scheduler.add_job(
-        service_monitor_worker.sweep,
-        "interval", minutes=2, id="service_monitors",
-        max_instances=1, replace_existing=True,
-    )
-
     from app.workers import uptime_worker
     scheduler_service.get_scheduler().add_job(
         uptime_worker.check_due_monitors,
