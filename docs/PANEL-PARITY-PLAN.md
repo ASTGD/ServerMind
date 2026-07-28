@@ -109,16 +109,24 @@ That is the whole of what a competitor sells on day one.
 7. **Fill in the blanks** — what each site runs and where it lives. Both are empty today
    because the panel path returns the domain only.
 
-### Wave 3 — Close the operational gaps *(≈3 days)*
+### Wave 3 — Email, done our way *(≈2 days)*
 
-8. **Background workers** — keep a queue running, restart it if it dies. Real new work.
-9. **PHP version per site** — Ally runbook.
-10. **Copy a site for testing** (staging/clone) — Ally runbook.
-11. **Database and certificate per site on plain servers** — screens over Wave 1's runbook.
+8. **Set up mail on a server** — Ally runbook, on request.
+9. **Manage mailboxes** where a panel already runs mail (CyberPanel, cPanel, Plesk).
+10. **Mail health** — the part that is actually ours: check SPF, DKIM and DMARC, watch for
+    blacklisting, warn before delivery starts failing, and diagnose "my email goes to spam".
+    Ally's `email-deliverability` runbook already exists.
 
-### Wave 4 — Optional parity *(later, only if asked for)*
+### Wave 4 — Close the operational gaps *(≈3 days)*
 
-12. Site isolation (a system user per site) · Suspend a site · Command-line tool.
+11. **Background workers** — keep a queue running, restart it if it dies. Real new work.
+12. **PHP version per site** — Ally runbook.
+13. **Copy a site for testing** (staging/clone) — Ally runbook.
+14. **Database and certificate per site on plain servers** — screens over Wave 1's runbook.
+
+### Wave 5 — Optional parity *(later, only if asked for)*
+
+15. Site isolation (a system user per site) · Suspend a site · Command-line tool.
 
 ---
 
@@ -126,9 +134,38 @@ That is the whole of what a competitor sells on day one.
 
 Recorded so it is a decision, not an oversight.
 
-- **Email hosting, FTP accounts, phpMyAdmin, reseller accounts.** These are control-panel
-  territory, five free products do them, and email alone is reported as **42% of a hosting
-  provider's support time.** We would inherit that cost and win nothing.
+- **FTP accounts, phpMyAdmin, reseller accounts.** Control-panel territory, five free
+  products do them, and they win us nothing.
+
+> ### Email — included, but not the way a panel does it
+>
+> **Owner's decision (2026-07-28): email is in.** Recorded here with the trade stated, so
+> the choice is deliberate.
+>
+> The cost is real: cPanel's own survey of 3,300 users found **email is 42% of a hosting
+> provider's support time** — more than any other category. Running mailboxes means
+> inheriting that. And the cost that does *not* show up in a feature list is
+> **deliverability**: a customer's mail lands in spam, and the cause is DNS records, a
+> blacklisted address or a neighbour on the same machine. Installing the software is a day;
+> that support burden is permanent.
+>
+> But the omission is also real: **CloudPanel's single most-cited weakness is having no
+> email at all.**
+>
+> **So we take the half that is genuinely ours: we do not run mail — we set it up, watch it
+> and fix it.**
+>
+> | We build | We do not build |
+> |---|---|
+> | Set up a mail server on request (Ally runbook) | Our own webmail |
+> | Manage mailboxes and forwarders where a panel already runs mail | Our own spam filtering |
+> | **Check SPF, DKIM and DMARC are correct** | Our own mail storage to support |
+> | **Watch for blacklisting, and warn before delivery fails** | |
+> | **Diagnose "my email goes to spam" and fix it** | |
+>
+> The last three are the actual pain, no competitor in Group A does any of them, and
+> **Ally already has an `email-deliverability` runbook** written for exactly this. This
+> makes email a strength rather than a support liability.
 - **Our own configuration templates per distribution.** That is the competitors' method and
   the reason their products only work on servers they built.
 - **A mobile app.** Ploi and RunCloud have one; it is not what loses us a sale.
@@ -165,10 +202,11 @@ of something free.
 |---|---|---|
 | **1** | Blank server → live website, no terminal | ~3 days |
 | **2** | Sites becomes the daily screen | ~2 days |
-| **3** | Operational parity | ~3 days |
-| 4 | Optional extras | later |
+| **3** | Email — set up, manage, and keep it delivering | ~2 days |
+| **4** | Operational parity — workers, PHP version, staging | ~3 days |
+| 5 | Optional extras | later |
 
-**About eight working days to parity on everything that matters**, because the large parts
+**About ten working days to parity on everything that matters**, because the large parts
 — deployment, firewall, backups, monitoring, DNS, cloud — were finished this week.
 
 **Start with Wave 1.** It is the first thing every competitor's customer does, we already
