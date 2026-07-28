@@ -85,3 +85,6 @@ gateway/*.db
 Issues-ss/
 Screenshots for Claude/
 /memory/
+
+# Generated PDFs and other build output — regenerate with scripts/md2pdf.py
+out/

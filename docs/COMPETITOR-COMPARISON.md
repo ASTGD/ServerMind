@@ -1,4 +1,4 @@
-# ServerAlly vs the market — one-page comparison
+# ServerAlly vs the market
 
 **Prepared 2026-07-28.** Condensed from our own research
 ([MARKET-RESEARCH-2026-07.md](MARKET-RESEARCH-2026-07.md),
@@ -28,6 +28,7 @@ have them."** Our engineering lead is much bigger than our marketing lead.
 | **Deploy platforms** | Ploi, RunCloud, Laravel Forge, SpinupWP, GridPane | Blank server → working web server → deploy code | Partly. They build; we also repair. |
 | **Managed hosts** | Cloudways, Hostinger, Kinsta, Rocket.net | Hosting, with a panel attached | Only on their own servers |
 | **Control panels** | cPanel, Plesk, CyberPanel, aaPanel, CloudPanel | The panel installed on one server | Baseline features only |
+| **AI-first rivals** | Panelica OpsAI, CtrlOps, Hostinger Kodee | The same promise we make | **Yes — directly** |
 | **Free / open source** | servermind.dev | Fleet monitoring, free forever | Sets the price floor |
 
 **One structural point matters more than any feature.** Every one of them is tied to one
@@ -41,55 +42,61 @@ agency with servers at five different providers cannot use any of them as a sing
 
 ✅ = has it · ⚠️ = partial or paid extra · ❌ = does not have it · — = not established in our research
 
-| | **ServerAlly** | Ploi | RunCloud | Forge | SpinupWP | Cloudways | cPanel/Plesk | servermind.dev |
-|---|---|---|---|---|---|---|---|---|
-| **Works across different providers** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ own only | ❌ per server | ✅ |
-| Deploy from a repository | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — |
-| Deploy on push · rollback · staging | ✅ | ⚠️ paid | ⚠️ paid | ✅ | ✅ | ⚠️ | ❌ | — |
-| Firewall screen | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ *(their users' #1 request)* | ❌ |
-| SSH key management | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — |
-| DNS records | ✅ Cloudflare | ✅ | ✅ | ✅ | — | ✅ | ✅ | — |
-| Backups | ✅ **all plans** | ⚠️ **paid tier** | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| **Backups stored off the server** | ✅ 6 providers | ✅ | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
-| Uptime / "is the site down" | ✅ **all plans** | ⚠️ **top tier only** | ✅ | ⚠️ | ⚠️ paid extra | ✅ | ⚠️ | ⚠️ server-level |
-| Service monitoring + auto-restart | ✅ | — | — | — | — | — | ⚠️ | ⚠️ |
-| Certificate expiry warning | ✅ | — | — | — | — | — | — | ✅ |
-| Server log viewer | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| On-call escalation, unanswered → next person | ✅ *(SMS/Telegram on Pro)* | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Public status pages | ✅ | ⚠️ top tier | ❌ | ❌ | ❌ | ❌ | ❌ | — |
-| White-label / client reports | ✅ | ✅ *(Ploi Core)* | ⚠️ | ❌ | ❌ | ✅ | ✅ | — |
-| API for customers | ✅ | ✅ all plans | ⚠️ **$49 tier** | ✅ | ✅ | ✅ | ✅ | — |
-| Team logins with roles | ✅ | ⚠️ **€30 tier** | ⚠️ paid | ✅ | ⚠️ $2/user | ✅ | ✅ | — |
-| **Create / resize / destroy servers** | ❌ **gap** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | — |
-| Email hosting, FTP accounts, phpMyAdmin | ❌ *deliberate* | ❌ | ❌ | ❌ | ❌ | ⚠️ | ✅ | — |
-| **AI that acts on the server** | ✅ | ❌ *(MCP only)* | ❌ | ❌ | ❌ | ⚠️ diagnose only | ⚠️ roadmap | ⚠️ chat |
-| **Checks its own work (verification gate)** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Multi-step jobs that survive a disconnect** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Malware / intrusion detection** | ✅ | ❌ | ⚠️ | ❌ | ❌ | ⚠️ | ⚠️ add-on | — |
-| **Guided hack cleanup + incident report** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **Defence against a hacked server tricking the AI** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Connect your own AI (MCP) | ✅ 22 tools | ✅ 60 tools | ⚠️ 3rd party | ❌ | ❌ | ❌ | ⚠️ roadmap | ⚠️ |
-| Answers in 8 languages | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| | **ServerAlly** | Ploi | RunCloud | Forge | SpinupWP | Cloudways | cPanel / Plesk | Panelica | servermind.dev |
+|---|---|---|---|---|---|---|---|---|---|
+| **Works across different providers** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ own only | ❌ per server | ❌ per server | ✅ |
+| Deploy from a repository | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | ✅ | ❌ |
+| Deploy on push | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | ✅ | ❌ |
+| Rollback · zero-downtime | ✅ | ⚠️ paid | ⚠️ **$49 tier** | ✅ | ❌ | ⚠️ | ❌ | — | ❌ |
+| Staging | ✅ | ⚠️ paid | ✅ | ❌ | ✅ best in class | ✅ | ⚠️ WordPress only | — | ❌ |
+| Firewall screen | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ **add-on — their users' #1 request** | ✅ | ❌ |
+| SSH key management | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| DNS records | ✅ Cloudflare | ✅ Cloudflare | ⚠️ **$49 tier** | ❌ **none** | ❌ **none** | ⚠️ 3rd-party | ✅ full nameserver | ✅ Cloudflare | ❌ |
+| Backups | ✅ **all plans** | ⚠️ **paid tier** | ✅ | ⚠️ **database only, paid** | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Backups stored off the server** | ✅ 6 providers | ✅ 3 | ✅ | ⚠️ | ✅ **10 providers** | ⚠️ paid extra | ✅ | ✅ | ❌ |
+| Uptime — "is the site down" | ✅ **all plans** | ⚠️ **top tier only** | ✅ | ✅ | ⚠️ **$1/site extra** | ✅ | ⚠️ | ✅ | ⚠️ server-level |
+| Service monitoring + auto-restart | ✅ | — | — | ✅ | — | ⚠️ | ⚠️ | ✅ | ⚠️ |
+| Certificate expiry warning | ✅ | — | — | — | — | — | ✅ Plesk | — | ✅ |
+| Server log viewer | ✅ | ✅ | — | ✅ | ✅ | — | ✅ | ✅ | ❌ |
+| On-call escalation, unanswered → next person | ✅ *(SMS/Telegram on Pro)* | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Public status pages | ✅ | ⚠️ **top tier** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| White-label / client reports | ✅ | ✅ *(Ploi Core, €30)* | ❌ | ❌ | ⚠️ | ⚠️ **invoices only** | ✅ | — | ❌ |
+| API for customers | ✅ | ✅ all paid plans | ⚠️ **$49 tier** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Team logins with roles | ✅ | ⚠️ **€30 tier** | ⚠️ **$49 tier** | ✅ | ⚠️ **$2/user** | ✅ | ✅ | ✅ | ❌ |
+| **Create / resize / destroy servers** | ❌ **our gap** | ✅ 8 providers | ✅ | ✅ | ✅ 6 providers | ✅ | ❌ | ❌ | ❌ |
+| Email hosting, FTP, phpMyAdmin | ❌ *deliberate* | ⚠️ | ❌ | ❌ | ⚠️ | ⚠️ | ✅ | ✅ | ❌ |
+| **AI that acts on the server** | ✅ | ❌ *(MCP only — no AI of their own)* | ❌ | ❌ | ❌ *("Assistant" is not AI)* | ⚠️ **server only, never the website** | ⚠️ roadmap — *"assist but not independently act"* | ✅ claimed | ⚠️ chat |
+| **Checks its own work** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Long jobs that survive a disconnect** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Malware / intrusion detection** | ✅ | ❌ | ⚠️ | ❌ | ❌ | ⚠️ **$4/site extra** | ⚠️ add-on | ✅ | ❌ |
+| **Guided hack cleanup + incident report** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **Stops a hacked server tricking the AI** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Connect your own AI (MCP) | ✅ 22 tools | ✅ 60 tools | ⚠️ community | ⚠️ community | ⚠️ community | ❌ | ⚠️ roadmap | — | ⚠️ |
+| Answers in 8 languages | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ---
 
 ## 4. Price comparison
 
-| Product | Price | What it buys | Meters usage? |
+| Product | Price / month | What it buys | Meters usage? |
 |---|---|---|---|
 | **ServerAlly Free** | **$0** | **2 servers** · 20 AI actions · **every feature** | No |
 | **ServerAlly Pro** | **$9** | **10 servers** · 50 AI actions · **every feature** | No |
 | **ServerAlly Pro+** | **$19** | **50 servers** · 100 AI actions · **every feature** | No |
 | Ploi Basic | €8 | 5 servers — **no backups, no monitoring, no support** | No |
-| Ploi Pro | €13 | 10 servers | No |
-| Ploi Unlimited | €30 | unlimited — status pages + teams start here | No |
-| RunCloud | $9 / $19 / $49 | 1 / **50** / 100 servers — API starts at $49 | No |
+| Ploi Pro | €13 | 10 servers — backups and monitoring start here | No |
+| Ploi Unlimited | €30 | unlimited — status pages and teams start here | No |
+| RunCloud | $9 / $19 / $49 / $399 | 1 / **50** / 100 / 500 servers — **API starts at $49** | No |
 | Laravel Forge | $12 / $19 / $39 | **unlimited servers, flat** | No — *"Is Forge usage-based pricing? No."* |
-| SpinupWP | $12 / $19 | 1 server, then +$1–10 each, +$2/user, +$1/monitor | No |
-| GridPane | Free ≤25 sites, then $19+ | per managed server | No |
-| Cloudways | hourly by server size | hosting + server | Meters disk and bandwidth |
-| Hostinger + Kodee AI | $6.49 | VPS with a **free, unlimited AI assistant** | No |
-| servermind.dev | **$0 forever** | fleet monitoring, free AI | No |
+| SpinupWP | $12 / $19 | 1 server, then +$1–10 each, +$2/user, **+$1 per site monitored** | Partly |
+| GridPane | **$0** up to 25 sites, then $19+ | per managed server; backups and monitoring are paid | No |
+| Cloudways | ~$11+ by server size | hosting + server, unlimited sites | Meters disk and bandwidth |
+| ↳ Cloudways AI Copilot | **+$3.99 / $9.99 / $19.99–80** | **4 / 12 / 25–100 AI credits** — runs out, AI stops | **Yes — credits** |
+| cPanel | **$29.99 → $69.99** | 1 / 5 / 30 / 100 accounts, then $0.49 each | No |
+| Plesk | **$16.99 → $69.99** | 10 / 30 / unlimited domains | No |
+| Panelica *(closest rival)* | **$0 / $4.99 / $9.99 / $24.99** | 3 / 15 / 50 / unlimited **domains**, AI included | No |
+| Hostinger VPS + Kodee AI | **$6.49** | a VPS with a **free, unlimited AI assistant** | No |
+| servermind.dev | **$0 forever** | fleet monitoring, free AI, open source | No |
 
 **Three things to take from this table.**
 
@@ -104,6 +111,9 @@ agency with servers at five different providers cannot use any of them as a sing
    servers with no backups, no monitoring, no file explorer and **no access to support**.
    We give a free account backups, malware scanning and incident response. That is a
    sentence we can put on the pricing page next to a named competitor.
+4. **We are the only one whose AI never stops working.** Cloudways sells AI credits — run
+   out and the fixing stops. We include AI in the plan. Nobody else in this market sells
+   AI by the unit, and the two that tried it in adjacent markets caused public refunds.
 
 ---
 
@@ -125,6 +135,12 @@ Verified across **15+ AI products** in our research. Not one of them has any of 
    **No competitor even discusses this risk**, while all of them feed server logs to an AI.
 5. **One place for every provider.** Nobody else does this. It is structural, not a feature
    they can add quickly — panels are licensed per server and hosts' AI belongs to the host.
+
+**The one provable gap to name in a sales conversation:** Cloudways' AI fixes *server*
+problems but **explicitly refuses to fix the website itself** — it only tells you what is
+wrong with WordPress. Fixing a broken WordPress site is exactly what our rescue missions do,
+proven live. Hostinger's free Kodee has no such limit, but it only ever works on Hostinger's
+own servers.
 
 **The honest framing:** "AI in a server panel" is no longer new — Hostinger, Cloudways,
 aaPanel and others all ship it. **"AI that acts safely across a whole fleet, and proves what
