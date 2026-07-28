@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
 import type { LucideIcon } from "lucide-react"
-import { ArrowUpRight, BookMarked, BookOpen, Boxes, FileCode, FileText, FlaskConical, Globe, LayoutDashboard, Monitor, Moon, Rocket, Settings, Sparkles, Sun, Terminal as TerminalIcon, Users } from "lucide-react"
+import { ArrowUpRight, BookMarked, BookOpen, Boxes, FileCode, FileText, FlaskConical, Globe, Globe2, LayoutDashboard, Monitor, Moon, Rocket, Settings, Sparkles, Sun, Terminal as TerminalIcon, Users } from "lucide-react"
 import Logo from "@/components/brand/Logo"
 import UpgradeModal from "./UpgradeModal"
 import { Card, Button, Badge } from "@/components/ui"
@@ -206,6 +206,7 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
           <NavItem to="/dashboard" icon={LayoutDashboard} label={t("nav.dashboard")} onClick={onClose} />
           <NavItem to="/servers" icon={Boxes} label={t("nav.servers")} onClick={onClose} />
           <NavItem to="/sites" icon={Globe} label="Sites" onClick={onClose} />
+          <NavItem to="/dns" icon={Globe2} label="DNS" onClick={onClose} />
 
           <SectionLabel>Automate</SectionLabel>
           <NavItem to="/missions" icon={Rocket} label={t("nav.missions")} badge={needsYou || undefined} onClick={onClose} />

@@ -7,6 +7,7 @@ import ServerDetail from "@/routes/ServerDetail"
 import ServerOverview from "@/routes/ServerOverview"
 import Playbooks from "@/routes/Playbooks"
 import Runbooks from "@/routes/Runbooks"
+import Dns from "@/routes/Dns"
 import Sites from "@/routes/Sites"
 import PlaybookDetail from "@/routes/PlaybookDetail"
 import ScriptGenerator from "@/routes/ScriptGenerator"
@@ -82,6 +83,7 @@ export default function App() {
           <Route path="playbooks" element={<Playbooks />} />
           <Route path="runbooks" element={<Runbooks />} />
           <Route path="sites" element={<Sites />} />
+          <Route path="dns" element={<Dns />} />
           <Route path="playbooks/:id" element={<PlaybookDetail />} />
           <Route path="scripts/generate" element={<ScriptGenerator />} />
           <Route path="scripts" element={<MyScripts />} />
