@@ -1841,7 +1841,8 @@ async def _handle_message(
     # The account's own runbooks (Pro #7) are considered alongside the built-in skills, and
     # win a tie — that is what "teach Ally YOUR procedures" has to mean.
     runbooks = await _load_runbooks(acting_user_id, server)
-    skill = skill_service.match(user_input, server.os_type, extra=runbooks)
+    skill = skill_service.match(user_input, server.os_type, extra=runbooks,
+                                panel=server.panel_type or "")
     if skill:
         logger.info("ally skill matched: %s%s (server=%s)", skill.slug,
                     " [custom]" if skill_service.is_custom(skill) else "", server.id)

@@ -326,7 +326,8 @@ async def build_chat_context(
     )
 
     ctx = ChatContext(
-        skill_menu=(skill_service.menu_for(server.os_type, extra=runbooks)
+        skill_menu=(skill_service.menu_for(server.os_type, extra=runbooks,
+                                           panel=server.panel_type or "")
                     if skill is None else None),
     )
     owner_id = acting_user_id or server.user_id

@@ -83,7 +83,8 @@ async def dry_run(server: Server, message: str, *, acting_user: User) -> dict:
     # the drift the Dev Door exists to rule out.
     async with AsyncSessionLocal() as _db:
         runbooks = await runbook_service.load_for(_db, acting_user)
-    skill = skill_service.match(message, server.os_type, extra=runbooks)
+    skill = skill_service.match(message, server.os_type, extra=runbooks,
+                                panel=server.panel_type or "")
 
     # Same assembly the live WS handler uses → the dry-run sees exactly what chat sees.
     ctx = await ai_context_service.build_chat_context(

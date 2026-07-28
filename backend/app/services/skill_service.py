@@ -130,6 +130,12 @@ class Skill:
     os_family: str  # 'linux' | 'windows' | 'any'
     body: str
     priority: int = 0
+    # Which servers this runbook applies to: "panel" (only where a control panel runs),
+    # "no-panel" (only where one does not), or "" (anywhere). Two runbooks can share the
+    # same triggers and still be told apart — "host a website" means something different
+    # on a CyberPanel box than on a plain one, and picking the wrong one makes Ally refuse
+    # a job it could have done.
+    requires: str = ""
     # 'knowledge' = injected into normal chat planning as an expert procedure.
     # 'mission'   = a runbook for the mission engine (chat only OFFERS a mission;
     #               the body is injected into each mission step-planning call).
@@ -197,6 +203,7 @@ def load_skills() -> list[Skill]:
                         os_family=(meta.get("os") or "any").lower(),
                         body=body[:_BODY_MAX],
                         priority=int(meta.get("priority", "0") or 0),
+                        requires=(meta.get("requires", "") or "").strip().lower(),
                         mode=(meta.get("mode") or "knowledge").lower(),
                         budget=_parse_budget(meta.get("budget")),
                         recipe=_truthy(meta.get("recipe")),
@@ -230,8 +237,28 @@ def _os_ok(skill: Skill, os_type: str | None) -> bool:
     return (skill.os_family == "windows") == is_windows
 
 
+def server_ok(skill: Skill, panel: str | None) -> bool:
+    """Does this runbook apply to a server with (or without) a control panel?
+
+    `panel` is None only when the caller has no server at all (an eval, a fleet-wide
+    question) — then nothing is filtered, because a missing detail must not hide the right
+    runbook. A caller holding a server passes `server.panel_type or ""`: a null panel on a
+    real server is not ignorance, it is the answer "no panel", and treating it as unknown
+    sent every plain server to the CyberPanel runbook.
+    """
+    need = (skill.requires or "").strip().lower()
+    if not need or panel is None:
+        return True
+    has_panel = bool((panel or "").strip())
+    if need == "panel":
+        return has_panel
+    if need in ("no-panel", "no_panel", "none"):
+        return not has_panel
+    return True
+
+
 def match(user_input: str, os_type: str | None = None,
-          extra: list[Skill] | None = None) -> Skill | None:
+          extra: list[Skill] | None = None, panel: str | None = None) -> Skill | None:
     """The best-matching skill for a message, or None.
 
     Deterministic: counts whole trigger phrases present in the lowercased message; highest hit
@@ -247,7 +274,7 @@ def match(user_input: str, os_type: str | None = None,
     best: Skill | None = None
     best_score = 0
     for skill in list(extra or []) + load_skills():
-        if not _os_ok(skill, os_type):
+        if not _os_ok(skill, os_type) or not server_ok(skill, panel):
             continue
         score = sum(_trigger_weight(t) for t in skill.triggers if t in text)
         # Strictly greater, and custom runbooks come first in the list — so an equal score
@@ -309,7 +336,8 @@ def list_recipes(os_type: str | None = None) -> list[Skill]:
     ]
 
 
-def menu_for(os_type: str | None, extra: list[Skill] | None = None) -> str:
+def menu_for(os_type: str | None, extra: list[Skill] | None = None,
+             panel: str | None = None) -> str:
     """A one-line-per-skill menu for the prompt (Skills Phase B) — the model itself picks a
     skill when keyword matching missed (any language, any phrasing). Only OS-compatible skills
     are listed. ~100 tokens for the whole library.
@@ -322,6 +350,8 @@ def menu_for(os_type: str | None, extra: list[Skill] | None = None) -> str:
         + (" [multi-step mission]" if s.mode == "mission" else "")
         + (" [this account's own procedure]" if s.path.startswith("runbook:") else "")
         for s in list(extra or []) + load_skills()
-        if _os_ok(s, os_type)
+        # A runbook the model cannot use on this server should not be offered to it —
+        # picking one that immediately refuses wastes a turn and reads as a dead end.
+        if _os_ok(s, os_type) and server_ok(s, panel)
     ]
     return "\n".join(lines)

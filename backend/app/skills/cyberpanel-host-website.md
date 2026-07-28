@@ -4,6 +4,7 @@ title: Host a Website / WordPress on CyberPanel
 triggers: host a wordpress, wordpress site, host a website, host a site, host a blog, new wordpress, install wordpress, create a website, launch a website, publish a website, host my website, set up wordpress, setup wordpress
 os: linux
 priority: 8
+requires: panel
 mode: mission
 budget: 25
 recipe: true
