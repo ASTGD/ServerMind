@@ -1,6 +1,6 @@
 # ServerAlly — Feature List
 
-**Prepared 2026-07-27 · For executive review**
+**Prepared 2026-07-27, updated 2026-07-28 · For executive review**
 
 > This document lists everything ServerAlly can do today, in plain language, and shows which
 > plan each feature belongs to. It is written from the product's actual configuration, not
@@ -99,6 +99,9 @@ The core of the product. The customer types what they want in plain English and 
 |---|---|---|
 | **Uptime monitoring** | All plans | Checks whether a website actually loads, from outside the server — where a real visitor is. A check from the server itself would pass even when the site is unreachable. |
 | **Real content checking** | All plans | A website can return "OK" while showing a blank page or an error. We check that the page really contains the site, not just that the server answered. |
+| **Service monitoring** | All plans | Watches the services that keep a server working — web server, database, cache, mail, queue workers — and tells the customer when one stops. Previously a database could die on a quiet server and nothing was said, because alerts only worked on processor, memory and disk. |
+| **Finds the services for you** | All plans | The customer does not need to know their database is called `mariadb`. We look at the server, list what is actually installed in plain names, and they tick the ones to watch. |
+| **Automatic restart** | All plans | Off by default. Switched on per service, Ally restarts it when it stops and confirms it really came back. **With a hard limit:** a service that crashes on startup would otherwise be restarted forever — hammering the server and hiding the real fault behind something that looks like it keeps recovering. After a few tries ServerAlly stops and says a person is needed. |
 | **Certificate expiry warnings** | All plans | An expired HTTPS certificate takes a site down completely, and always gives weeks of warning. We warn at 14 days and again at 3 days. |
 | **Performance monitoring** | All plans | Continuous tracking of processor, memory and disk use, with charts and history. |
 | **Custom alerts** | All plans | Email or webhook alerts when any measurement crosses a limit the customer sets. |
