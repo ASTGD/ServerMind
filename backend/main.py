@@ -14,6 +14,7 @@ from app.routers import audit as audit_router
 from app.routers import auth as auth_router
 from app.routers import backups as backups_router
 from app.routers import cloud_accounts as cloud_accounts_router
+from app.routers import cloud_lifecycle as cloud_lifecycle_router
 from app.routers import commands as commands_router
 from app.routers import dev as dev_router
 from app.routers import files as files_router
@@ -330,6 +331,7 @@ app.include_router(hosting_router.router)
 app.include_router(installed_router.router)
 app.include_router(usage_router.router)
 app.include_router(cloud_accounts_router.router)
+app.include_router(cloud_lifecycle_router.router)
 app.include_router(rdp_router.router)
 app.include_router(memories_router.router)
 app.include_router(branding_router.router)  # /api/branding + client reports

@@ -9,6 +9,7 @@ import {
   type CloudInstance,
   type ImportResult,
 } from "@/api/cloud"
+import CloudLifecyclePanel from "./CloudLifecyclePanel"
 
 interface Props {
   account: CloudAccount
@@ -93,6 +94,14 @@ export default function CloudAccountModal({ account, onClose }: Props) {
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-4">
+              {/* Managing what is already there — start, stop, resize, delete, and make
+                  a new one. Above the import table because acting on a running server is
+                  the frequent job; importing is the one-off. */}
+              <div className="mb-4 rounded-xl border border-border p-3">
+                <h3 className="mb-2 text-h3 text-foreground">Servers in this account</h3>
+                <CloudLifecyclePanel account={account} />
+              </div>
+              <h3 className="mb-2 text-h3 text-foreground">Import into ServerAlly</h3>
               {instancesQ.isLoading ? (
                 <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground"><Loader2 size={16} className="animate-spin" /> Loading instances…</div>
               ) : instancesQ.isError ? (

@@ -68,3 +68,86 @@ export async function importCloudInstances(
   const { data } = await apiClient.post<ImportResult>(`/api/cloud-accounts/${id}/import`, body)
   return data
 }
+
+// ── Lifecycle: create, restart, resize and destroy (DigitalOcean + Hetzner) ──
+
+export interface CloudSize {
+  slug: string
+  label: string
+  vcpus: number
+  memory_mb: number
+  disk_gb: number
+  price_monthly: number | null
+  currency: string
+  available: boolean
+}
+
+export interface Catalogue {
+  supported: boolean
+  provider: string
+  message?: string
+  regions: { slug: string; label: string; available: boolean; sizes?: string[] }[]
+  sizes: CloudSize[]
+  images: { slug: string; label: string }[]
+  ssh_keys: { id: string; label: string }[]
+}
+
+export interface ResizePlan {
+  from_size: string
+  to_size: string
+  grows_disk: boolean
+  /** False means the disk grows, which can never be undone. */
+  reversible: boolean
+  needs_power_off: boolean
+  warning: string
+  price_change: string
+}
+
+export async function getCloudCatalogue(accountId: string): Promise<Catalogue> {
+  const { data } = await apiClient.get(`/api/cloud-accounts/${accountId}/catalogue`)
+  return data
+}
+
+export async function createCloudInstance(
+  accountId: string,
+  body: { name: string; region: string; size: string; image: string; ssh_keys: string[] },
+): Promise<{ instance: CloudInstance; message: string }> {
+  const { data } = await apiClient.post(`/api/cloud-accounts/${accountId}/instances`, body)
+  return data
+}
+
+export async function cloudPower(
+  accountId: string, instanceId: string, action: "reboot" | "power-on" | "power-off",
+): Promise<{ ok: boolean; message: string }> {
+  const { data } = await apiClient.post(
+    `/api/cloud-accounts/${accountId}/instances/${instanceId}/${action}`)
+  return data
+}
+
+export async function previewCloudResize(
+  accountId: string, instanceId: string, size: string, growDisk: boolean,
+): Promise<{ plan: ResizePlan; name: string; state: string }> {
+  const { data } = await apiClient.post(
+    `/api/cloud-accounts/${accountId}/instances/${instanceId}/resize/preview`,
+    { size, grow_disk: growDisk })
+  return data
+}
+
+export async function cloudResize(
+  accountId: string, instanceId: string, size: string, growDisk: boolean,
+): Promise<{ ok: boolean; plan: ResizePlan; message: string }> {
+  const { data } = await apiClient.post(
+    `/api/cloud-accounts/${accountId}/instances/${instanceId}/resize`,
+    { size, grow_disk: growDisk })
+  return data
+}
+
+/** The typed name is the safety mechanism — the server refuses unless it matches. */
+export async function destroyCloudInstance(
+  accountId: string, instanceId: string, confirmName: string,
+): Promise<{ ok: boolean; message: string }> {
+  const { data } = await apiClient.post(
+    `/api/cloud-accounts/${accountId}/instances/${instanceId}/destroy`,
+    { confirm_name: confirmName })
+  return data
+}
