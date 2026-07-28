@@ -92,6 +92,7 @@ export default function ServerDetail() {
         { to: `/servers/${server.id}`, label: "Overview", end: true },
         { to: `/servers/${server.id}/files`, label: "Files", end: false },
         { to: `/servers/${server.id}/security`, label: "Security", end: false },
+        { to: `/servers/${server.id}/access`, label: "Access", end: false },
         { to: `/servers/${server.id}/logs`, label: "Logs", end: false },
         { to: `/servers/${server.id}/backups`, label: "Backups", end: false },
         { to: `/servers/${server.id}/scheduler`, label: "Scheduler", end: false },

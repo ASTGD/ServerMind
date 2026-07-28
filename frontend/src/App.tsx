@@ -17,6 +17,7 @@ import Scheduler from "@/routes/Scheduler"
 import FileManager from "@/routes/FileManager"
 import Security from "@/routes/Security"
 import ServerLogs from "./routes/ServerLogs"
+import ServerAccess from "@/routes/ServerAccess"
 import PublicStatusPage from "./routes/PublicStatus"
 import Acknowledge from "./routes/Acknowledge"
 import Backups from "@/routes/Backups"
@@ -76,6 +77,7 @@ export default function App() {
             <Route path="files" element={<FileManager />} />
             <Route path="security" element={<Security />} />
             <Route path="logs" element={<ServerLogs />} />
+            <Route path="access" element={<ServerAccess />} />
             <Route path="backups" element={<Backups />} />
             <Route path="scheduler" element={<Scheduler />} />
             <Route path="hosting" element={<Hosting />} />

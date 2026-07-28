@@ -44,6 +44,7 @@ from app.routers import runbooks as runbooks_router
 from app.routers import sites as sites_router
 from app.routers import memories as memories_router
 from app.routers import mcp_admin as mcp_admin_router
+from app.routers import access as access_router
 from app.routers import deployments as deployments_router
 from app.routers import dns as dns_router
 from app.routers import service_monitors as service_monitors_router
@@ -335,6 +336,7 @@ app.include_router(branding_router.router)  # /api/branding + client reports
 app.include_router(status_pages_router.router)  # /api/status-pages + public /api/public/status/{slug}
 app.include_router(autopilot_router.router)  # /api/autopilot — scheduled missions
 app.include_router(logs_router.router)  # /api/servers/{id}/logs — server log viewer
+app.include_router(access_router.router)
 app.include_router(deployments_router.router)
 app.include_router(dns_router.router)
 app.include_router(service_monitors_router.router)
