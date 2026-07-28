@@ -226,8 +226,9 @@ Included so nobody is surprised. These are known and tracked, not gaps we have m
   figure the $9 and $19 prices were based on. That measurement comes from our own heavy
   development use, not from customers, so it is a warning rather than a verdict. We should
   confirm it with a small group of real users before publishing prices.
-- **No marketing or pricing website exists yet.** The copy and brand are written; the site
-  itself is not built.
+- **The marketing site is live but has no prices on it.** Five pages are published at
+  serverally.firevps.net. The pricing page cannot be finished until the point above is
+  settled.
 - **Items awaiting live confirmation** are listed in the platform table above. In each case
   the feature is built and tested — what is missing is one live system to confirm it against.
 
