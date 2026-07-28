@@ -12,7 +12,7 @@ configuration, not from plans or notes.
 ## 1. The short version
 
 Four days ago we were behind the established players on ordinary, expected features while
-being far ahead on AI. **We have now closed nine of the twelve gaps our research found.**
+being far ahead on AI. **We have now closed ten of the twelve gaps our research found.**
 On the standard checklist we are at or near parity. On what happens when something breaks,
 nobody in this market is close.
 
@@ -63,7 +63,7 @@ agency with servers at five different providers cannot use any of them as a sing
 | White-label / client reports | ✅ | ✅ *(Ploi Core, €30)* | ❌ | ❌ | ⚠️ | ⚠️ **invoices only** | ✅ | — | ❌ |
 | API for customers | ✅ | ✅ all paid plans | ⚠️ **$49 tier** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Team logins with roles | ✅ | ⚠️ **€30 tier** | ⚠️ **$49 tier** | ✅ | ⚠️ **$2/user** | ✅ | ✅ | ✅ | ❌ |
-| **Create / resize / destroy servers** | ❌ **our gap** | ✅ 8 providers | ✅ | ✅ | ✅ 6 providers | ✅ | ❌ | ❌ | ❌ |
+| **Create / resize / destroy servers** | ✅ 2 providers | ✅ 8 providers | ✅ | ✅ | ✅ 6 providers | ✅ | ❌ | ❌ | ❌ |
 | Email hosting, FTP, phpMyAdmin | ❌ *deliberate* | ⚠️ | ❌ | ❌ | ⚠️ | ⚠️ | ✅ | ✅ | ❌ |
 | **AI that acts on the server** | ✅ | ❌ *(MCP only — no AI of their own)* | ❌ | ❌ | ❌ *("Assistant" is not AI)* | ⚠️ **server only, never the website** | ⚠️ roadmap — *"assist but not independently act"* | ✅ claimed | ⚠️ chat |
 | **Checks its own work** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -154,7 +154,7 @@ Stated plainly so nobody is surprised.
 
 | Gap | Detail | Plan |
 |---|---|---|
-| **Cannot create or destroy servers** | We import a cloud account and manage what is there; we cannot start a new server, resize it or shut it down. Every deploy platform can. | **Next item in the current build queue** |
+| Creating servers covers 2 providers, not 5 | DigitalOcean and Hetzner are done. Amazon, Google and Azure need networks and disks decided before a machine exists, so they stay import-only for now. | Deliberate; revisit on demand |
 | No command-line tool | We have an API; some buyers expect a CLI too. | Small; not scheduled |
 | No email hosting, FTP accounts, phpMyAdmin | Control panels have these; we deliberately do not. | **Deliberate — we sit above the panel, not inside it** |
 | DNS is Cloudflare only | The other providers use the same design and are quick to add. | On request |
@@ -179,7 +179,7 @@ Our research on 25 July listed twelve gaps against the market. **Nine are now cl
 | No SSH key screen | ✅ With lockout protection |
 | No white-label or client reports | ✅ Both |
 | No public API | ✅ API keys + signed webhooks |
-| Cannot create/resize/destroy cloud servers | ❌ **still open — next** |
+| Cannot create/resize/destroy cloud servers | ✅ DigitalOcean + Hetzner |
 | PHP version switching, queue workers | ❌ **deliberately dropped** — panel features, not ours |
 
 ---

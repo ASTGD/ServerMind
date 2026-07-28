@@ -148,6 +148,8 @@ This group is our strongest differentiator. Competitors stop at a firewall.
 |---|---|---|
 | **Any server, one place** | All plans | Linux, Windows, and shared hosting panels side by side. No competitor manages across providers — they are each locked to one host. |
 | **Sites view** | All plans | Every website across every server, searchable by domain name. When a client calls about their site, nobody needs to remember which server it is on. Shows whether it is up, its certificate status, and what it runs. |
+| **Create and delete servers** | All plans | Build a new server in a connected DigitalOcean or Hetzner account without leaving ServerAlly — choose the size, see the monthly price before pressing the button — then start, restart, shut down, resize or delete it. |
+| **Protection against costly mistakes** | All plans | Creating and deleting are the only actions that spend money or erase a disk. Deleting requires typing the server's exact name, checked against the provider at that instant so a stale page cannot delete anything; a repeated create is refused rather than billed twice; and a resize that permanently enlarges the disk is clearly marked as one that can never be undone. |
 | **Cloud account import** | All plans | Connect an Amazon, DigitalOcean, Hetzner, Google Cloud or Azure account and import the servers automatically instead of adding them one by one. |
 | **50 one-click installers** | All plans | Ready-made scripts for WordPress, Docker, LAMP/LEMP, Node.js, Nextcloud, monitoring tools, security hardening, control panels and more. |
 | **AI script writer** | All plans | Describe what a script should do and Ally writes it, ready to review, save and reuse. |
@@ -195,7 +197,8 @@ This group is our strongest differentiator. Competitors stop at a firewall.
 | Windows (remote desktop) | The full pipeline is proven; awaiting one live Windows desktop to confirm |
 | CyberPanel | Fully proven on live servers |
 | cPanel / WHM, Plesk, DirectAdmin | Built and tested against the published specifications; awaiting a licensed panel to confirm |
-| Amazon, DigitalOcean, Hetzner, Google Cloud, Azure | Connection proven; final import step awaiting one API key per provider |
+| Amazon, DigitalOcean, Hetzner, Google Cloud, Azure | Import: connection proven, final step awaiting one API key per provider |
+| Creating/deleting servers — DigitalOcean and Hetzner | Built and proven against a stand-in provider; awaiting one API key to confirm against the real one |
 
 ---
 
