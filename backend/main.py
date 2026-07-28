@@ -44,6 +44,7 @@ from app.routers import runbooks as runbooks_router
 from app.routers import sites as sites_router
 from app.routers import memories as memories_router
 from app.routers import mcp_admin as mcp_admin_router
+from app.routers import service_monitors as service_monitors_router
 from app.routers import uptime as uptime_router
 from app.routers import team as team_router
 from app.routers import usage as usage_router
@@ -136,6 +137,16 @@ async def _start_background_jobs() -> None:
     # Uptime monitoring — probe each site FROM ServerAlly (not from the server, which
     # would pass while DNS/firewall/the whole box is unreachable). Sweeps every minute;
     # each monitor is only probed when its own interval has elapsed.
+    # Services are checked every 2 minutes. Slower than uptime (1 min) because a stopped
+    # service is not usually a second-by-second race, and each sweep is one SSH round
+    # trip per server — worth being frugal with on a large fleet.
+    from app.workers import service_monitor_worker
+    scheduler.add_job(
+        service_monitor_worker.sweep,
+        "interval", minutes=2, id="service_monitors",
+        max_instances=1, replace_existing=True,
+    )
+
     from app.workers import uptime_worker
     scheduler_service.get_scheduler().add_job(
         uptime_worker.check_due_monitors,
@@ -320,6 +331,7 @@ app.include_router(branding_router.router)  # /api/branding + client reports
 app.include_router(status_pages_router.router)  # /api/status-pages + public /api/public/status/{slug}
 app.include_router(autopilot_router.router)  # /api/autopilot — scheduled missions
 app.include_router(logs_router.router)  # /api/servers/{id}/logs — server log viewer
+app.include_router(service_monitors_router.router)
 app.include_router(uptime_router.router)
 app.include_router(escalation_router.router)  # /api/escalation — on-call paging
 app.include_router(integrations_router.router)  # /api/api-keys, /api/webhooks — browser-only
