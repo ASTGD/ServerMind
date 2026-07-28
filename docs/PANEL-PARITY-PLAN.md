@@ -172,27 +172,49 @@ Recorded so it is a decision, not an oversight.
 
 ---
 
-## 6. What this changes about who we sell to
+## 6. Who we sell to — two buyers, one product
 
-Worth stating plainly, because it follows from the decision:
+An earlier draft of this plan said *"we cannot win by being easier — they are already
+competent."* **That was wrong, and the owner corrected it.** Ease is not the opposite of
+competence: Forge's customers are developers who could do every one of these jobs by hand,
+and they pay precisely so they do not have to. Ease is the whole category's value.
 
-**The person who pays us is now the same person who pays Ploi** — an agency, developer or
-MSP with several servers, who is semi-technical. Not a beginner. They *could* do this
-themselves; they pay to not spend the afternoon.
+The accurate version is that ease has to be measured against the right thing.
 
-So we cannot win by being easier — they are already competent. We win on:
+| | **Agency / developer / MSP** | **Business owner** |
+|---|---|---|
+| Knows the words (vhost, PHP version, queue) | Yes | **No** |
+| Buys | Speed and safety | **Being able to do it at all** |
+| Competitors serve them | Yes, well | **No** |
 
-- **Speed** — one sentence instead of thirty minutes of clicking.
-- **Safety** — it notices when a site breaks, and it can clean up a hack.
+**The opening is the second column.** Ploi and RunCloud are easy *for someone who already
+knows the vocabulary*. Their screens ask which PHP version, which web root, which worker
+count. A shop owner with four sites and no developer cannot answer any of that — so they
+are not really served by anyone today.
 
-The free tier stays valuable as a way in, not as the business.
+Ally is what makes that column reachable. The customer does not need the words; they say
+what they want.
 
-**The sentence that has to stay true:**
+### The design rule this creates — every feature gets two doors
 
-> *Anyone can set your server up. We set it up, watch it, and fix it when it breaks.*
+Each screen in this plan must work both ways:
 
-If we finish this plan and that sentence stops being true, we have built a slower version
-of something free.
+- **A form** for the person who knows exactly what they want — fast, precise, no AI cost.
+- **A sentence to Ally** for the person who does not — *"put a WordPress site on this
+  server for my shop"*.
+
+We already have this pattern working: the recipe form collects a few fields, writes a plain
+sentence, and hands it to Ally. Nothing new is needed architecturally — it just has to be
+applied consistently rather than once.
+
+**And the vocabulary is part of the product.** The interface says *"website"*, not vhost;
+*"background job"*, not supervisor worker; *"copy for testing"*, not staging clone. That
+alone puts us somewhere no competitor is standing.
+
+**The sentence that has to stay true, updated:**
+
+> *Anyone can set your server up. We set it up so a non-expert can, watch it, and fix it
+> when it breaks.*
 
 ---
 
