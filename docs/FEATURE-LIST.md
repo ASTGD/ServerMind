@@ -174,6 +174,9 @@ This group is our strongest differentiator. Competitors stop at a firewall.
 
 | Feature | Plan | What it does |
 |---|---|---|
+| **Deployments** | All plans | Ships a repository to a server. Each deploy is built in a folder of its own and only goes live once it has finished, so a broken build leaves the site running exactly as it was. One click goes back to the previous version. |
+| **Deploy on push** | All plans | Pushing to the chosen branch deploys automatically. The webhook is signed, so knowing the address is not enough to trigger a deploy. |
+| **Staging** | All plans | The same repository can be deployed twice — a staging copy from one branch and the live site from another — so changes are tried somewhere safe first. |
 | **API keys** | **Pro** | A documented interface so customers can connect ServerAlly to their own tools and scripts. |
 | **Webhooks** | **Pro** | ServerAlly notifies the customer's own systems when something happens, with signed and verified messages, automatic retries, and protection against being tricked into calling internal addresses. |
 | **Connect your own AI (MCP)** | **Pro** | A customer can connect their existing Claude or ChatGPT subscription and manage their whole fleet by chatting there. 22 available operations. **This costs us nothing in AI charges** — their subscription pays for the thinking. |
