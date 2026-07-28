@@ -6,6 +6,7 @@ import logging
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services import client_ip
 from app.models.audit_log import AuditLog
 from app.models.user import User
 
@@ -13,13 +14,16 @@ logger = logging.getLogger(__name__)
 
 
 def _client_ip(request: Request | None) -> str | None:
+    """Where this request really came from.
+
+    Was the FIRST `X-Forwarded-For` entry, which is the one the client writes themselves —
+    so anyone could choose the address recorded against their own actions. An audit log
+    whose addresses can be forged by the person being audited is worse than none, because
+    it gets believed.
+    """
     if request is None:
         return None
-    # Honour the first X-Forwarded-For hop when behind a proxy, else the peer.
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else None
+    return client_ip.resolve(request)
 
 
 async def audit(

@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     # data; the cloud deployment turns it on.
     ENFORCE_PLAN_LIMITS: bool = False
 
+    # Which hops in front of us may be believed about where a request came from.
+    # Loopback and the private ranges by default: a public client cannot legitimately
+    # present one of these as its source, and in a container deployment the proxy hop is
+    # always one of them. Set explicitly if the proxy is somewhere else.
+    TRUSTED_PROXIES: str = ("127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,"
+                            "192.168.0.0/16,fc00::/7")
+
     # Billing-system entitlement API (docs/WHMCS-INTEGRATION.md). The WHMCS
     # provisioning module authenticates with this shared secret to set users' plans
     # on paid/suspended/cancelled events. Empty (default) = the API is disabled.

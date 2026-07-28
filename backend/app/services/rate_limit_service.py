@@ -13,15 +13,17 @@ from __future__ import annotations
 import logging
 
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from app.config import settings
+from app.services.client_ip import key_func
 from app.services.redis_service import get_redis
 
 logger = logging.getLogger(__name__)
 
-# HTTP limiter. NOTE: behind a reverse proxy, configure trusted X-Forwarded-For
-# so the client IP (not the proxy IP) is the key; for prod multi-worker, pass
+# HTTP limiter. The key comes from `client_ip.key_func`, not from the raw peer address:
+# in production the backend sits behind Caddy and the frontend nginx container, so keying
+# on the peer put every visitor in ONE bucket — one person exhausting the login limit
+# would have locked out the entire customer base. For prod multi-worker, pass
 # storage_uri=settings.REDIS_URL for a shared window.
 #
 # key_style="endpoint" is load-bearing, not a preference. slowapi defaults to "url", which
@@ -33,7 +35,7 @@ logger = logging.getLogger(__name__)
 # with the same token did. Bucketing by endpoint function makes the limit per-route-per-IP,
 # which is what every `@limiter.limit(...)` in this codebase means.
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=key_func,
     enabled=settings.RATE_LIMIT_ENABLED,
     key_style="endpoint",
 )
