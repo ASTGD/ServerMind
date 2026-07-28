@@ -174,6 +174,9 @@ This group is our strongest differentiator. Competitors stop at a firewall.
 
 | Feature | Plan | What it does |
 |---|---|---|
+| **Firewall manager** | All plans | See what is open on a server in plain words — "Secure web traffic", "Database" — and open or close ports without typing commands. Works with both firewall systems in common use. |
+| **Lockout protection** | All plans | The dangerous part of any firewall change is cutting your own connection: the command works, and the server is gone for good. ServerAlly knows how it reaches each server and **refuses** any change that would close that door — it does not just warn. |
+| **SSH key manager** | All plans | Shows exactly who can sign in to a server, with a name for each key, and lets the customer add or remove people. The key ServerAlly itself uses is marked and cannot be removed by accident. |
 | **Deployments** | All plans | Ships a repository to a server. Each deploy is built in a folder of its own and only goes live once it has finished, so a broken build leaves the site running exactly as it was. One click goes back to the previous version. |
 | **Deploy on push** | All plans | Pushing to the chosen branch deploys automatically. The webhook is signed, so knowing the address is not enough to trigger a deploy. |
 | **Staging** | All plans | The same repository can be deployed twice — a staging copy from one branch and the live site from another — so changes are tried somewhere safe first. |
