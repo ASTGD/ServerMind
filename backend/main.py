@@ -35,6 +35,7 @@ from app.routers import recipes as recipes_router
 from app.routers import scheduler as scheduler_router
 from app.routers import scripts as scripts_router
 from app.routers import security as security_router
+from app.routers import server_setup as server_setup_router
 from app.routers import servers as servers_router
 from app.routers import settings as settings_router
 from app.routers import entitlements as entitlements_router
@@ -56,6 +57,7 @@ from app.services import backup_service, playbook_service, scheduler_service
 from app.services.rate_limit_service import limiter
 from app.websocket import terminal as ws_handlers
 from app.websocket import rdp_tunnel as ws_rdp
+from app.workers import setup_runner
 from app.workers import metrics_worker
 from app.mcp.server import mcp_server  # MCP server (docs/MCP-SERVER-PLAN.md)
 
@@ -259,6 +261,7 @@ async def lifespan(app: FastAPI):
     # mark it resumable (Ally Missions Phase 3).
     from app.services import mission_service
     await mission_service.recover_orphaned()
+    await setup_runner.recover_orphaned()
     async with AsyncSessionLocal() as db:
         await playbook_service.seed_if_empty(db)
         # Apply the saved AI provider config (Settings UI) over the .env default.
@@ -310,6 +313,7 @@ app.add_middleware(SlowAPIMiddleware)
 app.include_router(auth_router.router)
 app.include_router(audit_router.router)
 app.include_router(assistant_router.router)
+app.include_router(server_setup_router.router)
 app.include_router(servers_router.router)
 app.include_router(commands_router.router)
 app.include_router(dev_router.router)
