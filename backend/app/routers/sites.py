@@ -24,6 +24,7 @@ from app.database import get_db
 from app.dependencies.access import resolve_server
 from app.dependencies.auth import get_current_user
 from app.models.server import Server
+from app.models.mail_health import MailHealthRecord
 from app.models.site import Site
 from app.models.uptime import UptimeMonitor
 from app.models.user import User
@@ -110,15 +111,19 @@ async def list_sites(
 
     rows = (await db.execute(query.order_by(Site.domain).limit(limit))).scalars().all()
     uptime = await _uptime_by_host(db, current_user.id)
+    mail = await _mail_by_domain(db, current_user.id)
 
-    sites = [
-        site_service.serialize(
+    sites = []
+    for row in rows:
+        item = site_service.serialize(
             row,
             server_name=names.get(row.server_id),
             uptime=uptime.get(row.domain.lower()),
         )
-        for row in rows
-    ]
+        # Up, secure and deliverable in one row. Joined here rather than fetched separately
+        # so the page cannot show a site whose three answers came from three moments.
+        item["mail"] = mail.get(row.domain.lower())
+        sites.append(item)
 
     # Which servers have never been scanned, so the page can say "scan these" rather than
     # implying the fleet genuinely has no websites. Only SSH servers can be scanned at all.
@@ -136,6 +141,21 @@ async def list_sites(
         "count": len(sites),
         "servers_scanned": len(scanned_ids),
         "never_scanned": never,
+    }
+
+
+async def _mail_by_domain(db: AsyncSession, user_id) -> dict[str, dict]:
+    """The last mail-health result for every domain this customer watches."""
+    rows = (await db.execute(
+        select(MailHealthRecord).where(MailHealthRecord.user_id == user_id)
+    )).scalars().all()
+    return {
+        r.domain.lower(): {
+            "id": str(r.id), "verdict": r.verdict, "score": r.score,
+            "summary": r.summary, "findings": r.findings or [],
+            "checked": r.last_checked.isoformat() if r.last_checked else None,
+        }
+        for r in rows
     }
 
 

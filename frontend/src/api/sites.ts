@@ -14,7 +14,7 @@ export interface Site {
   id: string
   domain: string
   aliases: string[]
-  server_id: string
+  server_id: string | null
   server_name: string | null
   doc_root: string | null
   source: string
@@ -26,6 +26,8 @@ export interface Site {
   last_seen: string | null
   /** From the uptime monitor watching this domain, if one exists. */
   uptime: SiteUptime | null
+  /** Whether this domain's email will actually arrive, if it is being checked. */
+  mail?: SiteMail | null
 }
 
 export interface SiteList {
@@ -89,4 +91,14 @@ export async function watchSites(
 
 export async function forgetSite(siteId: string): Promise<void> {
   await apiClient.delete(`/api/sites/${siteId}`)
+}
+
+/** The last mail-health result for a site, joined into the list server-side. */
+export interface SiteMail {
+  id: string
+  verdict: "ok" | "at risk" | "failing" | "unknown"
+  score: number
+  summary: string | null
+  findings: { key: string; severity: string; title: string; detail: string; fix: string }[]
+  checked: string | null
 }

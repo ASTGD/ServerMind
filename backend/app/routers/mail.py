@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,7 +54,8 @@ async def list_mail_health(db: DBDep, current_user: CurrentUser) -> dict:
 
 
 @router.post("/watch")
-async def watch(body: WatchBody, db: DBDep, current_user: CurrentUser) -> dict:
+async def watch(body: WatchBody, background: BackgroundTasks, db: DBDep,
+                current_user: CurrentUser) -> dict:
     """Start checking domains. Defaults to every website the customer has."""
     wanted: list[str] = []
     if body.domains:
@@ -72,15 +73,20 @@ async def watch(body: WatchBody, db: DBDep, current_user: CurrentUser) -> dict:
         select(MailHealthRecord).where(
             MailHealthRecord.user_id == current_user.id))).scalars().all()}
 
-    added = 0
+    fresh: list[MailHealthRecord] = []
     for domain in wanted:
         if domain in known:
             continue
-        db.add(MailHealthRecord(user_id=current_user.id, domain=domain, is_active=True))
+        record = MailHealthRecord(user_id=current_user.id, domain=domain, is_active=True)
+        db.add(record)
+        fresh.append(record)
         known.add(domain)
-        added += 1
+    added = len(fresh)
     if added:
         await db.commit()
+        # Check them straight away rather than waiting for tomorrow's sweep — the reply
+        # below promises a result shortly, and that promise has to be true.
+        background.add_task(mail_worker.check_many, [r.id for r in fresh])
     return {"added": added,
             "message": (f"Checking email for {added} domain{'' if added == 1 else 's'}. "
                         "The first results appear within a few minutes."

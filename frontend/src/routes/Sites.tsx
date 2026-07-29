@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Globe, Search, Loader2, RefreshCw, CircleCheck, CircleAlert, CircleDashed,
   ShieldCheck, ShieldAlert, Server as ServerIcon, Sparkles, EyeOff, Plus,
+  Mail, MailWarning,
 } from "lucide-react"
 import {
   listSites, scanServerSites, addSite, watchSites, APP_LABEL, type Site,
@@ -10,6 +11,7 @@ import {
 import RunRecipeModal from "@/components/recipes/RunRecipeModal"
 import { listRecipes } from "@/api/recipes"
 import { listServers } from "@/api/servers"
+import { checkMailNow, watchMail } from "@/api/mail"
 import { Button, EmptyState } from "@/components/ui"
 import { useAssistantStore } from "@/store/assistantStore"
 import { cn } from "@/lib/utils"
@@ -62,9 +64,97 @@ function CertChip({ site }: { site: Site }) {
   return null
 }
 
+/**
+ * Whether this domain's email will actually arrive.
+ *
+ * Deliberately quiet when it is fine: an agency with fifty healthy domains should see
+ * fifty calm rows, so only a real problem earns colour. "Not checked yet" is shown as
+ * exactly that — never as a pass.
+ */
+function MailChip({ site, onClick }: { site: Site; onClick: () => void }) {
+  const mail = site.mail
+  if (!mail) return null
+  if (!mail.checked)
+    return (
+      <span className="flex items-center gap-1 text-[10.5px] text-muted-foreground">
+        <Loader2 size={9} className="animate-spin" /> Checking email…
+      </span>
+    )
+  const base = "flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+  if (mail.verdict === "failing")
+    return (
+      <button onClick={onClick} className={cn(base, "bg-red-500/15 text-red-700 dark:text-red-300")}>
+        <MailWarning size={9} /> Email failing
+      </button>
+    )
+  if (mail.verdict === "at risk")
+    return (
+      <button onClick={onClick}
+        className={cn(base, "bg-amber-500/15 text-amber-700 dark:text-amber-300")}>
+        <MailWarning size={9} /> Email at risk
+      </button>
+    )
+  return (
+    <button onClick={onClick}
+      className="flex items-center gap-1 text-[10.5px] text-muted-foreground hover:text-foreground">
+      <Mail size={9} /> Email {mail.score}/100
+    </button>
+  )
+}
+
+const SEVERITY: Record<string, string> = {
+  critical: "text-red-600 dark:text-red-400",
+  warning: "text-amber-600 dark:text-amber-400",
+  info: "text-muted-foreground",
+}
+
+/** What is wrong and what to do about it — the fix matters more than the finding. */
+function MailFindings({ site, onClose }: { site: Site; onClose: () => void }) {
+  const qc = useQueryClient()
+  const mail = site.mail!
+  const recheck = useMutation({
+    mutationFn: () => checkMailNow(mail.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sites"] }),
+  })
+  return (
+    <div className="mt-2 rounded-lg border border-border bg-muted/30 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <p className="text-[12.5px] text-foreground">{mail.summary}</p>
+        <div className="flex shrink-0 gap-1">
+          <Button size="sm" variant="ghost" disabled={recheck.isPending}
+            onClick={() => recheck.mutate()}>
+            {recheck.isPending
+              ? <Loader2 size={12} className="animate-spin" />
+              : <RefreshCw size={12} />}
+            Check again
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
+        </div>
+      </div>
+      <ul className="mt-2 space-y-2">
+        {mail.findings.map((f) => (
+          <li key={f.key} className="text-[12px]">
+            <p className={cn("font-medium", SEVERITY[f.severity] ?? "text-foreground")}>
+              {f.title}
+            </p>
+            <p className="text-muted-foreground">{f.detail}</p>
+            {f.fix && <p className="mt-0.5 text-foreground">→ {f.fix}</p>}
+          </li>
+        ))}
+        {mail.findings.length === 0 && (
+          <li className="text-[12px] text-muted-foreground">
+            Nothing to fix — SPF, DKIM and DMARC are all in order.
+          </li>
+        )}
+      </ul>
+    </div>
+  )
+}
+
 function SiteRow({ site }: { site: Site }) {
   const askAlly = useAssistantStore((s) => s.askAlly)
   const down = site.uptime?.status === "down"
+  const [showMail, setShowMail] = useState(false)
 
   return (
     <li className={cn(
@@ -84,6 +174,7 @@ function SiteRow({ site }: { site: Site }) {
                 {site.domain}
               </a>
               <CertChip site={site} />
+              <MailChip site={site} onClick={() => setShowMail((v) => !v)} />
               {!site.is_present && (
                 <span className="flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                   <EyeOff size={9} /> No longer found
@@ -117,6 +208,10 @@ function SiteRow({ site }: { site: Site }) {
           <Sparkles size={13} /> Ask Ally
         </Button>
       </div>
+
+      {showMail && site.mail && (
+        <MailFindings site={site} onClose={() => setShowMail(false)} />
+      )}
     </li>
   )
 }
@@ -187,10 +282,17 @@ export default function Sites() {
     mutationFn: () => watchSites(),
     onSuccess: (r) => { setNote(r.message); qc.invalidateQueries({ queryKey: ["sites"] }) },
   })
+  const checkMail = useMutation({
+    mutationFn: () => watchMail(),
+    onSuccess: (r) => { setNote(r.message); qc.invalidateQueries({ queryKey: ["sites"] }) },
+  })
 
   const scannable = servers.filter((s) => s.connection_type === "ssh")
   const unwatched = (data?.sites ?? []).filter((s) => !s.uptime).length
   const down = shown.filter((s) => s.uptime?.status === "down").length
+  const noMail = (data?.sites ?? []).filter((s) => !s.mail).length
+  const badMail = shown.filter(
+    (s) => s.mail?.verdict === "failing" || s.mail?.verdict === "at risk").length
 
   return (
     <div>
@@ -204,6 +306,11 @@ export default function Sites() {
           {down > 0 && (
             <span className="ml-1 font-medium text-red-600 dark:text-red-400">
               {down} {down === 1 ? "site is" : "sites are"} down.
+            </span>
+          )}
+          {badMail > 0 && (
+            <span className="ml-1 font-medium text-amber-700 dark:text-amber-300">
+              {badMail} {badMail === 1 ? "has" : "have"} an email problem.
             </span>
           )}
         </p>
@@ -220,6 +327,15 @@ export default function Sites() {
           <Button size="sm" variant="outline"
             onClick={() => { setCreating(true); setCreateOn(scannable[0].id) }}>
             <Sparkles size={13} />Create a new website
+          </Button>
+        )}
+        {noMail > 0 && (
+          <Button size="sm" variant="ghost" disabled={checkMail.isPending}
+            onClick={() => checkMail.mutate()}>
+            {checkMail.isPending
+              ? <Loader2 size={13} className="animate-spin" />
+              : <Mail size={13} />}
+            Check email for {noMail} domain{noMail === 1 ? "" : "s"}
           </Button>
         )}
         {unwatched > 0 && (

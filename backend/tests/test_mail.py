@@ -124,6 +124,16 @@ def test_a_missing_dkim_is_reported_as_not_found_never_as_absent():
         assert wrong.lower() not in (f[0].title + f[0].detail).lower()
 
 
+def test_an_unfindable_dkim_selector_does_not_make_a_healthy_domain_look_at_risk():
+    """Caught live: google.com came back "at risk" purely because we could not guess its
+    DKIM selector — and selectors are arbitrary names, so that would be true of most
+    domains an agency manages. An amber badge on almost everything is a badge nobody
+    reads, and then the domain that really is at risk gets ignored with the rest."""
+    h = _health(m.evaluate_dkim(None))
+    assert h.verdict == "ok"
+    assert m.evaluate_dkim(None)[0].severity == "info"
+
+
 def test_a_found_dkim_selector_raises_nothing():
     assert m.evaluate_dkim("default") == []
 
@@ -275,3 +285,94 @@ def test_the_trigger_is_imported_before_it_is_used():
     first_use = text.index("CronTrigger(hour=7")
     first_import = text.index("from apscheduler.triggers.cron import CronTrigger")
     assert first_import < first_use, "CronTrigger is used before it is imported"
+
+
+# ── the promise the screen makes ─────────────────────────────────────────────
+class _FakeResult:
+    def __init__(self, rows): self._rows = rows
+    def scalars(self): return self
+    def all(self): return self._rows
+
+
+class _FakeDB:
+    """Enough of a session to drive the watch endpoint without Postgres."""
+    def __init__(self, sites=(), known=()):
+        self._answers = [_FakeResult(list(sites)), _FakeResult(list(known))]
+        self.added = []
+        self.committed = False
+
+    async def execute(self, _stmt):
+        return self._answers.pop(0) if self._answers else _FakeResult([])
+
+    def add(self, row):
+        row.id = f"id-{len(self.added)}"
+        self.added.append(row)
+
+    async def commit(self):
+        self.committed = True
+
+
+@pytest.mark.asyncio
+async def test_watching_a_domain_checks_it_now_not_tomorrow():
+    """The reply says results appear "within a few minutes". The sweep runs once a day, so
+    without this the screen would be telling the customer something untrue for up to 24 hours.
+    """
+    from types import SimpleNamespace
+
+    from fastapi import BackgroundTasks
+
+    from app.routers import mail as mail_router
+    from app.workers import mail_worker
+
+    site = SimpleNamespace(domain="example.com")
+    db = _FakeDB(sites=[site])
+    background = BackgroundTasks()
+    user = SimpleNamespace(id="user-1")
+
+    reply = await mail_router.watch(
+        mail_router.WatchBody(domains=[]), background, db, user)
+
+    assert reply["added"] == 1
+    assert [t.func for t in background.tasks] == [mail_worker.check_many]
+    assert background.tasks[0].args[0] == ["id-0"], "the new record, by id"
+
+
+@pytest.mark.asyncio
+async def test_a_domain_already_watched_is_not_checked_again_on_every_visit():
+    """Otherwise pressing the button on a fleet of 80 sites would fire 80 pointless
+    lookups each time, and blocklist providers rate-limit exactly that."""
+    from types import SimpleNamespace
+
+    from fastapi import BackgroundTasks
+
+    from app.routers import mail as mail_router
+
+    db = _FakeDB(sites=[SimpleNamespace(domain="example.com")],
+                 known=[SimpleNamespace(domain="example.com")])
+    background = BackgroundTasks()
+
+    reply = await mail_router.watch(mail_router.WatchBody(domains=[]), background, db,
+                                    SimpleNamespace(id="user-1"))
+
+    assert reply["added"] == 0
+    assert background.tasks == [], "nothing new, so nothing to check"
+
+
+@pytest.mark.asyncio
+async def test_one_unresolvable_domain_does_not_stop_the_others():
+    from app.workers import mail_worker
+
+    seen = []
+
+    async def flaky(rid):
+        seen.append(rid)
+        if rid == "bad":
+            raise RuntimeError("dns is down")
+
+    original = mail_worker.check_one
+    mail_worker.check_one = flaky
+    try:
+        await mail_worker.check_many(["a", "bad", "b"])
+    finally:
+        mail_worker.check_one = original
+    assert set(seen) == {"a", "bad", "b"}

@@ -84,6 +84,27 @@ async def _tell_them(user_id, domain: str, health) -> None:
         logger.warning("Could not send the mail-health alert for %s", domain, exc_info=True)
 
 
+async def check_many(ids: list) -> None:
+    """Check a specific set of records now, at the same polite concurrency as the sweep.
+
+    Used when a customer has just asked for a domain to be watched. Without this the first
+    result would not appear until the next daily sweep, and the screen would be telling
+    them something that is not true.
+    """
+    if not ids:
+        return
+    semaphore = asyncio.Semaphore(CONCURRENCY)
+
+    async def guarded(rid):
+        async with semaphore:
+            try:
+                await check_one(rid)
+            except Exception:  # noqa: BLE001 — one bad domain must not stop the others
+                logger.warning("First mail check failed for %s", rid, exc_info=True)
+
+    await asyncio.gather(*(guarded(i) for i in ids))
+
+
 async def sweep() -> dict:
     """Check every active domain. One slow domain must not hold up the rest."""
     async with AsyncSessionLocal() as db:

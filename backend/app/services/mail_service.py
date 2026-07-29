@@ -194,8 +194,14 @@ def evaluate_dkim(selector: str | None) -> list[Finding]:
     # Deliberately not "you have no DKIM". The selector is chosen by whoever configured
     # the mail server, so a missing answer proves nothing — claiming otherwise would send
     # a customer to fix something that is not broken.
+    # Severity is INFO, not warning, on purpose. A DKIM selector is an arbitrary name
+    # chosen by whoever set the mail up — it is not discoverable, so failing to find one
+    # says nothing about the domain. Grading a domain down for OUR inability to guess put
+    # "at risk" on google.com in live testing, which means it would put "at risk" on most
+    # domains an agency manages. A screen where nearly everything is amber is a screen
+    # nobody reads, and the one domain genuinely at risk gets ignored with the rest.
     return [Finding(
-        "dkim_unknown", "warning", "Could not find a DKIM signature record",
+        "dkim_unknown", "info", "Could not find a DKIM signature record",
         "DKIM signs your mail so receivers can tell it really came from you. We checked "
         "the usual names and found none — it may exist under a name we did not try.",
         "Check your mail server's DKIM settings for the selector it uses, and confirm "
