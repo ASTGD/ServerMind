@@ -101,7 +101,7 @@ health · the setup wizard · Terminal · RDP desktop.
 
 ---
 
-## Phase 1 — The Assets list
+## Phase 1 — The Assets list  ✅ SHIPPED
 
 Replace the card grid in `routes/Servers.tsx`.
 
@@ -121,7 +121,7 @@ Replace the card grid in `routes/Servers.tsx`.
 **Verify:** every category renders; an RDP asset shows no fake metrics; light and dark; no
 console errors; `npm run build` and vitest clean.
 
-## Phase 2 — The asset shell and its menu
+## Phase 2 — The asset shell and its menu  ✅ SHIPPED
 
 - `lib/assetMenu.ts` — capabilities + the item registry + `menuFor()`. Pure, so it gets
   unit tests: an RDP asset yields exactly 3 items; a CyberPanel VPS yields shell items *and*
@@ -137,7 +137,17 @@ console errors; `npm run build` and vitest clean.
 **Verify:** every existing child route still loads; deep links still work; the menu differs
 correctly across the five asset types on the real account.
 
-## Phase 3 — Fill the menu from what we already have
+## Phase 3 — Fill the menu from what we already have  ✅ SHIPPED
+
+**Sites now leads the menu**, ahead of Overview, and is on the way to becoming the server's
+home outright. It lists what the machine actually serves and carries the "New website"
+action, which hands the job to Ally's runbook — the server decides which runbook, so a
+CyberPanel box gets the panel procedure and a plain box gets the plain one.
+
+That reordering also forced a naming fix. The panel section was called "Websites", which
+competed with Sites for the same meaning. It is now **Control panel**: Sites is what the
+machine serves, Control panel is the panel's own records and operations. A CyberPanel
+server legitimately has both.
 
 Each of these already has a working API and, in most cases, a component. This phase is
 wiring, not new capability.

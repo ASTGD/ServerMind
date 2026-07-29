@@ -26,23 +26,34 @@ describe("what an asset can do", () => {
     }
   })
 
-  it("offers no websites section until a panel is actually there", () => {
-    expect(labels(asset())).not.toContain("Websites")
-    expect(labels(asset({ panel_type: "cyberpanel" }))).toContain("Websites")
+  it("offers no control-panel section until a panel is actually there", () => {
+    expect(labels(asset())).not.toContain("Control panel")
+    expect(labels(asset({ panel_type: "cyberpanel" }))).toContain("Control panel")
+  })
+
+  it("keeps Sites and Control panel as separate ideas", () => {
+    // They sound alike and are not. Sites is what the machine actually serves, read from
+    // its own web server config; Control panel is the panel's own records and operations.
+    // A CyberPanel box legitimately has both, and naming the second one "Websites" made
+    // two items compete for one meaning.
+    const items = labels(asset({ panel_type: "cyberpanel" }))
+    expect(items).toContain("Sites")
+    expect(items).toContain("Control panel")
+    expect(items).not.toContain("Websites")
   })
 
   it("treats a panel reached over SSH as a panel", () => {
     // The common real case: CyberPanel installed on a box we also have SSH to. It is both,
     // and a per-type list would have to pick one.
     const items = labels(asset({ connection_type: "ssh", panel_type: "cyberpanel" }))
-    expect(items).toContain("Websites")
+    expect(items).toContain("Control panel")
     expect(items).toContain("Files")
     expect(items).toContain("Firewall & keys")
   })
 
   it("gives a hosting-only account its panel but not a Linux firewall", () => {
     const items = labels(asset({ connection_type: "hosting", panel_type: "cpanel" }))
-    expect(items).toContain("Websites")
+    expect(items).toContain("Control panel")
     expect(items).not.toContain("Firewall & keys")
     expect(items).not.toContain("Files") // no SFTP to an API-only panel
   })
@@ -70,11 +81,19 @@ describe("a Windows server over WinRM", () => {
   })
 
   it("hides the ones that are Linux-only in the code, not merely untested", () => {
-    // Files is SFTP; Logs reads Linux paths; Backups shells out to tar and mysqldump;
-    // the firewall section drives ufw/firewalld. None of these have a Windows branch.
-    for (const linuxOnly of ["Files", "Logs", "Backups", "Firewall & keys", "Installed"]) {
+    // Files is SFTP; Logs reads Linux paths; Backups shells out to tar and mysqldump; the
+    // firewall drives ufw/firewalld; Services reads systemd; site discovery and deploys go
+    // over SFTP. None of these have a Windows branch.
+    for (const linuxOnly of [
+      "Files", "Logs", "Backups", "Firewall & keys", "Installed",
+      "Sites", "Services", "Deployments",
+    ]) {
       expect(labels(win)).not.toContain(linuxOnly)
     }
+  })
+
+  it("keeps Monitoring, which does collect Windows metrics", () => {
+    expect(labels(win)).toContain("Monitoring")
   })
 
   it("can open a desktop but not the interactive terminal", () => {
@@ -97,9 +116,18 @@ describe("capabilities", () => {
 })
 
 describe("the registry itself", () => {
-  it("keeps Overview first and always available", () => {
-    expect(MENU[0].path).toBe("")
-    expect(MENU[0].needs).toBeUndefined()
+  it("leads with Sites, because a server exists to serve something", () => {
+    expect(MENU[0].path).toBe("sites")
+  })
+
+  it("keeps Overview reachable on every asset, whatever it is", () => {
+    // It is the one section with no requirement, so an asset can never end up with a menu
+    // that leads nowhere.
+    const overview = MENU.find((i) => i.path === "")
+    expect(overview?.needs).toBeUndefined()
+    for (const c of ["ssh", "winrm", "rdp", "hosting"] as const) {
+      expect(labels(asset({ connection_type: c }))).toContain("Overview")
+    }
   })
 
   it("has no duplicate destinations", () => {

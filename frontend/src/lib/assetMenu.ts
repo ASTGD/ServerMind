@@ -1,6 +1,6 @@
 import {
-  Archive, Clock, Cog, FileText, FolderOpen, KeyRound, LayoutDashboard,
-  LayoutPanelTop, Package, ShieldCheck,
+  Activity, Archive, Clock, Cog, FileText, FolderOpen, Globe, HeartPulse, KeyRound,
+  LayoutDashboard, LayoutPanelTop, Package, Rocket, ShieldCheck,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type { Server } from "@/types"
@@ -65,16 +65,25 @@ export interface MenuItem {
 /**
  * The registry. Order inside a group is the order shown.
  *
- * Sites, Monitoring, Services and Deployments are deliberately not here yet — their APIs
- * exist but their per-asset screens do not, and a menu item that leads nowhere is worse
- * than one that is missing. They arrive in Phase 3 by adding rows to this list.
+ * Sites leads, because a server exists to serve something and that is what an owner opens
+ * first. It is on the way to becoming the server's home outright.
+ *
+ * Note the deliberate split between "Sites" and "Control panel". They sound similar and are
+ * not: Sites is what this machine actually serves — discovered from its own web server
+ * config, joined with uptime and certificate state — while Control panel is the panel's own
+ * operations (its website records, databases, email). A CyberPanel box legitimately has
+ * both, and calling the second one "Websites" made two items compete for the same meaning.
  */
 export const MENU: MenuItem[] = [
+  { path: "sites", label: "Sites", icon: Globe, needs: "sftp", group: "manage" },
   { path: "", label: "Overview", icon: LayoutDashboard, group: "manage" },
-  { path: "hosting", label: "Websites", icon: LayoutPanelTop, needs: "panel", group: "manage" },
+  { path: "hosting", label: "Control panel", icon: LayoutPanelTop, needs: "panel", group: "manage" },
   { path: "files", label: "Files", icon: FolderOpen, needs: "sftp", group: "manage" },
   { path: "installed", label: "Installed", icon: Package, needs: "sftp", group: "manage" },
 
+  { path: "monitoring", label: "Monitoring", icon: Activity, needs: "shell", group: "operate" },
+  { path: "services", label: "Services", icon: HeartPulse, needs: "unix", group: "operate" },
+  { path: "deployments", label: "Deployments", icon: Rocket, needs: "sftp", group: "operate" },
   { path: "security", label: "Security", icon: ShieldCheck, needs: "shell", group: "operate" },
   { path: "access", label: "Firewall & keys", icon: KeyRound, needs: "unix", group: "operate" },
   { path: "scheduler", label: "Scheduled tasks", icon: Clock, needs: "shell", group: "operate" },
