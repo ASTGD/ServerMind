@@ -172,3 +172,148 @@ def test_progress_answers_the_only_question_a_waiting_person_has():
 def test_progress_never_divides_by_zero_or_exceeds_a_hundred():
     assert s.progress(0, 0)["percent"] == 0
     assert s.progress(99, 5)["percent"] == 100
+
+
+# ── the gap a competitor's provision exposed ─────────────────────────────────
+"""Ploi's 26-task provision was watched end to end on a real machine and then read back
+over SSH. These lock what that comparison changed, and why."""
+
+import shutil
+import subprocess
+import tempfile
+
+from app.services.playbook_service import OFFICIAL_PLAYBOOKS, substitute_variables
+
+_ADDED = ("composer", "supervisor", "redis-cache", "php-limits", "auto-updates")
+
+
+def _script(slug: str) -> str:
+    pb = next(p for p in OFFICIAL_PLAYBOOKS if p["slug"] == slug)
+    return substitute_variables(
+        pb["script_bash"], {v["name"]: v.get("default", "x")
+                            for v in pb.get("variables", [])})
+
+
+@pytest.mark.parametrize("slug", _ADDED)
+def test_every_added_installer_is_registered(slug):
+    assert any(p["slug"] == slug for p in OFFICIAL_PLAYBOOKS)
+
+
+@pytest.mark.parametrize("slug", _ADDED)
+def test_every_added_installer_parses_as_a_shell_would(slug):
+    """A script that does not parse fails at the first line, on a customer's server,
+    halfway through a build."""
+    if not shutil.which("bash"):
+        pytest.skip("no bash")
+    script = _script(slug)
+    assert "{{" not in script, "a placeholder was left unsubstituted"
+    with tempfile.NamedTemporaryFile("w", suffix=".sh") as f:
+        f.write(script)
+        f.flush()
+        r = subprocess.run(["bash", "-n", f.name], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+def test_a_website_server_gets_composer_and_node():
+    """The sharp edge of the gap: our OWN deploy pipeline runs `composer install` and
+    `npm ci` as its build step. Without these, deploying to a server our OWN wizard had
+    just finished would fail on a command that does not exist."""
+    slugs = [s.slug for s in s.build_recipe("websites").steps]
+    assert "composer" in slugs
+    assert "nodejs-pm2" in slugs
+    assert slugs.index("lemp-stack") < slugs.index("composer"), \
+        "Composer is a PHP program — PHP has to exist first"
+
+
+def test_a_website_server_can_accept_a_normal_upload():
+    """PHP's 2 MB default is the single reason a media upload fails on a fresh server."""
+    step = next(s for s in s.build_recipe("websites").steps if s.slug == "php-limits")
+    assert step.variables["UPLOAD_MAX"] == "64M"
+
+
+def test_every_server_keeps_getting_security_patches():
+    """A machine set up once and never updated again is the ordinary route to a
+    compromised server, and it is silent the whole way."""
+    for purpose in s.PURPOSES:
+        assert "auto-updates" in [s.slug for s in s.build_recipe(purpose).steps]
+
+
+def test_the_extras_never_halt_a_whole_server_build():
+    """None of them makes the machine incoherent by its absence. Stopping a build over a
+    cache daemon would be the wrong trade — a skipped step still shows its reason."""
+    for step in s.build_recipe("websites").steps:
+        if step.slug in ("redis-cache", "supervisor", "php-limits", "composer",
+                         "auto-updates", "nodejs-pm2"):
+            assert step.optional, f"{step.slug} would stop the entire setup"
+
+
+def test_composer_is_verified_before_it_is_run_as_root():
+    """The installer is downloaded and then executed with full privileges. Piping it in
+    unchecked would hand the server to anyone who could tamper with that download."""
+    s = _script("composer")
+    assert "composer.github.io/installer.sig" in s
+    assert "hash_file('sha384'" in s or 'hash_file(\\\'sha384\\\'' in s or "sha384" in s
+    fail = s.split("did not match its published")[1]
+    assert "exit 1" in fail, "a mismatch must stop, not continue"
+
+
+def test_redis_and_memcached_are_never_exposed_to_the_internet():
+    """An open Redis with no password is one of the most reliably exploited holes there
+    is — a large share of crypto-miner infections arrive that way."""
+    s = _script("redis-cache")
+    assert "bind 127.0.0.1" in s
+    assert "protected-mode yes" in s
+    assert "-l 127.0.0.1" in s, "memcached listens on all interfaces on some images"
+
+
+def test_automatic_updates_clear_the_list_before_setting_it():
+    """APT list directives APPEND rather than replace, and stock Ubuntu ships the WHOLE
+    archive enabled, not only security. Found by reading `apt-config dump` on a real
+    box: without #clear, every feature update kept applying itself unattended while we
+    told the customer "security only" — a server that wakes up with a new major PHP and
+    a dead website."""
+    s = _script("auto-updates")
+    assert '#clear "Unattended-Upgrade::Allowed-Origins"' in s
+    body = s.split("#clear")[1].split("EOF")[0]
+    assert "${distro_id}:${distro_codename}\";" not in body, \
+        "that is the whole archive, not security"
+
+
+def test_a_server_never_reboots_itself():
+    """A reboot nobody expected, in the middle of the working day, is worse than a patch
+    that waits a few hours."""
+    assert 'Unattended-Upgrade::Automatic-Reboot "false"' in _script("auto-updates")
+
+
+def test_php_limits_never_hardcodes_a_version_path():
+    """A guessed path edits a file nothing loads: the limit looks changed while uploads
+    keep failing, which is worse than not trying."""
+    s = _script("php-limits")
+    assert "Loaded Configuration File" in s, "ask PHP which ini it actually reads"
+    assert "/etc/php/8." not in s, "a hardcoded version breaks on every other server"
+
+
+def test_upload_and_post_limits_move_together():
+    """post_max_size below upload_max_filesize rejects the upload before PHP ever looks
+    at the file-size limit — so raising only one of them changes nothing."""
+    s = _script("php-limits")
+    assert 'set_ini post_max_size "$UPLOAD_MAX"' in s
+
+
+def test_raising_php_uploads_raises_the_web_server_limit_too():
+    """nginx rejects a body over ITS OWN limit — 1 MB by default — before the request
+    ever reaches PHP. Raising php.ini alone leaves the visitor with a 413 while the
+    setting reads 64M: the limit looks changed and uploads keep failing. Found by
+    reading a competitor's finished machine, which sets both together."""
+    s = _script("php-limits")
+    assert "client_max_body_size" in s
+
+
+def test_a_broken_web_server_config_is_never_reloaded():
+    """Reloading nginx with a configuration that does not parse takes down every OTHER
+    site on the server. An upload limit is not worth that."""
+    s = _script("php-limits")
+    assert "nginx -t" in s, "test the configuration before reloading it"
+    after = s.split("nginx -t")[1]
+    assert "rm -f /etc/nginx/conf.d/serverally-upload.conf" in after, \
+        "our own file must be removed when the test fails, not left to be loaded later"

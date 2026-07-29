@@ -465,6 +465,77 @@ def _script_for(item: dict) -> str | None:
 
 OFFICIAL_PLAYBOOKS: list[dict] = [
 
+    # ── Added after benchmarking a live Ploi provision (26 tasks) and
+    # reading the finished machine: everything a website server needs that
+    # we did not have. Without Composer and Node our OWN deploy pipeline
+    # could not build a PHP or JavaScript app on a server our OWN setup
+    # wizard had just finished.
+
+    {
+        'slug': 'composer',
+        'title': 'Composer (PHP dependency manager)',
+        'description': 'Installs Composer 2 globally. Every modern PHP application — Laravel, Symfony, most WordPress plugins built this decade — needs it to install.',
+        'category': 'setup',
+        'os_family': 'linux',
+        'script_type': 'bash',
+        'est_runtime_sec': 45,
+        'tags': ['php', 'composer', 'laravel'],
+        'variables': [],
+        "script_bash": ('#!/bin/bash\nset -euo pipefail\n# supported_os: ubuntu, debian, almalinux, rocky, centos\necho "=== Installing Composer ==="\nif command -v composer >/dev/null 2>&1; then\n  echo ">>> Composer is already installed: $(composer --version 2>/dev/null | head -1)"\n  exit 0\nfi\nif ! command -v php >/dev/null 2>&1; then\n  echo ">>> ERROR: PHP is not installed. Install the web stack first — Composer is a PHP program and cannot run without it."\n  exit 1\nfi\n\n# The installer is fetched over the network and then run as root, so its\n# signature is checked against the published hash BEFORE it executes. Piping\n# an unverified script straight into php would mean anyone who could tamper\n# with that download owns the server.\ncd /tmp\nEXPECTED="$(curl -fsSL https://composer.github.io/installer.sig)"\nphp -r "copy(\'https://getcomposer.org/installer\', \'/tmp/composer-setup.php\');"\nACTUAL="$(php -r "echo hash_file(\'sha384\', \'/tmp/composer-setup.php\');")"\nif [ "$EXPECTED" != "$ACTUAL" ]; then\n  rm -f /tmp/composer-setup.php\n  echo ">>> ERROR: the Composer installer did not match its published signature. Nothing was installed. This is either a corrupted download or someone tampering with it — try again, and if it repeats, stop and ask."\n  exit 1\nfi\nphp /tmp/composer-setup.php --quiet --install-dir=/usr/local/bin --filename=composer\nrm -f /tmp/composer-setup.php\n\ncommand -v composer >/dev/null 2>&1 || { echo ">>> ERROR: Composer did not install."; exit 1; }\necho ">>> Composer ready: $(composer --version | head -1)"\n'),
+    },
+
+    {
+        'slug': 'supervisor',
+        'title': 'Supervisor (keeps background jobs running)',
+        'description': 'Installs Supervisor, which restarts background workers when they stop. Laravel queues, scheduled jobs and long-running scripts need it.',
+        'category': 'setup',
+        'os_family': 'linux',
+        'script_type': 'bash',
+        'est_runtime_sec': 45,
+        'tags': ['supervisor', 'queue', 'laravel', 'workers'],
+        'variables': [],
+        "script_bash": ('#!/bin/bash\nset -euo pipefail\n# supported_os: ubuntu, debian, almalinux, rocky, centos\n' + _DISTRO + 'echo "=== Installing Supervisor ==="\nif command -v supervisord >/dev/null 2>&1; then\n  echo ">>> Supervisor is already installed."\nelse\n  pkg_refresh\n  pkg_install supervisor\nfi\n# Debian calls the unit supervisor, RHEL calls it supervisord.\nUNIT=supervisor\nsystemctl list-unit-files --no-legend \'supervisor.service\' 2>/dev/null | grep -q . || UNIT=supervisord\nmkdir -p /etc/supervisor/conf.d 2>/dev/null || true\nsvc_enable "$UNIT"\nsystemctl is-active --quiet "$UNIT" || { echo ">>> ERROR: Supervisor installed but is not running."; exit 1; }\necho ">>> Supervisor is running. Worker configs go in /etc/supervisor/conf.d."\n'),
+    },
+
+    {
+        'slug': 'redis-cache',
+        'title': 'Redis + Memcached (makes sites faster)',
+        'description': 'Installs Redis and Memcached for caching and sessions, both listening only on this server. WordPress and Laravel are noticeably faster with them.',
+        'category': 'setup',
+        'os_family': 'linux',
+        'script_type': 'bash',
+        'est_runtime_sec': 60,
+        'tags': ['redis', 'memcached', 'cache', 'performance'],
+        'variables': [],
+        "script_bash": ('#!/bin/bash\nset -euo pipefail\n# supported_os: ubuntu, debian, almalinux, rocky, centos\n' + _DISTRO + 'echo "=== Installing Redis and Memcached ==="\npkg_refresh\nif [ "$FAMILY" = debian ]; then\n  pkg_install redis-server memcached\n  REDIS_UNIT=redis-server\n  REDIS_CONF=/etc/redis/redis.conf\nelse\n  pkg_install redis memcached\n  REDIS_UNIT=redis\n  REDIS_CONF=/etc/redis/redis.conf\n  [ -f /etc/redis.conf ] && REDIS_CONF=/etc/redis.conf\nfi\n\n# Bind to this machine only. A Redis reachable from the internet with no\n# password is one of the most reliably exploited holes there is — it is how\n# a large share of crypto-miner infections get in.\nif [ -f "$REDIS_CONF" ]; then\n  sed -i "s/^[[:space:]]*bind .*/bind 127.0.0.1 ::1/" "$REDIS_CONF"\n  grep -q "^protected-mode" "$REDIS_CONF" \\\n    && sed -i "s/^protected-mode .*/protected-mode yes/" "$REDIS_CONF" \\\n    || echo "protected-mode yes" >> "$REDIS_CONF"\nfi\n# Memcached ships listening on all interfaces on some images — same problem.\nfor MC in /etc/memcached.conf /etc/sysconfig/memcached; do\n  [ -f "$MC" ] || continue\n  if grep -q "^-l " "$MC"; then sed -i "s/^-l .*/-l 127.0.0.1/" "$MC"; fi\n  if grep -q "^OPTIONS=" "$MC"; then\n    sed -i "s/^OPTIONS=.*/OPTIONS=\\"-l 127.0.0.1\\"/" "$MC"\n  fi\ndone\n\nsvc_enable "$REDIS_UNIT"\nsvc_enable memcached\n\n# The PHP extensions, so a site can actually use them. Optional: a missing\n# extension package must not fail the whole server setup.\nif command -v php >/dev/null 2>&1; then\n  if [ "$FAMILY" = debian ]; then\n    PHPV="$(php_fpm_ver)"\n    pkg_install "php${PHPV}-redis" "php${PHPV}-memcached" 2>/dev/null \\\n      || pkg_install php-redis php-memcached 2>/dev/null \\\n      || echo ">>> Note: the PHP cache extensions were not available; Redis itself is installed and running."\n  else\n    pkg_install php-pecl-redis php-pecl-memcached 2>/dev/null \\\n      || echo ">>> Note: the PHP cache extensions were not available; Redis itself is installed and running."\n  fi\n  FPM="$(php_fpm_service)"\n  systemctl is-active --quiet "$FPM" && svc_restart "$FPM" || true\nfi\n\nredis-cli ping >/dev/null 2>&1 && echo ">>> Redis is answering." \\\n  || { echo ">>> ERROR: Redis is installed but not answering."; exit 1; }\necho ">>> Redis and Memcached are running, reachable only from this server."\n'),
+    },
+
+    {
+        'slug': 'php-limits',
+        'title': 'Raise PHP upload and memory limits',
+        'description': 'PHP ships allowing 2 MB uploads and 128 MB of memory. That is the reason a WordPress media upload or a plugin install fails on a brand-new server.',
+        'category': 'setup',
+        'os_family': 'linux',
+        'script_type': 'bash',
+        'est_runtime_sec': 20,
+        'tags': ['php', 'upload', 'wordpress', 'limits'],
+        'variables': [{'name': 'UPLOAD_MAX', 'label': 'Largest file a visitor can upload', 'default': '64M', 'required': True}, {'name': 'MEMORY_LIMIT', 'label': 'Memory one page may use', 'default': '256M', 'required': True}, {'name': 'MAX_EXECUTION', 'label': 'Seconds a page may run', 'default': '120', 'required': True}],
+        "script_bash": ('#!/bin/bash\nset -euo pipefail\n# supported_os: ubuntu, debian, almalinux, rocky, centos\n' + _DISTRO + 'UPLOAD_MAX="{{UPLOAD_MAX}}"\nMEMORY_LIMIT="{{MEMORY_LIMIT}}"\nMAX_EXECUTION="{{MAX_EXECUTION}}"\necho "=== Raising PHP limits ==="\nif ! command -v php >/dev/null 2>&1; then\n  echo ">>> ERROR: PHP is not installed on this server."\n  exit 1\nfi\n\n# Every php.ini PHP actually reads — never a hardcoded version path. A\n# guessed path silently edits a file nothing loads, and the limit appears\n# changed while uploads keep failing.\nINIS="$(php -i 2>/dev/null | sed -n \'s/^Loaded Configuration File => //p\')"\nfor d in /etc/php/*/fpm/php.ini /etc/php/*/cli/php.ini /etc/php.ini \\\n         /etc/php-fpm.d/../php.ini; do\n  [ -f "$d" ] && INIS="$INIS $d"\ndone\nINIS="$(echo "$INIS" | tr " " "\\n" | grep -v "^$" | sort -u)"\n[ -n "$INIS" ] || { echo ">>> ERROR: could not find a php.ini to edit."; exit 1; }\n\nCHANGED=0\nfor INI in $INIS; do\n  cp -n "$INI" "${INI}.serverally.bak" 2>/dev/null || true\n  set_ini() {\n    if grep -qE "^[; ]*$1[[:space:]]*=" "$INI"; then\n      sed -i -E "s|^[; ]*$1[[:space:]]*=.*|$1 = $2|" "$INI"\n    else\n      printf "\\n%s = %s\\n" "$1" "$2" >> "$INI"\n    fi\n  }\n  set_ini upload_max_filesize "$UPLOAD_MAX"\n  # post_max_size must be at least upload_max_filesize or the upload is\n  # rejected before PHP ever looks at the file size limit.\n  set_ini post_max_size "$UPLOAD_MAX"\n  set_ini memory_limit "$MEMORY_LIMIT"\n  set_ini max_execution_time "$MAX_EXECUTION"\n  set_ini max_input_time "$MAX_EXECUTION"\n  echo ">>> Updated $INI"\n  CHANGED=$((CHANGED+1))\ndone\n\nFPM="$(php_fpm_service)"\nif systemctl is-active --quiet "$FPM" 2>/dev/null; then\n  svc_restart "$FPM"\n  echo ">>> Reloaded $FPM so the new limits are live."\nfi\n\n# PHP is only half of it. nginx rejects a body over ITS OWN limit (1 MB by default)\n# BEFORE the request ever reaches PHP, so raising php.ini alone still gives the visitor\n# a 413 while the setting reads 64M. Found by reading a competitor\'s finished server,\n# which sets nginx and PHP together.\nif [ -d /etc/nginx/conf.d ] && command -v nginx >/dev/null 2>&1; then\n  printf \'client_max_body_size %s;\\n\' "$UPLOAD_MAX" > /etc/nginx/conf.d/serverally-upload.conf\n  if nginx -t >/dev/null 2>&1; then\n    systemctl reload nginx >/dev/null 2>&1 || true\n    echo ">>> nginx will now accept bodies up to $UPLOAD_MAX."\n  else\n    # Never reload a configuration that does not parse: that takes down every OTHER\n    # site on the server, not just uploads.\n    rm -f /etc/nginx/conf.d/serverally-upload.conf\n    echo ">>> Left nginx alone: its configuration did not test clean."\n  fi\nfi\n# Apache has no low default here (LimitRequestBody is unlimited), so nothing to do.\necho ">>> PHP now accepts uploads up to $UPLOAD_MAX ($CHANGED file(s) updated)."\n'),
+    },
+
+    {
+        'slug': 'auto-updates',
+        'title': 'Automatic security updates',
+        'description': 'Turns on unattended security updates, so the server keeps getting patched after today. Only security fixes are applied automatically.',
+        'category': 'security',
+        'os_family': 'linux',
+        'script_type': 'bash',
+        'est_runtime_sec': 45,
+        'tags': ['updates', 'security', 'patching'],
+        'variables': [],
+        "script_bash": ('#!/bin/bash\nset -euo pipefail\n# supported_os: ubuntu, debian, almalinux, rocky, centos\n' + _DISTRO + 'echo "=== Turning on automatic security updates ==="\npkg_refresh\nif [ "$FAMILY" = debian ]; then\n  pkg_install unattended-upgrades\n  # Security origins only — and #clear FIRST, because APT list directives APPEND rather\n  # than replace, and stock Ubuntu ships "${distro_id}:${distro_codename}" (the WHOLE\n  # archive) enabled. Without clearing it, every feature update would keep applying\n  # itself unattended while we told the customer "security only" — a server that\n  # wakes up with a new major PHP and a dead website. Caught by reading apt-config\n  # dump on a real box, not by reading our own file.\n  cat > /etc/apt/apt.conf.d/51serverally-auto-upgrades <<\'EOF\'\nAPT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\nAPT::Periodic::AutocleanInterval "7";\nEOF\n  cat > /etc/apt/apt.conf.d/52serverally-origins <<\'EOF\'\n#clear "Unattended-Upgrade::Allowed-Origins";\nUnattended-Upgrade::Allowed-Origins {\n    "${distro_id}:${distro_codename}-security";\n    "${distro_id}ESMApps:${distro_codename}-apps-security";\n    "${distro_id}ESM:${distro_codename}-infra-security";\n};\n// Never reboot on its own. A reboot nobody expected, in the middle of the\n// working day, is worse than a patch waiting a few hours.\nUnattended-Upgrade::Automatic-Reboot "false";\nEOF\n  svc_enable unattended-upgrades\n  unattended-upgrade --dry-run --debug >/dev/null 2>&1 \\\n    && echo ">>> Checked: the update job runs cleanly." \\\n    || echo ">>> Installed. The first run happens on the daily timer."\nelse\n  pkg_install dnf-automatic\n  CONF=/etc/dnf/automatic.conf\n  if [ -f "$CONF" ]; then\n    sed -i "s/^upgrade_type.*/upgrade_type = security/" "$CONF"\n    sed -i "s/^apply_updates.*/apply_updates = yes/" "$CONF"\n  fi\n  svc_enable dnf-automatic.timer\nfi\necho ">>> This server will now install security updates on its own. It will never reboot itself."\n'),
+    },
+
     # ── Server Setup — Linux ──────────────────────────────────────────────────
 
     {

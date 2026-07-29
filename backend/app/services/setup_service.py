@@ -1,9 +1,16 @@
 """Turning a blank server into a working one, in a single step.
 
 Every competitor's customer does this first: connect a fresh machine and press one button.
-Ploi runs a fixed 27-task recipe; we have had all the pieces for months — 41 installers —
+Ploi runs a fixed 26-task recipe — watched end to end on a real machine, then read back
+over SSH to see what it actually did, not what its task names claimed. We had the pieces
 but nothing that ran them in order, so a customer had to know which ones to pick and in
 which sequence. That is exactly the knowledge they are paying us to not need.
+
+That benchmark also showed what we were MISSING, and the gap had a sharp edge: without
+Composer and Node, our own deploy pipeline could not build a PHP or JavaScript app on a
+server our own wizard had just finished. Those, plus Supervisor (background jobs), Redis
+and Memcached (caching), raised PHP upload limits, and automatic security updates, are
+now part of the recipe.
 
 **Two doors, one engine.** A form starts this, and so does Ally ("get this server ready for
 a WordPress site"). Neither does the work: both choose a recipe and start the same runner.
@@ -80,6 +87,10 @@ def _base(ssh_port: int, timezone: str) -> list[Step]:
     """
     return [
         Step("full-update", "Installing system updates", seconds=120),
+        # Patching must keep happening after today. A server set up once and never
+        # updated again is the most common way a managed machine ends up compromised.
+        Step("auto-updates", "Turning on automatic security updates",
+             seconds=45, optional=True),
         Step("set-timezone", "Setting the clock", {"TIMEZONE": timezone}, seconds=10),
         Step("swap-file", "Adding swap space", {"SWAP_SIZE": "2G"}, seconds=30),
         # The real port, not the installer's default of 22.
@@ -102,8 +113,26 @@ def build_recipe(purpose: str, *, ssh_port: int = 22, timezone: str = "UTC",
     steps = _base(ssh_port, timezone)
 
     if purpose == "websites":
+        # Order: the stack first, then everything that needs PHP to already exist.
+        # All of the extras are optional — each one is genuinely useful, but none of
+        # them makes the machine incoherent by its absence, and halting a whole server
+        # build over a cache daemon would be the wrong trade. A skipped step still
+        # shows in the checklist with its reason, so nothing goes missing quietly.
         steps += [
             Step("lemp-stack", "Installing the web server, PHP and database", seconds=180),
+            # PHP ships allowing 2 MB uploads. That single default is why a brand-new
+            # server cannot accept a photo or install a plugin.
+            Step("php-limits", "Allowing larger uploads",
+                 {"UPLOAD_MAX": "64M", "MEMORY_LIMIT": "256M", "MAX_EXECUTION": "120"},
+                 seconds=20, optional=True),
+            # Composer and Node are what our OWN deploy pipeline runs to build a site.
+            # Without them, deploying to a server we just built fails.
+            Step("composer", "Installing Composer", seconds=45, optional=True),
+            Step("nodejs-pm2", "Installing Node.js", {"NODE_VERSION": "20"},
+                 seconds=60, optional=True),
+            Step("redis-cache", "Installing Redis and Memcached", seconds=60,
+                 optional=True),
+            Step("supervisor", "Setting up background jobs", seconds=45, optional=True),
             Step("letsencrypt", "Preparing HTTPS certificates",
                  {"WEBSERVER": "nginx"}, seconds=120, optional=True),
         ]
