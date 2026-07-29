@@ -148,3 +148,70 @@ def test_an_unknown_provider_is_a_sentence_not_a_crash():
     with pytest.raises(dns.DnsError) as e:
         dns.adapter_for("route53", {})
     assert "don’t support yet" in str(e.value) or "isn’t a DNS provider" in str(e.value)
+
+
+# ── the token that was refused while being perfectly good ────────────────────
+class _Resp:
+    def __init__(self, status, payload):
+        self.status_code = status
+        self._payload = payload
+    def json(self):
+        return self._payload
+
+
+def test_a_token_is_verified_by_doing_what_we_actually_need():
+    """Reported live: a token with Zone:Read, DNS:Read and DNS:Write for every zone —
+    exactly what our own instructions ask for — was refused. We were calling
+    /user/tokens/verify, which asks Cloudflare about the token itself and needs
+    permissions this feature never uses. Listing zones is the capability the whole
+    feature rests on, so it is the honest test."""
+    import ast
+    import inspect
+    from app.services.dns_service import CloudflareAdapter
+    # The docstring explains the old endpoint, so match the CODE rather than the prose.
+    tree = ast.parse(inspect.getsource(CloudflareAdapter.verify).strip())
+    calls = [n.value for n in ast.walk(tree)
+             if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    body = [c for c in calls if c.startswith("/")]
+    assert any("/zones" in c for c in body), f"verify calls {body}"
+    assert not any("/user/tokens/verify" in c for c in body), \
+        "do not test a permission this feature never uses"
+
+
+def test_cloudflares_own_reason_reaches_the_customer():
+    """Every 401 was reported as "wrong permissions", which is one of several causes —
+    expired, revoked, IP-restricted — each needing a different fix."""
+    from app.services.dns_service import CloudflareAdapter
+    r = _Resp(403, {"errors": [{"code": 9109, "message": "Unauthorized to access requested resource"}]})
+    msg = CloudflareAdapter._reason(r)
+    assert "Unauthorized to access requested resource" in msg
+    assert "Zone:Read and DNS:Edit" in msg, "the hint belongs on this code, not on all of them"
+
+
+def test_the_specific_reason_is_pulled_out_of_the_nested_chain():
+    """Cloudflare puts a generic message on top and the useful one inside error_chain."""
+    from app.services.dns_service import CloudflareAdapter
+    r = _Resp(400, {"errors": [{"code": 6003, "message": "Invalid request headers",
+                                "error_chain": [{"code": 6111,
+                                                 "message": "Invalid format for Authorization header"}]}]})
+    msg = CloudflareAdapter._reason(r)
+    assert "Invalid format for Authorization header" in msg
+    assert "not the token itself" in msg
+
+
+def test_a_permission_hint_is_not_attached_to_unrelated_failures():
+    """Telling someone to fix their permissions when the token has expired sends them
+    to remake a token that was fine."""
+    from app.services.dns_service import CloudflareAdapter
+    r = _Resp(403, {"errors": [{"code": 1001, "message": "Something else entirely"}]})
+    msg = CloudflareAdapter._reason(r)
+    assert "Something else entirely" in msg
+    assert "Zone:Read" not in msg
+
+
+def test_an_unreadable_body_still_says_something():
+    from app.services.dns_service import CloudflareAdapter
+    class Bad:
+        status_code = 502
+        def json(self): raise ValueError("not json")
+    assert "502" in CloudflareAdapter._reason(Bad())

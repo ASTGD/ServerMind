@@ -239,6 +239,38 @@ class CloudflareAdapter(_Adapter):
         return {"Authorization": f"Bearer {self.cred.get('api_token', '')}",
                 "Content-Type": "application/json"}
 
+    @staticmethod
+    def _reason(response) -> str:
+        """Cloudflare's own explanation, with a hint only where one genuinely helps."""
+        try:
+            errs = (response.json() or {}).get("errors") or []
+        except ValueError:
+            errs = []
+        # Cloudflare nests the SPECIFIC reason inside error_chain and puts a generic one
+        # on top: "Invalid request headers" outside, "Invalid format for Authorization
+        # header" inside. The inner one is the only part a customer can act on.
+        flat = []
+        for e in errs:
+            flat.append(e)
+            flat.extend(e.get("error_chain") or [])
+        codes = {e.get("code") for e in flat}
+        seen, parts = set(), []
+        for e in flat:
+            m = (e.get("message") or "").strip()
+            if m and m not in seen:
+                seen.add(m)
+                parts.append(m)
+        msg = " — ".join(parts)
+        if not msg:
+            msg = f"HTTP {response.status_code} with no explanation."
+        if 9109 in codes or 10000 in codes:
+            msg += (" — the token is valid but not allowed to do this. Check it includes "
+                    "Zone:Read and DNS:Edit for the zones you want to manage.")
+        elif 6111 in codes or 1000 in codes:
+            msg += (" — this usually means the value pasted is not the token itself. "
+                    "Copy it again from Cloudflare; it is shown only once.")
+        return msg
+
     def _call(self, method: str, path: str, body: dict | None = None,
               timeout: int = 20) -> dict:
         try:
@@ -247,22 +279,37 @@ class CloudflareAdapter(_Adapter):
         except requests.RequestException as exc:
             raise DnsError(f"Could not reach {self.PROVIDER}: {exc}")
         if r.status_code in (401, 403):
-            raise DnsError(
-                f"{self.PROVIDER} rejected this API token. It needs Zone:Read and "
-                "DNS:Edit permissions for the zones you want to manage.")
+            # Cloudflare says exactly what is wrong — an expired token, a revoked one, a
+            # missing permission, an IP restriction — and each needs a different fix. The
+            # old code threw that away and guessed "wrong permissions" for all of them,
+            # which sent a customer with a perfectly good token to re-make it.
+            raise DnsError(f"{self.PROVIDER} rejected this API token: {self._reason(r)}")
         try:
             data = r.json()
         except ValueError:
             raise DnsError(f"{self.PROVIDER} returned an unexpected response.")
         if not data.get("success", r.status_code < 400):
-            errs = data.get("errors") or []
-            msg = "; ".join(e.get("message", "") for e in errs) or f"HTTP {r.status_code}"
-            raise DnsError(f"{self.PROVIDER}: {msg}")
+            # Same helper as the 401/403 path — Cloudflare returns a bad token as a 400
+            # "Invalid request headers", which tells a customer nothing on its own.
+            raise DnsError(f"{self.PROVIDER}: {self._reason(r)}")
         return data
 
     def verify(self) -> dict:
-        data = self._call("GET", "/user/tokens/verify")
-        return {"provider": self.PROVIDER, "status": (data.get("result") or {}).get("status")}
+        """Prove the token can do what we need — by doing it.
+
+        This used to call `/user/tokens/verify`, which asks Cloudflare about the token
+        itself and needs permissions our feature never uses. A token scoped only to zones
+        and DNS — exactly the token our own instructions ask for — was refused by that
+        endpoint and reported as having the wrong permissions, while being perfectly
+        capable of everything we do with it.
+
+        Listing zones is the capability the whole feature rests on, so it is the honest
+        test: if this works, the connection works.
+        """
+        data = self._call("GET", "/zones?per_page=1")
+        info = data.get("result_info") or {}
+        return {"provider": self.PROVIDER, "status": "active",
+                "zones": info.get("total_count", len(data.get("result") or []))}
 
     def list_zones(self) -> list[Zone]:
         out, page = [], 1
