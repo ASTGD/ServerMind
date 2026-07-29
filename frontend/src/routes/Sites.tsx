@@ -165,10 +165,16 @@ export default function Sites() {
   const [creating, setCreating] = useState(false)
   const [note, setNote] = useState("")
 
-  // The website recipe is a mission Ally runs — we are only opening the door from the
-  // page where someone is actually looking for it.
-  const { data: recipes = [] } = useQuery({ queryKey: ["recipes"], queryFn: () => listRecipes() })
-  const siteRecipe = recipes.find((r) => r.slug === "cyberpanel-host-website")
+  // Which server, then which recipe. A plain server and a panel server answer "host a
+  // website" with different runbooks, and the server decides — so it is chosen first
+  // rather than hardcoding one and hoping it fits.
+  const [createOn, setCreateOn] = useState("")
+  const { data: recipes = [] } = useQuery({
+    queryKey: ["recipes", createOn],
+    queryFn: () => listRecipes(null, createOn || null),
+    enabled: !!createOn,
+  })
+  const siteRecipe = recipes.find((r) => r.slug.includes("host-website"))
 
   const add = useMutation({
     mutationFn: () => addSite({ domain: newDomain, watch: true }),
@@ -210,8 +216,9 @@ export default function Sites() {
         <Button size="sm" onClick={() => { setAdding(!adding); setNote("") }}>
           <Plus size={13} />Add a website
         </Button>
-        {siteRecipe && (
-          <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
+        {scannable.length > 0 && (
+          <Button size="sm" variant="outline"
+            onClick={() => { setCreating(true); setCreateOn(scannable[0].id) }}>
             <Sparkles size={13} />Create a new website
           </Button>
         )}
@@ -258,8 +265,27 @@ export default function Sites() {
         </p>
       )}
 
-      {creating && siteRecipe && (
-        <RunRecipeModal recipe={siteRecipe} onClose={() => setCreating(false)} />
+      {creating && (
+        <div className="mb-3 rounded-xl border border-border bg-card p-3">
+          <p className="text-[12.5px] text-muted-foreground">
+            Which server should it go on? Ally will look at that server and use the right
+            method for it.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <select value={createOn} onChange={(e) => setCreateOn(e.target.value)}
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm
+                         outline-none focus:border-primary">
+              {scannable.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <Button size="sm" variant="ghost" onClick={() => setCreating(false)}>Cancel</Button>
+          </div>
+          {siteRecipe && (
+            <div className="mt-3 border-t border-border pt-3">
+              <RunRecipeModal recipe={siteRecipe}
+                onClose={() => setCreating(false)} />
+            </div>
+          )}
+        </div>
       )}
 
       <div className="mb-3 flex flex-wrap items-center gap-2">

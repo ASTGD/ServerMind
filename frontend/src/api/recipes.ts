@@ -19,9 +19,16 @@ export interface Recipe {
 }
 
 /** List recipes, optionally OS-gated against a target server's os_type. */
-export async function listRecipes(os?: string | null): Promise<Recipe[]> {
+/** Pass a server to get only the recipes that apply to THAT machine — two recipes can
+ *  answer "host a website" and only one fits a server with a control panel. */
+export async function listRecipes(
+  os?: string | null, serverId?: string | null,
+): Promise<Recipe[]> {
+  const params: Record<string, string> = {}
+  if (os) params.os = os
+  if (serverId) params.server_id = serverId
   const { data } = await apiClient.get<Recipe[]>("/api/recipes", {
-    params: os ? { os } : undefined,
+    params: Object.keys(params).length ? params : undefined,
   })
   return data
 }

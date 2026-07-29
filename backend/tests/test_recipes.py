@@ -155,3 +155,13 @@ def test_every_caller_that_has_a_server_passes_its_panel():
                  "services/ai_context_service.py"):
         text = (root / path).read_text()
         assert 'panel=server.panel_type or ""' in text, f"{path} does not pass the panel"
+
+
+def test_the_recipe_list_is_gated_by_the_server_too():
+    """The list a customer picks from must match the machine they picked, or they are
+    offered a recipe that refuses the moment it starts."""
+    for panel, want in (("cyberpanel", "cyberpanel-host-website"),
+                        ("", "host-website-plain")):
+        offered = [s.slug for s in sk.list_recipes("ubuntu")
+                   if sk.server_ok(s, panel) and "host-website" in s.slug]
+        assert offered == [want], f"panel={panel!r} offered {offered}"

@@ -13,6 +13,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.dependencies.access import resolve_server
 from app.dependencies.auth import get_current_user
 from app.models.user import User
 from app.services import skill_service
@@ -40,10 +44,25 @@ class RecipeOut(BaseModel):
 @router.get("", response_model=list[RecipeOut])
 async def list_recipes(
     os: str | None = Query(default=None, description="target server os_type to gate against"),
-    _: User = Depends(get_current_user),
+    server_id: str | None = Query(default=None,
+                                  description="gate against a specific server as well"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[RecipeOut]:
-    """List goal-oriented recipes, optionally OS-gated against the selected target
-    (all recipes when ``os`` is omitted). Read-only; auth required."""
+    """List goal-oriented recipes, gated against the target the customer has chosen.
+
+    Passing a server gates on what that machine actually is, not just its OS — two
+    recipes can answer "host a website" and only one of them applies to a server with a
+    control panel. The same rule the chat router uses, so a customer is never offered a
+    recipe that would refuse the moment it started.
+    """
+    panel = None
+    if server_id:
+        server = await resolve_server(server_id, current_user, db)
+        os = os or server.os_type
+        # `or ""` on purpose: a null panel on a real server means "no panel", not
+        # "we do not know" — see skill_service.server_ok.
+        panel = server.panel_type or ""
     return [
         RecipeOut(
             slug=s.slug,
@@ -56,4 +75,5 @@ async def list_recipes(
             goal_template=s.goal_template,
         )
         for s in skill_service.list_recipes(os)
+        if skill_service.server_ok(s, panel)
     ]

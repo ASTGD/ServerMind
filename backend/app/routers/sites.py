@@ -139,6 +139,26 @@ async def list_sites(
     }
 
 
+async def _watch_new(db: AsyncSession, user, server) -> int:
+    """Create uptime monitors for this server's sites that have none yet."""
+    sites = (await db.execute(
+        select(Site).where(Site.server_id == server.id, Site.user_id == user.id,
+                           Site.is_present.is_(True)))).scalars().all()
+    known = {_monitor_key(m.url) for m in (await db.execute(
+        select(UptimeMonitor).where(UptimeMonitor.user_id == user.id))).scalars().all()}
+    made = 0
+    for site in sites:
+        if site.domain in known:
+            continue
+        db.add(UptimeMonitor(user_id=user.id, server_id=site.server_id,
+                             **site_service.monitor_defaults(site.domain)))
+        known.add(site.domain)
+        made += 1
+    if made:
+        await db.commit()
+    return made
+
+
 @router.post("/servers/{server_id}/sites/scan")
 async def scan_server(server_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     """Look at one server and record the websites it serves.
@@ -153,10 +173,17 @@ async def scan_server(server_id: str, db: DBDep, current_user: CurrentUser) -> d
         raise HTTPException(status_code=502, detail=error)
 
     summary = await site_service.sync(db, server, found)
-    logger.info("Site scan on %s: %s", server.name, summary)
+
+    # Start watching what we just found. Discovery without monitoring is a phone book:
+    # the customer would have to create a monitor for every site by hand, so nobody ever
+    # would, and the up/down column that makes this page worth opening stays empty. New
+    # sites only — a site whose monitor was deliberately deleted is not resurrected.
+    watching = await _watch_new(db, current_user, server)
+    logger.info("Site scan on %s: %s (now watching %d more)", server.name, summary, watching)
     return {
         "server": server.name,
         **summary,
+        "watching": watching,
         "truncated": truncated,
         "note": (f"Only the first {site_service.MAX_SITES} sites were recorded — this server "
                  "has more." if truncated else None),
