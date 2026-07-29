@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Globe2, Loader2, Plus, Trash2, Lock, TriangleAlert, CircleCheck, Link2Off, X,
+  ArrowLeft, ChevronRight, Search,
 } from "lucide-react"
 import {
   listDnsAccounts, connectDns, disconnectDns, listZones, listRecords,
@@ -154,11 +155,12 @@ export default function Dns() {
     queryFn: () => listZones(acct!.id),
     enabled: !!acct,
   })
-  const zone = zones.data?.zones?.find((z) => z.id === zoneId) ?? zones.data?.zones?.[0]
+  // No fallback to the first zone. An agency with fifty domains should land on the list
+  // and choose, not on whichever one happened to sort first.
+  const zone = zones.data?.zones?.find((z) => z.id === zoneId)
+  const [zoneSearch, setZoneSearch] = useState("")
 
-  useEffect(() => {
-    if (!zoneId && zone) setZoneId(zone.id)
-  }, [zone, zoneId])
+
 
   const records = useQuery({
     queryKey: ["dns-records", acct?.id, zone?.id],
@@ -211,16 +213,20 @@ export default function Dns() {
                 <option key={a.id} value={a.id}>{a.label}</option>
               ))}
             </select>
-            {zones.data && zones.data.zones.length > 0 && (
-              <select value={zone?.id ?? ""} onChange={(e) => setZoneId(e.target.value)}
-                className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary">
-                {zones.data.zones.map((z) => <option key={z.id} value={z.id}>{z.name}</option>)}
-              </select>
+            {zone && (
+              <button onClick={() => { setZoneId(""); setAdding(false) }}
+                className="flex items-center gap-1 rounded-lg border border-border px-2 py-1.5
+                           text-sm text-foreground hover:bg-accent">
+                <ArrowLeft size={13} /> All domains
+              </button>
             )}
+            {zone && <span className="text-sm font-medium text-foreground">{zone.name}</span>}
             <div className="ml-auto flex gap-1.5">
-              <Button size="sm" onClick={() => setAdding(true)} disabled={!zone}>
-                <Plus size={14} /> Add record
-              </Button>
+              {zone && (
+                <Button size="sm" onClick={() => setAdding(true)}>
+                  <Plus size={14} /> Add record
+                </Button>
+              )}
               <Button size="sm" variant="ghost"
                 onClick={() => disconnectDns(acct.id).then(() =>
                   qc.invalidateQueries({ queryKey: ["dns-accounts"] }))}>
@@ -251,7 +257,55 @@ export default function Dns() {
             </div>
           )}
 
-          {records.isLoading ? (
+          {/* The landing view: every domain in the account. A dropdown hides how many
+              there are and makes finding one a hunt; a searchable list does not. */}
+          {!zone && zones.data && zones.data.zones.length > 0 && (
+            <>
+              {zones.data.zones.length > 8 && (
+                <div className="relative mb-2">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4
+                                     -translate-y-1/2 text-muted-foreground" />
+                  <input value={zoneSearch} onChange={(e) => setZoneSearch(e.target.value)}
+                    placeholder="Find a domain"
+                    className="w-full rounded-lg border border-border bg-background py-1.5
+                               pl-8 pr-3 text-sm outline-none focus:border-primary" />
+                </div>
+              )}
+              <p className="mb-2 text-[12.5px] text-muted-foreground">
+                {zones.data.zones.length} domain{zones.data.zones.length === 1 ? "" : "s"} in
+                this account. Choose one to see its records.
+              </p>
+              <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {zones.data.zones
+                  .filter((z) => z.name.toLowerCase().includes(zoneSearch.trim().toLowerCase()))
+                  .map((z) => (
+                  <li key={z.id}>
+                    <button onClick={() => setZoneId(z.id)}
+                      className="flex w-full items-center gap-2 rounded-xl border border-border
+                                 bg-card p-3 text-left hover:border-primary hover:bg-accent">
+                      <Globe2 size={15} className="shrink-0 text-primary" />
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium
+                                       text-foreground">{z.name}</span>
+                      {z.status !== "active" && (
+                        <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5
+                                         text-[10.5px] font-medium text-amber-700
+                                         dark:text-amber-400">{z.status}</span>
+                      )}
+                      <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {zoneSearch.trim() && !zones.data.zones.some((z) =>
+                z.name.toLowerCase().includes(zoneSearch.trim().toLowerCase())) && (
+                <p className="py-6 text-center text-[13px] text-muted-foreground">
+                  No domain matches “{zoneSearch}”.
+                </p>
+              )}
+            </>
+          )}
+
+          {zone && (records.isLoading ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Loading records…</p>
           ) : (
             <ul className="space-y-1.5">
@@ -301,7 +355,7 @@ export default function Dns() {
                 </li>
               ))}
             </ul>
-          )}
+          ))}
         </>
       )}
     </div>
