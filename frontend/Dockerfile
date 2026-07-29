@@ -17,6 +17,18 @@ COPY package*.json ./
 # `npm ci` installs exactly what package-lock.json says. `npm install` is free to resolve
 # something newer and rewrite the lock, so the lockfile we commit was being ignored — the
 # same reproducibility hole the backend had, just quieter because it rarely breaks.
+#
+# IMPORTANT: package-lock.json is authored for LINUX, because that is what this image is.
+# A lockfile generated on macOS records only macOS's optional packages, and `npm ci` here
+# then fails with "Missing: @emnapi/core from lock file" — which is what happened the
+# first time this changed. If you need to update dependencies, regenerate the lock in this
+# same image:
+#
+#   docker run --rm --platform linux/amd64 -v "$PWD/frontend":/w -w /w node:20-alpine \
+#     npm install --package-lock-only
+#
+# Running `npm install` on a Mac WILL rewrite it back and break the build. Use
+# `npm install --no-save` locally, or restore the file afterwards.
 RUN npm ci --no-audit --no-fund
 
 COPY . .
