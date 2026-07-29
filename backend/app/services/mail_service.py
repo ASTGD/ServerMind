@@ -393,3 +393,12 @@ async def check_domain(domain: str, *, sending_ip: str | None = None) -> MailHea
         return health
 
     return await asyncio.to_thread(work)
+
+
+def clean_domain_for_mail(value: str) -> str:
+    """The same cleaning the Sites page uses — one rule for what a domain is."""
+    from app.services import site_service
+    try:
+        return site_service.clean_domain(value)
+    except site_service.InvalidDomain as exc:
+        raise ValueError(str(exc)) from exc

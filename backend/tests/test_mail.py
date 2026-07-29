@@ -256,3 +256,22 @@ def test_one_refused_list_out_of_three_is_not_worth_mentioning():
 def test_a_real_listing_still_reports_even_when_another_list_refused():
     f = m.evaluate_blocklists(["SpamCop"], "1.2.3.4", unchecked=["Spamhaus"])
     assert f[0].severity == "critical" and "SpamCop" in f[0].detail
+
+
+def test_the_daily_job_is_registered_at_startup():
+    """A worker nobody schedules is a worker that never runs, and nothing fails to say so."""
+    import pathlib
+    text = (pathlib.Path(__file__).resolve().parents[1] / "main.py").read_text()
+    assert "mail_worker.sweep" in text
+    assert 'id="mail_health_sweep"' in text
+    assert "max_instances=1" in text
+
+
+def test_the_trigger_is_imported_before_it_is_used():
+    """It was not — CronTrigger was used 36 lines above its import, which would have
+    crashed the app at startup the moment the scheduler was enabled."""
+    import pathlib
+    text = (pathlib.Path(__file__).resolve().parents[1] / "main.py").read_text()
+    first_use = text.index("CronTrigger(hour=7")
+    first_import = text.index("from apscheduler.triggers.cron import CronTrigger")
+    assert first_import < first_use, "CronTrigger is used before it is imported"

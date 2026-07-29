@@ -25,6 +25,7 @@ from app.routers import autopilot as autopilot_router
 from app.routers import branding as branding_router
 from app.routers import status_pages as status_pages_router
 from app.routers import logs as logs_router
+from app.routers import mail as mail_router
 from app.routers import missions as missions_router
 from app.routers import monitoring as monitoring_router
 from app.routers import notifications as notifications_router
@@ -57,6 +58,7 @@ from app.services import backup_service, playbook_service, scheduler_service
 from app.services.rate_limit_service import limiter
 from app.websocket import terminal as ws_handlers
 from app.websocket import rdp_tunnel as ws_rdp
+from app.workers import mail_worker
 from app.workers import setup_runner
 from app.workers import metrics_worker
 from app.mcp.server import mcp_server  # MCP server (docs/MCP-SERVER-PLAN.md)
@@ -111,6 +113,8 @@ async def _start_background_jobs() -> None:
         logger.info("Scheduler disabled on this worker (ENABLE_SCHEDULER=false)")
         return
 
+    from apscheduler.triggers.cron import CronTrigger
+
     # Start APScheduler, load saved tasks, and register metrics collection
     scheduler_service.start()
     await scheduler_service.load_all_tasks()
@@ -151,6 +155,18 @@ async def _start_background_jobs() -> None:
         max_instances=1,  # an SSH sweep must never overlap itself
     )
     logger.info("Service monitoring job registered (every 2 min)")
+
+    # Mail health — SPF/DKIM/DMARC and blocklists, checked from ServerAlly against public
+    # DNS. Daily: these are DNS records, and a domain's SPF does not change between
+    # breakfast and lunch. Alerts only when a domain gets WORSE.
+    scheduler_service.get_scheduler().add_job(
+        mail_worker.sweep,
+        trigger=CronTrigger(hour=7, minute=30),
+        id="mail_health_sweep",
+        replace_existing=True,
+        max_instances=1,
+    )
+    logger.info("Mail health job registered (daily 07:30 UTC)")
 
     # Uptime monitoring — probe each site FROM ServerAlly (not from the server, which
     # would pass while DNS/firewall/the whole box is unreachable). Sweeps every minute;
@@ -322,6 +338,7 @@ app.include_router(recipes_router.router)
 app.include_router(scripts_router.router)
 app.include_router(scheduler_router.router)
 app.include_router(monitoring_router.router)
+app.include_router(mail_router.router)
 app.include_router(missions_router.router)
 app.include_router(server_reports_router.router)
 app.include_router(fleet_router.router)
