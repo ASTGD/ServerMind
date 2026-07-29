@@ -1,23 +1,42 @@
+# Every direct dependency is pinned to an exact version.
+#
+# It was not, and on 2026-07-29 that took production down: `mcp>=1.28.0` had no ceiling,
+# MCP 2.0 moved a module we import, and the next rebuild — whenever it came, whatever else
+# was in it — failed to start. The rebuild that triggered it was an unrelated DNS fix,
+# which is the point: an open upper bound means the failure lands on whoever deploys next
+# rather than on whoever chose the version.
+#
+# Reviewing the rest showed the same shape everywhere and how far it had already carried
+# us: croniter was declared >=2.0 and running 6.2, gunicorn >=21.2 running 26.0. Those
+# jumps happened silently across past rebuilds and happened not to break. That was luck.
+#
+# The versions below are the ones production is proven to be running right now. The trade
+# is deliberate: security updates no longer arrive on their own, so they are bumped on
+# purpose, tested, and deployed — rather than arriving unannounced in an unrelated deploy.
+#
+# Transitive dependencies are still unpinned. A full lockfile would close that too and is
+# worth doing; this closes the part that actually bit us.
+
 # Web framework
-fastapi>=0.111.0
-uvicorn[standard]>=0.29.0
+fastapi==0.140.13
+uvicorn[standard]==0.51.0
 
 # Database
-sqlalchemy[asyncio]>=2.0.36
+sqlalchemy[asyncio]==2.0.51
 alembic==1.13.1
-asyncpg>=0.29.0
+asyncpg==0.31.0
 
 # Validation
-pydantic[email]>=2.7.1
-pydantic-settings>=2.2.1
+pydantic[email]==2.13.4
+pydantic-settings==2.14.2
 
 # Auth
-python-jose[cryptography]>=3.3.0
+python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.2.1
-python-multipart>=0.0.9
-slowapi>=0.1.9
-pyotp>=2.9.0
+python-multipart==0.0.32
+slowapi==0.1.10
+pyotp==2.10.0
 
 # Cryptography
 cryptography==42.0.7
@@ -27,7 +46,7 @@ paramiko==3.4.0
 
 # WinRM
 pywinrm==0.4.3
-requests-ntlm>=1.2.0
+requests-ntlm==1.3.0
 
 # WebSocket
 python-socketio[asyncio_client]==5.11.2
@@ -38,7 +57,7 @@ redis==5.0.4
 
 # Scheduler
 apscheduler==3.10.4
-croniter>=2.0.0
+croniter==6.2.4
 
 # AI providers (multi-provider — Anthropic by default; the openai SDK also covers
 # OpenAI, Gemini via its OpenAI-compatible endpoint, and other OpenAI-compatible APIs)
@@ -50,7 +69,7 @@ requests==2.31.0
 aiofiles==23.2.1
 
 # Cloud provider SDKs (Assets Phase C — lazy-imported per adapter)
-boto3>=1.34.0
+boto3==1.43.58
 
 # MCP server — expose ServerAlly's bounded tools to a customer's own AI client
 # (Claude Code, Desktop, ChatGPT, Cursor) over Streamable HTTP. See docs/MCP-SERVER-PLAN.md.
@@ -62,6 +81,6 @@ mcp>=1.28.0,<2.0.0
 python-dotenv==1.0.1
 
 # Production
-gunicorn>=21.2.0
-sentry-sdk[fastapi]>=1.40.0
+gunicorn==26.0.0
+sentry-sdk[fastapi]==2.66.1
 dnspython==2.8.0

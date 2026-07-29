@@ -14,7 +14,10 @@ ENV VITE_API_URL=$VITE_API_URL \
     VITE_APP_TAGLINE=$VITE_APP_TAGLINE
 
 COPY package*.json ./
-RUN npm install --no-audit --no-fund
+# `npm ci` installs exactly what package-lock.json says. `npm install` is free to resolve
+# something newer and rewrite the lock, so the lockfile we commit was being ignored — the
+# same reproducibility hole the backend had, just quieter because it rarely breaks.
+RUN npm ci --no-audit --no-fund
 
 COPY . .
 RUN npm run build
