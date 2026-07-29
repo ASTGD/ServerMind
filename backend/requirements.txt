@@ -54,7 +54,9 @@ boto3>=1.34.0
 
 # MCP server — expose ServerAlly's bounded tools to a customer's own AI client
 # (Claude Code, Desktop, ChatGPT, Cursor) over Streamable HTTP. See docs/MCP-SERVER-PLAN.md.
-mcp>=1.28.0
+# Pinned below 2.0: it moved mcp.server.fastmcp, and an open upper bound meant
+# the next rebuild — whenever it happened — would fail to start. It did.
+mcp>=1.28.0,<2.0.0
 
 # Utilities
 python-dotenv==1.0.1
