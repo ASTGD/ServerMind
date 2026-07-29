@@ -229,6 +229,32 @@ class _Adapter:
     def delete_record(self, zone_id: str, record_id: str) -> None: raise NotImplementedError
 
 
+_TOKEN_JUNK = re.compile(r"\s+")
+
+
+def clean_token(value: str) -> str:
+    """A pasted token, with the ways people paste it removed.
+
+    ALL whitespace goes, not just the ends: a token copied from a narrow window arrives
+    with a line break in the middle, and that produces a header the provider rejects as
+    malformed — which reads as "your token is wrong" when it is only the copy that is.
+    No API token contains whitespace, so removing it can never damage a real one.
+
+    A "Bearer " prefix is dropped too, because the word appears next to the token in every
+    example a customer will have read.
+    """
+    text = _TOKEN_JUNK.sub("", value or "")
+    if text.lower().startswith("bearer"):
+        text = text[6:]
+    return text.strip()
+
+
+def looks_like_token(value: str) -> bool:
+    """Cloudflare tokens are 40 URL-safe characters. Used to say something useful BEFORE
+    a round trip, never to refuse — a format that changes must not lock customers out."""
+    return bool(re.fullmatch(r"[A-Za-z0-9_-]{30,}", value or ""))
+
+
 class CloudflareAdapter(_Adapter):
     """Cloudflare DNS. Free, and the provider this market actually uses."""
 
@@ -236,7 +262,7 @@ class CloudflareAdapter(_Adapter):
     PROVIDER = "Cloudflare"
 
     def _headers(self) -> dict:
-        return {"Authorization": f"Bearer {self.cred.get('api_token', '')}",
+        return {"Authorization": f"Bearer {clean_token(self.cred.get('api_token', ''))}",
                 "Content-Type": "application/json"}
 
     @staticmethod

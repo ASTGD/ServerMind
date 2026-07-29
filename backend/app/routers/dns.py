@@ -68,7 +68,16 @@ async def connect(body: ConnectIn, db: DBDep, current_user: CurrentUser) -> dict
     than none: it sits there looking connected until someone urgently needs to change a
     record and discovers it never worked.
     """
-    cred = {"api_token": body.api_token.strip()}
+    token = dns.clean_token(body.api_token)
+    if not dns.looks_like_token(token):
+        # Said before the round trip, because "Invalid request headers" from Cloudflare
+        # does not tell anyone that they pasted the wrong box's contents.
+        raise HTTPException(
+            status_code=422,
+            detail="That does not look like a Cloudflare API token. It is about 40 "
+                   "letters and numbers, shown once when you create it — not the "
+                   "Global API Key and not your account ID.")
+    cred = {"api_token": token}
     try:
         await dns.verify_credential(body.provider, cred)
     except dns.DnsError as exc:

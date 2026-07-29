@@ -215,3 +215,29 @@ def test_an_unreadable_body_still_says_something():
         status_code = 502
         def json(self): raise ValueError("not json")
     assert "502" in CloudflareAdapter._reason(Bad())
+
+
+# ── what people actually paste ───────────────────────────────────────────────
+@pytest.mark.parametrize("pasted", [
+    "abc123DEF456ghi789JKL012mno345PQR678stu",
+    "  abc123DEF456ghi789JKL012mno345PQR678stu  ",
+    "abc123DEF456ghi789JKL012mno\n345PQR678stu",     # copied from a narrow window
+    "abc123DEF456ghi789JKL012mno 345PQR678stu",
+    "Bearer abc123DEF456ghi789JKL012mno345PQR678stu",
+])
+def test_a_token_survives_the_ways_people_copy_it(pasted):
+    """A line break in the middle produces a header the provider rejects as malformed,
+    which reads as "your token is wrong" when only the copy was. No API token contains
+    whitespace, so removing it cannot damage a real one."""
+    from app.services.dns_service import clean_token
+    assert clean_token(pasted) == "abc123DEF456ghi789JKL012mno345PQR678stu"
+
+
+def test_the_shape_check_only_advises_it_never_refuses_a_plausible_token():
+    """A format that changes must not lock customers out, so this is a hint before the
+    round trip — not a gate."""
+    from app.services.dns_service import looks_like_token
+    assert looks_like_token("abc123DEF456ghi789JKL012mno345PQR678stu")
+    assert not looks_like_token("hello there")
+    assert not looks_like_token("short")
+    assert not looks_like_token("")
