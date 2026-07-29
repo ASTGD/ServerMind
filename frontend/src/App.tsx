@@ -17,6 +17,7 @@ import Scheduler from "@/routes/Scheduler"
 import FileManager from "@/routes/FileManager"
 import Security from "@/routes/Security"
 import ServerLogs from "./routes/ServerLogs"
+import ServerSettings from "./routes/ServerSettings"
 import ServerAccess from "@/routes/ServerAccess"
 import PublicStatusPage from "./routes/PublicStatus"
 import Acknowledge from "./routes/Acknowledge"
@@ -82,6 +83,7 @@ export default function App() {
             <Route path="scheduler" element={<Scheduler />} />
             <Route path="hosting" element={<Hosting />} />
             <Route path="installed" element={<Installed />} />
+            <Route path="settings" element={<ServerSettings />} />
           </Route>
           <Route path="playbooks" element={<Playbooks />} />
           <Route path="runbooks" element={<Runbooks />} />
