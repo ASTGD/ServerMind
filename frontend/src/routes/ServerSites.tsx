@@ -2,14 +2,13 @@ import { useState } from "react"
 import { useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  CircleAlert, CircleCheck, CircleDashed, EyeOff, FolderPlus, Globe, Loader2, Plus,
-  LayoutPanelTop, RefreshCw, Rocket, ShieldAlert, ShieldCheck, Sparkles, X,
+  CircleAlert, CircleCheck, CircleDashed, EyeOff, Globe, Loader2, Plus,
+  RefreshCw, ShieldAlert, ShieldCheck,
 } from "lucide-react"
 import { listServerSites, scanServerSites, APP_LABEL, type Site } from "@/api/sites"
 import { listRecipes } from "@/api/recipes"
-import { getPlaybook, listPlaybooks } from "@/api/playbooks"
 import RunRecipeModal from "@/components/recipes/RunRecipeModal"
-import RunPlaybookModal from "@/components/playbooks/RunPlaybookModal"
+import NewSiteDialog from "@/components/sites/NewSiteDialog"
 import ServerSetupPanel from "@/components/server/ServerSetupPanel"
 import { Button, EmptyState } from "@/components/ui"
 import { installerOptionsFor } from "@/lib/assetMenu"
@@ -33,7 +32,6 @@ export default function ServerSites() {
   const qc = useQueryClient()
   const [choosing, setChoosing] = useState(false)
   const [creating, setCreating] = useState(false)
-  const [runSlug, setRunSlug] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ["server-sites", server.id],
@@ -58,15 +56,6 @@ export default function ServerSites() {
 
   // The two deterministic installers. Fetched by slug so the button knows whether the
   // installer exists on this deployment before offering it.
-  const { data: playbooks = [] } = useQuery({
-    queryKey: ["playbooks"], queryFn: () => listPlaybooks(),
-  })
-  const bySlug = (slug: string) => playbooks.find((p) => p.slug === slug)
-  const { data: runPlaybook } = useQuery({
-    queryKey: ["playbook", runSlug],
-    queryFn: () => getPlaybook(bySlug(runSlug!)!.id),
-    enabled: !!runSlug && !!bySlug(runSlug!),
-  })
 
   const doors = installerOptionsFor(server)
   const sites = data?.sites ?? []
@@ -121,31 +110,15 @@ export default function ServerSites() {
       )}
 
       {choosing && (
-        <NewSiteChooser
-          hasEmpty={doors.direct && !!bySlug("create-site")}
-          hasWordPress={doors.direct && !!bySlug("wordpress")}
-          hasLaravel={doors.direct && !!bySlug("laravel-site")}
-          hasApp={doors.direct && !!bySlug("create-app")}
-          hasPanel={doors.panel}
-          hasAlly={doors.ally && !!siteRecipe}
+        <NewSiteDialog
           serverId={server.id}
-          onPick={(what) => {
-            setChoosing(false)
-            if (what === "ally") setCreating(true)
-            else setRunSlug(what)
-          }}
+          // A panel owns its own websites, so the direct installers are not offered at all
+          // rather than offered and then refused — see installerOptionsFor.
+          panelOnly={!doors.direct}
+          onAsk={doors.ally && siteRecipe
+            ? () => { setChoosing(false); setCreating(true) }
+            : undefined}
           onClose={() => setChoosing(false)}
-        />
-      )}
-
-      {runPlaybook && runSlug && (
-        <RunPlaybookModal
-          playbook={runPlaybook}
-          servers={[server]}
-          onClose={() => {
-            setRunSlug(null)
-            qc.invalidateQueries({ queryKey: ["server-sites", server.id] })
-          }}
         />
       )}
 
@@ -258,129 +231,35 @@ function SiteRow({ site }: { site: Site }) {
             {site.domain}
           </a>
           <CertChip site={site} />
-          {!site.is_present && (
+          {/* A site being built must SAY so. The status existed in the API and nowhere on
+              screen, so a half-installed site looked exactly like a finished one — which
+              defeats the point of recording the state at all. */}
+          {site.status === "installing" && (
+            <span className="flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+              <Loader2 size={9} className="animate-spin" /> Setting up…
+            </span>
+          )}
+          {site.status === "failed" && (
+            <span className="flex items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+              <CircleAlert size={9} /> Setup failed
+            </span>
+          )}
+          {!site.is_present && site.status !== "installing" && site.status !== "failed" && (
             <span className="flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
               <EyeOff size={9} /> No longer found
             </span>
           )}
         </p>
         <p className="truncate text-[11.5px] text-muted-foreground">
-          {APP_LABEL[site.app_type] ?? site.app_type}
+          {site.status === "failed" && site.install_error
+            ? site.install_error
+            : <>{APP_LABEL[site.app_type] ?? site.app_type}
           {site.app_version ? ` ${site.app_version}` : ""}
           {site.doc_root ? ` · ${site.doc_root}` : ""}
-          {down && site.uptime?.error ? ` · ${site.uptime.error}` : ""}
+          {down && site.uptime?.error ? ` · ${site.uptime.error}` : ""}</>}
         </p>
       </div>
     </div>
   )
 }
 
-/**
- * Three ways to get a website onto this server, and the order matters.
- *
- * The two deterministic installers come first because they are what most people want and
- * they behave the same way every time. Ally is the third door, for a server that turns out
- * not to be in a shape an installer can assume — which is the case an installer cannot
- * handle and the reason we have Ally at all.
- */
-function NewSiteChooser({
-  hasEmpty, hasWordPress, hasLaravel, hasApp, hasPanel, hasAlly, serverId, onPick, onClose,
-}: {
-  hasEmpty: boolean
-  hasWordPress: boolean
-  hasLaravel: boolean
-  hasApp: boolean
-  hasPanel: boolean
-  hasAlly: boolean
-  serverId: string
-  onPick: (what: "create-site" | "wordpress" | "laravel-site" | "create-app" | "ally") => void
-  onClose: () => void
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl">
-        <div className="mb-1 flex items-start justify-between">
-          <h3 className="text-[16px] font-medium text-foreground">Add a website</h3>
-          <button onClick={onClose} aria-label="Close"
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
-            <X size={15} />
-          </button>
-        </div>
-        <p className="mb-4 text-[12.5px] text-muted-foreground">
-          What should go on this server?
-        </p>
-
-        <div className="space-y-2">
-          {hasEmpty && (
-            <Choice
-              icon={FolderPlus}
-              title="Empty website"
-              blurb="A folder, an address and a working PHP page. For your own files, a Git deploy, or a WordPress install later."
-              onClick={() => onPick("create-site")}
-            />
-          )}
-          {hasWordPress && (
-            <Choice
-              icon={Globe}
-              title="WordPress"
-              blurb="A full WordPress install with its own database, ready to finish setting up in the browser."
-              onClick={() => onPick("wordpress")}
-            />
-          )}
-          {hasLaravel && (
-            <Choice
-              icon={Globe}
-              title="Laravel"
-              blurb="A fresh Laravel install with its own database, key and correct permissions. Needs PHP 8.3 or newer."
-              onClick={() => onPick("laravel-site")}
-            />
-          )}
-          {hasApp && (
-            <Choice
-              icon={Rocket}
-              title="Web application"
-              blurb="Node, Python, Go or similar — points the domain at your running program and keeps it alive across crashes and reboots."
-              onClick={() => onPick("create-app")}
-            />
-          )}
-          {/* A panel owns its own web-server config, so the direct installers are not
-              offered here at all — they would refuse. This is where its sites belong. */}
-          {hasPanel && (
-            <Choice
-              icon={LayoutPanelTop}
-              title="Create through the control panel"
-              blurb="This server runs a control panel, which manages its own websites. Creating one any other way would be invisible to it."
-              href={`/servers/${serverId}/hosting`}
-            />
-          )}
-          {hasAlly && (
-            <Choice
-              icon={Sparkles}
-              title="Let Ally set it up"
-              blurb="Ally looks at this server first and adapts — for an unusual layout, an existing site to work around, or anything the other options don’t fit."
-              onClick={() => onPick("ally")}
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function Choice({ icon: Icon, title, blurb, onClick, href }: {
-  icon: typeof Globe; title: string; blurb: string; onClick?: () => void; href?: string
-}) {
-  const Tag = href ? "a" : "button"
-  return (
-    <Tag
-      {...(href ? { href } : { onClick })}
-      className="flex w-full items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/40"
-    >
-      <Icon size={16} className="mt-0.5 shrink-0 text-primary" />
-      <div>
-        <p className="text-[13.5px] font-medium text-foreground">{title}</p>
-        <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{blurb}</p>
-      </div>
-    </Tag>
-  )
-}

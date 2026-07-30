@@ -213,6 +213,28 @@ async def scan_server(server_id: str, db: DBDep, current_user: CurrentUser) -> d
     }
 
 
+@router.get("/site-types")
+async def site_types(db: DBDep, current_user: CurrentUser) -> dict:
+    """What can be installed on a server, and what each one needs to know.
+
+    Served from the backend rather than listed again in the browser, so adding a type is
+    one entry plus a playbook — which is the whole promise of the catalogue. A type whose
+    playbook is missing from this deployment simply does not appear.
+    """
+    from app.models.playbook import Playbook
+
+    rows = (await db.execute(
+        select(Playbook).where(Playbook.is_official == True)  # noqa: E712
+    )).scalars().all()
+    by_slug = {p.slug: p for p in rows}
+    items = site_service.catalogue(by_slug)
+    return {
+        "groups": [{"id": g, "label": label, "blurb": blurb}
+                   for g, label, blurb in site_service.SITE_GROUPS],
+        "types": items,
+    }
+
+
 class CreateSiteIn(BaseModel):
     """What to put on this server."""
     domain: str

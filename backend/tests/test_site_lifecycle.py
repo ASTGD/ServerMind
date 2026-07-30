@@ -361,3 +361,98 @@ def test_the_api_actually_carries_the_new_state():
     assert out["status"] == "installing"
     assert "install_error" in out
     assert out["requested_type"] == "wordpress"
+
+
+# ── The catalogue the Sites page is built from ───────────────────────────────
+
+class _Pb:
+    def __init__(self, slug, variables=None, est=60):
+        self.slug = slug
+        self.variables = variables or []
+        self.est_runtime_sec = est
+
+
+def _all_playbooks():
+    """Stand-ins carrying the same variables the real installers declare."""
+    return {
+        "create-site": _Pb("create-site", [
+            {"name": "DOMAIN", "label": "Domain", "required": True},
+            {"name": "WEB_ROOT", "label": "Web root", "default": "/var/www", "required": True},
+            {"name": "WITH_PHP", "label": "With PHP", "default": "yes", "required": True}]),
+        "wordpress": _Pb("wordpress", [
+            {"name": "DOMAIN", "label": "Domain", "required": True},
+            {"name": "DB_NAME", "label": "Database", "default": "wordpress", "required": True},
+            {"name": "DB_PASS", "label": "Database password", "required": True},
+            {"name": "ADMIN_EMAIL", "label": "Admin email", "required": True}]),
+        "laravel-site": _Pb("laravel-site", [{"name": "DOMAIN", "required": True}]),
+        "create-app": _Pb("create-app", [
+            {"name": "DOMAIN", "required": True},
+            {"name": "APP_PORT", "label": "Port", "default": "3000", "required": True},
+            {"name": "START_CMD", "label": "Start command", "required": False}]),
+        "nextcloud": _Pb("nextcloud", [
+            {"name": "DOMAIN", "required": True},
+            {"name": "NC_ADMIN_PASS", "label": "Admin password", "required": True}]),
+        "ghost-cms": _Pb("ghost-cms", [{"name": "DOMAIN", "required": True}]),
+    }
+
+
+def test_the_catalogue_never_asks_for_the_domain_twice():
+    """It is asked for once, above the type-specific questions."""
+    for item in ss.catalogue(_all_playbooks()):
+        names = [f["name"] for f in item["fields"]]
+        assert "DOMAIN" not in names, f"{item['id']} asks for the domain again"
+
+
+def test_a_choice_the_type_already_made_is_not_asked_of_the_customer():
+    """Picking "Empty website" IS the answer to WITH_PHP. Asking again would let someone
+    choose an empty PHP-less site and then switch PHP on, which is the other type."""
+    empty = next(i for i in ss.catalogue(_all_playbooks()) if i["id"] == "static")
+    assert "WITH_PHP" not in [f["name"] for f in empty["fields"]]
+    assert "WEB_ROOT" in [f["name"] for f in empty["fields"]], (
+        "a genuine question should still be asked"
+    )
+
+
+def test_passwords_are_marked_so_the_form_can_hide_them():
+    """Same rule that decides what gets encrypted at rest, so the two cannot disagree."""
+    wp = next(i for i in ss.catalogue(_all_playbooks()) if i["id"] == "wordpress")
+    fields = {f["name"]: f for f in wp["fields"]}
+    assert fields["DB_PASS"]["secret"] is True
+    assert fields["DB_NAME"]["secret"] is False
+    nc = next(i for i in ss.catalogue(_all_playbooks()) if i["id"] == "nextcloud")
+    assert {f["name"]: f for f in nc["fields"]}["NC_ADMIN_PASS"]["secret"] is True
+
+
+def test_a_type_whose_installer_is_missing_is_not_offered():
+    """A button that cannot work is worse than no button — the customer has already
+    decided to trust it by the time it declines."""
+    partial = {"create-site": _all_playbooks()["create-site"]}
+    ids = {i["id"] for i in ss.catalogue(partial)}
+    assert ids == {"static", "php"}, f"only create-site types should survive: {ids}"
+
+
+def test_every_type_belongs_to_a_group_that_exists():
+    groups = {g[0] for g in ss.SITE_GROUPS}
+    for item in ss.catalogue(_all_playbooks()):
+        assert item["group"] in groups, f"{item['id']} is in unknown group {item['group']}"
+
+
+def test_port_only_apps_are_not_offered_as_sites_yet():
+    """Gitea, n8n, Uptime Kuma, Vaultwarden and Portainer install on a PORT.
+
+    Offering them here would mean the customer types a domain and gets something at an IP
+    and a port number — the same "button that declines after you trust it" problem the
+    panel case already avoids. They join once P4 gives them a reverse proxy.
+    """
+    offered = set(ss.SITE_TYPES)
+    for slug in ("gitea", "n8n", "uptime-kuma", "vaultwarden", "portainer"):
+        assert slug not in offered, (
+            f"{slug} installs on a port — it cannot honestly be offered as a site yet"
+        )
+
+
+def test_every_catalogue_entry_can_actually_be_created():
+    """The catalogue and the create path must agree on the set of types."""
+    for item in ss.catalogue(_all_playbooks()):
+        assert item["id"] in ss.SITE_TYPES
+        assert item["label"] and item["blurb"], f"{item['id']} needs something to show"

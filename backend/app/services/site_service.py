@@ -436,17 +436,108 @@ def monitor_defaults(domain: str, *, https: bool = True) -> dict:
 #: A map rather than a chain of ifs, because adding a type should be one line here plus a
 #: playbook — that is the whole point of the catalogue this feeds.
 SITE_TYPES: dict[str, dict] = {
-    "static":    {"playbook": "create-site",  "label": "Empty website",
-                  "app_type": "static", "extra": {"WITH_PHP": "no"}},
-    "php":       {"playbook": "create-site",  "label": "PHP website",
-                  "app_type": "php", "extra": {"WITH_PHP": "yes"}},
-    "wordpress": {"playbook": "wordpress",    "label": "WordPress",
-                  "app_type": "wordpress", "extra": {}},
-    "laravel":   {"playbook": "laravel-site", "label": "Laravel",
-                  "app_type": "laravel", "extra": {}},
-    "app":       {"playbook": "create-app",   "label": "Web application",
-                  "app_type": "unknown", "extra": {}},
+    # ── Websites: files a web server reads ──────────────────────────────────
+    "static": {
+        "group": "websites", "playbook": "create-site", "label": "Empty website",
+        "blurb": "A folder and an address. For your own files or a Git deploy.",
+        "app_type": "static", "extra": {"WITH_PHP": "no"},
+    },
+    "php": {
+        "group": "websites", "playbook": "create-site", "label": "PHP website",
+        "blurb": "An empty site with PHP switched on, ready for an installer.",
+        "app_type": "php", "extra": {"WITH_PHP": "yes"},
+    },
+    "wordpress": {
+        "group": "websites", "playbook": "wordpress", "label": "WordPress",
+        "blurb": "A full WordPress install with its own database.",
+        "app_type": "wordpress", "extra": {},
+    },
+    "laravel": {
+        "group": "websites", "playbook": "laravel-site", "label": "Laravel",
+        "blurb": "A fresh Laravel install with its database and keys. Needs PHP 8.3+.",
+        "app_type": "laravel", "extra": {},
+    },
+
+    # ── Applications: a program that keeps running ──────────────────────────
+    "app": {
+        "group": "applications", "playbook": "create-app", "label": "Web application",
+        "blurb": "Node, Next.js, Python or Go — we point the domain at your program "
+                 "and keep it alive across crashes and reboots.",
+        "app_type": "unknown", "extra": {},
+    },
+
+    # ── Ready-made apps ─────────────────────────────────────────────────────
+    #
+    # ONLY the ones that already answer on a real domain. Gitea, n8n, Uptime Kuma,
+    # Vaultwarden and Portainer install on a PORT — offering them here would mean a
+    # customer types a domain and gets something at an IP and a port number instead.
+    # They join this group in P4, once they are wrapped with a reverse proxy.
+    "nextcloud": {
+        "group": "apps", "playbook": "nextcloud", "label": "Nextcloud",
+        "blurb": "Your own file storage and sharing, like Dropbox.",
+        "app_type": "php", "extra": {},
+    },
+    "ghost": {
+        "group": "apps", "playbook": "ghost-cms", "label": "Ghost",
+        "blurb": "A modern blog and newsletter platform.",
+        "app_type": "unknown", "extra": {},
+    },
 }
+
+#: The order the groups are shown in, and what to call them.
+SITE_GROUPS = (
+    ("websites", "Websites", "A site your visitors browse."),
+    ("applications", "Applications", "A program you wrote, running behind your domain."),
+    ("apps", "Ready-made apps", "Well-known software, installed and configured for you."),
+)
+
+
+def catalogue(playbooks_by_slug: dict) -> list[dict]:
+    """What can be installed here, with the questions each one needs.
+
+    The fields come from the PLAYBOOK's own variable list rather than being written out
+    again here. Two copies of "what does WordPress ask for" would drift the first time one
+    was edited, and the form would then send a variable the script does not read — or miss
+    one it does.
+
+    A type whose playbook is missing from this deployment is left out entirely. Offering a
+    button that cannot work is worse than not offering it: the customer has already decided
+    to trust it by the time it fails.
+    """
+    from app.services.secret_vars import is_secret
+
+    out: list[dict] = []
+    for type_id, spec in SITE_TYPES.items():
+        pb = playbooks_by_slug.get(spec["playbook"])
+        if pb is None:
+            continue
+
+        fields = []
+        for var in (getattr(pb, "variables", None) or []):
+            name = var.get("name") if isinstance(var, dict) else None
+            if not name or name == "DOMAIN":
+                continue  # the domain is always asked for, separately
+            if name in spec["extra"]:
+                continue  # decided by the choice of type, not by the customer
+            fields.append({
+                "name": name,
+                "label": (var.get("label") or name).strip(),
+                "default": var.get("default") or "",
+                "required": bool(var.get("required", True)),
+                # Reuses the same rule that decides what gets encrypted at rest, so a field
+                # stored as a secret is never displayed in clear text on the way in.
+                "secret": is_secret(name),
+            })
+
+        out.append({
+            "id": type_id,
+            "group": spec["group"],
+            "label": spec["label"],
+            "blurb": spec["blurb"],
+            "est_seconds": getattr(pb, "est_runtime_sec", None),
+            "fields": fields,
+        })
+    return out
 
 
 class SiteError(Exception):

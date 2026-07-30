@@ -10,6 +10,45 @@ export interface SiteUptime {
   cert_state: string | null
 }
 
+/** What can be installed on a server, served by the backend so the list has one home. */
+export interface SiteTypeField {
+  name: string
+  label: string
+  default: string
+  required: boolean
+  /** A password or token — the form must not show it in clear text. */
+  secret: boolean
+}
+
+export interface SiteType {
+  id: string
+  group: string
+  label: string
+  blurb: string
+  est_seconds: number | null
+  fields: SiteTypeField[]
+}
+
+export interface SiteCatalogue {
+  groups: { id: string; label: string; blurb: string }[]
+  types: SiteType[]
+}
+
+export async function getSiteCatalogue(): Promise<SiteCatalogue> {
+  const res = await apiClient.get<SiteCatalogue>("/api/site-types")
+  return res.data
+}
+
+export async function createSite(
+  serverId: string,
+  body: { domain: string; site_type: string; variables: Record<string, string> },
+): Promise<Site & { run_id: string }> {
+  const res = await apiClient.post<Site & { run_id: string }>(
+    `/api/servers/${serverId}/sites`, body,
+  )
+  return res.data
+}
+
 export interface Site {
   id: string
   domain: string
@@ -22,6 +61,12 @@ export interface Site {
   app_version: string | null
   has_ssl: boolean
   is_present: boolean
+  /** installing | live | failed — a site is now created, not only discovered. */
+  status?: string
+  /** Why the install failed, in words the customer can act on. */
+  install_error?: string | null
+  /** What was ASKED for, as opposed to what a scan concluded is there. */
+  requested_type?: string | null
   first_seen: string | null
   last_seen: string | null
   /** From the uptime monitor watching this domain, if one exists. */
