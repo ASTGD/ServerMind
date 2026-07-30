@@ -280,6 +280,8 @@ async def sync(db, server: Server, found: list[DiscoveredSite]) -> dict:
                 source=site.source, app_type=site.app_type,
                 app_version=site.app_version or None, has_ssl=site.has_ssl,
                 is_present=True, first_seen=now, last_seen=now,
+                # Found on the server, so it exists — that is what live means.
+                status="live",
             ))
             added += 1
         else:
@@ -292,11 +294,23 @@ async def sync(db, server: Server, found: list[DiscoveredSite]) -> dict:
             row.last_seen = now
             # A site that came back is present again — a restored config or a fixed web server.
             row.is_present = True
+            # THIS is what makes an install real. A site we created becomes live because a
+            # scan has now SEEN it on the server, not because the installer exited 0 — the
+            # same "content, not status" rule the mission verification gate follows. A
+            # `failed` row that turns up is also live: the customer fixed it by hand, or a
+            # step we thought had failed had actually worked.
+            if row.status in ("installing", "failed"):
+                row.status = "live"
+                row.install_error = None
             updated += 1
 
     gone = 0
     for domain, row in existing.items():
-        if domain not in seen and row.is_present:
+        # A site being built has NOT disappeared — it has not arrived yet. Without this, a
+        # scan running in the seconds between "create" and the vhost existing would mark a
+        # site the customer just asked for as gone, which reads as a broken product.
+        # `failed` is skipped for the same reason: it never arrived, so it cannot vanish.
+        if domain not in seen and row.is_present and row.status == "live":
             row.is_present = False
             gone += 1
 
@@ -325,6 +339,12 @@ def serialize(site, *, server_name: str | None = None, uptime: dict | None = Non
         "app_version": site.app_version,
         "has_ssl": site.has_ssl,
         "is_present": site.is_present,
+        # A site is now created, not only found, so its state has to reach the UI — without
+        # these three the whole of P2 is invisible to the customer: they would see a row
+        # appear with no sign it is still being built or why it failed.
+        "status": getattr(site, "status", "live"),
+        "install_error": getattr(site, "install_error", None),
+        "requested_type": getattr(site, "requested_type", None),
         "first_seen": site.first_seen.isoformat() if site.first_seen else None,
         "last_seen": site.last_seen.isoformat() if site.last_seen else None,
         "uptime": uptime,
@@ -402,3 +422,140 @@ def monitor_defaults(domain: str, *, https: bool = True) -> dict:
         "failure_threshold": 2,
         "is_active": True,
     }
+
+
+# ── Creating a site ───────────────────────────────────────────────────────────
+#
+# Until now a site could only be FOUND. The installer wrote a vhost and the site turned up
+# minutes later when the next scan ran — with nothing in between recording what was asked
+# for, whether it worked, or why it did not. That is what made creating a website feel
+# bolted on, and it is what this section fixes.
+
+#: What the customer can ask for, and which installer builds it.
+#:
+#: A map rather than a chain of ifs, because adding a type should be one line here plus a
+#: playbook — that is the whole point of the catalogue this feeds.
+SITE_TYPES: dict[str, dict] = {
+    "static":    {"playbook": "create-site",  "label": "Empty website",
+                  "app_type": "static", "extra": {"WITH_PHP": "no"}},
+    "php":       {"playbook": "create-site",  "label": "PHP website",
+                  "app_type": "php", "extra": {"WITH_PHP": "yes"}},
+    "wordpress": {"playbook": "wordpress",    "label": "WordPress",
+                  "app_type": "wordpress", "extra": {}},
+    "laravel":   {"playbook": "laravel-site", "label": "Laravel",
+                  "app_type": "laravel", "extra": {}},
+    "app":       {"playbook": "create-app",   "label": "Web application",
+                  "app_type": "unknown", "extra": {}},
+}
+
+
+class SiteError(Exception):
+    """Something the customer can read and act on."""
+
+
+async def create(db, server, user, *, domain: str, site_type: str,
+                 variables: dict | None = None):
+    """Record the request, then start the installer that fulfils it.
+
+    Order matters: the row is written and committed BEFORE the background job starts. If it
+    were the other way round, an installer that finished quickly could look for a site that
+    did not exist yet — and a crash between the two would leave work running with nothing
+    to attribute it to.
+    """
+    from sqlalchemy import select
+
+    from app.models.playbook import Playbook, PlaybookRun
+    from app.models.site import Site
+    from app.services import playbook_service
+    from app.services.secret_vars import encrypt_variables
+
+    spec = SITE_TYPES.get(site_type)
+    if spec is None:
+        raise SiteError(
+            f"'{site_type}' is not something we can install. Choose one of: "
+            + ", ".join(sorted(SITE_TYPES)) + "."
+        )
+
+    # clean_domain raises its own InvalidDomain with a message already written for a
+    # customer ("try something like example.com"). Re-raise it as a SiteError so the router's
+    # single handler turns it into a 422 — otherwise it escapes as a 500 and the customer is
+    # told "Internal Server Error" for typing a domain with a space in it.
+    try:
+        domain = clean_domain(domain)
+    except Exception as exc:  # InvalidDomain, defined in this module
+        raise SiteError(str(exc)) from exc
+    if not is_real_domain(domain):
+        raise SiteError(f"'{domain}' does not look like a domain name.")
+
+    # Refuse a duplicate rather than letting two installers fight over one vhost. Includes
+    # `installing` rows, so double-clicking Create cannot start the same build twice.
+    dup = (await db.execute(
+        select(Site).where(Site.server_id == server.id, Site.domain == domain)
+    )).scalar_one_or_none()
+    if dup is not None:
+        state = {"installing": "is already being set up",
+                 "failed": "already exists here (the last attempt failed — remove it first)"}
+        raise SiteError(f"{domain} {state.get(dup.status, 'already exists on this server')}.")
+
+    pb = (await db.execute(
+        select(Playbook).where(Playbook.slug == spec["playbook"],
+                               Playbook.is_official == True)  # noqa: E712
+    )).scalar_one_or_none()
+    if pb is None:
+        raise SiteError(
+            f"The installer for {spec['label']} is not available on this ServerAlly.")
+
+    variables = {**(variables or {}), "DOMAIN": domain, **spec["extra"]}
+    raw = pb.script_bash
+    if not raw:
+        raise SiteError(f"The {spec['label']} installer has no script for this server.")
+    script = playbook_service.substitute_variables(raw, variables)
+
+    run = PlaybookRun(server_id=server.id, user_id=user.id, playbook_id=pb.id,
+                      variables_used=encrypt_variables(variables),
+                      status="running")
+    db.add(run)
+    await db.flush()
+
+    site = Site(
+        user_id=user.id, server_id=server.id, domain=domain,
+        aliases=[], doc_root=None, source="manual",
+        app_type=spec["app_type"], requested_type=site_type,
+        has_ssl=False, is_present=True,
+        # Not live. Nothing has been observed yet — see STATUSES.
+        status="installing", install_run_id=run.id,
+    )
+    db.add(site)
+    await db.commit()
+    await db.refresh(site)
+    return site, str(run.id), script
+
+
+async def reconcile_installs(db, user_id) -> int:
+    """Move sites out of ``installing`` once their run has actually finished.
+
+    Only FAILURE is concluded here. A run that exited 0 does NOT make a site live — that
+    happens when a scan sees it on the server, because an installer reporting success while
+    the site does not serve is exactly the failure mode this product exists to catch.
+    """
+    from sqlalchemy import select
+
+    from app.models.playbook import PlaybookRun
+    from app.models.site import Site
+
+    rows = (await db.execute(
+        select(Site, PlaybookRun)
+        .join(PlaybookRun, Site.install_run_id == PlaybookRun.id)
+        .where(Site.user_id == user_id, Site.status == "installing")
+    )).all()
+
+    changed = 0
+    for site, run in rows:
+        if (run.status or "").lower() in ("failed", "error"):
+            site.status = "failed"
+            site.install_error = (
+                (run.failure_reason or "The installer did not finish.").strip()[:500])
+            changed += 1
+    if changed:
+        await db.commit()
+    return changed

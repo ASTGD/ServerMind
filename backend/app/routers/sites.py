@@ -17,6 +17,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from app.services import audit_service
+from app.workers.playbook_tasks import run_playbook_task
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -208,6 +211,49 @@ async def scan_server(server_id: str, db: DBDep, current_user: CurrentUser) -> d
         "note": (f"Only the first {site_service.MAX_SITES} sites were recorded — this server "
                  "has more." if truncated else None),
     }
+
+
+class CreateSiteIn(BaseModel):
+    """What to put on this server."""
+    domain: str
+    site_type: str
+    #: Extra answers the chosen installer needs — a database name, an app's port. Kept
+    #: open-ended because each installer asks for different things and the catalogue is
+    #: meant to grow by adding a playbook, not by editing this schema.
+    variables: dict[str, str] = {}
+
+
+@router.post("/servers/{server_id}/sites", status_code=201)
+async def create_site(server_id: str, body: CreateSiteIn, db: DBDep,
+                      current_user: CurrentUser) -> dict:
+    """Create a site on this server, and start the installer that builds it.
+
+    Returns immediately with the site recorded as `installing`. The install runs in the
+    background — the row carries `install_run_id` so progress can be followed, and a failure
+    is written back onto the site rather than left in a log nobody reads.
+
+    A site becomes `live` only when a scan SEES it on the server. An installer exiting 0 is
+    not proof, which is the same rule the mission verification gate follows.
+    """
+    server = await resolve_server(server_id, current_user, db, need_execute=True)
+    if server.connection_type != "ssh":
+        raise HTTPException(
+            status_code=400,
+            detail="Sites can only be created on a Linux server we reach over SSH.")
+
+    try:
+        site, run_id, script = await site_service.create(
+            db, server, current_user,
+            domain=body.domain, site_type=body.site_type, variables=body.variables)
+    except site_service.SiteError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # Enqueued AFTER the commit inside create(), so the worker can always find the run.
+    run_playbook_task.delay(run_id, str(server.id), script)
+    await audit_service.audit(db, current_user, "site.created",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "type": body.site_type})
+    return {**site_service.serialize(site, server_name=server.name), "run_id": run_id}
 
 
 @router.get("/servers/{server_id}/sites")
