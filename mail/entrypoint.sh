@@ -130,6 +130,21 @@ echo ">>> Publish this DKIM record in DNS:"
 cat "$KEYDIR/$DKIM_SELECTOR.txt" || true
 echo ""
 
+# ── the chroot needs its own copy of the resolver ────────────────────────────
+# Postfix's smtp client runs chrooted to /var/spool/postfix, so it cannot see
+# /etc/resolv.conf and cannot look up a single MX record — every message defers with
+# "Host or domain name not found ... type=MX". The directory ships EMPTY in this image, so
+# nothing works until these are copied in. Done at startup, not build time, because Docker
+# writes resolv.conf when the container starts.
+#
+# Same family as the milter bug above: in a chroot, anything requiring name resolution
+# fails, and the failure is invisible until you read the mail log.
+mkdir -p /var/spool/postfix/etc
+for f in resolv.conf services hosts nsswitch.conf localtime; do
+  [ -e "/etc/$f" ] && cp -f "/etc/$f" "/var/spool/postfix/etc/$f" || true
+done
+echo ">>> Resolver copied into the chroot: $(ls /var/spool/postfix/etc | tr '\n' ' ')"
+
 service opendkim start
 echo ">>> opendkim started"
 
