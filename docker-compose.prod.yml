@@ -120,6 +120,34 @@ services:
     networks:
       - servermind
 
+  # Our own send-only mail relay, so alerts can actually reach a customer.
+  #
+  # Deliberately has NO `ports:` — publishing 25 would put an SMTP server on the public
+  # internet, and a relay reachable from outside is a spam problem waiting to happen. The
+  # app reaches it as `mail:25` on this internal network and nothing else can.
+  #
+  # The DKIM key lives on a named volume: it is generated once, and the public half is
+  # published in DNS. Losing it silently breaks the signature on every message, so the
+  # volume matters as much as the config.
+  mail:
+    build:
+      context: ./mail
+    image: servermind-mail:latest
+    container_name: servermind_mail
+    restart: unless-stopped
+    hostname: serverally.firevps.net
+    environment:
+      MAIL_DOMAIN: ${MAIL_DOMAIN:-serverally.firevps.net}
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME:-serverally.firevps.net}
+      DKIM_SELECTOR: ${DKIM_SELECTOR:-mail}
+    volumes:
+      - dkim_keys:/etc/opendkim/keys
+      - mail_spool:/var/spool/postfix
+    expose:
+      - "25"
+    networks:
+      - servermind
+
 networks:
   servermind:
     driver: bridge
@@ -127,3 +155,5 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  dkim_keys:
+  mail_spool:

@@ -12,6 +12,7 @@ import logging
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formatdate, make_msgid
 
 import requests as _requests
 
@@ -59,28 +60,71 @@ async def create_run_notification(db, run_id) -> None:
 
 # ── Email ─────────────────────────────────────────────────────────────────────
 
+#: Hosts we treat as our own mail server, reached over the loopback interface.
+#:
+#: A relay on localhost needs no username or password — the trust boundary is the machine
+#: itself, not a credential — and typically offers no STARTTLS, because there is no network
+#: hop to protect. Requiring both is what made our own mail server unusable.
+_LOCAL_RELAY_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "mail", "postfix"})
+
+
+def email_relay() -> str | None:
+    """Which relay we would send through, or ``None`` if email cannot be delivered.
+
+    Exposed so the product can SAY so. The old code logged a warning and returned, which
+    meant a customer with no mail configured believed they were covered while every alert
+    went nowhere — worse than having no alerting at all, because it is silent.
+    """
+    host = (settings.SMTP_HOST or "").strip()
+    if not host:
+        return None
+    if host.lower() in _LOCAL_RELAY_HOSTS:
+        return host
+    # A remote relay is only usable with credentials.
+    if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
+        return None
+    return host
+
+
 def _send_email_sync(to: str, subject: str, body_text: str, body_html: str | None = None) -> None:
     """Blocking SMTP send — runs in a thread pool. When ``body_html`` is given the
     message is multipart/alternative (plain + HTML); clients that can render HTML show
     it, the rest fall back to the plain text."""
-    if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
-        logger.warning("SMTP credentials not configured — skipping email to %s", to)
+    host = email_relay()
+    if host is None:
+        # ERROR, not WARNING: an alert that cannot be delivered is a failure of the thing
+        # the customer is paying for, not a routine condition.
+        logger.error("Email is not configured — could not deliver to %s: %s", to, subject)
         return
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = settings.EMAIL_FROM
     msg["To"] = to
+    # Date and Message-ID are not optional in practice. Spam filters score mail missing
+    # either of them as suspicious, and our queued messages were going out with
+    # `message-id=<>` — visible in the relay's own log. The Message-ID domain is taken from
+    # the sending address so it matches the DKIM signing domain.
+    msg["Date"] = formatdate(localtime=False)
+    _domain = settings.EMAIL_FROM.rpartition("@")[2] or "serverally.firevps.net"
+    msg["Message-ID"] = make_msgid(domain=_domain)
     # Per RFC 2046, the LAST alternative is the most-preferred — attach plain first.
     msg.attach(MIMEText(body_text, "plain"))
     if body_html:
         msg.attach(MIMEText(body_html, "html"))
 
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as smtp:
+        with smtplib.SMTP(host, settings.SMTP_PORT, timeout=15) as smtp:
             smtp.ehlo()
-            smtp.starttls()
-            smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            # Upgrade only when the server actually offers it. Calling starttls() on a
+            # relay that does not advertise it raises, which is how an unconditional call
+            # turns a working local mail server into "SMTP error" on every send.
+            if smtp.has_extn("starttls"):
+                smtp.starttls()
+                smtp.ehlo()
+            # Only authenticate when we have something to authenticate with.
+            if settings.SMTP_USER and settings.SMTP_PASSWORD:
+                smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             smtp.send_message(msg)
         logger.info("Email sent to %s: %s", to, subject)
     except Exception as exc:
