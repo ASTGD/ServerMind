@@ -127,3 +127,33 @@ export function actionsFor(server: Server) {
     ally: caps.has("shell"),
   }
 }
+
+
+/**
+ * Which "add a website" doors to offer on this asset.
+ *
+ * The deterministic installers write a web-server config directly, which a control panel
+ * owns — so on a panel server they refuse at runtime. Offering a button that then says no
+ * is worse than not offering it: the customer has already decided to trust it by the time
+ * it declines. So the chooser reads the asset first, the same way the menu does.
+ */
+export interface InstallerOptions {
+  /** Empty site, WordPress, Laravel, web application — anything that writes a vhost. */
+  direct: boolean
+  /** Create it through the panel instead, which is where a panel server's sites belong. */
+  panel: boolean
+  /** Ally, which looks at the server and adapts — the case an installer cannot handle. */
+  ally: boolean
+}
+
+export function installerOptionsFor(server: Server): InstallerOptions {
+  const caps = capabilitiesOf(server)
+  const hasPanel = caps.has("panel")
+  return {
+    // Needs SFTP to place files and a web server we own.
+    direct: caps.has("sftp") && !hasPanel,
+    panel: hasPanel,
+    // Ally needs somewhere to run what it decides.
+    ally: caps.has("shell"),
+  }
+}

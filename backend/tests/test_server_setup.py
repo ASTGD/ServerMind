@@ -523,3 +523,99 @@ def test_no_database_is_created_for_an_app_either():
     s = _script("create-app").lower()
     for verb in ("create database", "mysql -e", "createdb"):
         assert verb not in s
+
+
+# ── Laravel ──────────────────────────────────────────────────────────────────
+"""A website in shape, but with four requirements WordPress does not have — and each one
+produces a confusing failure rather than a clear one when it is missed."""
+
+
+def test_laravel_is_registered_and_parses():
+    if not shutil.which("bash"):
+        pytest.skip("no bash")
+    s = _script("laravel-site")
+    assert "{{" not in s
+    with tempfile.NamedTemporaryFile("w", suffix=".sh") as f:
+        f.write(s)
+        f.flush()
+        r = subprocess.run(["bash", "-n", f.name], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+def test_the_document_root_is_public_not_the_project_folder():
+    """The single worst mistake available when hosting Laravel: serving the project folder
+    makes .env, the whole codebase and the vendor tree downloadable over HTTP. Verified live
+    — .env returns 403 and composer.json, artisan and the log all 404."""
+    s = _script("laravel-site")
+    assert 'DOC_ROOT="$SITE_DIR/public"' in s
+    assert "root $DOC_ROOT" in s or "DocumentRoot $DOC_ROOT" in s
+
+
+def test_an_unsupported_php_version_is_refused_with_one_sentence():
+    """Found by running it on Ubuntu 22.04 (PHP 8.1): Composer falls back to Laravel 10,
+    every release of which now carries a security advisory it refuses to install, producing
+    a 200-line dependency error that explains nothing. One sentence up front is better —
+    and it must come before anything is created."""
+    s = _script("laravel-site")
+    assert "PHP_VERSION_ID >= 80300" in s
+    assert "needs PHP 8.3 or newer" in s
+    assert s.index("PHP_VERSION_ID >= 80300") < s.index("composer create-project")
+
+
+def test_the_migrations_run_or_the_first_request_is_a_500():
+    """Laravel 11+ defaults SESSION_DRIVER=database, so the very first request reads a
+    `sessions` table. Found live: without this the site 500s with "Table ... doesn't exist"
+    on a fresh, otherwise perfect install. Running them also proves the credentials just
+    written into .env actually work."""
+    s = _script("laravel-site")
+    assert "artisan migrate --force" in s
+    assert s.index("set_env DB_PASSWORD") < s.index("artisan migrate --force")
+
+
+def test_the_database_password_is_generated_and_never_printed():
+    s = _script("laravel-site")
+    assert "/dev/urandom" in s
+    assert "chmod 600 /root/" in s
+    # The password must not be echoed anywhere.
+    for line in s.split("\n"):
+        if line.strip().startswith("echo") and "$DB_PASS" in line:
+            raise AssertionError(f"password would be printed: {line.strip()}")
+
+
+def test_the_env_file_is_not_world_readable():
+    """It holds the database password, unlike the rest of the tree."""
+    assert 'chmod 640 "$ENVF"' in _script("laravel-site")
+
+
+def test_the_app_never_gets_rights_over_the_whole_database_server():
+    s = _script("laravel-site")
+    assert "GRANT ALL PRIVILEGES ON \\`$DB_NAME\\`.*" in s or "ON \\`$DB_NAME\\`.* TO" in s
+    assert "GRANT ALL PRIVILEGES ON *.*" not in s
+
+
+def test_an_existing_database_is_never_reused():
+    """Reusing one would point a fresh app at another application's data."""
+    s = _script("laravel-site")
+    assert "already exists" in s
+    assert s.index("SHOW DATABASES LIKE") < s.index("CREATE DATABASE")
+
+
+def test_a_failed_download_leaves_nothing_behind():
+    """Verified live when Composer refused the install: the half-made folder was removed."""
+    s = _script("laravel-site")
+    fail = s[s.index("could not be downloaded"):s.index("Laravel downloaded to")]
+    assert 'rm -rf "$SITE_DIR"' in fail
+
+
+def test_laravel_uses_the_shared_guards_too():
+    assert "shared site guards" in _script("laravel-site")
+
+
+def test_the_php_socket_prefers_the_running_fpm():
+    """Found live: with two PHP versions installed the old helper picked the lowest-numbered
+    unit — which was stopped, so its socket did not exist and every request 502'd. Worse, the
+    fallback took the alphabetically-first match, which was a DANGLING alternatives symlink."""
+    from app.services.playbook_service import _DISTRO
+    assert "--state=running" in _DISTRO, "must prefer the FPM that is actually running"
+    assert "sort -V | tail -1" in _DISTRO, "then the newest installed, not the oldest"
+    assert '[ -S "$c" ]' in _DISTRO, "and only ever a real socket"

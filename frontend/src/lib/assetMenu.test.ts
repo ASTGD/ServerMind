@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { actionsFor, capabilitiesOf, homePathFor, menuFor, MENU } from "./assetMenu"
+import {
+  actionsFor, capabilitiesOf, homePathFor, installerOptionsFor, menuFor, MENU,
+} from "./assetMenu"
 import type { Server } from "@/types"
 
 /**
@@ -156,5 +158,40 @@ describe("the registry itself", () => {
     for (const c of ["ssh", "winrm", "rdp", "hosting"] as const) {
       expect(menuFor(asset({ connection_type: c })).length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe("which 'add a website' doors an asset gets", () => {
+  it("offers the direct installers on a plain Linux server", () => {
+    const d = installerOptionsFor(asset())
+    expect(d).toEqual({ direct: true, panel: false, ally: true })
+  })
+
+  it("never offers a direct installer on a panel server", () => {
+    // They write a web-server config, which the panel owns — so they refuse at runtime.
+    // Offering a button that then says no is worse than not offering it: the customer has
+    // already decided to trust it by the time it declines.
+    const d = installerOptionsFor(asset({ panel_type: "cyberpanel" }))
+    expect(d.direct).toBe(false)
+    expect(d.panel).toBe(true)
+    expect(d.ally).toBe(true)
+  })
+
+  it("sends a hosting-only account to its panel and nowhere else", () => {
+    const d = installerOptionsFor(asset({ connection_type: "hosting", panel_type: "cpanel" }))
+    expect(d).toEqual({ direct: false, panel: true, ally: false })
+  })
+
+  it("offers nothing at all on an asset with no command channel", () => {
+    // An RDP box cannot host, so every door would be a dead end.
+    expect(installerOptionsFor(asset({ connection_type: "rdp" })))
+      .toEqual({ direct: false, panel: false, ally: false })
+  })
+
+  it("does not offer file-writing installers to a Windows box", () => {
+    // No SFTP: the installers place files and write an nginx or Apache config.
+    const d = installerOptionsFor(asset({ connection_type: "winrm" }))
+    expect(d.direct).toBe(false)
+    expect(d.ally).toBe(true)
   })
 })

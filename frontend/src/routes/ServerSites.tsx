@@ -3,7 +3,7 @@ import { useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   CircleAlert, CircleCheck, CircleDashed, EyeOff, FolderPlus, Globe, Loader2, Plus,
-  RefreshCw, Rocket, ShieldAlert, ShieldCheck, Sparkles, X,
+  LayoutPanelTop, RefreshCw, Rocket, ShieldAlert, ShieldCheck, Sparkles, X,
 } from "lucide-react"
 import { listServerSites, scanServerSites, APP_LABEL, type Site } from "@/api/sites"
 import { listRecipes } from "@/api/recipes"
@@ -12,6 +12,7 @@ import RunRecipeModal from "@/components/recipes/RunRecipeModal"
 import RunPlaybookModal from "@/components/playbooks/RunPlaybookModal"
 import ServerSetupPanel from "@/components/server/ServerSetupPanel"
 import { Button, EmptyState } from "@/components/ui"
+import { installerOptionsFor } from "@/lib/assetMenu"
 import { cn } from "@/lib/utils"
 import type { Server } from "@/types"
 
@@ -67,6 +68,7 @@ export default function ServerSites() {
     enabled: !!runSlug && !!bySlug(runSlug!),
   })
 
+  const doors = installerOptionsFor(server)
   const sites = data?.sites ?? []
   const down = sites.filter((s) => s.uptime?.status === "down").length
 
@@ -120,10 +122,13 @@ export default function ServerSites() {
 
       {choosing && (
         <NewSiteChooser
-          hasEmpty={!!bySlug("create-site")}
-          hasWordPress={!!bySlug("wordpress")}
-          hasApp={!!bySlug("create-app")}
-          hasAlly={!!siteRecipe}
+          hasEmpty={doors.direct && !!bySlug("create-site")}
+          hasWordPress={doors.direct && !!bySlug("wordpress")}
+          hasLaravel={doors.direct && !!bySlug("laravel-site")}
+          hasApp={doors.direct && !!bySlug("create-app")}
+          hasPanel={doors.panel}
+          hasAlly={doors.ally && !!siteRecipe}
+          serverId={server.id}
           onPick={(what) => {
             setChoosing(false)
             if (what === "ally") setCreating(true)
@@ -278,12 +283,17 @@ function SiteRow({ site }: { site: Site }) {
  * not to be in a shape an installer can assume — which is the case an installer cannot
  * handle and the reason we have Ally at all.
  */
-function NewSiteChooser({ hasEmpty, hasWordPress, hasApp, hasAlly, onPick, onClose }: {
+function NewSiteChooser({
+  hasEmpty, hasWordPress, hasLaravel, hasApp, hasPanel, hasAlly, serverId, onPick, onClose,
+}: {
   hasEmpty: boolean
   hasWordPress: boolean
+  hasLaravel: boolean
   hasApp: boolean
+  hasPanel: boolean
   hasAlly: boolean
-  onPick: (what: "create-site" | "wordpress" | "create-app" | "ally") => void
+  serverId: string
+  onPick: (what: "create-site" | "wordpress" | "laravel-site" | "create-app" | "ally") => void
   onClose: () => void
 }) {
   return (
@@ -317,6 +327,14 @@ function NewSiteChooser({ hasEmpty, hasWordPress, hasApp, hasAlly, onPick, onClo
               onClick={() => onPick("wordpress")}
             />
           )}
+          {hasLaravel && (
+            <Choice
+              icon={Globe}
+              title="Laravel"
+              blurb="A fresh Laravel install with its own database, key and correct permissions. Needs PHP 8.3 or newer."
+              onClick={() => onPick("laravel-site")}
+            />
+          )}
           {hasApp && (
             <Choice
               icon={Rocket}
@@ -325,11 +343,21 @@ function NewSiteChooser({ hasEmpty, hasWordPress, hasApp, hasAlly, onPick, onClo
               onClick={() => onPick("create-app")}
             />
           )}
+          {/* A panel owns its own web-server config, so the direct installers are not
+              offered here at all — they would refuse. This is where its sites belong. */}
+          {hasPanel && (
+            <Choice
+              icon={LayoutPanelTop}
+              title="Create through the control panel"
+              blurb="This server runs a control panel, which manages its own websites. Creating one any other way would be invisible to it."
+              href={`/servers/${serverId}/hosting`}
+            />
+          )}
           {hasAlly && (
             <Choice
               icon={Sparkles}
               title="Let Ally set it up"
-              blurb="Ally looks at this server first and adapts — for a control panel, an unusual layout, or anything the installers above don’t fit."
+              blurb="Ally looks at this server first and adapts — for an unusual layout, an existing site to work around, or anything the other options don’t fit."
               onClick={() => onPick("ally")}
             />
           )}
@@ -339,12 +367,13 @@ function NewSiteChooser({ hasEmpty, hasWordPress, hasApp, hasAlly, onPick, onClo
   )
 }
 
-function Choice({ icon: Icon, title, blurb, onClick }: {
-  icon: typeof Globe; title: string; blurb: string; onClick: () => void
+function Choice({ icon: Icon, title, blurb, onClick, href }: {
+  icon: typeof Globe; title: string; blurb: string; onClick?: () => void; href?: string
 }) {
+  const Tag = href ? "a" : "button"
   return (
-    <button
-      onClick={onClick}
+    <Tag
+      {...(href ? { href } : { onClick })}
       className="flex w-full items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/40"
     >
       <Icon size={16} className="mt-0.5 shrink-0 text-primary" />
@@ -352,6 +381,6 @@ function Choice({ icon: Icon, title, blurb, onClick }: {
         <p className="text-[13.5px] font-medium text-foreground">{title}</p>
         <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{blurb}</p>
       </div>
-    </button>
+    </Tag>
   )
 }
