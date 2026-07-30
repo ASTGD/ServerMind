@@ -2,12 +2,14 @@ import { useState } from "react"
 import { useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  CircleAlert, CircleCheck, CircleDashed, EyeOff, Globe, Loader2, Plus, RefreshCw,
-  ShieldAlert, ShieldCheck,
+  CircleAlert, CircleCheck, CircleDashed, EyeOff, FolderPlus, Globe, Loader2, Plus,
+  RefreshCw, ShieldAlert, ShieldCheck, Sparkles, X,
 } from "lucide-react"
 import { listServerSites, scanServerSites, APP_LABEL, type Site } from "@/api/sites"
 import { listRecipes } from "@/api/recipes"
+import { getPlaybook, listPlaybooks } from "@/api/playbooks"
 import RunRecipeModal from "@/components/recipes/RunRecipeModal"
+import RunPlaybookModal from "@/components/playbooks/RunPlaybookModal"
 import { Button, EmptyState } from "@/components/ui"
 import { cn } from "@/lib/utils"
 import type { Server } from "@/types"
@@ -27,7 +29,9 @@ import type { Server } from "@/types"
 export default function ServerSites() {
   const { server } = useOutletContext<{ server: Server }>()
   const qc = useQueryClient()
+  const [choosing, setChoosing] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [runSlug, setRunSlug] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ["server-sites", server.id],
@@ -49,6 +53,18 @@ export default function ServerSites() {
     queryFn: () => listRecipes(null, server.id),
   })
   const siteRecipe = recipes.find((r) => r.slug.includes("host-website"))
+
+  // The two deterministic installers. Fetched by slug so the button knows whether the
+  // installer exists on this deployment before offering it.
+  const { data: playbooks = [] } = useQuery({
+    queryKey: ["playbooks"], queryFn: () => listPlaybooks(),
+  })
+  const bySlug = (slug: string) => playbooks.find((p) => p.slug === slug)
+  const { data: runPlaybook } = useQuery({
+    queryKey: ["playbook", runSlug],
+    queryFn: () => getPlaybook(bySlug(runSlug!)!.id),
+    enabled: !!runSlug && !!bySlug(runSlug!),
+  })
 
   const sites = data?.sites ?? []
   const down = sites.filter((s) => s.uptime?.status === "down").length
@@ -79,11 +95,9 @@ export default function ServerSites() {
               : <RefreshCw size={13} />}
             Look for sites
           </Button>
-          {siteRecipe && (
-            <Button size="sm" onClick={() => setCreating(true)}>
-              <Plus size={13} /> New website
-            </Button>
-          )}
+          <Button size="sm" onClick={() => setChoosing(true)}>
+            <Plus size={13} /> New website
+          </Button>
         </div>
       </div>
 
@@ -92,6 +106,31 @@ export default function ServerSites() {
           Found {scan.data.found} site{scan.data.found === 1 ? "" : "s"}
           {scan.data.added > 0 && `, ${scan.data.added} new`}.
         </p>
+      )}
+
+      {choosing && (
+        <NewSiteChooser
+          hasEmpty={!!bySlug("create-site")}
+          hasWordPress={!!bySlug("wordpress")}
+          hasAlly={!!siteRecipe}
+          onPick={(what) => {
+            setChoosing(false)
+            if (what === "ally") setCreating(true)
+            else setRunSlug(what)
+          }}
+          onClose={() => setChoosing(false)}
+        />
+      )}
+
+      {runPlaybook && runSlug && (
+        <RunPlaybookModal
+          playbook={runPlaybook}
+          servers={[server]}
+          onClose={() => {
+            setRunSlug(null)
+            qc.invalidateQueries({ queryKey: ["server-sites", server.id] })
+          }}
+        />
       )}
 
       {creating && siteRecipe && (
@@ -117,9 +156,9 @@ export default function ServerSites() {
           title="Nothing hosted here yet"
           description="Press “Look for sites” to read the web server’s own configuration, or create a new website and Ally will set it up."
           className="py-14"
-          action={siteRecipe
-            ? <Button size="sm" onClick={() => setCreating(true)}><Plus size={13} /> New website</Button>
-            : undefined}
+          action={<Button size="sm" onClick={() => setChoosing(true)}>
+            <Plus size={13} /> New website
+          </Button>}
         />
       ) : (
         <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -211,5 +250,82 @@ function SiteRow({ site }: { site: Site }) {
         </p>
       </div>
     </div>
+  )
+}
+
+/**
+ * Three ways to get a website onto this server, and the order matters.
+ *
+ * The two deterministic installers come first because they are what most people want and
+ * they behave the same way every time. Ally is the third door, for a server that turns out
+ * not to be in a shape an installer can assume — which is the case an installer cannot
+ * handle and the reason we have Ally at all.
+ */
+function NewSiteChooser({ hasEmpty, hasWordPress, hasAlly, onPick, onClose }: {
+  hasEmpty: boolean
+  hasWordPress: boolean
+  hasAlly: boolean
+  onPick: (what: "create-site" | "wordpress" | "ally") => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl">
+        <div className="mb-1 flex items-start justify-between">
+          <h3 className="text-[16px] font-medium text-foreground">Add a website</h3>
+          <button onClick={onClose} aria-label="Close"
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+            <X size={15} />
+          </button>
+        </div>
+        <p className="mb-4 text-[12.5px] text-muted-foreground">
+          What should go on this server?
+        </p>
+
+        <div className="space-y-2">
+          {hasEmpty && (
+            <Choice
+              icon={FolderPlus}
+              title="Empty website"
+              blurb="A folder, an address and a working PHP page. For your own files, a Git deploy, or a WordPress install later."
+              onClick={() => onPick("create-site")}
+            />
+          )}
+          {hasWordPress && (
+            <Choice
+              icon={Globe}
+              title="WordPress"
+              blurb="A full WordPress install with its own database, ready to finish setting up in the browser."
+              onClick={() => onPick("wordpress")}
+            />
+          )}
+          {hasAlly && (
+            <Choice
+              icon={Sparkles}
+              title="Let Ally set it up"
+              blurb="Ally looks at this server first and adapts — for a control panel, an unusual layout, or anything the installers above don’t fit."
+              onClick={() => onPick("ally")}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Choice({ icon: Icon, title, blurb, onClick }: {
+  icon: typeof Globe; title: string; blurb: string; onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-start gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:border-primary/50 hover:bg-muted/40"
+    >
+      <Icon size={16} className="mt-0.5 shrink-0 text-primary" />
+      <div>
+        <p className="text-[13.5px] font-medium text-foreground">{title}</p>
+        <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{blurb}</p>
+      </div>
+    </button>
   )
 }

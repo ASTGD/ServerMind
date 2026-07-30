@@ -317,3 +317,99 @@ def test_a_broken_web_server_config_is_never_reloaded():
     after = s.split("nginx -t")[1]
     assert "rm -f /etc/nginx/conf.d/serverally-upload.conf" in after, \
         "our own file must be removed when the test fails, not left to be loaded later"
+
+
+# ── the create-site primitive ────────────────────────────────────────────────
+"""Ploi's "Add site" makes a folder, a web-server config and a placeholder page — nothing
+more; WordPress is a separate installer run into that site. We only had the WordPress-shaped
+path, so "give me a website for my own files" had no code route at all.
+
+Writing a web-server config is the one thing here that can take down sites which have
+nothing to do with the one being added, so the guards are the substance.
+"""
+
+
+def test_create_site_is_registered_and_parses():
+    if not shutil.which("bash"):
+        pytest.skip("no bash")
+    script = _script("create-site")
+    assert "{{" not in script
+    with tempfile.NamedTemporaryFile("w", suffix=".sh") as f:
+        f.write(script)
+        f.flush()
+        r = subprocess.run(["bash", "-n", f.name], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+def test_a_domain_is_validated_not_escaped():
+    """The domain lands inside a config file AND a filesystem path. Escaping it correctly in
+    both places is harder than refusing anything that is not a hostname, so it is refused —
+    proven live: `evil;rm -rf /` is rejected before a single file is written."""
+    s = _script("create-site")
+    assert '*[!a-zA-Z0-9.-]*' in s, "anything outside hostname characters must be refused"
+    assert "is not a valid domain name" in s
+
+
+def test_a_panel_server_is_refused():
+    """A control panel owns its web-server config. A vhost written behind its back is
+    invisible to the panel, never gets its certificate renewed, and may be overwritten on
+    the panel's next change."""
+    s = _script("create-site")
+    for panel_dir in ("/usr/local/CyberCP", "/usr/local/cpanel", "/opt/psa"):
+        assert panel_dir in s
+    assert "Add the website through the" in s
+
+
+def test_an_existing_domain_is_never_taken_over():
+    """Otherwise creating a site would silently repoint a live one."""
+    s = _script("create-site")
+    assert "already configured on this server" in s
+    before_write = s.split("mkdir -p")[0]
+    assert "already configured on this server" in before_write, \
+        "the check must come before anything is created"
+
+
+def test_the_config_is_tested_before_the_reload_and_removed_if_bad():
+    """Reloading a configuration that does not parse takes EVERY site on the server offline,
+    not just the new one. Proven live: with nginx already broken by someone else, the run
+    refused, removed both its config and its symlink, never reloaded, and the other site
+    kept answering 200."""
+    s = _script("create-site")
+    test_at = s.index("$TEST_CMD")
+    reload_at = s.index('systemctl reload "$RELOAD_SVC"')
+    assert test_at < reload_at, "the config must be tested before the server is reloaded"
+    failure = s[test_at:reload_at]
+    assert 'rm -f "$CREATED_CONF"' in failure, "a rejected config must not be left behind"
+    assert "exit 1" in failure
+
+
+def test_the_php_socket_is_never_hardcoded():
+    """A wrong socket makes the server hand out PHP SOURCE as plain text, which leaks
+    database credentials to anyone who visits."""
+    s = _script("create-site")
+    assert "php_fpm_socket" in s
+    assert "/run/php/php8" not in s, "a hardcoded version breaks on every other server"
+
+
+def test_the_verification_retries_instead_of_racing_the_reload():
+    """Found by running it: `systemctl reload` returns BEFORE nginx finishes swapping
+    workers, so an immediate request is still answered by the OLD config. A single shot
+    reported "could not verify" on a site that was serving perfectly, and a false warning
+    like that teaches people to ignore the real ones."""
+    s = _script("create-site")
+    assert "for _try in" in s
+    assert "grep -qF" in s, "a domain is full of dots, which grep treats as wildcards"
+
+
+def test_it_reloads_rather_than_restarts():
+    """A restart drops live connections that the server's OTHER sites are serving."""
+    s = _script("create-site")
+    assert 'systemctl reload "$RELOAD_SVC"' in s
+
+
+def test_no_database_is_created():
+    """Matching the primitive: Ploi's Add site creates none, and a database nobody asked for
+    is a credential to look after for no reason."""
+    s = _script("create-site").lower()
+    for verb in ("create database", "mysql -e", "createdb"):
+        assert verb not in s
