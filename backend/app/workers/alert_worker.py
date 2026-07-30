@@ -18,6 +18,44 @@ logger = logging.getLogger(__name__)
 COOLDOWN_SECONDS = 3600
 
 
+async def _notify(db, alert, server_name: str, value: float, *, recovered: bool) -> None:
+    """Send through the alert's named channel if it has one, else its inline destination.
+
+    Both paths exist because rules created before channels carry their own copy of the
+    destination, and a migration could only guess which named channel the customer meant.
+    A named channel wins when set; nothing else changes.
+    """
+    from app.models.notification_channel import NotificationChannel
+    from app.services import channel_service, notification_service
+
+    if alert.channel_id:
+        row = await db.execute(
+            select(NotificationChannel).where(NotificationChannel.id == alert.channel_id)
+        )
+        ch = row.scalar_one_or_none()
+        if ch is not None and ch.is_active:
+            metric = str(alert.metric).upper()
+            if recovered:
+                subject = f"Resolved — {server_name}: {metric} is back to normal"
+                body = f"{metric} is {value:.1f}%, inside your threshold. Nothing to do."
+            else:
+                subject = f"{server_name}: {metric} is {value:.1f}%"
+                body = (f"{metric} is past your {float(alert.threshold):.0f}% threshold.")
+            try:
+                await channel_service.deliver(db, ch, subject=subject, body=body)
+                await channel_service.record_result(db, ch, error=None)
+            except Exception as exc:  # noqa: BLE001 — record it, do not lose the alert
+                await channel_service.record_result(db, ch, error=str(exc))
+                raise
+            return
+
+    # No channel named (or it was deleted) — the original inline path, unchanged.
+    if recovered:
+        await notification_service.fire_recovery(alert, server_name, value)
+    else:
+        await notification_service.fire_alert(alert, server_name, value)
+
+
 async def check_alerts_for_server(server_id: str) -> None:
     """Compare the server's latest metric snapshot against all active alert rules.
 
@@ -77,8 +115,8 @@ async def check_alerts_for_server(server_id: str) -> None:
                     logger.info("Alert recovered — server=%s metric=%s value=%.1f",
                                 server.name, alert.metric, current_value)
                     try:
-                        await notification_service.fire_recovery(
-                            alert, server.name, current_value)
+                        await _notify(db, alert, server.name, current_value,
+                                      recovered=True)
                     except Exception as exc:  # noqa: BLE001 — never block clearing the flag
                         logger.warning("Recovery notice failed for alert %s: %s",
                                        alert.id, exc)
@@ -131,7 +169,8 @@ async def check_alerts_for_server(server_id: str) -> None:
                     logger.warning("Metric escalation failed for alert %s: %s", alert.id, exc)
 
                 if not escalated:
-                    await notification_service.fire_alert(alert, server.name, current_value)
+                    await _notify(db, alert, server.name, current_value,
+                                  recovered=False)
                 # Set inside the fire block, i.e. AFTER the cooldown check, so a breach we
                 # deliberately stayed quiet about can never produce a "back to normal"
                 # message for something the customer was never told about.

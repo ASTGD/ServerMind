@@ -11,6 +11,7 @@ import RetentionPanel from "@/components/settings/RetentionPanel"
 import FeatureLock from "@/components/plan/FeatureLock"
 import WebhooksPanel from "@/components/integrations/WebhooksPanel"
 import PagingChannelsPanel from "@/components/escalation/PagingChannelsPanel"
+import NotificationChannels from "@/components/settings/NotificationChannels"
 import { QRCodeSVG } from "qrcode.react"
 import { listAudit } from "@/api/audit"
 import {
@@ -897,6 +898,8 @@ export default function Settings() {
       <FeatureLock feature="api_access">
         <WebhooksPanel />
       </FeatureLock>
+
+      <NotificationChannels />
 
       <OnCallPanel />
 

@@ -22,7 +22,7 @@ class _Alert:
     """Stand-in for the Alert row, mutable so the fake UPDATE can be applied to it."""
 
     def __init__(self, *, threshold=80.0, condition="gt", is_breaching=False,
-                 last_triggered=None):
+                 last_triggered=None, channel_id=None):
         self.id = uuid.uuid4()
         self.user_id = uuid.uuid4()
         self.metric = "disk"
@@ -33,6 +33,10 @@ class _Alert:
         self.is_active = True
         self.last_triggered = last_triggered
         self.is_breaching = is_breaching
+        # A real Alert row always has this column. Leaving it off the stub meant the worker
+        # raised AttributeError, the outer handler swallowed it, and the recovery simply
+        # never sent — a stub that has drifted from the model tests nothing useful.
+        self.channel_id = channel_id
 
 
 class _Metric:
@@ -216,3 +220,72 @@ async def test_recovery_works_for_a_below_threshold_rule(wired, monkeypatch):
     alert = _Alert(threshold=20.0, condition="lt", is_breaching=True)
     await _run(monkeypatch, disk=55.0, alert=alert)
     assert wired["recoveries"] == [("web1", 55.0)]
+
+
+# ── Named channels ───────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_a_rule_with_no_named_channel_still_uses_its_own_destination(wired, monkeypatch):
+    """Every rule created before channels existed must keep working, untouched.
+
+    This is why both paths exist: a migration could only have guessed which named channel
+    the customer meant, so nothing was rewritten.
+    """
+    alert = _Alert(threshold=80.0, channel_id=None)
+    await _run(monkeypatch, disk=91.0, alert=alert)
+    assert wired["alerts"] == [("web1", 91.0)], "the inline destination must still be used"
+
+
+@pytest.mark.asyncio
+async def test_a_rule_pointing_at_a_named_channel_uses_it_instead(monkeypatch):
+    """The point of the feature: the destination lives in one place, not on every rule."""
+    import uuid as _uuid
+    from app.services import channel_service
+    import app.services.incident_service as incident_service
+    import app.services.notification_service as notification_service
+
+    sent: dict = {"channel": [], "inline": []}
+    ch_id = _uuid.uuid4()
+
+    class _Ch:
+        id = ch_id
+        kind = "slack"
+        is_active = True
+        user_id = _uuid.uuid4()
+
+    async def fake_deliver(db, channel, *, subject, body):
+        sent["channel"].append((channel.kind, subject))
+
+    async def fake_record(db, channel, *, error):
+        pass
+
+    async def fake_fire_alert(alert, name, value):
+        sent["inline"].append((name, value))
+
+    async def fake_raise_for(*a, **k):
+        return None
+
+    monkeypatch.setattr(channel_service, "deliver", fake_deliver)
+    monkeypatch.setattr(channel_service, "record_result", fake_record)
+    monkeypatch.setattr(notification_service, "fire_alert", fake_fire_alert)
+    monkeypatch.setattr(incident_service, "raise_for", fake_raise_for)
+
+    alert = _Alert(threshold=80.0, channel_id=ch_id)
+    server = _Server()
+
+    class _S(_FakeSession):
+        async def execute(self, stmt):
+            if self._queue:
+                return self._queue.pop(0)
+            # The worker looks the channel up; everything after is an UPDATE.
+            if not getattr(self, "_gave_channel", False):
+                self._gave_channel = True
+                return _Rows(_Ch())
+            return await super().execute(stmt)
+
+    session = _S(_Metric(95.0), server, [alert])
+    monkeypatch.setattr(alert_worker, "AsyncSessionLocal", lambda: session)
+    await alert_worker.check_alerts_for_server(str(server.id))
+
+    assert sent["channel"], "the named channel should have been used"
+    assert sent["inline"] == [], "the inline destination must NOT also fire — that is a duplicate"

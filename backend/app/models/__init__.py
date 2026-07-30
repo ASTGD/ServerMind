@@ -5,6 +5,7 @@ from app.models.command_log import CommandLog
 from app.models.playbook import Playbook, UserScript, PlaybookRun
 from app.models.scheduled_task import ScheduledTask
 from app.models.alert import Alert, ServerMetric
+from app.models.notification_channel import NotificationChannel
 from app.models.team import TeamMember, ServerAccess
 from app.models.security_scan import SecurityScan
 from app.models.backup import Backup, BackupRun
@@ -17,6 +18,7 @@ from app.models.dev_eval_case import DevEvalCase
 from app.models.oauth import OAuthClient, OAuthAuthorizationCode, OAuthTokenRecord
 
 __all__ = [
+    "NotificationChannel",
     "User",
     "Server",
     "CommandLog",

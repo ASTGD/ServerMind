@@ -233,6 +233,22 @@ def _telegram_error(resp) -> str:
     return detail or f"Telegram refused the message (HTTP {resp.status_code})."
 
 
+async def send_telegram_direct(*, bot_token: str, chat_id: str, text: str) -> None:
+    """Send with a bot token supplied by the caller, not the account-level provider.
+
+    A named Telegram channel carries its own bot and chat, so an agency can point one
+    channel at a client's group and another at their own — which one account-wide bot
+    token cannot express. Shares `_telegram_send_sync` with `send_telegram`, so there is
+    one implementation of talking to Telegram and one set of error messages.
+    """
+    try:
+        await asyncio.to_thread(_telegram_send_sync, bot_token, chat_id, text)
+    except PagingError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise PagingError(f"Could not reach Telegram: {type(exc).__name__}") from None
+
+
 async def send_telegram(db: AsyncSession, user_id, chat_id: str, text: str) -> None:
     row = await get_provider(db, user_id, "telegram")
     if row is None:

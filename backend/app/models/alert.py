@@ -43,6 +43,15 @@ class Alert(Base):
     threshold: Mapped[float | None] = mapped_column(Numeric(10, 2))
     channel: Mapped[str | None] = mapped_column(String(20))        # 'email' | 'webhook' | 'slack'
     channel_target: Mapped[str | None] = mapped_column(String(500))
+    #: A named channel to use instead of the inline destination above.
+    #:
+    #: Both exist on purpose. Every rule created before channels kept its own copy of the
+    #: destination, and rewriting them all in a migration would guess at which named channel
+    #: the customer meant. So the sender prefers `channel_id` when set and falls back to the
+    #: inline pair otherwise — no rule stops working, and new ones stop duplicating.
+    channel_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("notification_channels.id", ondelete="SET NULL"),
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_triggered: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     #: Whether this rule was over its threshold at the previous check.
