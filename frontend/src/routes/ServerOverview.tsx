@@ -100,7 +100,7 @@ export default function ServerOverview() {
 
       {!isRdp && (
         <div className="space-y-4">
-          <ServerMetrics serverId={server.id} />
+          <ServerMetrics serverId={server.id} compact />
           {/* Metrics answer "is the box busy"; this answers "is the site up" — the thing
               an owner actually cares about, and checked from outside the server. */}
           <UptimePanel serverId={server.id} />

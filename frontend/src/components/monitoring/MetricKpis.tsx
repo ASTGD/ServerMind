@@ -32,6 +32,14 @@ interface Props {
   diskDetail?: string
   /** Shown so "Avg" is never ambiguous about the period it covers. */
   windowLabel: string
+  /**
+   * Two columns instead of four, for a narrow container.
+   *
+   * A prop rather than `lg:grid-cols-4`, because Tailwind breakpoints follow the VIEWPORT:
+   * on a wide screen a narrow column would still try four across and squash them. Same
+   * mistake cost a live pixel-measuring session on the Assets cards.
+   */
+  compact?: boolean
 }
 
 /** Warm the number, not the whole card — colour should mean "look here", not decoration. */
@@ -44,7 +52,7 @@ function toneFor(value: number | null | undefined, unit: "percent" | "load"): st
 }
 
 export default function MetricKpis({
-  history, cpu, ram, disk, load, ramDetail, diskDetail, windowLabel,
+  history, cpu, ram, disk, load, ramDetail, diskDetail, windowLabel, compact = false,
 }: Props) {
   const metrics: Metric[] = [
     { key: "cpu_percent", label: "CPU", icon: Cpu, unit: "percent", current: cpu },
@@ -56,7 +64,7 @@ export default function MetricKpis({
   ]
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className={`grid gap-3 ${compact ? "grid-cols-2" : "grid-cols-2 lg:grid-cols-4"}`}>
       {metrics.map((m) => {
         const stats = summariseMetric(history, m.key)
         const Icon = m.icon

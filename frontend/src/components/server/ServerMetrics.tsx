@@ -1,25 +1,23 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Loader2, RefreshCw, Bell, ChevronDown, ChevronRight, Cpu, MemoryStick, HardDrive } from "lucide-react"
+import { Loader2, RefreshCw, Bell } from "lucide-react"
 import { getMetrics } from "@/api/servers"
 import { getMetricsHistory } from "@/api/monitoring"
-import CpuChart from "@/components/monitoring/CpuChart"
-import RamChart from "@/components/monitoring/RamChart"
-import DiskChart from "@/components/monitoring/DiskChart"
 import MetricKpis from "@/components/monitoring/MetricKpis"
+import MetricsChart from "@/components/monitoring/MetricsChart"
 import AlertsModal from "@/components/server/AlertsModal"
 import type { ServerMetrics as IServerMetrics } from "@/types"
 
 interface Props {
   serverId: string
   /**
-   * Whether the history charts start open.
+   * Render for a narrow column (the Overview card) rather than a full-width page.
    *
-   * Collapsed suits the narrow Overview column, where the charts would be squeezed. But on
-   * the Monitoring page — a page that exists for no other reason than to show this — hidden
-   * history reads as "we only have live numbers", which is what a real customer reported.
+   * Only spacing depends on it — the same numbers and the same chart appear either way.
+   * Note this cannot be a CSS breakpoint: `lg:` follows the VIEWPORT, so on a wide screen a
+   * narrow column would still try to fit four cards across and squash them.
    */
-  historyOpen?: boolean
+  compact?: boolean
 }
 
 const WINDOWS: { v: 6 | 24 | 48 | 168; l: string }[] = [
@@ -28,24 +26,6 @@ const WINDOWS: { v: 6 | 24 | 48 | 168; l: string }[] = [
   { v: 48, l: "48h" },
   { v: 168, l: "7d" },
 ]
-
-function MetricBar({ label, value, used, total }: { label: string; value: number | null; used?: string; total?: string }) {
-  if (value === null) return null
-  const color = value > 85 ? "bg-red-500" : value > 60 ? "bg-yellow-500" : "bg-green-500"
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="font-mono font-medium text-foreground">
-          {value.toFixed(1)}%{used && total ? ` · ${used} / ${total}` : ""}
-        </span>
-      </div>
-      <div className="h-1.5 w-full rounded-full bg-muted">
-        <div className={`h-1.5 rounded-full ${color} transition-all`} style={{ width: `${Math.min(value, 100)}%` }} />
-      </div>
-    </div>
-  )
-}
 
 function formatUptime(seconds: number | null): string {
   if (seconds === null) return "—"
@@ -57,8 +37,7 @@ function formatUptime(seconds: number | null): string {
   return `${m}m`
 }
 
-export default function ServerMetrics({ serverId, historyOpen = false }: Props) {
-  const [showHistory, setShowHistory] = useState(historyOpen)
+export default function ServerMetrics({ serverId, compact = false }: Props) {
   const [showAlerts, setShowAlerts] = useState(false)
   const [window, setWindow] = useState<6 | 24 | 48 | 168>(24)
 
@@ -72,7 +51,6 @@ export default function ServerMetrics({ serverId, historyOpen = false }: Props) 
   const { data: history = [], isLoading: histLoading } = useQuery({
     queryKey: ["metrics-history", serverId, window],
     queryFn: () => getMetricsHistory(serverId, window),
-    enabled: showHistory,
     refetchInterval: 60_000,
   })
 
@@ -112,102 +90,62 @@ export default function ServerMetrics({ serverId, historyOpen = false }: Props) 
         <p className="text-sm text-muted-foreground">Could not load live metrics — server may be offline.</p>
       ) : (
         <>
-          {/* Cards where there is room for them; the bars stay for the narrow column, where
-              four cards would wrap into an unreadable stack. */}
-          {historyOpen ? (
-            <MetricKpis
-              history={history}
-              cpu={data.cpu_percent}
-              ram={data.ram_percent}
-              disk={data.disk_percent}
-              load={data.load_1}
-              ramDetail={ramUsed && ramTotal ? `${ramUsed} / ${ramTotal}` : undefined}
-              diskDetail={diskUsed && diskTotal ? `${diskUsed} / ${diskTotal}` : undefined}
-              windowLabel={WINDOWS.find((w) => w.v === window)?.l ?? "24h"}
-            />
-          ) : (
-            <div className="space-y-3">
-              <MetricBar label="CPU" value={data.cpu_percent ?? null} />
-              <MetricBar label="RAM" value={data.ram_percent ?? null} used={ramUsed} total={ramTotal} />
-              <MetricBar label="Disk" value={data.disk_percent ?? null} used={diskUsed} total={diskTotal} />
-            </div>
-          )}
+          <MetricKpis
+            history={history}
+            cpu={data.cpu_percent}
+            ram={data.ram_percent}
+            disk={data.disk_percent}
+            load={data.load_1}
+            ramDetail={ramUsed && ramTotal ? `${ramUsed} / ${ramTotal}` : undefined}
+            diskDetail={diskUsed && diskTotal ? `${diskUsed} / ${diskTotal}` : undefined}
+            windowLabel={WINDOWS.find((w) => w.v === window)?.l ?? "24h"}
+            compact={compact}
+          />
 
-          <div className="grid grid-cols-2 gap-3 border-t border-border pt-3 text-xs">
-            {/* The KPI cards already carry load average; repeating it here would be noise.
-                The 5/15-minute figures still earn their place in the compact view. */}
-            {!historyOpen && data.load_1 !== null && (
-              <div>
-                <p className="text-muted-foreground">Load avg</p>
-                <p className="font-mono font-medium text-foreground">
-                  {data.load_1?.toFixed(2)} / {data.load_5?.toFixed(2)} / {data.load_15?.toFixed(2)}
-                </p>
-              </div>
-            )}
-            <div>
-              <p className="text-muted-foreground">Uptime</p>
-              <p className="font-mono font-medium text-foreground">{formatUptime(data.uptime_seconds ?? null)}</p>
-            </div>
-          </div>
+          {/* Load average is on its own card now, so only uptime is left to state. */}
+          <p className="text-xs text-muted-foreground">
+            Uptime{" "}
+            <span className="font-mono font-medium text-foreground">
+              {formatUptime(data.uptime_seconds ?? null)}
+            </span>
+          </p>
         </>
       )}
 
-      {/* History (read-only charts) — collapsed by default to keep the widget compact. */}
-      <div className="border-t border-border pt-3">
-        <button
-          onClick={() => setShowHistory((s) => !s)}
-          className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {showHistory ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          History
-        </button>
+      {/* One chart, always visible.
+          Always visible because this is the reason the section exists — hiding it behind a
+          disclosure made the page read as "live numbers only", which is what a customer
+          reported. One chart rather than three because the useful question is whether the
+          CPU spike and the memory spike were the same moment, and three stacked charts made
+          the reader line up three x-axes by eye to answer it. */}
+      <div className="space-y-3 border-t border-border pt-3">
+        <div className="flex overflow-hidden rounded-lg border border-border">
+          {WINDOWS.map((opt) => (
+            <button
+              key={opt.v}
+              onClick={() => setWindow(opt.v)}
+              className={`flex-1 px-2 py-1 text-xs font-medium transition-colors ${
+                window === opt.v
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+              }`}
+            >
+              {opt.l}
+            </button>
+          ))}
+        </div>
 
-        {showHistory && (
-          <div className="mt-3 space-y-3">
-            <div className="flex overflow-hidden rounded-lg border border-border">
-              {WINDOWS.map((opt) => (
-                <button
-                  key={opt.v}
-                  onClick={() => setWindow(opt.v)}
-                  className={`flex-1 px-2 py-1 text-xs font-medium transition-colors ${
-                    window === opt.v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                  }`}
-                >
-                  {opt.l}
-                </button>
-              ))}
-            </div>
-
-            {histLoading ? (
-              <div className="flex items-center justify-center py-6 text-muted-foreground">
-                <Loader2 size={16} className="animate-spin" />
-              </div>
-            ) : history.length === 0 ? (
-              <p className="py-4 text-center text-xs text-muted-foreground">
-                No history yet — the first points arrive within 5 minutes.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                <div className="rounded-lg border border-border p-3">
-                  <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
-                    <Cpu size={13} className="text-emerald-400" /> CPU
-                  </div>
-                  <CpuChart data={history} />
-                </div>
-                <div className="rounded-lg border border-border p-3">
-                  <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
-                    <MemoryStick size={13} className="text-blue-400" /> RAM
-                  </div>
-                  <RamChart data={history} />
-                </div>
-                <div className="rounded-lg border border-border p-3">
-                  <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
-                    <HardDrive size={13} className="text-violet-400" /> Disk
-                  </div>
-                  <DiskChart data={history} />
-                </div>
-              </div>
-            )}
+        {histLoading ? (
+          <div className="flex items-center justify-center py-10 text-muted-foreground">
+            <Loader2 size={16} className="animate-spin" />
+          </div>
+        ) : history.length === 0 ? (
+          <p className="py-8 text-center text-xs text-muted-foreground">
+            No history yet — the first points arrive within 5 minutes.
+          </p>
+        ) : (
+          <div className="rounded-lg border border-border p-3">
+            <MetricsChart data={history} height={compact ? 200 : 280} />
           </div>
         )}
       </div>
