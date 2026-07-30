@@ -55,18 +55,18 @@ export default function CpuChart({ data, height = 180 }: Props) {
             <stop offset="95%" stopColor={color} stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis
           dataKey="time"
           tickFormatter={(v) => format(new Date(v as string), "HH:mm")}
-          tick={{ fontSize: 10, fill: "rgba(255,255,255,0.35)" }}
+          tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
           tickLine={false}
           axisLine={false}
           interval="preserveStartEnd"
         />
         <YAxis
           domain={[0, 100]}
-          tick={{ fontSize: 10, fill: "rgba(255,255,255,0.35)" }}
+          tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
           tickLine={false}
           axisLine={false}
           tickFormatter={(v: number) => `${v}%`}

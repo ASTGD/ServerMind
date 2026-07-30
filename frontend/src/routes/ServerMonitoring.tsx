@@ -24,7 +24,7 @@ export default function ServerMonitoring() {
           Live load, history, and the alerts that tell you when it changes.
         </p>
       </div>
-      <ServerMetrics serverId={server.id} />
+      <ServerMetrics serverId={server.id} historyOpen />
     </div>
   )
 }

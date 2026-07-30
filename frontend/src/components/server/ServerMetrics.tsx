@@ -11,6 +11,14 @@ import type { ServerMetrics as IServerMetrics } from "@/types"
 
 interface Props {
   serverId: string
+  /**
+   * Whether the history charts start open.
+   *
+   * Collapsed suits the narrow Overview column, where the charts would be squeezed. But on
+   * the Monitoring page — a page that exists for no other reason than to show this — hidden
+   * history reads as "we only have live numbers", which is what a real customer reported.
+   */
+  historyOpen?: boolean
 }
 
 const WINDOWS: { v: 6 | 24 | 48 | 168; l: string }[] = [
@@ -48,8 +56,8 @@ function formatUptime(seconds: number | null): string {
   return `${m}m`
 }
 
-export default function ServerMetrics({ serverId }: Props) {
-  const [showHistory, setShowHistory] = useState(false)
+export default function ServerMetrics({ serverId, historyOpen = false }: Props) {
+  const [showHistory, setShowHistory] = useState(historyOpen)
   const [showAlerts, setShowAlerts] = useState(false)
   const [window, setWindow] = useState<6 | 24 | 48 | 168>(24)
 
