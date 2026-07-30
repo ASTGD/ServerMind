@@ -1,6 +1,6 @@
 import {
   Activity, Archive, Clock, Cog, FileText, FolderOpen, Globe, HeartPulse, KeyRound,
-  LayoutDashboard, LayoutPanelTop, Package, Rocket, ShieldCheck,
+  Code2, LayoutDashboard, LayoutPanelTop, Package, Rocket, ShieldCheck,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type { Server } from "@/types"
@@ -58,6 +58,16 @@ export interface MenuItem {
   icon: LucideIcon
   /** The capability this section cannot work without. Absent means "always". */
   needs?: Capability
+  /**
+   * A capability whose PRESENCE makes this section wrong.
+   *
+   * Needed because "works on a plain server, but a control panel owns this itself" is a
+   * real shape. PHP is the case: on a CyberPanel box PHP is lsphp with the panel's own
+   * vhost layout and its own switcher, so our page read a server running 77 PHP sites and
+   * reported "no PHP websites found" — honest, but a menu item promising something it
+   * cannot deliver.
+   */
+  excludes?: Capability
   /** Grouped in the sidebar so a long menu still scans. */
   group: "manage" | "operate" | "account"
 }
@@ -80,6 +90,7 @@ export const MENU: MenuItem[] = [
   { path: "hosting", label: "Control panel", icon: LayoutPanelTop, needs: "panel", group: "manage" },
   { path: "files", label: "Files", icon: FolderOpen, needs: "sftp", group: "manage" },
   { path: "installed", label: "Installed", icon: Package, needs: "sftp", group: "manage" },
+  { path: "php", label: "PHP", icon: Code2, needs: "sftp", excludes: "panel", group: "manage" },
 
   { path: "monitoring", label: "Monitoring", icon: Activity, needs: "shell", group: "operate" },
   { path: "services", label: "Services", icon: HeartPulse, needs: "unix", group: "operate" },
@@ -105,7 +116,10 @@ export const MENU: MenuItem[] = [
  */
 export function menuFor(server: Server): MenuItem[] {
   const caps = capabilitiesOf(server)
-  const items = MENU.filter((item) => !item.needs || caps.has(item.needs))
+  const items = MENU.filter(
+    (item) => (!item.needs || caps.has(item.needs))
+      && !(item.excludes && caps.has(item.excludes)),
+  )
   const hasSites = items.some((i) => i.path === "sites")
   return hasSites ? items.filter((i) => i.path !== "") : items
 }

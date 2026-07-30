@@ -89,7 +89,7 @@ describe("a Windows server over WinRM", () => {
     // over SFTP. None of these have a Windows branch.
     for (const linuxOnly of [
       "Files", "Logs", "Backups", "Firewall & keys", "Installed",
-      "Sites", "Services", "Deployments",
+      "Sites", "Services", "Deployments", "PHP",
     ]) {
       expect(labels(win)).not.toContain(linuxOnly)
     }
@@ -162,6 +162,12 @@ describe("the registry itself", () => {
 })
 
 describe("which 'add a website' doors an asset gets", () => {
+  it("gives a Linux server the PHP section, and a Windows box none", () => {
+    // PHP management reads and rewrites nginx/Apache configs over SFTP.
+    expect(labels(asset())).toContain("PHP")
+    expect(labels(asset({ connection_type: "winrm" }))).not.toContain("PHP")
+  })
+
   it("offers the direct installers on a plain Linux server", () => {
     const d = installerOptionsFor(asset())
     expect(d).toEqual({ direct: true, panel: false, ally: true })
@@ -193,5 +199,23 @@ describe("which 'add a website' doors an asset gets", () => {
     const d = installerOptionsFor(asset({ connection_type: "winrm" }))
     expect(d.direct).toBe(false)
     expect(d.ally).toBe(true)
+  })
+})
+
+describe("a section a control panel owns itself", () => {
+  it("hides PHP on a panel server", () => {
+    // On a CyberPanel box PHP is lsphp with the panel's own vhost layout and its own
+    // switcher. Our page read a server running 77 PHP sites and reported "no PHP websites
+    // found" — honest, but a menu item promising something it cannot deliver.
+    expect(labels(asset({ panel_type: "cyberpanel" }))).not.toContain("PHP")
+    expect(labels(asset({ connection_type: "hosting", panel_type: "cpanel" }))).not.toContain("PHP")
+  })
+
+  it("keeps PHP on a plain server, which is where it works", () => {
+    expect(labels(asset())).toContain("PHP")
+  })
+
+  it("still shows the panel's own section there instead", () => {
+    expect(labels(asset({ panel_type: "cyberpanel" }))).toContain("Control panel")
   })
 })
