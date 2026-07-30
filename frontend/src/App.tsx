@@ -4,7 +4,6 @@ import ProtectedRoute from "@/components/shared/ProtectedRoute"
 import Dashboard from "@/routes/Dashboard"
 import Servers from "@/routes/Servers"
 import ServerDetail from "@/routes/ServerDetail"
-import ServerOverview from "@/routes/ServerOverview"
 import Playbooks from "@/routes/Playbooks"
 import Runbooks from "@/routes/Runbooks"
 import Dns from "@/routes/Dns"
@@ -18,6 +17,7 @@ import FileManager from "@/routes/FileManager"
 import Security from "@/routes/Security"
 import ServerLogs from "./routes/ServerLogs"
 import ServerSettings from "./routes/ServerSettings"
+import ServerHome from "./routes/ServerHome"
 import ServerSites from "./routes/ServerSites"
 import ServerMonitoring from "./routes/ServerMonitoring"
 import ServerServices from "./routes/ServerServices"
@@ -78,7 +78,7 @@ export default function App() {
           <Route path="terminal" element={<Navigate to="/dashboard" replace />} />
           <Route path="servers" element={<Servers />} />
           <Route path="servers/:id" element={<ServerDetail />}>
-            <Route index element={<ServerOverview />} />
+            <Route index element={<ServerHome />} />
             <Route path="files" element={<FileManager />} />
             <Route path="security" element={<Security />} />
             <Route path="logs" element={<ServerLogs />} />

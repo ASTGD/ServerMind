@@ -10,6 +10,7 @@ import { listRecipes } from "@/api/recipes"
 import { getPlaybook, listPlaybooks } from "@/api/playbooks"
 import RunRecipeModal from "@/components/recipes/RunRecipeModal"
 import RunPlaybookModal from "@/components/playbooks/RunPlaybookModal"
+import ServerSetupPanel from "@/components/server/ServerSetupPanel"
 import { Button, EmptyState } from "@/components/ui"
 import { cn } from "@/lib/utils"
 import type { Server } from "@/types"
@@ -76,10 +77,19 @@ export default function ServerSites() {
           <h2 className="flex items-center gap-2 text-[17px] font-medium text-foreground">
             <Globe size={16} className="text-primary" /> Sites
           </h2>
+          {/* What this server can serve WITH, before what it serves. Built only from data
+              already loaded — reading the real stack (nginx, PHP version, database) needs a
+              live SSH probe, and this is the page you open most, so it does not pay for one.
+              Installed does that job, one click away. */}
           <p className="mt-0.5 text-sm text-muted-foreground">
+            {[
+              server.os_version ? `${server.os_type} ${server.os_version}` : server.os_type,
+              server.panel_type,
+            ].filter(Boolean).join(" · ")}
+            {(server.os_type || server.panel_type) && " — "}
             {sites.length === 0
-              ? "No websites found on this server yet."
-              : `${sites.length} website${sites.length === 1 ? "" : "s"} on this server`}
+              ? "nothing hosted here yet"
+              : `${sites.length} website${sites.length === 1 ? "" : "s"}`}
             {down > 0 && (
               <span className="ml-1 font-medium text-red-600 dark:text-red-400">
                 · {down} down
@@ -151,15 +161,21 @@ export default function ServerSites() {
           ))}
         </div>
       ) : sites.length === 0 ? (
-        <EmptyState
+        <div className="space-y-4">
+          {/* A Linux server's home is now this page, so the setup wizard has to live here —
+              it was the one thing on Overview that was not a duplicate, and a blank server
+              would otherwise never be told what it needs. It hides itself once done. */}
+          {server.connection_type === "ssh" && <ServerSetupPanel server={server} />}
+          <EmptyState
           icon={Globe}
           title="Nothing hosted here yet"
           description="Press “Look for sites” to read the web server’s own configuration, or create a new website and Ally will set it up."
           className="py-14"
-          action={<Button size="sm" onClick={() => setChoosing(true)}>
-            <Plus size={13} /> New website
-          </Button>}
-        />
+            action={<Button size="sm" onClick={() => setChoosing(true)}>
+              <Plus size={13} /> New website
+            </Button>}
+          />
+        </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-border bg-card">
           {sites.map((s) => <SiteRow key={s.id} site={s} />)}

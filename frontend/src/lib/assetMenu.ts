@@ -93,10 +93,26 @@ export const MENU: MenuItem[] = [
   { path: "settings", label: "Settings", icon: Cog, group: "account" },
 ]
 
-/** The sections this particular asset can actually use. */
+/**
+ * The sections this particular asset can actually use.
+ *
+ * Overview is the FALLBACK home, not a peer section. Everything on it is a preview of
+ * another section — live metrics duplicate Monitoring, the services panel duplicates
+ * Services, "Installed" duplicates Installed — so on an asset that has Sites it is pure
+ * duplication and is dropped. On an asset with no Sites (a Windows box, an RDP box) it is
+ * the only landing place there is, so it stays. Nothing is deleted either way; which page
+ * is home is simply decided by what the asset can do, like the rest of this menu.
+ */
 export function menuFor(server: Server): MenuItem[] {
   const caps = capabilitiesOf(server)
-  return MENU.filter((item) => !item.needs || caps.has(item.needs))
+  const items = MENU.filter((item) => !item.needs || caps.has(item.needs))
+  const hasSites = items.some((i) => i.path === "sites")
+  return hasSites ? items.filter((i) => i.path !== "") : items
+}
+
+/** Where this asset should land when opened. */
+export function homePathFor(server: Server): string {
+  return menuFor(server).some((i) => i.path === "sites") ? "sites" : ""
 }
 
 /** Which quick actions belong in the asset header. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { actionsFor, capabilitiesOf, menuFor, MENU } from "./assetMenu"
+import { actionsFor, capabilitiesOf, homePathFor, menuFor, MENU } from "./assetMenu"
 import type { Server } from "@/types"
 
 /**
@@ -21,7 +21,7 @@ const labels = (s: Server) => menuFor(s).map((i) => i.label)
 describe("what an asset can do", () => {
   it("gives a plain Linux server the full set", () => {
     const items = labels(asset())
-    for (const expected of ["Overview", "Files", "Security", "Firewall & keys", "Backups", "Logs", "Settings"]) {
+    for (const expected of ["Sites", "Files", "Security", "Firewall & keys", "Backups", "Logs", "Settings"]) {
       expect(items).toContain(expected)
     }
   })
@@ -64,6 +64,7 @@ describe("an RDP asset never pretends to be more than it is", () => {
 
   it("offers only what a desktop connection can support", () => {
     // There is no command channel at all, so every command-backed section would fail.
+    // Overview survives because it is the only home this asset has.
     expect(labels(rdp)).toEqual(["Overview", "Settings"])
   })
 
@@ -120,14 +121,30 @@ describe("the registry itself", () => {
     expect(MENU[0].path).toBe("sites")
   })
 
-  it("keeps Overview reachable on every asset, whatever it is", () => {
-    // It is the one section with no requirement, so an asset can never end up with a menu
-    // that leads nowhere.
-    const overview = MENU.find((i) => i.path === "")
-    expect(overview?.needs).toBeUndefined()
+  it("keeps Overview as the FALLBACK home, never a duplicate section", () => {
+    // Everything on Overview is a preview of another section: live metrics duplicate
+    // Monitoring, the services panel duplicates Services, its Installed card duplicates
+    // Installed. So on an asset that has Sites it is pure duplication and is dropped; on an
+    // asset with no Sites it is the only landing place there is and must stay.
+    expect(labels(asset())).not.toContain("Overview")                       // Linux: has Sites
+    expect(labels(asset({ connection_type: "rdp" }))).toContain("Overview") // RDP: nothing else
+    expect(labels(asset({ connection_type: "winrm" }))).toContain("Overview")
+    expect(labels(asset({ connection_type: "hosting" }))).toContain("Overview")
+  })
+
+  it("never leaves an asset with nowhere to land", () => {
+    // The whole point of the fallback: every asset must have a home page.
     for (const c of ["ssh", "winrm", "rdp", "hosting"] as const) {
-      expect(labels(asset({ connection_type: c }))).toContain("Overview")
+      const items = labels(asset({ connection_type: c }))
+      expect(items.includes("Sites") || items.includes("Overview")).toBe(true)
     }
+  })
+
+  it("sends anything that can host to Sites, and everything else to Overview", () => {
+    expect(homePathFor(asset())).toBe("sites")
+    expect(homePathFor(asset({ connection_type: "rdp" }))).toBe("")
+    expect(homePathFor(asset({ connection_type: "winrm" }))).toBe("")
+    expect(homePathFor(asset({ connection_type: "hosting" }))).toBe("")
   })
 
   it("has no duplicate destinations", () => {

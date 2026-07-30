@@ -162,6 +162,40 @@ wiring, not new capability.
 | Cloud | `CloudLifecyclePanel` | show when the asset came from a cloud account |
 | Installed, Files, Security, Access, Backups, Logs, Hosting | already pages | move into the menu only |
 
+## Sites is home — decided and shipped 2026-07-30
+
+**Overview had no content of its own.** Every panel on it was a preview of another section:
+live metrics duplicated Monitoring, the services panel duplicated Services, its Installed
+card duplicated Installed, Server info duplicated Settings and the sidebar footer. The one
+unique thing was the setup wizard — and that is temporary, since it stops applying the
+moment a server is set up. That is why "what goes on Sites vs Overview" was impossible to
+answer: Overview was not a thing.
+
+Ploi solved the same problem by having **no Overview at all** — identity facts live in their
+sidebar footer and every other concern is its own section.
+
+So: **Overview is now the FALLBACK home, not a peer section.**
+
+- An asset that can host lands on **Sites**; Overview is dropped from its menu as pure
+  duplication.
+- An asset that cannot host — Windows, RDP — still lands on Overview, because it is the only
+  page it has. Nothing was deleted; `menuFor` simply drops Overview when Sites is present,
+  and `homePathFor` decides where a given asset lands.
+
+Three consequences, all handled:
+
+1. **The setup wizard moved onto Sites' empty state.** Required, not cosmetic — a Linux
+   server no longer sees Overview, so a blank box would otherwise never be told what it
+   needs. As an empty state it is unmissable and hides itself once done. It is gated on
+   "no sites yet", so an established server never sees a wizard that would refuse anyway.
+2. **Sites gained a stack line** — `ubuntu 20.04 · cyberpanel — 77 websites`. Built only
+   from data already loaded: reading the real stack (nginx, PHP version, database) needs a
+   live SSH probe, and this is now the most-opened page in the app, so it does not pay for
+   one. Installed does that job, one click away.
+3. **The health numbers moved into the sidebar footer**, where they are visible from every
+   section instead of only from Overview. Shares the existing metrics query key, so it costs
+   no extra request.
+
 ## Phase 4 — Cloud account detail page
 
 Cloud accounts are listed on Assets but have no detail page. Give them the same shell:

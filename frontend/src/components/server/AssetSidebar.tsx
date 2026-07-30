@@ -1,5 +1,7 @@
 import { Link, NavLink } from "react-router-dom"
+import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft } from "lucide-react"
+import { getMetrics } from "@/api/servers"
 import type { Server } from "@/types"
 import { categoryForServer } from "@/lib/assetCategories"
 import { menuFor, type MenuItem } from "@/lib/assetMenu"
@@ -35,6 +37,47 @@ function statusDot(server: Server) {
   if (server.status === "offline") return "bg-red-500"
   if (server.status === "auth_failed" || server.status === "host_changed") return "bg-red-500"
   return "bg-muted-foreground/40"
+}
+
+/**
+ * Load, in the sidebar rather than on a page.
+ *
+ * Overview used to answer "how is this server" in its right-hand column, but only there.
+ * Since a Linux server no longer lands on Overview, that question would have moved a click
+ * away — so it lives here instead, where it is visible from every single section. Shares the
+ * same query key the rest of the app uses, so it costs no extra request.
+ */
+function Load({ server }: { server: Server }) {
+  const live = server.status === "online"
+    && (server.connection_type === "ssh" || server.connection_type === "winrm")
+  const { data } = useQuery({
+    queryKey: ["server-metrics", server.id],
+    queryFn: () => getMetrics(server.id),
+    enabled: live,
+    retry: false,
+    staleTime: 30_000,
+    refetchInterval: live ? 60_000 : false,
+  })
+  if (!live || !data) return null
+
+  const cells: [string, number | null][] = [
+    ["CPU", data.cpu_percent], ["RAM", data.ram_percent], ["Disk", data.disk_percent],
+  ]
+  return (
+    <div className="flex items-baseline justify-between gap-1 pt-0.5">
+      {cells.map(([label, value]) => (
+        <span key={label} className="text-[11px] tabular-nums text-muted-foreground">
+          {label}{" "}
+          <span className={cn(
+            "font-medium",
+            (value ?? 0) >= 90 ? "text-red-600 dark:text-red-400"
+              : (value ?? 0) >= 70 ? "text-amber-600 dark:text-amber-400"
+                : "text-foreground",
+          )}>{value == null ? "—" : `${Math.round(value)}%`}</span>
+        </span>
+      ))}
+    </div>
+  )
 }
 
 export default function AssetSidebar({ server }: { server: Server }) {
@@ -102,6 +145,7 @@ export default function AssetSidebar({ server }: { server: Server }) {
           )}
           {server.panel_type && <Fact label="Panel" value={server.panel_type} />}
           {server.arch && <Fact label="Arch" value={server.arch} />}
+          <Load server={server} />
         </dl>
       </div>
     </aside>
