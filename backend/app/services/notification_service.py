@@ -172,6 +172,55 @@ async def fire_alert(
         logger.warning("Unknown alert channel '%s' — no notification sent", channel)
 
 
+async def fire_recovery(
+    alert: object,  # Alert model instance — typed loosely to avoid circular import
+    server_name: str,
+    current_value: float,
+) -> None:
+    """Tell the customer the metric came back inside its threshold.
+
+    Sent once, on the way down. An alert without a matching all-clear is worse than no
+    alert: the person who was told the disk was filling has to go and check for themselves
+    whether it still is, which is exactly the work they bought this to avoid.
+
+    Deliberately worded as good news and marked "Resolved" in the subject, so it is
+    obviously not another warning at a glance in a phone notification.
+    """
+    metric_label = str(alert.metric).upper()  # type: ignore[attr-defined]
+    threshold = float(alert.threshold)  # type: ignore[attr-defined]
+    channel = str(alert.channel)  # type: ignore[attr-defined]
+    target = str(alert.channel_target)  # type: ignore[attr-defined]
+
+    subject = (
+        f"[ServerAlly] Resolved — {server_name}: {metric_label} is back to normal "
+        f"({current_value:.1f}%)"
+    )
+    body = (
+        f"ServerAlly — Resolved\n"
+        f"{'=' * 40}\n\n"
+        f"Server:    {server_name}\n"
+        f"Metric:    {metric_label}\n"
+        f"Value now: {current_value:.1f}%\n"
+        f"Threshold: {threshold:.0f}%\n\n"
+        f"{metric_label} is back inside your threshold. Nothing to do.\n"
+    )
+
+    if channel == "email":
+        await send_email(target, subject, body)
+    elif channel in ("webhook", "slack"):
+        await send_webhook(target, {
+            "text": subject,
+            "server": server_name,
+            "metric": alert.metric,          # type: ignore[attr-defined]
+            "threshold": threshold,
+            "current_value": round(current_value, 1),
+            "status": "resolved",
+            "source": "ServerAlly",
+        })
+    else:
+        logger.warning("Unknown alert channel '%s' — no recovery notice sent", channel)
+
+
 def _condition_label(condition: str) -> str:
     return {
         "gt": "above",

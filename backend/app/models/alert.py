@@ -45,4 +45,13 @@ class Alert(Base):
     channel_target: Mapped[str | None] = mapped_column(String(500))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_triggered: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Whether this rule was over its threshold at the previous check.
+    #:
+    #: Needed to send exactly one "back to normal" message on the way down.
+    #: ``last_triggered`` cannot do that job — it stays set forever after the first breach,
+    #: so recovering from it would mean sending a recovery notice on every sweep for the
+    #: rest of the rule's life. Same state-change rule the uptime, service and threat
+    #: monitors already follow: one message down, one message up, nothing in between.
+    is_breaching: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False,
+                                               server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

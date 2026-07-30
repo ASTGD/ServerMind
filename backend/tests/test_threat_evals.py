@@ -144,3 +144,121 @@ def test_timeout_helper_fails_open_not_into_a_false_clean():
     for section in t.LINUX_SECTIONS:
         assert "timeout " not in section.command, \
             f"section '{section.id}' calls timeout directly instead of _t: {section.command}"
+
+
+# ── Fast vs slow tiers ────────────────────────────────────────────────────────
+# Measured on a 20-site server holding 11,800 PHP files: the six local probes cost
+# 137 ms warm / 697 ms cold in TOTAL, so they are affordable every few minutes. Only
+# `wpcore` is unbounded by local disk (wp-cli reaches api.wordpress.org per site).
+
+def test_fast_tier_excludes_only_the_network_bound_probe():
+    fast = {s.id for s in t.FAST_SECTIONS}
+    every = {s.id for s in t.LINUX_SECTIONS}
+    assert every - fast == {"wpcore"}, (
+        "the frequent sweep should carry every locally-bounded probe; "
+        f"missing from fast: {sorted(every - fast - {'wpcore'})}"
+    )
+    # The IOCs that actually signal an intrusion must all be in the frequent sweep —
+    # detecting a webshell twice a day is the gap this tier split exists to close.
+    for critical_probe in ("webshell", "uploads_php", "proc", "persistence", "accounts"):
+        assert critical_probe in fast, f"{critical_probe} must be in the fast sweep"
+
+
+def test_fast_tier_never_shells_out_per_site():
+    """A per-site loop is what makes a probe unaffordable to repeat.
+
+    `wpcore` runs wp-cli once per WordPress install, so its cost scales with the number
+    of sites AND depends on a remote API. Any probe doing the same would quietly turn the
+    5-minute sweep into a multi-minute one, so the shape is banned from the fast tier
+    rather than trusted to a reviewer noticing.
+    """
+    for s in t.FAST_SECTIONS:
+        assert "for f in" not in s.command, f"{s.id}: per-site loop does not belong in the fast tier"
+        assert " wp " not in f" {s.command} ", f"{s.id}: wp-cli is network-bound, keep it slow"
+
+
+def _fake_ssh_output(sections) -> str:
+    """Stand in for the server: emit each section marker with clean (empty) output."""
+    return "\n".join(f"{t._marker(s.id)}\n" for s in sections)
+
+
+@pytest.mark.asyncio
+async def test_a_skipped_probe_is_absent_not_reported_as_unchecked(monkeypatch):
+    """Honesty rule: never blame the server for a probe we chose not to run.
+
+    Evaluating `wpcore` against empty output reports "not checked (wp-cli not available
+    or no WordPress found)" — the wrong reason, since it was OUR choice. So a fast scan
+    must leave the finding out entirely.
+
+    This runs the real ``run_scan`` because an assertions-only version of this test passed
+    even with the skip guard deleted.
+    """
+    wpcore_check = [c for c in t.LINUX_CHECKS if c.section == "wpcore"][0]
+    assert "not available" in (wpcore_check.evaluate("")["detail"] or ""), (
+        "this guard assumes the empty-input reason blames the server — recheck if that changed"
+    )
+
+    async def fake_execute(server, script):
+        # Only the sections actually in the script come back, exactly like a real run.
+        present = [s for s in t.LINUX_SECTIONS if t._marker(s.id) in script]
+        return _fake_ssh_output(present), "", 0
+
+    monkeypatch.setattr(t.connection_manager, "execute", fake_execute)
+    srv = Server(name="s", host="h", username="u", connection_type="ssh", shell="bash",
+                 os_type="ubuntu")
+
+    fast = await t.run_scan(srv, fast_only=True)
+    ids = {f["id"] for f in fast["findings"]}
+    assert "wpcore" not in ids, (
+        "a fast scan must OMIT the WordPress check, not report it as uncheckable: "
+        f"{[f for f in fast['findings'] if f['id'] == 'wpcore']}"
+    )
+    assert fast["scope"] == "fast"
+    assert ids, "the fast scan must still report its own probes"
+
+    full = await t.run_scan(srv, fast_only=False)
+    assert "wpcore" in {f["id"] for f in full["findings"]}, "the full scan must include it"
+    assert full["scope"] == "full"
+
+
+@pytest.mark.asyncio
+async def test_fast_and_full_agree_on_a_clean_server(monkeypatch):
+    """A quick sweep must not invent a problem the full scan would not report."""
+    async def fake_execute(server, script):
+        present = [s for s in t.LINUX_SECTIONS if t._marker(s.id) in script]
+        return _fake_ssh_output(present), "", 0
+
+    monkeypatch.setattr(t.connection_manager, "execute", fake_execute)
+    srv = Server(name="s", host="h", username="u", connection_type="ssh", shell="bash",
+                 os_type="ubuntu")
+    fast = await t.run_scan(srv, fast_only=True)
+    full = await t.run_scan(srv, fast_only=False)
+    assert fast["verdict"] == full["verdict"] == "clean"
+
+
+def test_default_tier_is_fast_so_a_new_probe_is_caught_by_these_tests():
+    s = t.Section("brand_new", "echo hi")
+    assert s.tier == "fast"
+
+
+def test_the_slow_probe_can_never_change_the_verdict():
+    """Why the 5-minute sweep is safe to drive alerts.
+
+    The verdict comes only from critical/high/medium findings, and `wpcore` tops out at
+    `low`. So omitting it cannot change the verdict — a fast sweep is as trustworthy as a
+    full scan for deciding "is this server compromised".
+
+    If someone raises wpcore's severity, that stops being true: the fast sweep and the
+    12-hour scan would disagree, and a server would flap between clean and at-risk every
+    few minutes. This test fails first.
+    """
+    wpcore = [c for c in t.LINUX_CHECKS if c.section == "wpcore"][0]
+    inputs = ("", "NO_WPCLI", "OK:/home/a/public_html", "CAPPED:12\nOK:/home/a",
+              "TAMPER:/home/a:core.php should not exist")
+    severities = {wpcore.evaluate(i)["severity"] for i in inputs}
+    escalating = severities & {"critical", "high", "medium"}
+    assert not escalating, (
+        f"wpcore now returns {escalating}, which changes the verdict. The fast sweep omits "
+        "wpcore, so it would disagree with the full scan and alerts would flap. Either keep "
+        "wpcore non-escalating, or move it into the fast tier."
+    )

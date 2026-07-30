@@ -68,6 +68,25 @@ async def check_alerts_for_server(server_id: str) -> None:
                     await incident_service.resolve_key(db, alert.user_id, f"metric:{alert.id}")
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("Metric incident close failed for %s: %s", alert.id, exc)
+
+                # And say so, once. Being told a disk filled up but never that it was
+                # sorted leaves someone checking manually — which is the job they bought
+                # this to avoid. Only on the transition down: `is_breaching` is what keeps
+                # this from repeating every sweep forever.
+                if alert.is_breaching:
+                    logger.info("Alert recovered — server=%s metric=%s value=%.1f",
+                                server.name, alert.metric, current_value)
+                    try:
+                        await notification_service.fire_recovery(
+                            alert, server.name, current_value)
+                    except Exception as exc:  # noqa: BLE001 — never block clearing the flag
+                        logger.warning("Recovery notice failed for alert %s: %s",
+                                       alert.id, exc)
+                    await db.execute(
+                        sa_update(Alert).where(Alert.id == alert.id)
+                        .values(is_breaching=False)
+                    )
+                    await db.commit()
                 continue
 
             # Cooldown check — skip if we already fired within COOLDOWN_SECONDS
@@ -113,10 +132,13 @@ async def check_alerts_for_server(server_id: str) -> None:
 
                 if not escalated:
                     await notification_service.fire_alert(alert, server.name, current_value)
+                # Set inside the fire block, i.e. AFTER the cooldown check, so a breach we
+                # deliberately stayed quiet about can never produce a "back to normal"
+                # message for something the customer was never told about.
                 await db.execute(
                     sa_update(Alert)
                     .where(Alert.id == alert.id)
-                    .values(last_triggered=now)
+                    .values(last_triggered=now, is_breaching=True)
                 )
                 await db.commit()
             except Exception as exc:

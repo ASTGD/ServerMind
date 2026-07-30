@@ -6,6 +6,7 @@ import { getMetricsHistory } from "@/api/monitoring"
 import CpuChart from "@/components/monitoring/CpuChart"
 import RamChart from "@/components/monitoring/RamChart"
 import DiskChart from "@/components/monitoring/DiskChart"
+import MetricKpis from "@/components/monitoring/MetricKpis"
 import AlertsModal from "@/components/server/AlertsModal"
 import type { ServerMetrics as IServerMetrics } from "@/types"
 
@@ -111,14 +112,31 @@ export default function ServerMetrics({ serverId, historyOpen = false }: Props) 
         <p className="text-sm text-muted-foreground">Could not load live metrics — server may be offline.</p>
       ) : (
         <>
-          <div className="space-y-3">
-            <MetricBar label="CPU" value={data.cpu_percent ?? null} />
-            <MetricBar label="RAM" value={data.ram_percent ?? null} used={ramUsed} total={ramTotal} />
-            <MetricBar label="Disk" value={data.disk_percent ?? null} used={diskUsed} total={diskTotal} />
-          </div>
+          {/* Cards where there is room for them; the bars stay for the narrow column, where
+              four cards would wrap into an unreadable stack. */}
+          {historyOpen ? (
+            <MetricKpis
+              history={history}
+              cpu={data.cpu_percent}
+              ram={data.ram_percent}
+              disk={data.disk_percent}
+              load={data.load_1}
+              ramDetail={ramUsed && ramTotal ? `${ramUsed} / ${ramTotal}` : undefined}
+              diskDetail={diskUsed && diskTotal ? `${diskUsed} / ${diskTotal}` : undefined}
+              windowLabel={WINDOWS.find((w) => w.v === window)?.l ?? "24h"}
+            />
+          ) : (
+            <div className="space-y-3">
+              <MetricBar label="CPU" value={data.cpu_percent ?? null} />
+              <MetricBar label="RAM" value={data.ram_percent ?? null} used={ramUsed} total={ramTotal} />
+              <MetricBar label="Disk" value={data.disk_percent ?? null} used={diskUsed} total={diskTotal} />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3 border-t border-border pt-3 text-xs">
-            {data.load_1 !== null && (
+            {/* The KPI cards already carry load average; repeating it here would be noise.
+                The 5/15-minute figures still earn their place in the compact view. */}
+            {!historyOpen && data.load_1 !== null && (
               <div>
                 <p className="text-muted-foreground">Load avg</p>
                 <p className="font-mono font-medium text-foreground">
