@@ -437,17 +437,79 @@ def test_every_type_belongs_to_a_group_that_exists():
         assert item["group"] in groups, f"{item['id']} is in unknown group {item['group']}"
 
 
-def test_port_only_apps_are_not_offered_as_sites_yet():
-    """Gitea, n8n, Uptime Kuma, Vaultwarden and Portainer install on a PORT.
+#: The apps that install as a container on a port and need a domain put in front of them.
+PORT_ONLY_APPS = ("gitea", "n8n", "uptime-kuma", "vaultwarden", "portainer")
 
-    Offering them here would mean the customer types a domain and gets something at an IP
-    and a port number — the same "button that declines after you trust it" problem the
-    panel case already avoids. They join once P4 gives them a reverse proxy.
+
+def test_a_port_only_app_is_only_offered_once_it_can_take_a_domain():
+    """These install as containers on a PORT.
+
+    Offering one as a site before it can accept a domain would mean the customer types
+    git.example.com and gets an IP with a port number — the "button that lets you down
+    after you have decided to trust it" problem. So membership of the catalogue is tied to
+    the installer actually accepting a DOMAIN, not to someone remembering to check.
     """
-    offered = set(ss.SITE_TYPES)
-    for slug in ("gitea", "n8n", "uptime-kuma", "vaultwarden", "portainer"):
-        assert slug not in offered, (
-            f"{slug} installs on a port — it cannot honestly be offered as a site yet"
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS
+
+    by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
+    for slug in PORT_ONLY_APPS:
+        if slug not in ss.SITE_TYPES:
+            continue  # not offered — nothing to prove
+        pb = by_slug[slug]
+        names = [v["name"] for v in (pb.get("variables") or [])]
+        assert "DOMAIN" in names, (
+            f"{slug} is offered as a site but its installer takes no DOMAIN, so the "
+            f"customer would get an IP and a port instead of the address they typed"
+        )
+        assert "proxy_pass" in pb["script_bash"], (
+            f"{slug} takes a DOMAIN but never puts a reverse proxy in front of it"
+        )
+
+
+def test_a_domain_is_optional_for_the_port_only_apps():
+    """They also run on servers with no web server at all, where demanding a domain — and
+    therefore an nginx — would break a setup that works today."""
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS
+
+    by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
+    for slug in PORT_ONLY_APPS:
+        var = next(v for v in by_slug[slug]["variables"] if v["name"] == "DOMAIN")
+        assert var.get("required") is False, (
+            f"{slug}: DOMAIN must stay optional so the port-only install keeps working"
+        )
+
+
+def test_portainer_is_proxied_over_https():
+    """Its published port speaks TLS with a self-signed certificate. Proxying to it as
+    plain http produces a 502 that looks like the app is broken."""
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS
+
+    pb = next(p for p in OFFICIAL_PLAYBOOKS if p["slug"] == "portainer")
+    assert "proxy_pass https://127.0.0.1:$PORT" in pb["script_bash"]
+    assert "proxy_ssl_verify off" in pb["script_bash"], (
+        "the certificate is self-signed by design, so verification must be off or every "
+        "request fails"
+    )
+    # And the ones that speak plain HTTP must NOT be switched to https.
+    for slug in ("gitea", "n8n", "uptime-kuma", "vaultwarden"):
+        other = next(p for p in OFFICIAL_PLAYBOOKS if p["slug"] == slug)
+        assert "proxy_pass http://127.0.0.1:$PORT" in other["script_bash"], (
+            f"{slug} speaks plain HTTP on its port"
+        )
+
+
+def test_the_front_door_never_writes_a_vhost_without_a_domain():
+    """The whole block is inside `if [ -n "$DOMAIN" ]`. Without that, a port-only install
+    would write a vhost for an empty server_name and break the web server."""
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS
+
+    by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
+    for slug in PORT_ONLY_APPS:
+        script = by_slug[slug]["script_bash"]
+        i = script.index("proxy_pass")
+        before = script[:i]
+        assert 'if [ -n "${DOMAIN:-}" ]; then' in before, (
+            f"{slug}: the proxy must be guarded by a domain being set"
         )
 
 
@@ -456,3 +518,88 @@ def test_every_catalogue_entry_can_actually_be_created():
     for item in ss.catalogue(_all_playbooks()):
         assert item["id"] in ss.SITE_TYPES
         assert item["label"] and item["blurb"], f"{item['id']} needs something to show"
+
+
+def test_every_catalogue_installer_generates_valid_bash():
+    """Generate each installer's script and run `bash -n` over it.
+
+    The front door is assembled from shared Python strings full of nested quoting and
+    heredocs, so a broken script is a plausible mistake — and one that would only show up
+    on a customer's server, mid-install. Both cases are covered because the domain is
+    optional and the two paths differ.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS, substitute_variables
+
+    bash = shutil.which("bash")
+    if not bash:  # pragma: no cover
+        pytest.skip("bash not available")
+
+    by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
+    for type_id, spec in ss.SITE_TYPES.items():
+        pb = by_slug.get(spec["playbook"])
+        assert pb is not None, f"{type_id}: playbook {spec['playbook']} is missing"
+
+        for label, domain in (("with a domain", "app.example.com"), ("without one", "")):
+            # Fill every declared variable so nothing is left as an unsubstituted
+            # placeholder, which would itself be a syntax error.
+            variables = {v["name"]: (v.get("default") or "x")
+                         for v in (pb.get("variables") or [])}
+            variables.update(spec["extra"])
+            variables["DOMAIN"] = domain
+            script = substitute_variables(pb["script_bash"], variables)
+
+            assert "{{" not in script, f"{type_id} {label}: a placeholder was left unfilled"
+
+            with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as fh:
+                fh.write(script)
+                path = fh.name
+            try:
+                result = subprocess.run([bash, "-n", path], capture_output=True, text=True)
+            finally:
+                import os
+                os.unlink(path)
+
+            assert result.returncode == 0, (
+                f"{type_id} ({spec['playbook']}) {label} produced invalid bash:\n"
+                f"{result.stderr.strip()[:400]}"
+            )
+
+
+def test_a_ready_made_app_never_asks_the_customer_for_a_port():
+    """The whole point of putting a domain in front is that the port stops being their
+    problem. Asking "which port?" reintroduces exactly the concept P4 removed — and the
+    answer is one only we can sensibly give, since it has to match what the container
+    publishes.
+    """
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS
+
+    by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
+    for item in ss.catalogue(by_slug):
+        if item["group"] != "apps":
+            continue
+        names = [f["name"] for f in item["fields"]]
+        assert "PORT" not in names, (
+            f"{item['id']} asks the customer for a port; it should be decided for them"
+        )
+
+
+def test_the_port_we_decide_matches_what_the_container_publishes():
+    """A port chosen here that the installer does not publish gives a proxy pointing at
+    nothing — a 502 on a site that reports success."""
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS
+
+    by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
+    for type_id, spec in ss.SITE_TYPES.items():
+        port = spec["extra"].get("PORT")
+        if not port:
+            continue
+        declared = next(v for v in by_slug[spec["playbook"]]["variables"]
+                        if v["name"] == "PORT")
+        assert declared.get("default") == port, (
+            f"{type_id}: the catalogue installs on port {port} but the playbook's own "
+            f"default is {declared.get('default')} — one of them is wrong"
+        )

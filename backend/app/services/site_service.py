@@ -482,6 +482,35 @@ SITE_TYPES: dict[str, dict] = {
         "blurb": "A modern blog and newsletter platform.",
         "app_type": "unknown", "extra": {},
     },
+
+    # These five install as containers on a port. They can be offered as SITES because the
+    # installer now also puts a domain in front of that port (P4) — before that, choosing one
+    # here would have meant typing a domain and getting an IP and a port number instead.
+    "gitea": {
+        "group": "apps", "playbook": "gitea", "label": "Gitea",
+        "blurb": "Your own Git hosting, like a private GitHub.",
+        "app_type": "unknown", "extra": {"PORT": "3000"},
+    },
+    "n8n": {
+        "group": "apps", "playbook": "n8n", "label": "n8n",
+        "blurb": "Automate work between your apps, without code.",
+        "app_type": "unknown", "extra": {"PORT": "5678"},
+    },
+    "uptime-kuma": {
+        "group": "apps", "playbook": "uptime-kuma", "label": "Uptime Kuma",
+        "blurb": "A status page and uptime monitor you host yourself.",
+        "app_type": "unknown", "extra": {"PORT": "3001"},
+    },
+    "vaultwarden": {
+        "group": "apps", "playbook": "vaultwarden", "label": "Vaultwarden",
+        "blurb": "A password manager for your team, Bitwarden-compatible.",
+        "app_type": "unknown", "extra": {"PORT": "8080"},
+    },
+    "portainer": {
+        "group": "apps", "playbook": "portainer", "label": "Portainer",
+        "blurb": "A web interface for the Docker containers on this server.",
+        "app_type": "unknown", "extra": {"PORT": "9443"},
+    },
 }
 
 #: The order the groups are shown in, and what to call them.

@@ -192,6 +192,123 @@ open_firewall() {
 _SITE_GUARDS = "# --- ServerAlly shared site guards ---\n# A domain reaches the shell as a variable and ends up inside BOTH a config file and a\n# filesystem path. Escaping it correctly in both places is harder than refusing anything\n# that is not a hostname, so it is validated rather than escaped.\ncase \"$DOMAIN\" in\n  \"\"|*[!a-zA-Z0-9.-]*|-*|.*|*.)\n    echo \">>> ERROR: '$DOMAIN' is not a valid domain name. Use something like shop.example.com.\"\n    exit 1 ;;\nesac\ncase \"$DOMAIN\" in *..*)\n    echo \">>> ERROR: '$DOMAIN' is not a valid domain name.\"; exit 1 ;;\nesac\n\n# A control panel owns its own web-server configuration. A vhost written behind its back is\n# invisible to the panel, never gets its certificate renewed, and may be overwritten on the\n# panel's next change. This is the single most likely way to ruin someone's day here.\nfor _PANEL in /usr/local/CyberCP /usr/local/cpanel /opt/psa /usr/local/directadmin; do\n  if [ -d \"$_PANEL\" ]; then\n    echo \">>> ERROR: this server runs a control panel ($_PANEL). Add this through the panel\"\n    echo \"    instead \u2014 anything created behind its back is invisible to it and will not get\"\n    echo \"    certificates renewed. Nothing was changed.\"\n    exit 1\n  fi\ndone\n\n# Which web server, and only one of them.\nNGINX=no; APACHE=no; APACHE_SVC=\"\"\nsystemctl is-active --quiet nginx 2>/dev/null && NGINX=yes\nfor _a in apache2 httpd; do\n  if systemctl is-active --quiet \"$_a\" 2>/dev/null; then APACHE=yes; APACHE_SVC=\"$_a\"; fi\ndone\nif [ \"$NGINX\" = yes ] && [ \"$APACHE\" = yes ]; then\n  echo \">>> ERROR: nginx and Apache are both running, so they are already fighting over\"\n  echo \"    port 80. Stop one of them first. Nothing was changed.\"\n  exit 1\nfi\nif [ \"$NGINX\" = no ] && [ \"$APACHE\" = no ]; then\n  echo \">>> ERROR: no web server is running on this server. Set the server up first\"\n  echo \"    (that installs nginx, PHP and a database), then add this.\"\n  exit 1\nfi\n\n# Taking over a domain that already has a config would silently repoint a live site.\n_EXISTING=\"$(grep -rl -- \"$DOMAIN\" /etc/nginx /etc/apache2 /etc/httpd 2>/dev/null | head -1 || true)\"\nif [ -n \"$_EXISTING\" ]; then\n  echo \">>> ERROR: $DOMAIN is already configured on this server ($_EXISTING).\"\n  echo \"    Nothing was changed \u2014 delete the existing one first if you meant to replace it.\"\n  exit 1\nfi\n\n# The user the web server actually runs as, read rather than assumed: wrong ownership either\n# breaks uploads or hands the web server write access it should not have.\nWEB_USER=\"$(ps -eo user,comm 2>/dev/null | awk '$2 ~ /^(nginx|apache2|httpd)$/ && $1 != \"root\" {print $1; exit}')\"\n[ -z \"$WEB_USER\" ] && { id -u www-data >/dev/null 2>&1 && WEB_USER=www-data; }\n[ -z \"$WEB_USER\" ] && { id -u nginx >/dev/null 2>&1 && WEB_USER=nginx; }\n[ -z \"$WEB_USER\" ] && { id -u apache >/dev/null 2>&1 && WEB_USER=apache; }\n[ -z \"$WEB_USER\" ] && WEB_USER=root\n\nif [ \"$NGINX\" = yes ]; then\n  if [ -d /etc/nginx/sites-available ]; then SITE_CONF=/etc/nginx/sites-available/\"$DOMAIN\"\n  else SITE_CONF=/etc/nginx/conf.d/\"$DOMAIN\".conf; fi\n  TEST_CMD=\"nginx -t\"; RELOAD_SVC=\"nginx\"\nelse\n  if [ -d /etc/apache2/sites-available ]; then SITE_CONF=/etc/apache2/sites-available/\"$DOMAIN\".conf\n  else SITE_CONF=/etc/httpd/conf.d/\"$DOMAIN\".conf; fi\n  TEST_CMD=\"apachectl configtest\"; RELOAD_SVC=\"$APACHE_SVC\"\nfi\nENABLED_LINK=\"\"\n\n# Test BEFORE reloading, and undo on failure. Reloading a configuration that does not parse\n# takes EVERY site on this server offline, not just the new one \u2014 so a failure here removes\n# what was added and leaves the running server untouched.\napply_web_config() {\n  if [ \"$NGINX\" = yes ] && [ -d /etc/nginx/sites-enabled ]; then\n    ln -sfn \"$SITE_CONF\" /etc/nginx/sites-enabled/\"$DOMAIN\"\n    ENABLED_LINK=/etc/nginx/sites-enabled/\"$DOMAIN\"\n  elif [ \"$APACHE\" = yes ] && command -v a2ensite >/dev/null 2>&1; then\n    a2ensite \"$DOMAIN\" >/dev/null 2>&1 || true\n    ENABLED_LINK=/etc/apache2/sites-enabled/\"$DOMAIN\".conf\n  fi\n  if ! $TEST_CMD >/tmp/sm_conftest.log 2>&1; then\n    echo \">>> ERROR: the web server rejected the new configuration:\"\n    tail -12 /tmp/sm_conftest.log\n    [ -n \"$ENABLED_LINK\" ] && rm -f \"$ENABLED_LINK\"\n    rm -f \"$SITE_CONF\"\n    echo \">>> Removed what was added. The running web server was NOT touched, so your other\"\n    echo \"    websites are unaffected.\"\n    exit 1\n  fi\n  # reload, not restart: a restart drops connections that other sites are serving.\n  systemctl reload \"$RELOAD_SVC\" 2>/dev/null || svc_restart \"$RELOAD_SVC\"\n  echo \">>> Reloaded $RELOAD_SVC\"\n}\n\n# A 200 is not proof \u2014 confirm the body is really what we put there. Retried, because\n# `systemctl reload` returns BEFORE nginx has finished swapping workers, so an immediate\n# request can still be answered by the OLD config. A single shot reported \"could not verify\"\n# on a site that was serving perfectly, and a false warning teaches people to ignore real ones.\nverify_serves() {\n  _want=\"$1\"; _ok=no\n  for _try in 1 2 3 4 5 6 7 8; do\n    _body=\"$(curl -s --max-time 5 -H \"Host: $DOMAIN\" http://127.0.0.1/ 2>/dev/null | head -c 600 || true)\"\n    # -F because a domain is full of dots, which grep would treat as wildcards.\n    if printf \"%s\" \"$_body\" | grep -qF \"$_want\"; then _ok=yes; break; fi\n    sleep 2\n  done\n  [ \"$_ok\" = yes ] && return 0 || return 1\n}\n# --- end shared site guards ---\n"
 
 
+# ── Giving a port-only app a real address ────────────────────────────────────
+#
+# Gitea, n8n, Uptime Kuma, Vaultwarden and Portainer install as containers listening on a
+# PORT. Fine for a technician, useless to everyone else: nobody hands a client a link with a
+# port number in it, and nothing on a bare port can have a certificate.
+#
+# These two blocks let the same install also put a domain in front. They reuse _SITE_GUARDS
+# rather than carrying a second copy of "write a vhost safely" — that logic refuses
+# control-panel servers and already-configured domains, tests the config BEFORE reloading,
+# and undoes itself on failure. A second copy subtly wrong takes every site on the server
+# offline.
+#
+# The domain is OPTIONAL. Left empty the playbook behaves exactly as it always has — app on
+# its port, no web server needed — because these also run on boxes with no nginx at all.
+
+
+def _front_guards() -> str:
+    """Check the front door BEFORE installing anything.
+
+    Early on purpose: finding out the domain is taken, or that this is a control-panel
+    server, only after pulling a container image wastes minutes and leaves a half-built box.
+    """
+    return ('\nif [ -n "${DOMAIN:-}" ]; then\n'
+            'echo ">>> Checking the web address before installing anything"\n'
+            + _SITE_GUARDS + 'fi\n')
+
+
+def _front_proxy(scheme: str = "http", app_label: str = "the app") -> str:
+    """Point DOMAIN at 127.0.0.1:PORT once the app is running.
+
+    ``scheme`` is https for Portainer, whose published port speaks TLS with a self-signed
+    certificate — proxying to it as http yields a confusing 502 instead of the app. The
+    certificate is deliberately not verified: it is self-signed by design and the hop is to
+    localhost.
+    """
+    ssl_n = "        proxy_ssl_verify off;\n" if scheme == "https" else ""
+    ssl_a = ("    SSLProxyEngine On\n    SSLProxyVerify none\n"
+             "    SSLProxyCheckPeerCN off\n    SSLProxyCheckPeerName off\n"
+             if scheme == "https" else "")
+    d = "$"          # written this way so the shell variable survives Python formatting
+    return (
+        '\nif [ -n "${DOMAIN:-}" ]; then\n'
+        'if [ "$NGINX" = yes ]; then\n'
+        '  cat > "$SITE_CONF" <<NGEOF\n'
+        '# Created by ServerAlly — ' + app_label + ' at $DOMAIN\n'
+        'server {\n'
+        '    listen 80;\n'
+        '    listen [::]:80;\n'
+        '    server_name $DOMAIN;\n'
+        '\n'
+        '    # These apps move real files; the 1 MB default would break uploads in a way\n'
+        '    # that looks like a bug in the app rather than in the proxy.\n'
+        '    client_max_body_size 512M;\n'
+        '\n'
+        '    location / {\n'
+        '        proxy_pass ' + scheme + '://127.0.0.1:$PORT;\n'
+        + ssl_n +
+        '        proxy_http_version 1.1;\n'
+        '        # Without these a realtime feature connects, is upgraded, then cut off\n'
+        '        # immediately — Uptime Kuma and n8n are unusable without them.\n'
+        '        proxy_set_header Upgrade \\' + d + 'http_upgrade;\n'
+        '        proxy_set_header Connection "upgrade";\n'
+        '        proxy_set_header Host \\' + d + 'host;\n'
+        '        proxy_cache_bypass \\' + d + 'http_upgrade;\n'
+        '        proxy_set_header X-Real-IP \\' + d + 'remote_addr;\n'
+        '        proxy_set_header X-Forwarded-For \\' + d + 'proxy_add_x_forwarded_for;\n'
+        '        proxy_set_header X-Forwarded-Proto \\' + d + 'scheme;\n'
+        '        proxy_read_timeout 120s;\n'
+        '    }\n'
+        '\n'
+        '    error_log /var/log/nginx/$DOMAIN-error.log error;\n'
+        '    access_log /var/log/nginx/$DOMAIN-access.log;\n'
+        '}\n'
+        'NGEOF\n'
+        'else\n'
+        '  cat > "$SITE_CONF" <<APEOF\n'
+        '# Created by ServerAlly — ' + app_label + ' at $DOMAIN\n'
+        '<VirtualHost *:80>\n'
+        '    ServerName $DOMAIN\n'
+        '    ProxyPreserveHost On\n'
+        + ssl_a +
+        '    ProxyPass / ' + scheme + '://127.0.0.1:$PORT/\n'
+        '    ProxyPassReverse / ' + scheme + '://127.0.0.1:$PORT/\n'
+        '    RewriteEngine On\n'
+        '    RewriteCond %{HTTP:Upgrade} =websocket [NC]\n'
+        '    RewriteRule /(.*) ws://127.0.0.1:$PORT/\\' + d + '1 [P,L]\n'
+        '    ErrorLog \\' + d + '{APACHE_LOG_DIR}/$DOMAIN-error.log\n'
+        '    CustomLog \\' + d + '{APACHE_LOG_DIR}/$DOMAIN-access.log combined\n'
+        '</VirtualHost>\n'
+        'APEOF\n'
+        '  # Apache cannot proxy at all without these, and the failure is a confusing 500.\n'
+        '  for _m in proxy proxy_http proxy_wstunnel rewrite ssl; do\n'
+        '    command -v a2enmod >/dev/null 2>&1 && a2enmod "$_m" >/dev/null 2>&1 || true\n'
+        '  done\n'
+        'fi\n'
+        'echo ">>> Wrote $SITE_CONF (forwarding $DOMAIN to ' + scheme + '://127.0.0.1:$PORT)"\n'
+        'apply_web_config\n'
+        '\n'
+        '# A container can take a while to answer after docker returns, so this waits rather\n'
+        '# than declaring failure on the first try. Anything that is not 502/504 means the\n'
+        '# proxy reached the app.\n'
+        '_UP=no; _C=000\n'
+        'for _try in 1 2 3 4 5 6 7 8 9 10; do\n'
+        '  _C="$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 -H "Host: $DOMAIN" http://127.0.0.1/ 2>/dev/null || echo 000)"\n'
+        '  case "$_C" in 502|504|000) sleep 3 ;; *) _UP=yes; break ;; esac\n'
+        'done\n'
+        'if [ "$_UP" = yes ]; then\n'
+        '  echo ">>> Verified: $DOMAIN answered through the proxy (HTTP $_C)."\n'
+        'else\n'
+        '  echo ">>> The web address is set up, but ' + app_label + ' has not answered yet."\n'
+        '  echo "    It may still be starting — try the domain in a browser shortly."\n'
+        'fi\n'
+        'fi\n'
+    )
+
+
+
 # LEMP — Nginx + MariaDB + PHP-FPM, multi-distro.
 _LEMP_BASH = "#!/bin/bash\nset -euo pipefail\n" + _DISTRO + r"""MYSQL_ROOT_PASS="{{MYSQL_ROOT_PASS}}"
 echo "=== Installing LEMP stack ==="
@@ -1149,16 +1266,20 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "est_runtime_sec": 60,
         "tags": ["portainer", "docker", "ui"],
         "variables": [
+            {"name": "DOMAIN", "label": "Domain (leave blank to use the port only)", "default": "", "required": False},
             {"name": "PORT", "label": "Web Port", "default": "9443", "required": True}
         ],
         "script_bash": (
+            _front_guards() +
             "#!/bin/bash\n"
+            "DOMAIN=\"{{DOMAIN}}\"\n"
             "set -euo pipefail\n"
             'PORT="{{PORT}}"\n'
             "docker volume create portainer_data 2>/dev/null || true\n"
             "docker stop portainer 2>/dev/null || true; docker rm portainer 2>/dev/null || true\n"
             'docker run -d --name portainer --restart=always -p "${PORT}:9443" -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:latest\n'
             'echo "Portainer running at https://$(curl -s ifconfig.me):${PORT}"\n'
+            + _front_proxy("https", "Portainer")
         ),
     },
 
@@ -1174,15 +1295,19 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "est_runtime_sec": 60,
         "tags": ["monitoring", "uptime", "docker"],
         "variables": [
+            {"name": "DOMAIN", "label": "Domain (leave blank to use the port only)", "default": "", "required": False},
             {"name": "PORT", "label": "Web Port", "default": "3001", "required": True}
         ],
         "script_bash": (
+            _front_guards() +
             "#!/bin/bash\n"
+            "DOMAIN=\"{{DOMAIN}}\"\n"
             "set -euo pipefail\n"
             'PORT="{{PORT}}"\n'
             "docker stop uptime-kuma 2>/dev/null || true; docker rm uptime-kuma 2>/dev/null || true\n"
             'docker run -d --name uptime-kuma --restart=always -p "${PORT}:3001" -v uptime-kuma:/app/data louislam/uptime-kuma:1\n'
             'echo "Uptime Kuma running at http://$(curl -s ifconfig.me):${PORT}"\n'
+            + _front_proxy("http", "Uptime Kuma")
         ),
     },
 
@@ -1250,16 +1375,20 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "est_runtime_sec": 180,
         "tags": ["gitea", "git", "self-hosted", "docker"],
         "variables": [
+            {"name": "DOMAIN", "label": "Domain (leave blank to use the port only)", "default": "", "required": False},
             {"name": "PORT", "label": "Web Port", "default": "3000", "required": True}
         ],
         "script_bash": (
+            _front_guards() +
             "#!/bin/bash\n"
+            "DOMAIN=\"{{DOMAIN}}\"\n"
             "set -euo pipefail\n"
             'PORT="{{PORT}}"\n'
             "mkdir -p /opt/gitea\n"
             'printf "services:\\n  gitea:\\n    image: gitea/gitea:latest\\n    restart: always\\n    ports: [\\"%s:3000\\", \\"222:22\\"]\\n    volumes: [gitea_data:/data]\\nvolumes:\\n  gitea_data:\\n" "$PORT" > /opt/gitea/docker-compose.yml\n'
             "cd /opt/gitea && docker compose up -d\n"
             'echo "Gitea running at http://$(curl -s ifconfig.me):${PORT}"\n'
+            + _front_proxy("http", "Gitea")
         ),
     },
 
@@ -1275,16 +1404,20 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "est_runtime_sec": 120,
         "tags": ["n8n", "automation", "workflow", "docker"],
         "variables": [
+            {"name": "DOMAIN", "label": "Domain (leave blank to use the port only)", "default": "", "required": False},
             {"name": "PORT", "label": "Web Port", "default": "5678", "required": True},
             {"name": "N8N_USER", "label": "Basic Auth Username", "default": "admin", "required": True},
             {"name": "N8N_PASS", "label": "Basic Auth Password", "default": "", "required": True}
         ],
         "script_bash": (
+            _front_guards() +
             "#!/bin/bash\n"
+            "DOMAIN=\"{{DOMAIN}}\"\n"
             "set -euo pipefail\n"
             'PORT="{{PORT}}"\n'
             'docker run -d --name n8n --restart=always -p "${PORT}:5678" -e N8N_BASIC_AUTH_ACTIVE=true -e N8N_BASIC_AUTH_USER="{{N8N_USER}}" -e N8N_BASIC_AUTH_PASSWORD="{{N8N_PASS}}" -v n8n_data:/home/node/.n8n n8nio/n8n:latest\n'
             'echo "n8n running at http://$(curl -s ifconfig.me):${PORT}"\n'
+            + _front_proxy("http", "n8n")
         ),
     },
 
@@ -1300,15 +1433,19 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "est_runtime_sec": 120,
         "tags": ["vaultwarden", "bitwarden", "passwords", "docker"],
         "variables": [
+            {"name": "DOMAIN", "label": "Domain (leave blank to use the port only)", "default": "", "required": False},
             {"name": "PORT", "label": "Web Port", "default": "8080", "required": True},
             {"name": "ADMIN_TOKEN", "label": "Admin Token (strong password)", "default": "", "required": True}
         ],
         "script_bash": (
+            _front_guards() +
             "#!/bin/bash\n"
+            "DOMAIN=\"{{DOMAIN}}\"\n"
             "set -euo pipefail\n"
             'PORT="{{PORT}}"\n'
             'docker run -d --name vaultwarden --restart=always -p "${PORT}:80" -e ADMIN_TOKEN="{{ADMIN_TOKEN}}" -v vaultwarden_data:/data vaultwarden/server:latest\n'
             'echo "Vaultwarden running at http://$(curl -s ifconfig.me):${PORT}"\n'
+            + _front_proxy("http", "Vaultwarden")
         ),
     },
 
