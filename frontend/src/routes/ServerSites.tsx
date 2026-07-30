@@ -3,7 +3,7 @@ import { useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   CircleAlert, CircleCheck, CircleDashed, EyeOff, FolderPlus, Globe, Loader2, Plus,
-  RefreshCw, ShieldAlert, ShieldCheck, Sparkles, X,
+  RefreshCw, Rocket, ShieldAlert, ShieldCheck, Sparkles, X,
 } from "lucide-react"
 import { listServerSites, scanServerSites, APP_LABEL, type Site } from "@/api/sites"
 import { listRecipes } from "@/api/recipes"
@@ -122,6 +122,7 @@ export default function ServerSites() {
         <NewSiteChooser
           hasEmpty={!!bySlug("create-site")}
           hasWordPress={!!bySlug("wordpress")}
+          hasApp={!!bySlug("create-app")}
           hasAlly={!!siteRecipe}
           onPick={(what) => {
             setChoosing(false)
@@ -277,11 +278,12 @@ function SiteRow({ site }: { site: Site }) {
  * not to be in a shape an installer can assume — which is the case an installer cannot
  * handle and the reason we have Ally at all.
  */
-function NewSiteChooser({ hasEmpty, hasWordPress, hasAlly, onPick, onClose }: {
+function NewSiteChooser({ hasEmpty, hasWordPress, hasApp, hasAlly, onPick, onClose }: {
   hasEmpty: boolean
   hasWordPress: boolean
+  hasApp: boolean
   hasAlly: boolean
-  onPick: (what: "create-site" | "wordpress" | "ally") => void
+  onPick: (what: "create-site" | "wordpress" | "create-app" | "ally") => void
   onClose: () => void
 }) {
   return (
@@ -313,6 +315,14 @@ function NewSiteChooser({ hasEmpty, hasWordPress, hasAlly, onPick, onClose }: {
               title="WordPress"
               blurb="A full WordPress install with its own database, ready to finish setting up in the browser."
               onClick={() => onPick("wordpress")}
+            />
+          )}
+          {hasApp && (
+            <Choice
+              icon={Rocket}
+              title="Web application"
+              blurb="Node, Python, Go or similar — points the domain at your running program and keeps it alive across crashes and reboots."
+              onClick={() => onPick("create-app")}
             />
           )}
           {hasAlly && (

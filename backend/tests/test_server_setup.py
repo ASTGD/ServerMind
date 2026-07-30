@@ -357,7 +357,7 @@ def test_a_panel_server_is_refused():
     s = _script("create-site")
     for panel_dir in ("/usr/local/CyberCP", "/usr/local/cpanel", "/opt/psa"):
         assert panel_dir in s
-    assert "Add the website through the" in s
+    assert "Add this through the panel" in s
 
 
 def test_an_existing_domain_is_never_taken_over():
@@ -375,11 +375,11 @@ def test_the_config_is_tested_before_the_reload_and_removed_if_bad():
     refused, removed both its config and its symlink, never reloaded, and the other site
     kept answering 200."""
     s = _script("create-site")
-    test_at = s.index("$TEST_CMD")
+    test_at = s.index("$TEST_CMD >/tmp/sm_conftest.log")
     reload_at = s.index('systemctl reload "$RELOAD_SVC"')
     assert test_at < reload_at, "the config must be tested before the server is reloaded"
     failure = s[test_at:reload_at]
-    assert 'rm -f "$CREATED_CONF"' in failure, "a rejected config must not be left behind"
+    assert 'rm -f "$SITE_CONF"' in failure, "a rejected config must not be left behind"
     assert "exit 1" in failure
 
 
@@ -411,5 +411,115 @@ def test_no_database_is_created():
     """Matching the primitive: Ploi's Add site creates none, and a database nobody asked for
     is a credential to look after for no reason."""
     s = _script("create-site").lower()
+    for verb in ("create database", "mysql -e", "createdb"):
+        assert verb not in s
+
+
+# ── hosting a web application ────────────────────────────────────────────────
+"""A website is files the web server reads; an application is a program that keeps running
+and answers on a port. It needs a reverse proxy and something to keep it alive — Deployments
+already covers the build step."""
+
+
+def test_create_app_is_registered_and_parses():
+    if not shutil.which("bash"):
+        pytest.skip("no bash")
+    s = _script("create-app")
+    assert "{{" not in s
+    with tempfile.NamedTemporaryFile("w", suffix=".sh") as f:
+        f.write(s)
+        f.flush()
+        r = subprocess.run(["bash", "-n", f.name], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+def test_both_site_installers_share_one_set_of_guards():
+    """Writing a web-server config is the one thing here that can take down sites unrelated
+    to the one being added. Copying those checks means the third copy is the one that forgets
+    to test the config before reloading, so there is exactly one definition."""
+    from app.services.playbook_service import _SITE_GUARDS
+    assert "shared site guards" in _SITE_GUARDS
+    for slug in ("create-site", "create-app"):
+        assert "shared site guards" in _script(slug), f"{slug} does not use the shared guards"
+    # And the guards still carry the properties that matter.
+    for needed in ("is not a valid domain name", "runs a control panel",
+                   "already configured on this server", "apply_web_config"):
+        assert needed in _SITE_GUARDS
+
+
+def test_the_app_port_can_never_be_the_web_server_s_own():
+    """The web server is about to proxy TO the app. Pointing it at itself is an infinite
+    loop that takes the whole web server down, not just this site."""
+    s = _script("create-app")
+    assert '"$APP_PORT" = 80' in s and '"$APP_PORT" = 443' in s
+    assert "the web server's own port" in s
+
+
+def test_the_app_port_is_validated_not_escaped():
+    s = _script("create-app")
+    assert '*[!0-9]*' in s, "anything that is not digits must be refused"
+    assert "-gt 65535" in s
+
+
+def test_a_missing_run_as_user_is_refused_before_anything_is_written():
+    """systemd would accept the unit and then fail to start it with a confusing error."""
+    s = _script("create-app")
+    check = s.index('id -u "$RUN_AS"')
+    assert check < s.index("mkdir -p \"$APP_ROOT\""), "check the user before creating anything"
+
+
+def test_the_start_limit_is_in_the_unit_section_where_systemd_reads_it():
+    """Found by running it: under [Service] systemd logs "Unknown key name … ignoring", so
+    the crash-loop protection LOOKS present and does nothing. A test kill showed 12 restarts
+    with no limit ever applied; after the fix systemd gave up after 5, as intended."""
+    lines = _script("create-app").split("\n")
+    section, by_section = None, {}
+    for line in lines:
+        bare = line.strip()
+        if bare in ("[Unit]", "[Service]", "[Install]"):
+            section = bare
+        elif section and not bare.startswith("#"):
+            by_section.setdefault(section, []).append(bare)
+    unit = "\n".join(by_section.get("[Unit]", []))
+    service = "\n".join(by_section.get("[Service]", []))
+    assert "StartLimitBurst=" in unit, "systemd only reads it here"
+    assert "StartLimitIntervalSec=" in unit
+    assert "StartLimitBurst=" not in service, "under [Service] it is silently ignored"
+
+
+def test_the_app_is_the_service_s_main_process_not_a_shell_wrapper():
+    """Without `exec`, bash stays as the main process and the app is only its child: systemd
+    then watches the wrapper rather than the program, and stopping the service orphans the
+    app, which keeps holding the port so the restart fails with "address already in use".
+    Verified live — after the fix the main process is the app itself."""
+    s = _script("create-app")
+    assert "exec $START_CMD" in s
+
+
+def test_websockets_are_not_silently_broken():
+    """Without the upgrade headers a realtime app connects, gets upgraded, and is cut off —
+    which looks like an application bug rather than a proxy setting."""
+    s = _script("create-app")
+    assert "proxy_set_header Upgrade" in s
+    assert 'proxy_set_header Connection "upgrade"' in s
+
+
+def test_the_visitor_s_address_reaches_the_app():
+    """Otherwise every request appears to come from the proxy, which breaks rate limiting,
+    audit logs and anything geographic."""
+    s = _script("create-app")
+    for h in ("X-Real-IP", "X-Forwarded-For", "X-Forwarded-Proto"):
+        assert h in s
+
+
+def test_a_502_is_explained_rather_than_left_as_a_number():
+    """It is the single most likely outcome on first run, and it means one specific thing:
+    the domain works, the app is not listening yet."""
+    s = _script("create-app")
+    assert "502" in s and "nothing is listening on port" in s
+
+
+def test_no_database_is_created_for_an_app_either():
+    s = _script("create-app").lower()
     for verb in ("create database", "mysql -e", "createdb"):
         assert verb not in s
