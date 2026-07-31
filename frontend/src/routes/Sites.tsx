@@ -217,7 +217,7 @@ function SiteRow({ site }: { site: Site }) {
 }
 
 /**
- * Sites — every website across the fleet, searchable by domain.
+ * Sites — every site across the fleet, searchable by domain.
  *
  * Deliberately joins data we already collect (uptime, certificate expiry, what each site runs)
  * rather than introducing a new kind. Creating or configuring a site is a control panel's job;
@@ -301,7 +301,7 @@ export default function Sites() {
           <Globe className="h-5 w-5 text-primary" /> Sites
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Every website across your servers. Search by domain — you don’t need to know which
+          Every site across your servers. Search by domain — you don’t need to know which
           server it’s on.
           {down > 0 && (
             <span className="ml-1 font-medium text-red-600 dark:text-red-400">
@@ -316,17 +316,17 @@ export default function Sites() {
         </p>
       </header>
 
-      {/* Two doors, on the page where someone looks for a website. "I already have one"
+      {/* Two doors, on the page where someone looks for a site. "I already have one"
           is ours alone — no competitor can track a site on a host it did not build.
           "Create one" hands the job to Ally rather than templating a vhost ourselves. */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={() => { setAdding(!adding); setNote("") }}>
-          <Plus size={13} />Add a website
+          <Plus size={13} />Add a site
         </Button>
         {scannable.length > 0 && (
           <Button size="sm" variant="outline"
             onClick={() => { setCreating(true); setCreateOn(scannable[0].id) }}>
-            <Sparkles size={13} />Create a new website
+            <Sparkles size={13} />Create a new site
           </Button>
         )}
         {noMail > 0 && (
