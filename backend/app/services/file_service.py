@@ -143,6 +143,25 @@ def _write_file(server: Server, path: str, content: str) -> None:
         sftp.close()
 
 
+def _write_private_file(server: Server, path: str, content: str) -> None:
+    """Write a file only its owner can read, with no moment where that is untrue.
+
+    The order is what matters. Creating the file, writing it, and then restricting it
+    leaves a window in which the contents are world-readable — short, but long enough on
+    a shared server, and this is used for files that hold a password. So: create
+    exclusively (an existing path is an error, never something we follow, which is what
+    stops another user pre-planting a symlink), restrict it while it is still empty, and
+    only then write.
+    """
+    sftp = _get_sftp(server)
+    try:
+        with sftp.open(path, "wx") as fh:
+            fh.chmod(0o600)
+            fh.write(content)
+    finally:
+        sftp.close()
+
+
 def _mkdir(server: Server, path: str) -> None:
     sftp = _get_sftp(server)
     try:
@@ -223,6 +242,13 @@ async def write_file(server: Server, path: str, content: str) -> None:
     p = _normalise(path)
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(_executor, _write_file, server, p, content)
+
+
+async def write_private(server: Server, path: str, content: str) -> None:
+    """Create a new file readable only by its owner. Fails if the path already exists."""
+    p = _normalise(path)
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(_executor, _write_private_file, server, p, content)
 
 
 async def make_dir(server: Server, path: str) -> None:
