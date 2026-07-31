@@ -33,9 +33,9 @@ const GROUP_ICON: Record<string, typeof Globe> = {
 
 interface Props {
   serverId: string
-  /** Shown when the server is a control panel, which owns its own websites. */
+  /** Shown when the server is a control panel, which owns its own sites. */
   panelOnly?: boolean
-  onClose: () => void
+  onClose?: () => void
   onAsk?: () => void
 }
 
@@ -60,7 +60,7 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["server-sites", serverId] })
       qc.invalidateQueries({ queryKey: ["sites"] })
-      onClose()
+      onClose?.()
     },
     // The server's message names the actual problem — an unusable domain, a duplicate, a
     // missing installer — so show it rather than a generic failure.
@@ -87,15 +87,17 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
     <section className="rounded-xl border border-border bg-card">
       <header className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
         <div>
-          <h3 className="text-sm font-medium text-foreground">Add a website</h3>
+          <h3 className="text-sm font-medium text-foreground">Add a site</h3>
           <p className="text-caption text-muted-foreground">
-            {chosen ? chosen.blurb : "Choose what should go on this server."}
+            {chosen ? chosen.blurb : "What should go on this server?"}
           </p>
         </div>
-        <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+        {onClose && (
+          <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+        )}
       </header>
 
-      {/* A control panel manages its own websites — anything we wrote directly would be
+      {/* A control panel manages its own sites — anything we wrote directly would be
           invisible to it, so the installers are not offered at all rather than offered and
           then refused. */}
       {panelOnly ? (
@@ -105,7 +107,7 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
             <div>
               <p className="text-sm font-medium text-foreground">Create it in the control panel</p>
               <p className="mt-0.5 text-small text-muted-foreground">
-                This server runs a control panel, which manages its own websites. Creating
+                This server runs a control panel, which manages its own sites. Creating
                 one any other way would be invisible to it.
               </p>
             </div>
@@ -116,14 +118,16 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
         <div className="flex justify-center py-12 text-muted-foreground">
           <Loader2 size={18} className="animate-spin" />
         </div>
-      ) : chosen ? (
-        <div className="p-4">
-          <ChosenRow type={chosen} onChange={() => { setChosen(null); setError(null) }} />
-
-          <form
-            onSubmit={(e) => { e.preventDefault(); setError(null); create.mutate() }}
-            className="mt-4 max-w-xl space-y-3"
-          >
+      ) : (
+        /* One form, with the domain first. A site IS a domain — asking for it before
+           anything else matches how someone arrives here ("I want shop.example.com on
+           this server"), and the page then opens with something to type rather than a
+           decision to make. What to install narrows it afterwards. */
+        <form
+          onSubmit={(e) => { e.preventDefault(); setError(null); create.mutate() }}
+          className="space-y-4 p-4"
+        >
+          <div className="max-w-xl">
             <Field label="Domain" hint="Point this domain's DNS at this server, now or later — the site is built either way.">
               <input
                 value={domain}
@@ -134,94 +138,104 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
                 className={INPUT}
               />
             </Field>
+          </div>
 
-            {chosen.fields.map((f) => (
-              <Field
-                key={f.name}
-                label={f.label}
-                // Shown, never masked: this is the only time it is ever displayed, and for
-                // Nextcloud and n8n it is the login itself. Hiding it behind dots would
-                // mean the customer cannot check what they are about to be given.
-                hint={f.secret ? "Save this somewhere — it is not stored here and cannot be shown again." : undefined}
-              >
-                {f.secret ? (
-                  <div className="mt-1 flex gap-2">
+          {chosen ? (
+            <div className="max-w-xl space-y-3">
+              <ChosenRow type={chosen} onChange={() => { setChosen(null); setError(null) }} />
+
+              {chosen.fields.map((f) => (
+                <Field
+                  key={f.name}
+                  label={f.label}
+                  // Shown, never masked: this is the only time it is ever displayed, and
+                  // for Nextcloud and n8n it is the login itself. Hiding it behind dots
+                  // would mean the customer cannot check what they are about to be given.
+                  hint={f.secret ? "Save this somewhere — it is not stored here and cannot be shown again." : undefined}
+                >
+                  {f.secret ? (
+                    <div className="mt-1 flex gap-2">
+                      <input
+                        value={values[f.name] ?? ""}
+                        onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
+                        required={f.required}
+                        className={INPUT.replace("mt-1 ", "")}
+                      />
+                      <Button type="button" variant="outline" size="sm"
+                              onClick={() => setValues({ ...values, [f.name]: strongPassword() })}>
+                        New
+                      </Button>
+                    </div>
+                  ) : (
                     <input
                       value={values[f.name] ?? ""}
                       onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
                       required={f.required}
-                      className={INPUT.replace("mt-1 ", "")}
+                      className={INPUT}
                     />
-                    <Button type="button" variant="outline" size="sm"
-                            onClick={() => setValues({ ...values, [f.name]: strongPassword() })}>
-                      New
-                    </Button>
-                  </div>
-                ) : (
-                  <input
-                    value={values[f.name] ?? ""}
-                    onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
-                    required={f.required}
-                    className={INPUT}
-                  />
-                )}
-              </Field>
-            ))}
+                  )}
+                </Field>
+              ))}
 
-            {error && (
-              <p className="rounded-lg border-l-2 border-destructive bg-destructive/5 px-3 py-2 text-small text-destructive">
-                {error}
-              </p>
-            )}
+              {error && (
+                <p className="rounded-lg border-l-2 border-destructive bg-destructive/5 px-3 py-2 text-small text-destructive">
+                  {error}
+                </p>
+              )}
 
-            <div className="flex items-center gap-3 pt-1">
-              <Button type="submit" disabled={create.isPending}>
-                {create.isPending ? "Starting…" : `Create ${chosen.label}`}
-              </Button>
-              <p className="text-caption text-muted-foreground">
-                It builds in the background — you can leave this page.
-              </p>
+              <div className="flex items-center gap-3 pt-1">
+                <Button type="submit" disabled={create.isPending}>
+                  {create.isPending ? "Starting…" : `Add ${chosen.label}`}
+                </Button>
+                <p className="text-caption text-muted-foreground">
+                  It builds in the background — you can leave this page.
+                </p>
+              </div>
             </div>
-          </form>
-        </div>
-      ) : (
-        <div className="space-y-4 p-4">
-          {/* The common few first, without group headings. Twelve tiles under three
-              headings is a catalogue to study; eight tiles is a choice to make, and it is
-              the right choice for almost everyone. The rest are one click away rather than
-              gone — the headings come back with them, because that is when they help. */}
-          {showAll ? (
-            catalogue?.groups.map((group) => {
-              const items = catalogue.types.filter((t) => t.group === group.id)
-              if (!items.length) return null
-              const Icon = GROUP_ICON[group.id] ?? Globe
-              return (
-                <div key={group.id}>
-                  <div className="flex items-baseline gap-2">
-                    <Icon size={13} className="translate-y-0.5 text-muted-foreground" />
-                    <h4 className="text-sm font-medium text-foreground">{group.label}</h4>
-                    <p className="text-caption text-muted-foreground">{group.blurb}</p>
-                  </div>
-                  <TypeGrid items={items} onPick={pick} />
-                </div>
-              )
-            })
           ) : (
-            <TypeGrid items={popular} onPick={pick} />
-          )}
+            <>
+              {/* The common few first, without group headings. Twelve tiles under three
+                  headings is a catalogue to study; eight tiles is a choice to make, and it
+                  is the right choice for almost everyone. The rest are one click away
+                  rather than gone — the headings come back with them, because that is when
+                  they help. */}
+              {showAll ? (
+                <div className="space-y-4">
+                  {catalogue?.groups.map((group) => {
+                    const items = catalogue.types.filter((t) => t.group === group.id)
+                    if (!items.length) return null
+                    const Icon = GROUP_ICON[group.id] ?? Globe
+                    return (
+                      <div key={group.id}>
+                        <div className="flex items-baseline gap-2">
+                          <Icon size={13} className="translate-y-0.5 text-muted-foreground" />
+                          <h4 className="text-sm font-medium text-foreground">{group.label}</h4>
+                          <p className="text-caption text-muted-foreground">{group.blurb}</p>
+                        </div>
+                        <TypeGrid items={items} onPick={pick} />
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <TypeGrid items={popular} onPick={pick} />
+              )}
 
-          {!showAll && rest.length > 0 && (
-            <button
-              onClick={() => setShowAll(true)}
-              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 text-caption text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <ChevronDown size={13} />
-              Show all {(catalogue?.types.length ?? 0)} options
-            </button>
-          )}
+              {!showAll && rest.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAll(true)}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 text-caption text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <ChevronDown size={13} />
+                  Show all {(catalogue?.types.length ?? 0)} options
+                </button>
+              )}
 
-          {onAsk && <AskAllyRow onAsk={onAsk} />}
-        </div>
+              {onAsk && <AskAllyRow onAsk={onAsk} />}
+            </>
+          )}
+        </form>
       )}
     </section>
   )
@@ -236,6 +250,7 @@ function TypeGrid({ items, onPick }: {
       {items.map((t) => (
         <button
           key={t.id}
+          type="button"
           onClick={() => onPick(t)}
           className="rounded-lg border border-border p-3 text-left transition-colors hover:border-primary/60 hover:bg-accent"
         >
@@ -298,6 +313,7 @@ function ChosenRow({ type, onChange }: { type: SiteType; onChange: () => void })
 function AskAllyRow({ onAsk }: { onAsk: () => void }) {
   return (
     <button
+      type="button"
       onClick={onAsk}
       className="flex w-full items-start gap-3 rounded-lg border border-dashed border-border p-3 text-left hover:bg-accent"
     >

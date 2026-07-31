@@ -515,7 +515,7 @@ SITE_TYPES: dict[str, dict] = {
 
 #: The order the groups are shown in, and what to call them.
 SITE_GROUPS = (
-    ("websites", "Websites", "A site your visitors browse."),
+    ("websites", "Sites", "A site your visitors browse."),
     ("applications", "Applications", "A program you wrote, running behind your domain."),
     ("apps", "Ready-made apps", "Well-known software, installed and configured for you."),
 )

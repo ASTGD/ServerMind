@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Loader2, KeyRound, Pencil, Search, Trash2, Wifi } from "lucide-react"
 import { deleteServer, detectOs, testConnection } from "@/api/servers"
 import EditServerModal from "@/components/server/EditServerModal"
+import ServerSetupPanel from "@/components/server/ServerSetupPanel"
 import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
 import { Button } from "@/components/ui"
 import type { Server } from "@/types"
@@ -41,6 +42,11 @@ export default function ServerSettings() {
 
   return (
     <div className="max-w-2xl space-y-5">
+      {/* Preparing a blank server is a one-time job about the machine, not about the sites
+          on it, so it belongs here rather than on the Sites page — where it competed with
+          the thing that page is for. It hides itself once the server is ready. */}
+      {server.connection_type === "ssh" && <ServerSetupPanel server={server} />}
+
       <section className="rounded-xl border border-border bg-card p-4">
         <h2 className="text-[15px] font-medium text-foreground">Connection</h2>
         <dl className="mt-3 space-y-2 text-sm">

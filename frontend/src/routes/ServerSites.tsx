@@ -9,14 +9,13 @@ import { listServerSites, scanServerSites, APP_LABEL, type Site } from "@/api/si
 import { listRecipes } from "@/api/recipes"
 import RunRecipeModal from "@/components/recipes/RunRecipeModal"
 import SiteInstaller from "@/components/sites/SiteInstaller"
-import ServerSetupPanel from "@/components/server/ServerSetupPanel"
-import { Button, EmptyState } from "@/components/ui"
+import { Button } from "@/components/ui"
 import { installerOptionsFor } from "@/lib/assetMenu"
 import { cn } from "@/lib/utils"
 import type { Server } from "@/types"
 
 /**
- * The websites on one server — and the place to put a new one there.
+ * The sites on one server — and the place to put a new one there.
  *
  * This is the section an owner opens first, because a server exists to serve something.
  * It answers three questions per site in one line: is it up, is its certificate valid, and
@@ -59,6 +58,8 @@ export default function ServerSites() {
 
   const doors = installerOptionsFor(server)
   const sites = data?.sites ?? []
+  // An empty server has nothing to look at, so it opens straight into the form.
+  const showForm = choosing || creating || (!isLoading && sites.length === 0)
   const down = sites.filter((s) => s.uptime?.status === "down").length
 
   return (
@@ -80,7 +81,7 @@ export default function ServerSites() {
             {(server.os_type || server.panel_type) && " — "}
             {sites.length === 0
               ? "nothing hosted here yet"
-              : `${sites.length} website${sites.length === 1 ? "" : "s"}`}
+              : `${sites.length} site${sites.length === 1 ? "" : "s"}`}
             {down > 0 && (
               <span className="ml-1 font-medium text-red-600 dark:text-red-400">
                 · {down} down
@@ -97,7 +98,7 @@ export default function ServerSites() {
             Look for sites
           </Button>
           <Button size="sm" onClick={() => setChoosing(true)}>
-            <Plus size={13} /> New website
+            <Plus size={13} /> New site
           </Button>
         </div>
       </div>
@@ -109,16 +110,16 @@ export default function ServerSites() {
         </p>
       )}
 
-      {choosing && (
+      {showForm && !creating && (
         <SiteInstaller
           serverId={server.id}
-          // A panel owns its own websites, so the direct installers are not offered at all
+          // A panel owns its own sites, so the direct installers are not offered at all
           // rather than offered and then refused — see installerOptionsFor.
           panelOnly={!doors.direct}
           onAsk={doors.ally && siteRecipe
             ? () => { setChoosing(false); setCreating(true) }
             : undefined}
-          onClose={() => setChoosing(false)}
+          onClose={sites.length ? () => setChoosing(false) : undefined}
         />
       )}
 
@@ -133,35 +134,21 @@ export default function ServerSites() {
         </div>
       )}
 
-      {/* While the installer is open, nothing else competes with it. The customer has said
-          what they want; the setup panel and the empty state would both be arguing for a
-          different action on the same screen. Nothing is lost by waiting — a server that is
-          not ready refuses the install with a message saying to set it up first. */}
-      {choosing || creating ? null : isLoading ? (
+      {/* This page is the sites on this server and the way to add one — nothing else. An
+          empty server therefore opens straight into the form rather than showing a card
+          that says there is nothing here and a button to begin: on a page with one purpose,
+          that is a click asking permission to do the only available thing. */}
+      {showForm || isLoading ? null : (
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          {sites.map((s) => <SiteRow key={s.id} site={s} />)}
+        </div>
+      )}
+
+      {isLoading && (
         <div className="overflow-hidden rounded-xl border border-border bg-card">
           {[...Array(3)].map((_, i) => (
             <div key={i} className="h-14 animate-pulse border-t border-border first:border-t-0" />
           ))}
-        </div>
-      ) : sites.length === 0 ? (
-        <div className="space-y-4">
-          {/* A Linux server's home is now this page, so the setup wizard has to live here —
-              it was the one thing on Overview that was not a duplicate, and a blank server
-              would otherwise never be told what it needs. It hides itself once done. */}
-          {server.connection_type === "ssh" && <ServerSetupPanel server={server} />}
-          <EmptyState
-          icon={Globe}
-          title="Nothing hosted here yet"
-          description="Press “Look for sites” to read the web server’s own configuration, or create a new website and Ally will set it up."
-          className="py-14"
-            action={<Button size="sm" onClick={() => setChoosing(true)}>
-              <Plus size={13} /> New website
-            </Button>}
-          />
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-border bg-card">
-          {sites.map((s) => <SiteRow key={s.id} site={s} />)}
         </div>
       )}
     </div>
