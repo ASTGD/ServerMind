@@ -8,7 +8,7 @@ import {
 import { listServerSites, scanServerSites, APP_LABEL, type Site } from "@/api/sites"
 import { listRecipes } from "@/api/recipes"
 import RunRecipeModal from "@/components/recipes/RunRecipeModal"
-import NewSiteDialog from "@/components/sites/NewSiteDialog"
+import SiteInstaller from "@/components/sites/SiteInstaller"
 import ServerSetupPanel from "@/components/server/ServerSetupPanel"
 import { Button, EmptyState } from "@/components/ui"
 import { installerOptionsFor } from "@/lib/assetMenu"
@@ -110,7 +110,7 @@ export default function ServerSites() {
       )}
 
       {choosing && (
-        <NewSiteDialog
+        <SiteInstaller
           serverId={server.id}
           // A panel owns its own websites, so the direct installers are not offered at all
           // rather than offered and then refused — see installerOptionsFor.
@@ -133,7 +133,11 @@ export default function ServerSites() {
         </div>
       )}
 
-      {isLoading ? (
+      {/* While the installer is open, nothing else competes with it. The customer has said
+          what they want; the setup panel and the empty state would both be arguing for a
+          different action on the same screen. Nothing is lost by waiting — a server that is
+          not ready refuses the install with a message saying to set it up first. */}
+      {choosing || creating ? null : isLoading ? (
         <div className="overflow-hidden rounded-xl border border-border bg-card">
           {[...Array(3)].map((_, i) => (
             <div key={i} className="h-14 animate-pulse border-t border-border first:border-t-0" />

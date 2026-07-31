@@ -7,6 +7,7 @@ import {
   type DatabaseEngine, type DatabaseRow,
 } from "@/api/databases"
 import { Button, EmptyState } from "@/components/ui"
+import { strongPassword } from "@/lib/password"
 import type { Server } from "@/types"
 
 /**
@@ -19,14 +20,6 @@ import type { Server } from "@/types"
  * server, and a database shown as present when it is gone is worse than showing nothing,
  * because someone will point an application at it.
  */
-
-/** Long, mixed, and generated here so the customer never has to invent one. */
-function strongPassword(): string {
-  const alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-  const bytes = new Uint32Array(24)
-  crypto.getRandomValues(bytes)
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("")
-}
 
 function sizeLabel(mb: number): string {
   if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`
