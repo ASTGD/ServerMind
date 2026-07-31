@@ -179,3 +179,92 @@ def issuer_name(cert: dict) -> str | None:
             if key == "commonName":
                 return val
     return None
+
+
+# --- Turning HTTPS on for a site ----------------------------------------------------------
+#
+# A certificate can only be issued if the domain ALREADY points at the server: Let's Encrypt
+# proves ownership by fetching a file over the public internet. That is the one part of this
+# nobody here controls — the customer may have bought the domain an hour ago — so it is
+# checked first and answered plainly, rather than attempted and failed with a certbot error
+# nobody can read.
+
+import asyncio
+import ipaddress
+import socket
+
+
+class SslError(Exception):
+    """Something the customer can read and act on."""
+
+
+async def resolve(name: str) -> set[str]:
+    """Every address a name currently answers with. Empty when it does not resolve.
+
+    Resolved from here rather than from the server, deliberately: Let's Encrypt will look
+    it up from the public internet too, and a server's own resolver can be pointed at
+    something local that would give a different — and wrong — answer.
+    """
+    def _lookup() -> set[str]:
+        try:
+            infos = socket.getaddrinfo(name, None, proto=socket.IPPROTO_TCP)
+        except socket.gaierror:
+            return set()
+        return {info[4][0] for info in infos}
+
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(_lookup), timeout=10)
+    except (asyncio.TimeoutError, Exception):  # noqa: BLE001 — a lookup failure is "no answer"
+        return set()
+
+
+def _is_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
+
+
+async def server_addresses(host: str) -> set[str]:
+    """The addresses this server answers on, whether it was added by IP or by name."""
+    return {host} if _is_ip(host) else await resolve(host)
+
+
+async def check_dns(domain: str, server_host: str) -> dict:
+    """Does this domain point at this server yet?
+
+    Returns what the customer needs to know either way: whether it is ready, where the
+    domain currently points, and the record to create if it does not point here. A "no"
+    here is not a failure — it is the normal state of a domain someone just bought.
+    """
+    theirs = await resolve(domain)
+    ours = await server_addresses(server_host)
+    ready = bool(theirs and ours and (theirs & ours))
+
+    target = sorted(a for a in ours if _is_ip(a)) or sorted(ours)
+    return {
+        "ready": ready,
+        "points_to": sorted(theirs),
+        "server_addresses": sorted(ours),
+        "record": {"type": "A", "name": domain, "value": target[0] if target else server_host},
+        "reason": (
+            None if ready
+            else "does not resolve" if not theirs
+            else "points somewhere else"
+        ),
+    }
+
+
+def dns_message(domain: str, check: dict) -> str:
+    """Why HTTPS cannot be turned on yet, in words, with the fix."""
+    record = check["record"]
+    fix = (f'Create a DNS record for it: type {record["type"]}, name {record["name"]}, '
+           f'value {record["value"]}. It can take a few minutes to take effect.')
+    if check["reason"] == "does not resolve":
+        return (f"{domain} does not point anywhere yet, so a certificate cannot be issued "
+                f"for it — the authority has to reach this server through that name to "
+                f"prove it is yours. {fix}")
+    where = ", ".join(check["points_to"][:3])
+    return (f"{domain} currently points to {where}, not to this server, so a certificate "
+            f"cannot be issued for it yet. {fix}")

@@ -18,7 +18,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.services import audit_service
+from app.services import audit_service, ssl_service
 from app.workers.playbook_tasks import run_playbook_task
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -477,3 +477,81 @@ async def install_on_site(site_id: str, body: InstallIn, db: DBDep,
                               target_type="server", target_id=str(server.id),
                               meta={"domain": site.domain, "type": body.site_type})
     return {**site_service.serialize(site, server_name=server.name), "run_id": run_id}
+
+
+@router.get("/sites/{site_id}/ssl-readiness")
+async def ssl_readiness(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Can HTTPS be turned on for this site yet?
+
+    Answered before anything is started, because the one requirement is outside our
+    control: the domain has to point at this server already, since the authority proves
+    ownership by reaching it through that name. A domain bought an hour ago does not, and
+    that is normal — so the answer carries the record to create rather than an error.
+    """
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+    server = await resolve_server(str(site.server_id), current_user, db)
+
+    check = await ssl_service.check_dns(site.domain, server.host)
+    return {
+        **check,
+        "has_ssl": bool(site.has_ssl),
+        "message": None if check["ready"] else ssl_service.dns_message(site.domain, check),
+    }
+
+
+@router.post("/sites/{site_id}/ssl")
+async def turn_on_ssl(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Get a certificate for this site and serve it over HTTPS.
+
+    Refuses up front when the domain does not point here yet. Let's Encrypt allows five
+    certificates per domain per week, and a failed attempt spends one of them — so an
+    attempt that cannot possibly succeed is worse than a refusal.
+    """
+    from app.models.playbook import Playbook, PlaybookRun
+    from app.services import playbook_service
+    from app.services.secret_vars import encrypt_variables
+
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+
+    server = await resolve_server(str(site.server_id), current_user, db, need_execute=True)
+    if server.connection_type != "ssh":
+        raise HTTPException(
+            status_code=400,
+            detail="HTTPS is set up over SSH on a Linux server. A hosting panel issues its "
+                   "own certificates — use its own screen for that.")
+
+    check = await ssl_service.check_dns(site.domain, server.host)
+    if not check["ready"]:
+        raise HTTPException(status_code=422,
+                            detail=ssl_service.dns_message(site.domain, check))
+
+    pb = (await db.execute(
+        select(Playbook).where(Playbook.slug == "site-ssl",
+                               Playbook.is_official == True)  # noqa: E712
+    )).scalar_one_or_none()
+    if pb is None or not pb.script_bash:
+        raise HTTPException(status_code=422,
+                            detail="The HTTPS installer is not available on this ServerAlly.")
+
+    variables = {"DOMAIN": site.domain, "EMAIL": current_user.email}
+    script = playbook_service.substitute_variables(pb.script_bash, variables)
+
+    run = PlaybookRun(server_id=server.id, user_id=current_user.id, playbook_id=pb.id,
+                      variables_used=encrypt_variables(variables), status="running")
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+
+    run_playbook_task.delay(str(run.id), str(server.id), script)
+    await audit_service.audit(db, current_user, "site.ssl_requested",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain})
+    return {"run_id": str(run.id), "domain": site.domain}

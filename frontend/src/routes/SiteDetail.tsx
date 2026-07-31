@@ -6,6 +6,7 @@ import {
 } from "lucide-react"
 import { getSite, APP_LABEL, type SiteDetail as SiteDetailData } from "@/api/sites"
 import SiteInstaller from "@/components/sites/SiteInstaller"
+import SiteHttps from "@/components/sites/SiteHttps"
 import { canInstallOnto, wasCreatedHere } from "@/lib/siteInstall"
 
 /**
@@ -100,6 +101,8 @@ export default function SiteDetail() {
           panelOnly={!!site.server.panel_type}
         />
       )}
+
+      {!installing && <SiteHttps siteId={site.id} domain={site.domain} hasSsl={site.has_ssl} />}
 
       {!installing && !canInstall && (
         <div className="rounded-xl border border-border bg-card p-4">

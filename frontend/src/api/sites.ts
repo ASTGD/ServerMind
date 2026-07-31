@@ -173,3 +173,24 @@ export async function installOnSite(
   const { data } = await apiClient.post(`/api/sites/${siteId}/install`, body)
   return data
 }
+
+export interface SslReadiness {
+  ready: boolean
+  has_ssl: boolean
+  points_to: string[]
+  server_addresses: string[]
+  record: { type: string; name: string; value: string }
+  reason: string | null
+  /** Plain-English why-not, with the fix. Null when it is ready. */
+  message: string | null
+}
+
+export async function getSslReadiness(siteId: string): Promise<SslReadiness> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/ssl-readiness`)
+  return data
+}
+
+export async function turnOnSsl(siteId: string): Promise<{ run_id: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/ssl`)
+  return data
+}

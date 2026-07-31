@@ -165,3 +165,131 @@ def test_messages_say_what_to_do_and_avoid_jargon():
     subject, body = message("shop.example.com", 12, "warning")
     assert "12 days" in subject
     assert "probably nothing to do" in body  # do not alarm people over routine renewal
+
+
+# --- Deciding whether HTTPS can be turned on ---------------------------------------------
+#
+# The one requirement is outside our control: the domain must ALREADY point at the server,
+# because the authority proves ownership by reaching it through that name. Let's Encrypt
+# allows five certificates per domain per week and a FAILED attempt spends one, so an
+# attempt that cannot succeed is worse than a refusal — three of those and the domain is
+# locked out for days.
+
+import pytest
+from app.services import ssl_service
+
+
+@pytest.mark.asyncio
+async def test_ready_when_the_domain_resolves_to_the_server(monkeypatch):
+    async def fake(name):
+        return {"203.0.113.10"}
+    monkeypatch.setattr(ssl_service, "resolve", fake)
+
+    check = await ssl_service.check_dns("shop.example.com", "203.0.113.10")
+    assert check["ready"] is True
+    assert check["reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_not_ready_when_the_domain_does_not_resolve(monkeypatch):
+    """A domain bought an hour ago. Normal, not an error."""
+    async def fake(name):
+        return set()
+    monkeypatch.setattr(ssl_service, "resolve", fake)
+
+    check = await ssl_service.check_dns("brandnew.example.com", "203.0.113.10")
+    assert check["ready"] is False
+    assert check["reason"] == "does not resolve"
+    message = ssl_service.dns_message("brandnew.example.com", check)
+    assert "does not point anywhere yet" in message
+    assert "203.0.113.10" in message, "the message must carry the address to point at"
+
+
+@pytest.mark.asyncio
+async def test_not_ready_when_it_points_somewhere_else(monkeypatch):
+    """The common one: DNS still aimed at the old host during a migration."""
+    async def fake(name):
+        return {"198.51.100.7"} if name == "shop.example.com" else {"203.0.113.10"}
+    monkeypatch.setattr(ssl_service, "resolve", fake)
+
+    check = await ssl_service.check_dns("shop.example.com", "203.0.113.10")
+    assert check["ready"] is False
+    assert check["reason"] == "points somewhere else"
+    assert "198.51.100.7" in ssl_service.dns_message("shop.example.com", check)
+
+
+@pytest.mark.asyncio
+async def test_a_server_added_by_hostname_still_matches(monkeypatch):
+    """Not every server is stored as an IP. Comparing the names would say no when the
+    domain points at exactly the right machine."""
+    async def fake(name):
+        return {"203.0.113.10"}          # both the domain and the server's hostname
+    monkeypatch.setattr(ssl_service, "resolve", fake)
+
+    check = await ssl_service.check_dns("shop.example.com", "box.hosting.example")
+    assert check["ready"] is True
+
+
+@pytest.mark.asyncio
+async def test_one_matching_address_among_several_is_enough(monkeypatch):
+    """A domain behind round-robin DNS answers with several addresses; the certificate can
+    still be issued as long as one of them is this server."""
+    async def fake(name):
+        return {"198.51.100.7", "203.0.113.10"} if "shop" in name else {"203.0.113.10"}
+    monkeypatch.setattr(ssl_service, "resolve", fake)
+
+    assert (await ssl_service.check_dns("shop.example.com", "203.0.113.10"))["ready"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_lookup_that_fails_is_not_treated_as_ready(monkeypatch):
+    """Fails closed. A resolver hiccup must not green-light an attempt that would spend
+    one of the week's five."""
+    async def fake(name):
+        return set()
+    monkeypatch.setattr(ssl_service, "resolve", fake)
+
+    check = await ssl_service.check_dns("shop.example.com", "unresolvable.invalid")
+    assert check["ready"] is False
+
+
+def test_the_installer_never_reissues_a_certificate_that_already_exists():
+    """Re-issuing spends one of five a week for nothing, and exhausting them locks the
+    domain out for days."""
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS, _script_for
+
+    script = _script_for(next(p for p in OFFICIAL_PLAYBOOKS if p["slug"] == "site-ssl"))
+    assert 'if [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then' in script
+    assert "--keep-until-expiring" in script
+
+
+def test_the_installer_checks_the_config_before_the_web_server_keeps_it():
+    """A configuration that does not parse takes every site on the server offline, not
+    just this one."""
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS, _script_for
+
+    script = _script_for(next(p for p in OFFICIAL_PLAYBOOKS if p["slug"] == "site-ssl"))
+    assert "nginx -t" in script and "apachectl configtest" in script
+    assert script.index("TEST_CMD") < script.index("systemctl reload")
+
+
+def test_the_installer_refuses_a_domain_the_server_does_not_serve():
+    """A certificate for a domain this machine does not answer for would be issued
+    successfully and protect nothing."""
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS, _script_for
+
+    script = _script_for(next(p for p in OFFICIAL_PLAYBOOKS if p["slug"] == "site-ssl"))
+    assert "is not set up on this server yet" in script
+
+
+def test_the_installer_names_the_three_things_that_actually_go_wrong():
+    """certbot's own output is long and says none of this in words anyone can act on."""
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS, _script_for
+
+    script = _script_for(next(p for p in OFFICIAL_PLAYBOOKS if p["slug"] == "site-ssl"))
+    assert "too many certificates" in script            # rate limit
+    assert "does not point at this server" in script    # dns
+    assert "Open port 80, then try again" in script     # port 80 blocked
+    # Each one has to be reachable — a branch that can never be taken says nothing.
+    for marker in ("rate limit", "NXDOMAIN|DNS problem", "Timeout|connection refused"):
+        assert marker in script
