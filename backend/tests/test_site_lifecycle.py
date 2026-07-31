@@ -646,3 +646,42 @@ def test_sync_never_touches_the_counters_the_system_owns():
         assert owned_by_the_system not in _REPO_OWNED, (
             f"{owned_by_the_system} would be overwritten on every startup"
         )
+
+
+def test_the_short_list_is_short_enough_to_choose_from():
+    """Eight tiles is a choice; twelve under three headings is a catalogue to study.
+
+    The point of the split is that almost nobody needs to see all of it, so if the
+    "popular" set ever grows to most of the list it has stopped doing its job.
+    """
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS
+
+    by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
+    items = ss.catalogue(by_slug)
+    popular = [i for i in items if i["popular"]]
+
+    assert 6 <= len(popular) <= 8, f"{len(popular)} shown up front"
+    assert len(popular) < len(items), "everything is popular, so nothing is"
+
+
+def test_the_common_website_kinds_are_all_offered_up_front():
+    """These are what people actually put on a server. Hiding one behind "show all"
+    would make the common case the slow one."""
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS
+
+    by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
+    popular = {i["id"] for i in ss.catalogue(by_slug) if i["popular"]}
+    for expected in ("wordpress", "laravel", "static", "php", "app"):
+        assert expected in popular, f"{expected} should not need a second click"
+
+
+def test_every_type_is_reachable_even_when_it_is_not_popular():
+    """"Show all" has to mean all — a type that appears in neither list is a playbook
+    nobody can ever run from this screen."""
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS
+
+    by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
+    items = ss.catalogue(by_slug)
+    assert {i["id"] for i in items} == {
+        t for t, spec in ss.SITE_TYPES.items() if spec["playbook"] in by_slug
+    }

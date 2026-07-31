@@ -438,29 +438,29 @@ def monitor_defaults(domain: str, *, https: bool = True) -> dict:
 SITE_TYPES: dict[str, dict] = {
     # ── Websites: files a web server reads ──────────────────────────────────
     "static": {
-        "group": "websites", "playbook": "create-site", "label": "Empty website",
+        "popular": True, "group": "websites", "playbook": "create-site", "label": "Empty website",
         "blurb": "A folder and an address. For your own files or a Git deploy.",
         "app_type": "static", "extra": {"WITH_PHP": "no"},
     },
     "php": {
-        "group": "websites", "playbook": "create-site", "label": "PHP website",
+        "popular": True, "group": "websites", "playbook": "create-site", "label": "PHP website",
         "blurb": "An empty site with PHP switched on, ready for an installer.",
         "app_type": "php", "extra": {"WITH_PHP": "yes"},
     },
     "wordpress": {
-        "group": "websites", "playbook": "wordpress", "label": "WordPress",
+        "popular": True, "group": "websites", "playbook": "wordpress", "label": "WordPress",
         "blurb": "A full WordPress install with its own database.",
         "app_type": "wordpress", "extra": {},
     },
     "laravel": {
-        "group": "websites", "playbook": "laravel-site", "label": "Laravel",
+        "popular": True, "group": "websites", "playbook": "laravel-site", "label": "Laravel",
         "blurb": "A fresh Laravel install with its database and keys. Needs PHP 8.3+.",
         "app_type": "laravel", "extra": {},
     },
 
     # ── Applications: a program that keeps running ──────────────────────────
     "app": {
-        "group": "applications", "playbook": "create-app", "label": "Web application",
+        "popular": True, "group": "applications", "playbook": "create-app", "label": "Web application",
         "blurb": "Node, Next.js, Python or Go — we point the domain at your program "
                  "and keep it alive across crashes and reboots.",
         "app_type": "unknown", "extra": {},
@@ -473,12 +473,12 @@ SITE_TYPES: dict[str, dict] = {
     # customer types a domain and gets something at an IP and a port number instead.
     # They join this group in P4, once they are wrapped with a reverse proxy.
     "nextcloud": {
-        "group": "apps", "playbook": "nextcloud", "label": "Nextcloud",
+        "popular": True, "group": "apps", "playbook": "nextcloud", "label": "Nextcloud",
         "blurb": "Your own file storage and sharing, like Dropbox.",
         "app_type": "php", "extra": {},
     },
     "ghost": {
-        "group": "apps", "playbook": "ghost-cms", "label": "Ghost",
+        "popular": True, "group": "apps", "playbook": "ghost-cms", "label": "Ghost",
         "blurb": "A modern blog and newsletter platform.",
         "app_type": "unknown", "extra": {},
     },
@@ -492,7 +492,7 @@ SITE_TYPES: dict[str, dict] = {
         "app_type": "unknown", "extra": {"PORT": "3000"},
     },
     "n8n": {
-        "group": "apps", "playbook": "n8n", "label": "n8n",
+        "popular": True, "group": "apps", "playbook": "n8n", "label": "n8n",
         "blurb": "Automate work between your apps, without code.",
         "app_type": "unknown", "extra": {"PORT": "5678"},
     },
@@ -563,6 +563,11 @@ def catalogue(playbooks_by_slug: dict) -> list[dict]:
             "group": spec["group"],
             "label": spec["label"],
             "blurb": spec["blurb"],
+            # Which few are offered before "show everything". Decided here rather than in
+            # the browser: it is a statement about what people actually put on a server,
+            # and it belongs with the list it describes — a copy in the frontend would
+            # drift the first time a type was added.
+            "popular": bool(spec.get("popular")),
             "est_seconds": getattr(pb, "est_runtime_sec", None),
             "fields": fields,
         })

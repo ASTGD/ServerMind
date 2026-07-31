@@ -25,6 +25,8 @@ export interface SiteType {
   group: string
   label: string
   blurb: string
+  /** One of the few offered before "show all". Decided by the backend. */
+  popular: boolean
   est_seconds: number | null
   fields: SiteTypeField[]
 }

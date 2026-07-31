@@ -1,6 +1,8 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Globe, Rocket, Package, Loader2, Sparkles, LayoutPanelTop, Check } from "lucide-react"
+import {
+  Globe, Rocket, Package, Loader2, Sparkles, LayoutPanelTop, Check, ChevronDown,
+} from "lucide-react"
 import { getSiteCatalogue, createSite, type SiteType } from "@/api/sites"
 import { Button } from "@/components/ui"
 import { strongPassword } from "@/lib/password"
@@ -43,6 +45,7 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
   const [domain, setDomain] = useState("")
   const [values, setValues] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
 
   const { data: catalogue, isLoading } = useQuery({
     queryKey: ["site-catalogue"],
@@ -64,6 +67,9 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
     onError: (e: { response?: { data?: { detail?: string } } }) =>
       setError(e.response?.data?.detail ?? "The site could not be created."),
   })
+
+  const popular = (catalogue?.types ?? []).filter((t) => t.popular)
+  const rest = (catalogue?.types ?? []).filter((t) => !t.popular)
 
   function pick(type: SiteType) {
     setChosen(type)
@@ -179,43 +185,70 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
           </form>
         </div>
       ) : (
-        <div className="space-y-5 p-4">
-          {catalogue?.groups.map((group) => {
-            const items = catalogue.types.filter((t) => t.group === group.id)
-            if (!items.length) return null
-            const Icon = GROUP_ICON[group.id] ?? Globe
-            return (
-              <div key={group.id}>
-                <div className="flex items-baseline gap-2">
-                  <Icon size={13} className="translate-y-0.5 text-muted-foreground" />
-                  <h4 className="text-sm font-medium text-foreground">{group.label}</h4>
-                  <p className="text-caption text-muted-foreground">{group.blurb}</p>
+        <div className="space-y-4 p-4">
+          {/* The common few first, without group headings. Twelve tiles under three
+              headings is a catalogue to study; eight tiles is a choice to make, and it is
+              the right choice for almost everyone. The rest are one click away rather than
+              gone — the headings come back with them, because that is when they help. */}
+          {showAll ? (
+            catalogue?.groups.map((group) => {
+              const items = catalogue.types.filter((t) => t.group === group.id)
+              if (!items.length) return null
+              const Icon = GROUP_ICON[group.id] ?? Globe
+              return (
+                <div key={group.id}>
+                  <div className="flex items-baseline gap-2">
+                    <Icon size={13} className="translate-y-0.5 text-muted-foreground" />
+                    <h4 className="text-sm font-medium text-foreground">{group.label}</h4>
+                    <p className="text-caption text-muted-foreground">{group.blurb}</p>
+                  </div>
+                  <TypeGrid items={items} onPick={pick} />
                 </div>
-                <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  {items.map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => pick(t)}
-                      className="rounded-lg border border-border p-3 text-left transition-colors hover:border-primary/60 hover:bg-accent"
-                    >
-                      <p className="text-sm font-medium text-foreground">{t.label}</p>
-                      <p className="mt-0.5 text-caption text-muted-foreground">{t.blurb}</p>
-                      {t.est_seconds ? (
-                        <p className="mt-1.5 text-caption text-muted-foreground/70">
-                          about {Math.max(1, Math.round(t.est_seconds / 60))} min
-                        </p>
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )
-          })}
+              )
+            })
+          ) : (
+            <TypeGrid items={popular} onPick={pick} />
+          )}
+
+          {!showAll && rest.length > 0 && (
+            <button
+              onClick={() => setShowAll(true)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 text-caption text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <ChevronDown size={13} />
+              Show all {(catalogue?.types.length ?? 0)} options
+            </button>
+          )}
 
           {onAsk && <AskAllyRow onAsk={onAsk} />}
         </div>
       )}
     </section>
+  )
+}
+
+function TypeGrid({ items, onPick }: {
+  items: SiteType[]
+  onPick: (t: SiteType) => void
+}) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      {items.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => onPick(t)}
+          className="rounded-lg border border-border p-3 text-left transition-colors hover:border-primary/60 hover:bg-accent"
+        >
+          <p className="text-sm font-medium text-foreground">{t.label}</p>
+          <p className="mt-0.5 text-caption text-muted-foreground">{t.blurb}</p>
+          {t.est_seconds ? (
+            <p className="mt-1.5 text-caption text-muted-foreground/70">
+              about {Math.max(1, Math.round(t.est_seconds / 60))} min
+            </p>
+          ) : null}
+        </button>
+      ))}
+    </div>
   )
 }
 
