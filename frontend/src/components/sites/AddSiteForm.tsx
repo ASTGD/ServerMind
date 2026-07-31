@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
-import { LayoutPanelTop, Sparkles } from "lucide-react"
+import { LayoutPanelTop, Search, Sparkles } from "lucide-react"
 import { createSite } from "@/api/sites"
 import { Button } from "@/components/ui"
 
@@ -25,9 +25,14 @@ interface Props {
   panelOnly?: boolean
   onClose?: () => void
   onAsk?: () => void
+  /** Offered only when nothing is listed yet — see the note by the button. */
+  showFind?: boolean
+  onFind?: () => void
 }
 
-export default function AddSiteForm({ serverId, panelOnly, onClose, onAsk }: Props) {
+export default function AddSiteForm({
+  serverId, panelOnly, onClose, onAsk, showFind, onFind,
+}: Props) {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const [domain, setDomain] = useState("")
@@ -119,6 +124,25 @@ export default function AddSiteForm({ serverId, panelOnly, onClose, onAsk }: Pro
               </button>
             )}
           </div>
+
+          {/* An empty list means one of two things, and only the customer knows which: a
+              server with nothing on it, or one whose sites we have not looked for yet.
+              Someone who has just connected a box running twenty sites should not be asked
+              to add the twenty-first. */}
+          {showFind && (
+            <p className="border-t border-border pt-3 text-caption text-muted-foreground">
+              Already have websites on this server?{" "}
+              <button
+                type="button"
+                onClick={onFind}
+                className="inline-flex items-center gap-1 font-medium text-foreground underline-offset-2 hover:underline"
+              >
+                <Search size={11} /> Look for them
+              </button>{" "}
+              — ServerAlly reads the web server's own configuration and lists what is
+              already there.
+            </p>
+          )}
         </form>
       )}
     </section>

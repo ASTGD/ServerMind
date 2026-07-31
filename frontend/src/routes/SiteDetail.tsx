@@ -6,6 +6,7 @@ import {
 } from "lucide-react"
 import { getSite, APP_LABEL, type SiteDetail as SiteDetailData } from "@/api/sites"
 import SiteInstaller from "@/components/sites/SiteInstaller"
+import { canInstallOnto, wasCreatedHere } from "@/lib/siteInstall"
 
 /**
  * One site.
@@ -42,8 +43,8 @@ export default function SiteDetail() {
 
   const installing = site.status === "installing"
   const failed = site.status === "failed"
-  // "static" is the empty site the domain alone creates — nothing has been chosen yet.
-  const empty = site.app_type === "static" || site.app_type === "unknown"
+  const canInstall = canInstallOnto(site)
+  const ours = wasCreatedHere(site)
 
   return (
     <div className="space-y-4">
@@ -89,10 +90,10 @@ export default function SiteDetail() {
         </p>
       )}
 
-      {/* The installer only makes sense while the site is still empty. Offering it on a
-          live WordPress site would be offering to replace it — and the server refuses that
-          anyway, so the button would be a promise we cannot keep. */}
-      {!installing && empty && (
+      {/* Only on an empty site ServerAlly made. On a site that was already on the server
+          when we found it, this would be offering to replace someone's live website — and
+          the server refuses that anyway, so the button would be a promise we cannot keep. */}
+      {canInstall && (
         <SiteInstaller
           siteId={site.id}
           serverId={site.server.id}
@@ -100,14 +101,17 @@ export default function SiteDetail() {
         />
       )}
 
-      {!installing && !empty && (
+      {!installing && !canInstall && (
         <div className="rounded-xl border border-border bg-card p-4">
           <p className="text-sm font-medium text-foreground">
-            {APP_LABEL[site.app_type] ?? site.app_type} is installed here
+            {ours
+              ? `${APP_LABEL[site.app_type] ?? site.app_type} is installed here`
+              : "This site was already on the server"}
           </p>
           <p className="mt-0.5 text-small text-muted-foreground">
-            To put something else on this domain, remove the site first — replacing it in
-            place would delete whatever is here now.
+            {ours
+              ? "To put something else on this domain, remove the site first — replacing it in place would delete whatever is here now."
+              : "ServerAlly found it rather than building it, so it is watched and managed from here but not replaced. Ask Ally if you need to change what it runs."}
           </p>
         </div>
       )}

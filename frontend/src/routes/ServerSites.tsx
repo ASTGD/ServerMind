@@ -119,6 +119,10 @@ export default function ServerSites() {
             ? () => { setChoosing(false); setCreating(true) }
             : undefined}
           onClose={sites.length ? () => setChoosing(false) : undefined}
+          // Only worth offering when there is nothing listed — that is the moment someone
+          // has connected a server whose sites we have not looked for yet.
+          showFind={sites.length === 0 && !scan.data}
+          onFind={() => scan.mutate()}
         />
       )}
 
