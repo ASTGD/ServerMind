@@ -373,13 +373,17 @@ class _Pb:
 
 
 def _all_playbooks():
-    """Stand-ins carrying the same variables the real installers declare."""
+    """Stand-ins carrying the same variables the real installers declare.
+
+    Keyed by the real slugs, so the catalogue's "can this be installed onto an existing
+    site" rule — which reads the real definitions — applies to them unchanged.
+    """
     return {
         "create-site": _Pb("create-site", [
             {"name": "DOMAIN", "label": "Domain", "required": True},
             {"name": "WEB_ROOT", "label": "Web root", "default": "/var/www", "required": True},
             {"name": "WITH_PHP", "label": "With PHP", "default": "yes", "required": True}]),
-        "wordpress": _Pb("wordpress", [
+        "wordpress-site": _Pb("wordpress-site", [
             {"name": "DOMAIN", "label": "Domain", "required": True},
             {"name": "DB_NAME", "label": "Database", "default": "wordpress", "required": True},
             {"name": "DB_PASS", "label": "Database password", "required": True},
@@ -389,10 +393,11 @@ def _all_playbooks():
             {"name": "DOMAIN", "required": True},
             {"name": "APP_PORT", "label": "Port", "default": "3000", "required": True},
             {"name": "START_CMD", "label": "Start command", "required": False}]),
-        "nextcloud": _Pb("nextcloud", [
+        "n8n": _Pb("n8n", [
             {"name": "DOMAIN", "required": True},
-            {"name": "NC_ADMIN_PASS", "label": "Admin password", "required": True}]),
-        "ghost-cms": _Pb("ghost-cms", [{"name": "DOMAIN", "required": True}]),
+            {"name": "PORT", "label": "Port", "default": "5678", "required": True},
+            {"name": "N8N_USER", "label": "User", "default": "admin", "required": True},
+            {"name": "N8N_PASS", "label": "Password", "required": True}]),
     }
 
 
@@ -419,8 +424,8 @@ def test_passwords_are_marked_so_the_form_can_hide_them():
     fields = {f["name"]: f for f in wp["fields"]}
     assert fields["DB_PASS"]["secret"] is True
     assert fields["DB_NAME"]["secret"] is False
-    nc = next(i for i in ss.catalogue(_all_playbooks()) if i["id"] == "nextcloud")
-    assert {f["name"]: f for f in nc["fields"]}["NC_ADMIN_PASS"]["secret"] is True
+    n8n = next(i for i in ss.catalogue(_all_playbooks()) if i["id"] == "n8n")
+    assert {f["name"]: f for f in n8n["fields"]}["N8N_PASS"]["secret"] is True
 
 
 def test_a_type_whose_installer_is_missing_is_not_offered():
@@ -675,13 +680,83 @@ def test_the_common_website_kinds_are_all_offered_up_front():
         assert expected in popular, f"{expected} should not need a second click"
 
 
-def test_every_type_is_reachable_even_when_it_is_not_popular():
-    """"Show all" has to mean all — a type that appears in neither list is a playbook
-    nobody can ever run from this screen."""
+def test_every_offered_type_is_reachable_from_one_list_or_the_other():
+    """"Show all" has to mean all of what is offered — a type in neither list is one
+    nobody can ever reach from this screen."""
+    items = ss.catalogue(_all_playbooks())
+    popular = {i["id"] for i in items if i["popular"]}
+    rest = {i["id"] for i in items if not i["popular"]}
+    assert popular | rest == {i["id"] for i in items}
+    assert not (popular & rest), "a type cannot be in both lists"
+
+
+# --- Installing INTO a site that already exists -----------------------------------------
+#
+# A site is added by its domain alone, which builds an empty site; what runs on it is
+# chosen afterwards. That means an installer has to be able to replace the empty site's own
+# configuration — and ONLY that. These pin the two conditions that make it safe.
+
+def _guards() -> str:
+    from app.services.playbook_service import _SITE_GUARDS
+    return _SITE_GUARDS
+
+
+def test_takeover_requires_our_own_marker_in_the_existing_config():
+    """A hand-written vhost must never be replaced, whatever flags are passed."""
+    g = _guards()
+    assert 'grep -q "Created by ServerAlly"' in g
+    # Both conditions on the same branch: asking is not enough on its own.
+    assert '[ "${TAKEOVER:-no}" = yes ] && grep -q "Created by ServerAlly"' in g
+
+
+def test_without_takeover_an_existing_domain_is_still_refused():
+    """The default has not changed: pointing a second site at a live domain is an error."""
+    g = _guards()
+    assert "is already configured on this server" in g
+
+
+def test_adopt_dir_refuses_a_folder_with_anything_in_it():
+    """The folder check is what stops a site in use being deleted. It allows exactly the
+    placeholder page an empty site is made of, and nothing else."""
+    g = _guards()
+    assert 'find "$_d" -mindepth 1 ! -path "$_d/public" ! -path "$_d/public/index.html"' in g
+    assert "already has files in it" in g
+
+
+def test_the_installers_that_make_a_folder_call_adopt_dir_first():
+    """Otherwise their own "already exists" check fires and the install never starts."""
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS, _script_for
+
+    for slug in ("create-site", "laravel-site"):
+        item = next(p for p in OFFICIAL_PLAYBOOKS if p["slug"] == slug)
+        script = _script_for(item)
+        assert 'adopt_dir "$SITE_DIR"' in script, slug
+        assert script.index('adopt_dir "$SITE_DIR"') < script.index('already exists. Nothing was changed'), slug
+
+
+def test_only_installers_that_can_take_over_a_site_are_offered():
+    """The catalogue is now used to install INTO a site that already exists, so an
+    installer that writes its own configuration from scratch cannot appear there — it
+    would leave two web-server entries fighting over one domain.
+
+    Derived from the scripts, so an old installer earns its place back by being fixed
+    rather than by being added to a list here.
+    """
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS, _script_for
+
+    by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
+    offered = {i["id"] for i in ss.catalogue(by_slug)}
+    for type_id in offered:
+        script = _script_for(by_slug[ss.SITE_TYPES[type_id]["playbook"]])
+        assert "TAKEOVER" in script, f"{type_id} is offered but cannot take over a site"
+
+
+def test_the_common_types_are_all_installable_today():
+    """These are what the product is for. If one drops out of the catalogue because its
+    installer cannot take over a site, that is a regression, not a detail."""
     from app.services.playbook_service import OFFICIAL_PLAYBOOKS
 
     by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
-    items = ss.catalogue(by_slug)
-    assert {i["id"] for i in items} == {
-        t for t, spec in ss.SITE_TYPES.items() if spec["playbook"] in by_slug
-    }
+    offered = {i["id"] for i in ss.catalogue(by_slug)}
+    for expected in ("wordpress", "laravel", "static", "php", "app"):
+        assert expected in offered, f"{expected} can no longer be installed onto a site"

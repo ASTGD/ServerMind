@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useOutletContext } from "react-router-dom"
+import { Link, useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   CircleAlert, CircleCheck, CircleDashed, EyeOff, Globe, Loader2, Plus,
@@ -8,7 +8,7 @@ import {
 import { listServerSites, scanServerSites, APP_LABEL, type Site } from "@/api/sites"
 import { listRecipes } from "@/api/recipes"
 import RunRecipeModal from "@/components/recipes/RunRecipeModal"
-import SiteInstaller from "@/components/sites/SiteInstaller"
+import AddSiteForm from "@/components/sites/AddSiteForm"
 import { Button } from "@/components/ui"
 import { installerOptionsFor } from "@/lib/assetMenu"
 import { cn } from "@/lib/utils"
@@ -111,10 +111,9 @@ export default function ServerSites() {
       )}
 
       {showForm && !creating && (
-        <SiteInstaller
+        <AddSiteForm
           serverId={server.id}
-          // A panel owns its own sites, so the direct installers are not offered at all
-          // rather than offered and then refused — see installerOptionsFor.
+          // A panel owns its own sites, so nothing can be written behind its back.
           panelOnly={!doors.direct}
           onAsk={doors.ally && siteRecipe
             ? () => { setChoosing(false); setCreating(true) }
@@ -140,7 +139,7 @@ export default function ServerSites() {
           that is a click asking permission to do the only available thing. */}
       {showForm || isLoading ? null : (
         <div className="overflow-hidden rounded-xl border border-border bg-card">
-          {sites.map((s) => <SiteRow key={s.id} site={s} />)}
+          {sites.map((s) => <SiteRow key={s.id} site={s} serverId={server.id} />)}
         </div>
       )}
 
@@ -206,21 +205,23 @@ function CertChip({ site }: { site: Site }) {
   return null
 }
 
-function SiteRow({ site }: { site: Site }) {
+function SiteRow({ site, serverId }: { site: Site; serverId: string }) {
   const down = site.uptime?.status === "down"
   return (
-    <div className={cn(
+    <Link
+      to={`/servers/${serverId}/sites/${site.id}`}
+      className={cn(
       "flex flex-wrap items-center gap-3 border-t border-border px-3 py-2.5 first:border-t-0",
+      "transition-colors hover:bg-accent",
       down && "bg-red-500/[0.03]",
       !site.is_present && "opacity-60",
     )}>
       <StatusDot site={site} />
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-center gap-2">
-          <a href={`https://${site.domain}`} target="_blank" rel="noopener noreferrer"
-            className="truncate text-[14px] font-medium text-foreground hover:underline">
+          <span className="truncate text-[14px] font-medium text-foreground">
             {site.domain}
-          </a>
+          </span>
           <CertChip site={site} />
           {/* A site being built must SAY so. The status existed in the API and nowhere on
               screen, so a half-installed site looked exactly like a finished one — which
@@ -250,7 +251,7 @@ function SiteRow({ site }: { site: Site }) {
           {down && site.uptime?.error ? ` · ${site.uptime.error}` : ""}</>}
         </p>
       </div>
-    </div>
+    </Link>
   )
 }
 

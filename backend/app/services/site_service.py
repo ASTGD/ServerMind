@@ -448,7 +448,7 @@ SITE_TYPES: dict[str, dict] = {
         "app_type": "php", "extra": {"WITH_PHP": "yes"},
     },
     "wordpress": {
-        "popular": True, "group": "websites", "playbook": "wordpress", "label": "WordPress",
+        "popular": True, "group": "websites", "playbook": "wordpress-site", "label": "WordPress",
         "blurb": "A full WordPress install with its own database.",
         "app_type": "wordpress", "extra": {},
     },
@@ -521,6 +521,21 @@ SITE_GROUPS = (
 )
 
 
+def takes_over() -> frozenset[str]:
+    """Which installers can be run against a site that already exists.
+
+    Read from the playbook definitions rather than from the row handed in, so the answer
+    cannot depend on what shape the caller passed — and so an installer earns its place by
+    actually being able to do the job, not by being named in a list here.
+    """
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS, _script_for
+
+    return frozenset(
+        item["slug"] for item in OFFICIAL_PLAYBOOKS
+        if "TAKEOVER" in (_script_for(item) or "")
+    )
+
+
 def catalogue(playbooks_by_slug: dict) -> list[dict]:
     """What can be installed here, with the questions each one needs.
 
@@ -539,6 +554,11 @@ def catalogue(playbooks_by_slug: dict) -> list[dict]:
     for type_id, spec in SITE_TYPES.items():
         pb = playbooks_by_slug.get(spec["playbook"])
         if pb is None:
+            continue
+        # An installer is offered here only if it can take over the empty site it is being
+        # installed into. One that cannot would write a SECOND web-server entry for a domain
+        # that already has one — two configs fighting over one address.
+        if spec["playbook"] not in takes_over():
             continue
 
         fields = []
@@ -651,6 +671,68 @@ async def create(db, server, user, *, domain: str, site_type: str,
         status="installing", install_run_id=run.id,
     )
     db.add(site)
+    await db.commit()
+    await db.refresh(site)
+    return site, str(run.id), script
+
+
+async def install(db, server, user, site, *, site_type: str, variables: dict | None = None):
+    """Put an application onto a site that already exists.
+
+    This is the second half of how a site is made: you add the domain, which builds an
+    empty site, and then you choose what goes on it. Without this the catalogue could only
+    ever create a site from nothing, so a site and its contents had to be decided in one
+    breath — which is not how anyone arrives at the question.
+
+    The installer is the SAME playbook the create path runs. It is handed ``TAKEOVER=yes``,
+    which lets the shared site guards replace the empty site's own configuration — and only
+    that: the guard additionally requires our marker in the existing config and refuses any
+    folder that has anything in it, so this can never overwrite a site in use.
+    """
+    from sqlalchemy import select
+
+    from app.models.playbook import Playbook, PlaybookRun
+    from app.services import playbook_service
+    from app.services.secret_vars import encrypt_variables
+
+    spec = SITE_TYPES.get(site_type)
+    if spec is None:
+        raise SiteError(
+            f"'{site_type}' is not something we can install. Choose one of: "
+            + ", ".join(sorted(SITE_TYPES)) + "."
+        )
+    if site.status == "installing":
+        raise SiteError(
+            f"{site.domain} is still being set up. Wait for that to finish before "
+            f"installing something else on it."
+        )
+
+    pb = (await db.execute(
+        select(Playbook).where(Playbook.slug == spec["playbook"],
+                               Playbook.is_official == True)  # noqa: E712
+    )).scalar_one_or_none()
+    if pb is None:
+        raise SiteError(
+            f"The installer for {spec['label']} is not available on this ServerAlly.")
+    if not pb.script_bash:
+        raise SiteError(f"The {spec['label']} installer has no script for this server.")
+
+    variables = {**(variables or {}), "DOMAIN": site.domain, **spec["extra"],
+                 "TAKEOVER": "yes"}
+    script = playbook_service.substitute_variables(pb.script_bash, variables)
+
+    run = PlaybookRun(server_id=server.id, user_id=user.id, playbook_id=pb.id,
+                      variables_used=encrypt_variables(variables),
+                      status="running")
+    db.add(run)
+    await db.flush()
+
+    # Back to installing, and the old failure cleared — this attempt is the current truth.
+    site.status = "installing"
+    site.install_error = None
+    site.install_run_id = run.id
+    site.requested_type = site_type
+    site.app_type = spec["app_type"]
     await db.commit()
     await db.refresh(site)
     return site, str(run.id), script

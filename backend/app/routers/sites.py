@@ -408,3 +408,72 @@ async def forget_site(site_id: str, db: DBDep, current_user: CurrentUser) -> Non
         raise HTTPException(status_code=404, detail="No such site.")
     await db.delete(site)
     await db.commit()
+
+
+class InstallIn(BaseModel):
+    """What to put on a site that already exists."""
+    site_type: str
+    variables: dict[str, str] = {}
+
+
+@router.get("/sites/{site_id}")
+async def get_site(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """One site, with the server it lives on.
+
+    Its own page reads this rather than picking a row out of the list, so the page works
+    when it is opened directly from a link or a bookmark — which is how someone returns to
+    a site they were told about.
+    """
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+
+    server = await resolve_server(str(site.server_id), current_user, db)
+    return {
+        **site_service.serialize(site, server_name=server.name),
+        "server": {
+            "id": str(server.id),
+            "name": server.name,
+            "connection_type": server.connection_type,
+            "panel_type": server.panel_type,
+        },
+    }
+
+
+@router.post("/sites/{site_id}/install")
+async def install_on_site(site_id: str, body: InstallIn, db: DBDep,
+                          current_user: CurrentUser) -> dict:
+    """Put an application onto a site that already exists.
+
+    The second half of making a site: the domain is added first, then what runs on it is
+    chosen here. The installer replaces the empty site's configuration — and can only do
+    that, because the shared guard requires our own marker in the existing config and
+    refuses a folder with anything in it.
+    """
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+
+    server = await resolve_server(str(site.server_id), current_user, db, need_execute=True)
+    if server.connection_type != "ssh":
+        raise HTTPException(
+            status_code=400,
+            detail="Applications can only be installed on a Linux server we reach over SSH.")
+
+    try:
+        site, run_id, script = await site_service.install(
+            db, server, current_user, site,
+            site_type=body.site_type, variables=body.variables)
+    except site_service.SiteError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # Enqueued after the commit inside install(), so the worker can always find the run.
+    run_playbook_task.delay(run_id, str(server.id), script)
+    await audit_service.audit(db, current_user, "site.installed",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "type": body.site_type})
+    return {**site_service.serialize(site, server_name=server.name), "run_id": run_id}

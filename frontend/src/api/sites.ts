@@ -149,3 +149,27 @@ export interface SiteMail {
   findings: { key: string; severity: string; title: string; detail: string; fix: string }[]
   checked: string | null
 }
+
+export interface SiteDetail extends Site {
+  server: {
+    id: string
+    name: string
+    connection_type: string
+    panel_type: string | null
+  }
+}
+
+/** One site, read by id so the page works from a link or a bookmark. */
+export async function getSite(siteId: string): Promise<SiteDetail> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}`)
+  return data
+}
+
+/** Put an application onto a site that already exists. */
+export async function installOnSite(
+  siteId: string,
+  body: { site_type: string; variables: Record<string, string> },
+): Promise<{ run_id: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/install`, body)
+  return data
+}

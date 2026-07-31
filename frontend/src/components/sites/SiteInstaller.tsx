@@ -1,28 +1,23 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  Globe, Rocket, Package, Loader2, Sparkles, LayoutPanelTop, Check, ChevronDown,
+  Globe, Rocket, Package, Loader2, LayoutPanelTop, Check, ChevronDown,
 } from "lucide-react"
-import { getSiteCatalogue, createSite, type SiteType } from "@/api/sites"
+import { getSiteCatalogue, installOnSite, type SiteType } from "@/api/sites"
 import { Button } from "@/components/ui"
 import { strongPassword } from "@/lib/password"
 
 /**
- * What do you want to put on this server?
+ * What runs on this site.
  *
- * Lives ON the Sites page rather than in a dialog. A modal was the wrong container for
- * this: twelve options in an overlay meant a scrolling list with the last few cut off, and
- * a covered page loses the thing the choice is about — the server and what is already on
- * it. Inline, the options get the full width and nothing is hidden behind them.
+ * Lives on ONE site's page, not on the list of sites. A site is added by its domain alone,
+ * and choosing what goes on it is a separate question asked afterwards — which is how
+ * someone actually arrives at it ("I have shop.example.com, now put WordPress on it").
+ * Putting the catalogue on the list meant deciding both at once, before the site existed.
  *
  * The list comes from the backend, not from this file. Adding a type is then one entry
- * plus a playbook — which is the whole promise of a catalogue. A copy here would drift the
- * first time either side was edited, and the form would send a variable the installer does
- * not read, or miss one it does.
- *
- * Choosing collapses the grid to the one chosen, rather than replacing the whole panel:
- * you keep seeing what you picked while you answer its questions, and changing your mind
- * is one click rather than a step backwards.
+ * plus a playbook — a copy here would drift the first time either side was edited, and the
+ * form would send a variable the installer does not read, or miss one it does.
  */
 
 const GROUP_ICON: Record<string, typeof Globe> = {
@@ -32,17 +27,15 @@ const GROUP_ICON: Record<string, typeof Globe> = {
 }
 
 interface Props {
+  siteId: string
   serverId: string
-  /** Shown when the server is a control panel, which owns its own sites. */
+  /** A control panel owns its own sites, so nothing here can be written behind its back. */
   panelOnly?: boolean
-  onClose?: () => void
-  onAsk?: () => void
 }
 
-export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: Props) {
+export default function SiteInstaller({ siteId, serverId, panelOnly }: Props) {
   const qc = useQueryClient()
   const [chosen, setChosen] = useState<SiteType | null>(null)
-  const [domain, setDomain] = useState("")
   const [values, setValues] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
@@ -54,18 +47,17 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
     staleTime: 5 * 60_000,
   })
 
-  const create = useMutation({
-    mutationFn: () =>
-      createSite(serverId, { domain, site_type: chosen!.id, variables: values }),
+  const install = useMutation({
+    mutationFn: () => installOnSite(siteId, { site_type: chosen!.id, variables: values }),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["site", siteId] })
       qc.invalidateQueries({ queryKey: ["server-sites", serverId] })
       qc.invalidateQueries({ queryKey: ["sites"] })
-      onClose?.()
     },
-    // The server's message names the actual problem — an unusable domain, a duplicate, a
-    // missing installer — so show it rather than a generic failure.
+    // The server's message names the actual problem — a folder with files in it, a missing
+    // installer, a server that is not ready — so show it rather than a generic failure.
     onError: (e: { response?: { data?: { detail?: string } } }) =>
-      setError(e.response?.data?.detail ?? "The site could not be created."),
+      setError(e.response?.data?.detail ?? "It could not be installed."),
   })
 
   const popular = (catalogue?.types ?? []).filter((t) => t.popular)
@@ -74,72 +66,52 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
   function pick(type: SiteType) {
     setChosen(type)
     setError(null)
-    // Prefill the installer's own defaults so the common case is one field and a button —
-    // and generate the secrets, which have no default and are exactly where a customer
-    // asked to invent one invents a weak one. Two of these (Nextcloud, n8n) are what they
-    // will log in with, on a server anyone on the internet can reach.
+    // Prefill the installer's own defaults, and generate the secrets — those have no
+    // default and are exactly where a customer asked to invent one invents a weak one.
+    // For Nextcloud and n8n it is the password they will log in with, on a server anyone
+    // on the internet can reach.
     setValues(Object.fromEntries(type.fields.map(
       (f) => [f.name, f.default || (f.secret ? strongPassword() : "")],
     )))
   }
 
+  if (panelOnly) {
+    return (
+      <section className="rounded-xl border border-border bg-card p-4">
+        <div className="flex items-start gap-3">
+          <LayoutPanelTop size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              This server runs a control panel
+            </p>
+            <p className="mt-0.5 text-small text-muted-foreground">
+              It manages its own sites, so anything installed any other way would be
+              invisible to it. Use the panel, or ask Ally.
+            </p>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="rounded-xl border border-border bg-card">
-      <header className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
-        <div>
-          <h3 className="text-sm font-medium text-foreground">Add a site</h3>
-          <p className="text-caption text-muted-foreground">
-            {chosen ? chosen.blurb : "What should go on this server?"}
-          </p>
-        </div>
-        {onClose && (
-          <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
-        )}
+      <header className="border-b border-border px-4 py-3">
+        <h3 className="text-sm font-medium text-foreground">Install something here</h3>
+        <p className="text-caption text-muted-foreground">
+          {chosen ? chosen.blurb : "Nothing runs on this site yet. Choose what should."}
+        </p>
       </header>
 
-      {/* A control panel manages its own sites — anything we wrote directly would be
-          invisible to it, so the installers are not offered at all rather than offered and
-          then refused. */}
-      {panelOnly ? (
-        <div className="space-y-2 p-4">
-          <div className="flex items-start gap-3 rounded-lg border border-border p-3">
-            <LayoutPanelTop size={15} className="mt-0.5 shrink-0 text-muted-foreground" />
-            <div>
-              <p className="text-sm font-medium text-foreground">Create it in the control panel</p>
-              <p className="mt-0.5 text-small text-muted-foreground">
-                This server runs a control panel, which manages its own sites. Creating
-                one any other way would be invisible to it.
-              </p>
-            </div>
-          </div>
-          {onAsk && <AskAllyRow onAsk={onAsk} />}
-        </div>
-      ) : isLoading ? (
+      {isLoading ? (
         <div className="flex justify-center py-12 text-muted-foreground">
           <Loader2 size={18} className="animate-spin" />
         </div>
       ) : (
-        /* One form, with the domain first. A site IS a domain — asking for it before
-           anything else matches how someone arrives here ("I want shop.example.com on
-           this server"), and the page then opens with something to type rather than a
-           decision to make. What to install narrows it afterwards. */
         <form
-          onSubmit={(e) => { e.preventDefault(); setError(null); create.mutate() }}
+          onSubmit={(e) => { e.preventDefault(); setError(null); install.mutate() }}
           className="space-y-4 p-4"
         >
-          <div className="max-w-xl">
-            <Field label="Domain" hint="Point this domain's DNS at this server, now or later — the site is built either way.">
-              <input
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                placeholder="shop.example.com"
-                required
-                autoFocus
-                className={INPUT}
-              />
-            </Field>
-          </div>
-
           {chosen ? (
             <div className="max-w-xl space-y-3">
               <ChosenRow type={chosen} onChange={() => { setChosen(null); setError(null) }} />
@@ -148,9 +120,9 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
                 <Field
                   key={f.name}
                   label={f.label}
-                  // Shown, never masked: this is the only time it is ever displayed, and
-                  // for Nextcloud and n8n it is the login itself. Hiding it behind dots
-                  // would mean the customer cannot check what they are about to be given.
+                  // Shown, never masked: this is the only time it is displayed, and for
+                  // Nextcloud and n8n it is the login itself. Hiding it behind dots would
+                  // mean the customer cannot check what they are about to be given.
                   hint={f.secret ? "Save this somewhere — it is not stored here and cannot be shown again." : undefined}
                 >
                   {f.secret ? (
@@ -184,21 +156,20 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
               )}
 
               <div className="flex items-center gap-3 pt-1">
-                <Button type="submit" disabled={create.isPending}>
-                  {create.isPending ? "Starting…" : `Add ${chosen.label}`}
+                <Button type="submit" disabled={install.isPending}>
+                  {install.isPending ? "Starting…" : `Install ${chosen.label}`}
                 </Button>
                 <p className="text-caption text-muted-foreground">
-                  It builds in the background — you can leave this page.
+                  It runs in the background — you can leave this page.
                 </p>
               </div>
             </div>
           ) : (
             <>
               {/* The common few first, without group headings. Twelve tiles under three
-                  headings is a catalogue to study; eight tiles is a choice to make, and it
-                  is the right choice for almost everyone. The rest are one click away
-                  rather than gone — the headings come back with them, because that is when
-                  they help. */}
+                  headings is a catalogue to study; eight is a choice to make, and it is the
+                  right choice for almost everyone. The rest are one click away rather than
+                  gone — the headings come back with them, which is when they help. */}
               {showAll ? (
                 <div className="space-y-4">
                   {catalogue?.groups.map((group) => {
@@ -231,8 +202,6 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
                   Show all {(catalogue?.types.length ?? 0)} options
                 </button>
               )}
-
-              {onAsk && <AskAllyRow onAsk={onAsk} />}
             </>
           )}
         </form>
@@ -241,6 +210,8 @@ export default function SiteInstaller({ serverId, panelOnly, onClose, onAsk }: P
   )
 }
 
+/** Every button inside the form is explicitly not a submit — a tile that submitted would
+ *  try to install with nothing chosen. */
 function TypeGrid({ items, onPick }: {
   items: SiteType[]
   onPick: (t: SiteType) => void
@@ -307,23 +278,5 @@ function ChosenRow({ type, onChange }: { type: SiteType; onChange: () => void })
         Change
       </button>
     </div>
-  )
-}
-
-function AskAllyRow({ onAsk }: { onAsk: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onAsk}
-      className="flex w-full items-start gap-3 rounded-lg border border-dashed border-border p-3 text-left hover:bg-accent"
-    >
-      <Sparkles size={15} className="mt-0.5 shrink-0 text-primary" />
-      <div>
-        <p className="text-sm font-medium text-foreground">Something else — ask Ally</p>
-        <p className="mt-0.5 text-caption text-muted-foreground">
-          For an unusual layout, an existing site to work around, or anything not listed here.
-        </p>
-      </div>
-    </button>
   )
 }
