@@ -2291,47 +2291,57 @@ def _build_playbook(item: dict) -> Playbook:
     )
 
 
-async def seed_if_empty(db: AsyncSession) -> None:
-    """Seed official playbooks if the table is empty."""
-    result = await db.execute(select(Playbook).limit(1))
-    if result.scalar_one_or_none() is not None:
-        return
-
-    logger.info("Seeding %d official playbooks...", len(OFFICIAL_PLAYBOOKS))
-    for item in OFFICIAL_PLAYBOOKS:
-        db.add(_build_playbook(item))
-
-    await db.commit()
-    logger.info("Playbook seed complete.")
+# The columns a playbook DEFINITION owns. Everything else on the row belongs either to the
+# running system (run_count, rating) or to the database (id, created_at), and must survive a
+# sync untouched.
+_REPO_OWNED = (
+    "title", "description", "category", "os_family", "script_type", "est_runtime_sec",
+    "tags", "variables", "access_info", "supported_os", "script_bash",
+    "script_powershell", "is_official", "is_public",
+)
 
 
-async def resync_official_scripts(db: AsyncSession) -> dict:
-    """Upsert official playbooks against the current definitions (matched by slug):
-    update existing rows' scripts/access and INSERT any new playbooks. Use after
-    editing or adding playbooks. Preserves run_count/rating. Returns counts.
+async def sync_official(db: AsyncSession) -> dict:
+    """Make the official playbook rows match the definitions in this build.
+
+    The repo is the source of truth and a row is a copy of it, so this runs on every
+    startup. Without it, editing a playbook changes the code and nothing else: the
+    customer keeps running the previous script, and the change looks deployed while
+    behaving exactly as it did before. That is not hypothetical — reverse-proxy support
+    for Gitea, n8n, Uptime Kuma, Vaultwarden and Portainer reached production as code
+    while their rows still had no DOMAIN variable, so there was no way to give one a
+    domain and the feature silently did nothing.
+
+    Fields are copied from the same builder the insert path uses, so the two cannot
+    drift: adding a column to a definition now reaches existing rows as well as new ones.
+    The previous version listed five columns by hand, which meant a changed title or
+    estimated runtime stayed stale forever.
     """
-    from sqlalchemy import update as sa_update
+    existing = {p.slug: p for p in (await db.execute(
+        select(Playbook).where(Playbook.is_official == True)  # noqa: E712
+    )).scalars().all()}
 
-    existing = set((await db.execute(select(Playbook.slug))).scalars().all())
     updated = inserted = 0
     for item in OFFICIAL_PLAYBOOKS:
-        if item["slug"] in existing:
-            await db.execute(
-                sa_update(Playbook)
-                .where(Playbook.slug == item["slug"])
-                .values(
-                    script_bash=_script_for(item),
-                    script_powershell=item.get("script_powershell"),
-                    access_info=item.get("access"),
-                    variables=item.get("variables", []),
-                    supported_os=item.get("supported_os"),
-                )
-            )
-            updated += 1
-        else:
-            db.add(_build_playbook(item))
+        fresh = _build_playbook(item)
+        row = existing.get(item["slug"])
+        if row is None:
+            db.add(fresh)
             inserted += 1
+            continue
+        # Only count a row that really changed, so a normal restart logs "0 updated"
+        # and a log line saying otherwise means something actually shipped.
+        changed = False
+        for col in _REPO_OWNED:
+            value = getattr(fresh, col)
+            if getattr(row, col) != value:
+                setattr(row, col, value)
+                changed = True
+        updated += changed
+
     await db.commit()
+    if inserted or updated:
+        logger.info("Playbooks synced: %d new, %d updated.", inserted, updated)
     return {"updated": updated, "inserted": inserted}
 
 

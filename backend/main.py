@@ -298,7 +298,12 @@ async def lifespan(app: FastAPI):
     await mission_service.recover_orphaned()
     await setup_runner.recover_orphaned()
     async with AsyncSessionLocal() as db:
-        await playbook_service.seed_if_empty(db)
+        # Not "seed if empty": a playbook edit has to reach the row, or the customer keeps
+        # running the previous script while the change looks deployed.
+        try:
+            await playbook_service.sync_official(db)
+        except Exception as exc:  # noqa: BLE001 — a sync problem must not stop the app
+            logger.warning("Could not sync official playbooks: %s", exc)
         # Apply the saved AI provider config (Settings UI) over the .env default.
         from app.services import llm_service, settings_service
         try:

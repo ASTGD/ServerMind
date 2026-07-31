@@ -603,3 +603,46 @@ def test_the_port_we_decide_matches_what_the_container_publishes():
             f"{type_id}: the catalogue installs on port {port} but the playbook's own "
             f"default is {declared.get('default')} — one of them is wrong"
         )
+
+
+# --- Playbook definitions must actually reach the database ---------------------------
+#
+# P4 shipped reverse-proxy support as code while production's rows still had no DOMAIN
+# variable, so nothing could be given a domain and the feature quietly did nothing. The
+# cause was a sync that listed a handful of columns by hand and silently ignored the rest.
+
+def test_sync_covers_every_field_a_definition_owns():
+    """A field added to a playbook definition must reach existing rows, not only new ones.
+
+    This is the test that was missing: the old sync updated five columns, so a changed
+    title, category, estimated runtime or tag list stayed stale in the database forever
+    while looking correct in the repo.
+    """
+    from app.services.playbook_service import _REPO_OWNED, _build_playbook, OFFICIAL_PLAYBOOKS
+
+    built = _build_playbook(OFFICIAL_PLAYBOOKS[0])
+    # Everything the builder sets is owned by the definition, except the identity of the
+    # row itself and the counters the running system maintains.
+    from sqlalchemy import inspect as sa_inspect
+
+    set_by_builder = {
+        c.key for c in sa_inspect(built).mapper.column_attrs
+        if getattr(built, c.key, None) is not None
+    }
+    not_owned = {"id", "slug", "created_at", "updated_at", "run_count", "rating",
+                 "author_id", "version"}
+    missing = set_by_builder - not_owned - set(_REPO_OWNED)
+    assert not missing, (
+        f"the builder sets {sorted(missing)} but sync_official never copies them onto an "
+        f"existing row, so changing one would never reach a deployed database"
+    )
+
+
+def test_sync_never_touches_the_counters_the_system_owns():
+    """run_count and rating are earned by real use and must survive a redeploy."""
+    from app.services.playbook_service import _REPO_OWNED
+
+    for owned_by_the_system in ("run_count", "rating", "id", "slug", "created_at"):
+        assert owned_by_the_system not in _REPO_OWNED, (
+            f"{owned_by_the_system} would be overwritten on every startup"
+        )
