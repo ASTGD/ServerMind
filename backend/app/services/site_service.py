@@ -440,22 +440,22 @@ SITE_TYPES: dict[str, dict] = {
     "static": {
         "popular": True, "group": "websites", "playbook": "create-site", "label": "Empty website",
         "blurb": "A folder and an address. For your own files or a Git deploy.",
-        "app_type": "static", "extra": {"WITH_PHP": "no"},
+        "app_type": "static", "extra": {"WITH_PHP": "no", "TAKEOVER": "no"},
     },
     "php": {
         "popular": True, "group": "websites", "playbook": "create-site", "label": "PHP website",
         "blurb": "An empty site with PHP switched on, ready for an installer.",
-        "app_type": "php", "extra": {"WITH_PHP": "yes"},
+        "app_type": "php", "extra": {"WITH_PHP": "yes", "TAKEOVER": "no"},
     },
     "wordpress": {
         "popular": True, "group": "websites", "playbook": "wordpress-site", "label": "WordPress",
         "blurb": "A full WordPress install with its own database.",
-        "app_type": "wordpress", "extra": {},
+        "app_type": "wordpress", "extra": {"TAKEOVER": "no"},
     },
     "laravel": {
         "popular": True, "group": "websites", "playbook": "laravel-site", "label": "Laravel",
         "blurb": "A fresh Laravel install with its database and keys. Needs PHP 8.3+.",
-        "app_type": "laravel", "extra": {},
+        "app_type": "laravel", "extra": {"TAKEOVER": "no"},
     },
 
     # ── Applications: a program that keeps running ──────────────────────────
@@ -463,7 +463,7 @@ SITE_TYPES: dict[str, dict] = {
         "popular": True, "group": "applications", "playbook": "create-app", "label": "Web application",
         "blurb": "Node, Next.js, Python or Go — we point the domain at your program "
                  "and keep it alive across crashes and reboots.",
-        "app_type": "unknown", "extra": {},
+        "app_type": "unknown", "extra": {"TAKEOVER": "no"},
     },
 
     # ── Ready-made apps ─────────────────────────────────────────────────────
@@ -475,12 +475,12 @@ SITE_TYPES: dict[str, dict] = {
     "nextcloud": {
         "popular": True, "group": "apps", "playbook": "nextcloud", "label": "Nextcloud",
         "blurb": "Your own file storage and sharing, like Dropbox.",
-        "app_type": "php", "extra": {},
+        "app_type": "php", "extra": {"TAKEOVER": "no"},
     },
     "ghost": {
         "popular": True, "group": "apps", "playbook": "ghost-cms", "label": "Ghost",
         "blurb": "A modern blog and newsletter platform.",
-        "app_type": "unknown", "extra": {},
+        "app_type": "unknown", "extra": {"TAKEOVER": "no"},
     },
 
     # These five install as containers on a port. They can be offered as SITES because the
@@ -489,27 +489,27 @@ SITE_TYPES: dict[str, dict] = {
     "gitea": {
         "group": "apps", "playbook": "gitea", "label": "Gitea",
         "blurb": "Your own Git hosting, like a private GitHub.",
-        "app_type": "unknown", "extra": {"PORT": "3000"},
+        "app_type": "unknown", "extra": {"PORT": "3000", "TAKEOVER": "no"},
     },
     "n8n": {
         "popular": True, "group": "apps", "playbook": "n8n", "label": "n8n",
         "blurb": "Automate work between your apps, without code.",
-        "app_type": "unknown", "extra": {"PORT": "5678"},
+        "app_type": "unknown", "extra": {"PORT": "5678", "TAKEOVER": "no"},
     },
     "uptime-kuma": {
         "group": "apps", "playbook": "uptime-kuma", "label": "Uptime Kuma",
         "blurb": "A status page and uptime monitor you host yourself.",
-        "app_type": "unknown", "extra": {"PORT": "3001"},
+        "app_type": "unknown", "extra": {"PORT": "3001", "TAKEOVER": "no"},
     },
     "vaultwarden": {
         "group": "apps", "playbook": "vaultwarden", "label": "Vaultwarden",
         "blurb": "A password manager for your team, Bitwarden-compatible.",
-        "app_type": "unknown", "extra": {"PORT": "8080"},
+        "app_type": "unknown", "extra": {"PORT": "8080", "TAKEOVER": "no"},
     },
     "portainer": {
         "group": "apps", "playbook": "portainer", "label": "Portainer",
         "blurb": "A web interface for the Docker containers on this server.",
-        "app_type": "unknown", "extra": {"PORT": "9443"},
+        "app_type": "unknown", "extra": {"PORT": "9443", "TAKEOVER": "no"},
     },
 }
 

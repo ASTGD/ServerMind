@@ -760,3 +760,124 @@ def test_the_common_types_are_all_installable_today():
     offered = {i["id"] for i in ss.catalogue(by_slug)}
     for expected in ("wordpress", "laravel", "static", "php", "app"):
         assert expected in offered, f"{expected} can no longer be installed onto a site"
+
+
+# --- An unfilled placeholder must never reach a server ------------------------------------
+#
+# Found on a real server: running the LEMP playbook with no variables set the database root
+# password to the literal text "{{MYSQL_ROOT_PASS}}". Nothing errored and nothing was
+# logged — the box simply had a database nobody could open, with a password nobody chose.
+
+def test_a_script_with_an_unfilled_placeholder_is_refused():
+    from app.services.playbook_service import UnresolvedVariables, substitute_variables
+
+    with pytest.raises(UnresolvedVariables) as exc:
+        substitute_variables('MYSQL_ROOT_PASS="{{MYSQL_ROOT_PASS}}"', {})
+    assert "MYSQL_ROOT_PASS" in str(exc.value)
+
+
+def test_a_partly_filled_script_is_refused_too():
+    """The dangerous shape: some answers given, one forgotten."""
+    from app.services.playbook_service import UnresolvedVariables, substitute_variables
+
+    with pytest.raises(UnresolvedVariables) as exc:
+        substitute_variables('D="{{DOMAIN}}"\nP="{{DB_PASS}}"', {"DOMAIN": "shop.example.com"})
+    assert "DB_PASS" in str(exc.value)
+    assert "DOMAIN" not in str(exc.value), "only name what is actually still missing"
+
+
+def test_a_fully_answered_script_passes_through():
+    from app.services.playbook_service import substitute_variables
+
+    assert substitute_variables('D="{{DOMAIN}}"', {"DOMAIN": "shop.example.com"}) \
+        == 'D="shop.example.com"'
+
+
+def test_the_guard_does_not_fire_on_ordinary_shell_braces():
+    """A narrow pattern on purpose: heredocs for nginx and systemd are full of braces, and
+    a guard that refused those would block every installer that writes a config."""
+    from app.services.playbook_service import substitute_variables
+
+    for text in ('echo "${HOME}"', 'awk "{{print $1}}"', "func() {{ :; }}", "${!x}"):
+        assert substitute_variables(text, {}) == text
+
+
+def test_every_official_playbook_is_runnable_with_its_own_declared_answers():
+    """If a playbook needs a value it never declares, nobody can run it — the guard would
+    refuse every attempt, and the customer would have no way to supply the missing one."""
+    from app.services.playbook_service import (OFFICIAL_PLAYBOOKS, _script_for,
+                                               substitute_variables)
+
+    for item in OFFICIAL_PLAYBOOKS:
+        script = _script_for(item)
+        if not script:
+            continue
+        answers = {v["name"]: (v.get("default") or "x") for v in item.get("variables", [])}
+        substitute_variables(script, answers)   # raises if the playbook is unrunnable
+
+
+# --- The takeover switch has to actually reach the script ---------------------------------
+#
+# It did not. The guard read ${TAKEOVER:-no} and NOTHING ever set it — install() passed it
+# as a substitution variable with no placeholder to fill, so the branch always took the "no"
+# path and installing onto an existing site was quietly impossible. The tests above this one
+# all passed, because they checked that the guard's text existed rather than that the value
+# could ever arrive. A script is delivered as text to a fresh shell: substitution is the
+# only channel there is.
+
+def test_the_takeover_switch_is_fillable_by_substitution():
+    from app.services.playbook_service import _SITE_GUARDS
+
+    assert 'TAKEOVER="{{TAKEOVER}}"' in _SITE_GUARDS, (
+        "nothing can set this from outside — a script reaches the server as text"
+    )
+
+
+def test_an_install_really_turns_takeover_on_in_the_finished_script():
+    """End to end through substitution, which is what actually runs."""
+    from app.services.playbook_service import (OFFICIAL_PLAYBOOKS, _script_for,
+                                               substitute_variables)
+
+    by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
+    spec = ss.SITE_TYPES["wordpress"]
+    answers = {v["name"]: (v.get("default") or "x")
+               for v in by_slug[spec["playbook"]]["variables"]}
+    # Exactly what install() sends: the type's own extras, then TAKEOVER forced on.
+    answers.update({**spec["extra"], "TAKEOVER": "yes"})
+
+    script = substitute_variables(_script_for(by_slug[spec["playbook"]]), answers)
+    assert 'TAKEOVER="yes"' in script
+    assert "{{TAKEOVER}}" not in script
+
+
+def test_creating_a_site_leaves_takeover_off():
+    """A fresh create must never adopt anything — it has nothing to adopt, and a stray
+    "yes" would let it replace a config that happened to be ours."""
+    from app.services.playbook_service import (OFFICIAL_PLAYBOOKS, _script_for,
+                                               substitute_variables)
+
+    by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
+    for type_id, spec in ss.SITE_TYPES.items():
+        item = by_slug.get(spec["playbook"])
+        if item is None or "{{TAKEOVER}}" not in (_script_for(item) or ""):
+            continue
+        answers = {v["name"]: (v.get("default") or "x") for v in item["variables"]}
+        answers.update(spec["extra"])          # what create() sends
+        script = substitute_variables(_script_for(item), answers)
+        assert 'TAKEOVER="no"' in script, f"{type_id} would adopt on a fresh create"
+
+
+def test_anything_other_than_yes_is_treated_as_no():
+    """The value arrives as text from a form and an API. Only an exact "yes" may unlock it."""
+    from app.services.playbook_service import _SITE_GUARDS
+
+    assert 'case "$TAKEOVER" in yes) : ;; *) TAKEOVER=no ;; esac' in _SITE_GUARDS
+
+
+def test_the_customer_is_never_asked_about_takeover():
+    """It is ours to decide, not a question. In `extra`, so the catalogue filters it out."""
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS
+
+    by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
+    for item in ss.catalogue(by_slug):
+        assert "TAKEOVER" not in [f["name"] for f in item["fields"]], item["id"]
