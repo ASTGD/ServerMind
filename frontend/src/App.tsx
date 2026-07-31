@@ -19,6 +19,8 @@ import ServerLogs from "./routes/ServerLogs"
 import ServerSettings from "./routes/ServerSettings"
 import ServerHome from "./routes/ServerHome"
 import ServerSites from "./routes/ServerSites"
+import ServerCron from "./routes/ServerCron"
+import ServerDatabases from "./routes/ServerDatabases"
 import ServerPhp from "./routes/ServerPhp"
 import ServerMonitoring from "./routes/ServerMonitoring"
 import ServerServices from "./routes/ServerServices"
@@ -90,6 +92,8 @@ export default function App() {
             <Route path="installed" element={<Installed />} />
             <Route path="sites" element={<ServerSites />} />
             <Route path="php" element={<ServerPhp />} />
+            <Route path="databases" element={<ServerDatabases />} />
+            <Route path="cron" element={<ServerCron />} />
             <Route path="monitoring" element={<ServerMonitoring />} />
             <Route path="services" element={<ServerServices />} />
             <Route path="deployments" element={<ServerDeployments />} />

@@ -1,6 +1,6 @@
 import {
-  Activity, Archive, Clock, Cog, FileText, FolderOpen, Globe, HeartPulse, KeyRound,
-  Code2, LayoutDashboard, LayoutPanelTop, Package, Rocket, ShieldCheck,
+  Activity, Archive, CalendarClock, Clock, Cog, Database, FileText, FolderOpen, Globe, HeartPulse,
+  KeyRound, Code2, LayoutDashboard, LayoutPanelTop, Package, Rocket, ShieldCheck,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type { Server } from "@/types"
@@ -91,6 +91,7 @@ export const MENU: MenuItem[] = [
   { path: "files", label: "Files", icon: FolderOpen, needs: "sftp", group: "manage" },
   { path: "installed", label: "Installed", icon: Package, needs: "sftp", group: "manage" },
   { path: "php", label: "PHP", icon: Code2, needs: "sftp", excludes: "panel", group: "manage" },
+  { path: "databases", label: "Databases", icon: Database, needs: "unix", excludes: "panel", group: "manage" },
 
   { path: "monitoring", label: "Monitoring", icon: Activity, needs: "shell", group: "operate" },
   { path: "services", label: "Services", icon: HeartPulse, needs: "unix", group: "operate" },
@@ -98,6 +99,7 @@ export const MENU: MenuItem[] = [
   { path: "security", label: "Security", icon: ShieldCheck, needs: "shell", group: "operate" },
   { path: "access", label: "Firewall & keys", icon: KeyRound, needs: "unix", group: "operate" },
   { path: "scheduler", label: "Scheduled tasks", icon: Clock, needs: "shell", group: "operate" },
+  { path: "cron", label: "Cron jobs", icon: CalendarClock, needs: "unix", group: "operate" },
   { path: "backups", label: "Backups", icon: Archive, needs: "sftp", group: "operate" },
   { path: "logs", label: "Logs", icon: FileText, needs: "sftp", group: "operate" },
 

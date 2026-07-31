@@ -83,6 +83,21 @@ def is_host_key_mismatch(exc: BaseException | None) -> bool:
     return isinstance(exc, HostKeyMismatch)
 
 
+def _key_classes() -> tuple:
+    """The private-key formats this paramiko build can actually read.
+
+    Built from what is installed rather than written out, because the list is not stable:
+    paramiko 5 removed ``DSSKey`` (DSA has been disabled in OpenSSH for years), and naming
+    it directly raised AttributeError before a single key was tried — so EVERY key login
+    failed, not just DSA ones, the moment paramiko was upgraded. requirements.txt pins an
+    older version, which is exactly why nobody noticed.
+
+    Ordered most-likely-first; each is tried in turn until one parses the key.
+    """
+    names = ("RSAKey", "Ed25519Key", "ECDSAKey", "DSSKey")
+    return tuple(cls for cls in (getattr(paramiko, n, None) for n in names) if cls)
+
+
 def _key_fingerprint(key: paramiko.PKey) -> str:
     """OpenSSH-style SHA256 fingerprint of a host key, e.g. 'SHA256:abc…'."""
     digest = hashlib.sha256(key.asbytes()).digest()
@@ -121,7 +136,7 @@ def _make_client(host: str, port: int, username: str, auth_type: str, credential
         # auth_type == "key" — credential is the PEM private key string
         key_file = io.StringIO(credential)
         pkey = None
-        for key_class in (paramiko.RSAKey, paramiko.Ed25519Key, paramiko.ECDSAKey, paramiko.DSSKey):
+        for key_class in _key_classes():
             try:
                 key_file.seek(0)
                 pkey = key_class.from_private_key(key_file)

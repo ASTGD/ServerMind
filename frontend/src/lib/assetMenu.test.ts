@@ -219,3 +219,38 @@ describe("a section a control panel owns itself", () => {
     expect(labels(asset({ panel_type: "cyberpanel" }))).toContain("Control panel")
   })
 })
+
+describe("databases and cron", () => {
+  it("offers both on a plain Linux server", () => {
+    const paths = menuFor(asset()).map((i) => i.path)
+    expect(paths).toContain("databases")
+    expect(paths).toContain("cron")
+  })
+
+  it("hides Databases on a control panel, which owns its own", () => {
+    // Same reasoning as PHP: a panel manages databases through its own screens, and a
+    // database we created behind its back would be invisible there.
+    const paths = menuFor(asset({ panel_type: "cyberpanel" })).map((i) => i.path)
+    expect(paths).not.toContain("databases")
+    expect(paths).toContain("hosting")
+  })
+
+  it("keeps Cron jobs on a control panel, because the crontab is still the server's", () => {
+    // Unlike databases, a panel does not own the machine's crontab — Laravel jobs and
+    // backup scripts live there regardless of which panel is installed.
+    expect(menuFor(asset({ panel_type: "cyberpanel" })).map((i) => i.path)).toContain("cron")
+  })
+
+  it("offers neither on a Windows box", () => {
+    // Both are Linux tools: mysql/psql over a unix socket, and crontab.
+    const paths = menuFor(asset({ connection_type: "winrm", port: 5985 })).map((i) => i.path)
+    expect(paths).not.toContain("databases")
+    expect(paths).not.toContain("cron")
+  })
+
+  it("offers neither on an RDP-only box", () => {
+    const paths = menuFor(asset({ connection_type: "rdp", port: 3389 })).map((i) => i.path)
+    expect(paths).not.toContain("databases")
+    expect(paths).not.toContain("cron")
+  })
+})

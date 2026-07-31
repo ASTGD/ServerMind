@@ -52,6 +52,8 @@ from app.routers import access as access_router
 from app.routers import php as php_router
 from app.routers import deployments as deployments_router
 from app.routers import dns as dns_router
+from app.routers import cron as cron_router
+from app.routers import databases as databases_router
 from app.routers import service_monitors as service_monitors_router
 from app.routers import uptime as uptime_router
 from app.routers import team as team_router
@@ -387,6 +389,8 @@ app.include_router(access_router.router)
 app.include_router(php_router.router)
 app.include_router(deployments_router.router)
 app.include_router(dns_router.router)
+app.include_router(cron_router.router)
+app.include_router(databases_router.router)
 app.include_router(service_monitors_router.router)
 app.include_router(uptime_router.router)
 app.include_router(escalation_router.router)  # /api/escalation — on-call paging
