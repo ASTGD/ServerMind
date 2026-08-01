@@ -174,3 +174,50 @@ def line_severity(line: str) -> str:
     if _WARN_RE.search(line):
         return "warn"
     return "info"
+
+
+# --- One site's logs ----------------------------------------------------------------------
+#
+# The server-wide list answers "what is happening on this machine". On a machine with
+# fifteen sites that is the wrong question — the one anyone actually asks is "what about
+# THIS one", and until now there was no way to ask it.
+#
+# Our own installers name their log files after the domain, which is what makes this
+# possible without guessing. An app's own log is found from the site's folder.
+
+def build_site_log_command(domain: str, doc_root: str | None) -> str:
+    """Which log files belong to this one site. One round trip, read-only.
+
+    The domain is quoted rather than escaped, and the paths are ours — a customer's domain
+    never becomes part of a command's structure.
+    """
+    d = shlex.quote(domain)
+    parts = [
+        # Written by every site our installers create, named after the domain.
+        f'for f in /var/log/nginx/{{{d},{d}-error,{d}-access}}.log '
+        f'/var/log/apache2/{d}-*.log /var/log/httpd/{d}-*.log; do '
+        f'[ -f "$f" ] && echo "{_SENTINEL}|Web server|site|$f|'
+        f'$(stat -c%s "$f" 2>/dev/null || echo 0)"; done 2>/dev/null'
+    ]
+    if doc_root:
+        # The application's own log, which is where a 500 explains itself. Laravel writes
+        # here; so do most PHP frameworks.
+        site_dir = shlex.quote(doc_root.rstrip("/").removesuffix("/public"))
+        parts.append(
+            f'for f in {site_dir}/storage/logs/*.log {site_dir}/logs/*.log '
+            f'{site_dir}/wp-content/debug.log; do '
+            f'[ -f "$f" ] && echo "{_SENTINEL}|Application|site|$f|'
+            f'$(stat -c%s "$f" 2>/dev/null || echo 0)"; done 2>/dev/null'
+        )
+    return "; ".join(parts) + "; true"
+
+
+async def discover_for_site(server: Server, domain: str, doc_root: str | None) -> list[dict]:
+    """This site's own log files. Never raises — an unreachable server returns nothing."""
+    try:
+        stdout, _stderr, _code = await connection_manager.execute(
+            server, build_site_log_command(domain, doc_root))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Site log discovery failed for %s: %s", domain, exc)
+        return []
+    return parse_discovery(stdout)

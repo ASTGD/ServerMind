@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Globe, Search, Loader2, RefreshCw, CircleCheck, CircleAlert, CircleDashed,
@@ -167,12 +168,12 @@ function SiteRow({ site }: { site: Site }) {
           <span className="mt-0.5"><StatusDot site={site} /></span>
           <div className="min-w-0">
             <p className="flex flex-wrap items-center gap-2">
-              <a
-                href={`https://${site.domain}`} target="_blank" rel="noopener noreferrer"
+              <Link
+                to={`/sites/${site.id}`}
                 className="truncate text-[14px] font-medium text-foreground hover:underline"
               >
                 {site.domain}
-              </a>
+              </Link>
               <CertChip site={site} />
               <MailChip site={site} onClick={() => setShowMail((v) => !v)} />
               {!site.is_present && (

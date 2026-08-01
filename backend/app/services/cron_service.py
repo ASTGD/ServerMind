@@ -469,3 +469,32 @@ PRESETS = [
         "needs_path": "The folder the site is in, for example /var/www/shop.example.com",
     },
 ]
+
+
+def jobs_for_site(users: list[dict], domain: str, doc_root: str | None) -> list[dict]:
+    """The scheduled jobs that belong to one site.
+
+    A crontab is the server's, not a site's — so this is a filter, not a separate list.
+    A job counts as this site's when it mentions the site's folder or its domain, which is
+    how the two jobs that matter are always written: Laravel's scheduler runs `cd <folder>
+    && php artisan schedule:run`, and WordPress's cron runs its own wp-cron.php.
+
+    Matching on the FOLDER first is what keeps it honest. Matching on the domain alone
+    would claim `curl https://other-site.com/ping?from=shop.example.com` as this site's,
+    and would miss every job written with a path and no domain in it at all.
+    """
+    needles = []
+    if doc_root:
+        site_dir = doc_root.rstrip("/")
+        needles.append(site_dir)
+        if site_dir.endswith("/public"):
+            needles.append(site_dir[: -len("/public")])
+    needles.append(domain)
+
+    out: list[dict] = []
+    for entry in users:
+        for job in entry.get("jobs", []):
+            command = job.get("command", "")
+            if any(n and n in command for n in needles):
+                out.append({**job, "user": entry["user"], "fingerprint": entry["fingerprint"]})
+    return out

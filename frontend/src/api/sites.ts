@@ -194,3 +194,38 @@ export async function turnOnSsl(siteId: string): Promise<{ run_id: string }> {
   const { data } = await apiClient.post(`/api/sites/${siteId}/ssl`)
   return data
 }
+
+export async function removeSite(
+  siteId: string,
+  body: { confirm_domain: string; drop_database: boolean },
+): Promise<{ run_id: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/remove`, body)
+  return data
+}
+
+export interface SiteLogFile {
+  path: string
+  label: string
+  category: string
+  size_bytes: number
+}
+
+export async function getSiteLogs(siteId: string): Promise<{ logs: SiteLogFile[]; reachable: boolean; server_id: string }> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/logs`)
+  return data
+}
+
+export interface SiteCronJob {
+  raw: string
+  schedule: string
+  command: string
+  description: string
+  note: string | null
+  parsed: boolean
+  user: string
+}
+
+export async function getSiteCron(siteId: string): Promise<{ jobs: SiteCronJob[]; reachable: boolean; server_id: string }> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/cron`)
+  return data
+}

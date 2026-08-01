@@ -20,7 +20,14 @@ import ServerSettings from "./routes/ServerSettings"
 import ServerHome from "./routes/ServerHome"
 import ServerSites from "./routes/ServerSites"
 import ServerCron from "./routes/ServerCron"
-import SiteDetail from "./routes/SiteDetail"
+import SiteLayout from "./routes/SiteLayout"
+import SiteOverview from "./routes/site/SiteOverview"
+import SiteHttpsTab from "./routes/site/SiteHttpsTab"
+import SiteUptime from "./routes/site/SiteUptime"
+import SiteLogs from "./routes/site/SiteLogs"
+import SiteCron from "./routes/site/SiteCron"
+import SiteSettings from "./routes/site/SiteSettings"
+import SiteRedirect from "./routes/site/SiteRedirect"
 import ServerDatabases from "./routes/ServerDatabases"
 import ServerPhp from "./routes/ServerPhp"
 import ServerMonitoring from "./routes/ServerMonitoring"
@@ -92,7 +99,7 @@ export default function App() {
             <Route path="hosting" element={<Hosting />} />
             <Route path="installed" element={<Installed />} />
             <Route path="sites" element={<ServerSites />} />
-            <Route path="sites/:siteId" element={<SiteDetail />} />
+            <Route path="sites/:siteId" element={<SiteRedirect />} />
             <Route path="php" element={<ServerPhp />} />
             <Route path="databases" element={<ServerDatabases />} />
             <Route path="cron" element={<ServerCron />} />
@@ -104,6 +111,14 @@ export default function App() {
           <Route path="playbooks" element={<Playbooks />} />
           <Route path="runbooks" element={<Runbooks />} />
           <Route path="sites" element={<Sites />} />
+          <Route path="sites/:siteId" element={<SiteLayout />}>
+            <Route index element={<SiteOverview />} />
+            <Route path="https" element={<SiteHttpsTab />} />
+            <Route path="logs" element={<SiteLogs />} />
+            <Route path="cron" element={<SiteCron />} />
+            <Route path="uptime" element={<SiteUptime />} />
+            <Route path="settings" element={<SiteSettings />} />
+          </Route>
           <Route path="dns" element={<Dns />} />
           <Route path="deployments" element={<Deployments />} />
           <Route path="playbooks/:id" element={<PlaybookDetail />} />

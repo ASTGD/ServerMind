@@ -22,7 +22,20 @@ from app.models.escalation import NotificationProvider
 from app.services import paging_service
 from app.services.paging_service import PagingError
 
+# Every test that reasons about the budget passes this in explicitly, so those stay fixed
+# and readable. But send_sms() reads the real clock, so a provider handed a hardcoded date
+# is in "last month" the moment the month turns — the counter resets, the limit stops
+# applying, and a test about refusing past the limit starts failing at midnight on the 1st
+# for reasons that have nothing to do with the code. It happened: this file went red on
+# 1 August. So the default period is the CURRENT month, and only the tests that are
+# deliberately about a rollover say otherwise.
 NOW = datetime(2026, 7, 26, 12, 0, tzinfo=timezone.utc)
+
+
+def this_month() -> datetime:
+    """The start of the month the real clock is in, whenever the suite happens to run."""
+    now = datetime.now(tz=timezone.utc)
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
 class FakeSession:
@@ -43,7 +56,7 @@ def provider(**kw) -> NotificationProvider:
     )
     row.monthly_limit = kw.get("monthly_limit", 100)
     row.sent_this_month = kw.get("sent_this_month", 0)
-    row.period_start = kw.get("period_start", NOW)
+    row.period_start = kw.get("period_start", this_month())
     row.verified_at = kw.get("verified_at")
     return row
 
@@ -52,6 +65,7 @@ def provider(**kw) -> NotificationProvider:
 
 def test_budget_counts_down_within_the_month():
     row = provider(monthly_limit=10, sent_this_month=4)
+    row.period_start = NOW
     assert paging_service.sms_budget_left(row, NOW) == 6
 
 
@@ -73,6 +87,7 @@ def test_reading_the_counter_does_not_reset_it():
 def test_a_naive_period_start_is_still_compared_correctly():
     row = provider(monthly_limit=5, sent_this_month=5,
                    period_start=datetime(2026, 7, 1, 0, 0))
+    row.period_start = NOW
     assert paging_service.sms_budget_left(row, NOW) == 0
 
 

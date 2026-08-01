@@ -555,3 +555,132 @@ async def turn_on_ssl(site_id: str, db: DBDep, current_user: CurrentUser) -> dic
                               target_type="server", target_id=str(server.id),
                               meta={"domain": site.domain})
     return {"run_id": str(run.id), "domain": site.domain}
+
+
+class RemoveIn(BaseModel):
+    """Typed back, because there is no undo anywhere in this system."""
+    confirm_domain: str
+    drop_database: bool = False
+
+
+@router.post("/sites/{site_id}/remove")
+async def remove_site(site_id: str, body: RemoveIn, db: DBDep,
+                      current_user: CurrentUser) -> dict:
+    """Take a site off the server: files, configuration, certificate and — if asked — its
+    database.
+
+    Only a site ServerAlly built. One that was already on the server when we found it has a
+    layout we did not choose, and deleting its folder on a guess is how something
+    irreplaceable disappears; those can be untracked instead, which changes nothing on the
+    server. The script enforces this too, by requiring our own marker in the configuration.
+
+    The typed domain has to match, for the same reason the database drop asks: the loss is
+    rarely "I meant not to", it is "I deleted the one next to it".
+    """
+    from app.models.playbook import Playbook, PlaybookRun
+    from app.services import playbook_service
+    from app.services.secret_vars import encrypt_variables
+
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+
+    if (body.confirm_domain or "").strip() != site.domain:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Type the domain exactly — {site.domain} — to confirm. Removing a site "
+                   f"cannot be undone, and there is no copy of it here.")
+
+    if site.source != "manual":
+        raise HTTPException(
+            status_code=422,
+            detail="This site was already on the server when ServerAlly found it, so it is "
+                   "not removed from here — its files are laid out in a way we did not "
+                   "choose. You can stop tracking it instead, which changes nothing on the "
+                   "server.")
+
+    server = await resolve_server(str(site.server_id), current_user, db, need_execute=True)
+    if server.connection_type != "ssh":
+        raise HTTPException(
+            status_code=400,
+            detail="Sites are removed over SSH on a Linux server. A hosting panel removes "
+                   "its own — use its own screen for that.")
+
+    pb = (await db.execute(
+        select(Playbook).where(Playbook.slug == "site-remove",
+                               Playbook.is_official == True)  # noqa: E712
+    )).scalar_one_or_none()
+    if pb is None or not pb.script_bash:
+        raise HTTPException(status_code=422,
+                            detail="The remove-site tool is not available on this ServerAlly.")
+
+    variables = {"DOMAIN": site.domain, "DROP_DB": "yes" if body.drop_database else "no"}
+    script = playbook_service.substitute_variables(pb.script_bash, variables)
+
+    run = PlaybookRun(server_id=server.id, user_id=current_user.id, playbook_id=pb.id,
+                      variables_used=encrypt_variables(variables), status="running")
+    db.add(run)
+    # The row goes when the server confirms it is gone, not before: a site removed from the
+    # list while it is still being served is a site nobody knows about any more.
+    site.status = "installing"
+    site.install_error = None
+    await db.commit()
+    await db.refresh(run)
+
+    run_playbook_task.delay(str(run.id), str(server.id), script)
+    await audit_service.audit(db, current_user, "site.removed",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain,
+                                    "database": body.drop_database})
+    return {"run_id": str(run.id), "domain": site.domain}
+
+
+@router.get("/sites/{site_id}/logs")
+async def site_logs(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """This site's own log files.
+
+    The server-wide list answers "what is happening on this machine", which on a machine
+    with fifteen sites is the wrong question.
+    """
+    from app.services import log_service
+
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+    server = await resolve_server(str(site.server_id), current_user, db)
+    if server.connection_type != "ssh":
+        return {"logs": [], "reachable": False}
+
+    logs = await log_service.discover_for_site(server, site.domain, site.doc_root)
+    return {"logs": logs, "reachable": True, "server_id": str(server.id)}
+
+
+@router.get("/sites/{site_id}/cron")
+async def site_cron(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """The scheduled jobs that belong to this site.
+
+    A crontab is the server's, so this is a filter over it rather than a separate list —
+    and it matches on the site's FOLDER first, because matching on the domain alone would
+    claim a neighbour's job that merely mentions this domain in a URL.
+    """
+    from app.services import cron_service
+
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+    server = await resolve_server(str(site.server_id), current_user, db)
+    if server.connection_type != "ssh":
+        return {"jobs": [], "reachable": False}
+
+    listing = await cron_service.list_jobs(server)
+    return {
+        "jobs": cron_service.jobs_for_site(listing.get("users", []), site.domain, site.doc_root),
+        "reachable": listing.get("reachable", False),
+        "server_id": str(server.id),
+    }

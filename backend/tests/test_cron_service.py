@@ -323,3 +323,65 @@ def test_a_note_survives_the_round_trip_intact():
 def test_a_job_added_without_a_note_has_none():
     job = cron.parse_crontab(cron.compose_add("", "0 2 * * *", "/bin/true"))[0]
     assert job["note"] is None
+
+
+# --- One site's scheduled jobs ------------------------------------------------------------
+
+SITE_CRONTAB = [
+    {"user": "root", "fingerprint": "abc", "jobs": [
+        {"raw": "* * * * * cd /var/www/shop.example.com && php artisan schedule:run",
+         "schedule": "* * * * *", "command": "cd /var/www/shop.example.com && php artisan schedule:run",
+         "description": "Every minute", "note": None, "parsed": True},
+        {"raw": "*/5 * * * * cd /var/www/other.example.com && php -q wp-cron.php",
+         "schedule": "*/5 * * * *", "command": "cd /var/www/other.example.com && php -q wp-cron.php",
+         "description": "Every 5 minutes", "note": None, "parsed": True},
+        {"raw": "0 2 * * * /usr/local/bin/backup.sh --all",
+         "schedule": "0 2 * * *", "command": "/usr/local/bin/backup.sh --all",
+         "description": "Every day at 2:00 am", "note": None, "parsed": True},
+    ]},
+]
+
+
+def test_only_this_site_s_jobs_are_shown():
+    jobs = cron.jobs_for_site(SITE_CRONTAB, "shop.example.com",
+                              "/var/www/shop.example.com/public")
+    assert len(jobs) == 1
+    assert "shop.example.com" in jobs[0]["command"]
+
+
+def test_a_neighbouring_site_s_job_is_not_claimed():
+    """Two sites on one server, both with a Laravel scheduler. Showing the wrong one under
+    the wrong site is how someone deletes a job that was keeping another site alive."""
+    jobs = cron.jobs_for_site(SITE_CRONTAB, "other.example.com",
+                              "/var/www/other.example.com")
+    assert len(jobs) == 1
+    assert "other.example.com" in jobs[0]["command"]
+
+
+def test_a_server_wide_job_belongs_to_no_site():
+    """The nightly backup is the machine's, not any one site's."""
+    for domain, root in (("shop.example.com", "/var/www/shop.example.com"),
+                         ("other.example.com", "/var/www/other.example.com")):
+        assert not any("backup.sh" in j["command"]
+                       for j in cron.jobs_for_site(SITE_CRONTAB, domain, root))
+
+
+def test_a_public_docroot_still_matches_the_site_folder():
+    """Laravel serves from public/, but its cron job names the folder above it."""
+    jobs = cron.jobs_for_site(SITE_CRONTAB, "shop.example.com",
+                              "/var/www/shop.example.com/public")
+    assert jobs, "the site's own scheduler job was not found"
+
+
+def test_a_job_that_only_mentions_the_domain_still_counts():
+    """Not every job is written with a path — a health check is written with a URL."""
+    crontab = [{"user": "root", "fingerprint": "x", "jobs": [
+        {"raw": "*/5 * * * * curl -s https://shop.example.com/health",
+         "schedule": "*/5 * * * *", "command": "curl -s https://shop.example.com/health",
+         "description": "", "note": None, "parsed": True}]}]
+    assert len(cron.jobs_for_site(crontab, "shop.example.com", None)) == 1
+
+
+def test_a_site_with_nothing_scheduled_gets_an_empty_list_not_everything():
+    assert cron.jobs_for_site(SITE_CRONTAB, "unrelated.example.com",
+                              "/var/www/unrelated.example.com") == []
