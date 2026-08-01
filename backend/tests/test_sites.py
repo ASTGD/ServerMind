@@ -522,3 +522,45 @@ def test_apaches_own_noise_is_not_mistaken_for_a_site():
     output. A site list full of things nobody can visit is worse than a short one."""
     for junk in ("NameVirtualHost", "ServerRoot", "DocumentRoot", "default", "*:80"):
         assert junk not in _apache_probe(_APACHE_ONE) + _apache_probe(_APACHE_MANY)
+
+
+def test_openlitespeed_is_asked_where_a_site_lives_rather_than_guessing():
+    """A real CyberPanel box serves vev.astgd.com from /var/www/validemailverifier/public
+    while /home/vev.astgd.com/public_html also exists.
+
+    Guessing from the domain recorded the wrong folder, which reported a Laravel
+    application as a plain PHP site and pointed its Files, Logs and application sections at
+    a directory nobody serves. The config is the authority; the guess is the fallback.
+    """
+    cmd = sites.build_discovery_command()
+    assert 'grep -m1 -E "^[[:space:]]*docRoot"' in cmd, "the vhost's own docRoot is read"
+    assert "VH_ROOT" in cmd, "LiteSpeed's own path variable has to be resolved"
+    # The guess survives, but only when the config did not answer.
+    assert cmd.index("docRoot") < cmd.index('/home/$d/public_html'), \
+        "the config must be consulted before the guess"
+
+
+def test_the_openlitespeed_docroot_reading_works_on_both_real_shapes():
+    """Run the extraction the way the server runs it, against the two forms a real box has:
+    an absolute path, and LiteSpeed's $VH_ROOT variable."""
+    import subprocess
+    import tempfile
+
+    root = tempfile.mkdtemp()
+    import os
+    for domain, line in (("vev.astgd.com", "docRoot   /var/www/validemailverifier/public"),
+                         ("cloud.verifier", "docRoot   $VH_ROOT/public_html")):
+        os.makedirs(f"{root}/{domain}")
+        with open(f"{root}/{domain}/vhost.conf", "w") as fh:
+            fh.write(line + "\nvhDomain  " + domain + "\n")
+
+    script = f'''
+for d in vev.astgd.com cloud.verifier; do
+  v={root}/$d
+  r=$(grep -m1 -E "^[[:space:]]*docRoot" "$v/vhost.conf" 2>/dev/null | awk '{{print $2}}')
+  r=$(printf "%s" "$r" | sed "s|[\\$]VH_ROOT|/home/$d|")
+  echo "$d=$r"
+done'''
+    out = subprocess.run(["bash"], input=script, text=True, capture_output=True).stdout
+    assert "vev.astgd.com=/var/www/validemailverifier/public" in out
+    assert "cloud.verifier=/home/cloud.verifier/public_html" in out

@@ -128,16 +128,27 @@ def build_discovery_command() -> str:
     # OpenLiteSpeed / CyberPanel keep one vhost conf per domain, named after the domain.
     ols = (
         f'if [ -d /usr/local/lsws/conf/vhosts ]; then '
-        f'for v in /usr/local/lsws/conf/vhosts/*/; do d=$(basename "$v"); '
-        # The doc root is the DIRECTORY existing, not index.php existing. Requiring index.php
-        # lost the root for every Laravel site (it serves from /public) and every static one,
-        # which then also lost app detection because that matches on the root.
+        f'for v in /usr/local/lsws/conf/vhosts/*/; do d=$(basename "$v"); r=""; '
+        # ASK the vhost where its files are, rather than guessing from the domain name. A
+        # real production site here is served from /var/www/validemailverifier/public while
+        # /home/<domain>/public_html also exists — so guessing recorded the wrong folder,
+        # which then reported a Laravel application as a plain PHP site and put its Files,
+        # Logs and application sections on a directory nobody serves.
+        f'if [ -f "$v/vhost.conf" ]; then '
+        f'r=$(grep -m1 -E "^[[:space:]]*docRoot" "$v/vhost.conf" 2>/dev/null | awk \'{{print $2}}\'); '
+        # $VH_ROOT is LiteSpeed's own variable for the vhost home; left as-is it is a path
+        # that does not exist.
+        f'r=$(printf "%s" "$r" | sed "s|[\\$]VH_ROOT|/home/$d|"); fi; '
+        # Only when the config did not say. The doc root is the DIRECTORY existing, not
+        # index.php existing: requiring index.php lost the root for every Laravel site (it
+        # serves from /public) and every static one, which then also lost app detection.
+        f'if [ -z "$r" ] || [ ! -d "$r" ]; then '
         f'if [ -d "/home/$d/public_html" ]; then r="/home/$d/public_html"; '
         # A CyberPanel CHILD domain lives under its parent account —
         # /home/desktopit.net/news.rmp.gov.bd — not at /home/<domain>/public_html. Looking only
         # in the obvious place left a third of a real box's sites with no path and no detected
         # app. Same layout that made the malware scan miss whole sites in July 2026.
-        f'else r=$(ls -d /home/*/"$d" 2>/dev/null | head -1); fi; '
+        f'else r=$(ls -d /home/*/"$d" 2>/dev/null | head -1); fi; fi; '
         # A cert directory for the domain is the only HTTPS signal available from this source.
         # Without it every CyberPanel site reported "no HTTPS", which is a false negative on a
         # box where nearly all of them have it.
