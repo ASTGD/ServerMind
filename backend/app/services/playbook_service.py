@@ -112,6 +112,62 @@ def _with_preflight(script: str) -> str:
     return script[:cut] + _PREFLIGHT + script[cut:]
 
 
+# ── Changing SSH without locking anyone out ───────────────────────────────────
+# Three things about sshd that a sed-and-restart script gets wrong, all found live on a
+# fresh Ubuntu 24.04:
+#
+#   1. The unit is `ssh` on Debian/Ubuntu and `sshd` on RHEL. `systemctl restart sshd`
+#      fails outright on Ubuntu 24.04 — there is not even an alias.
+#   2. sshd takes the FIRST value it sees, and Ubuntu's sshd_config starts with an
+#      Include of sshd_config.d/*.conf. Editing a line further down the main file is
+#      therefore silently ignored for anything a drop-in already sets — we reported
+#      hardening that had not happened.
+#   3. Applying a broken or locking-out config is unrecoverable without console access,
+#      so the config is validated first and the daemon is checked afterwards.
+_SSH_SAFE = r"""# --- ServerAlly ssh safety ---
+ssh_unit() {
+  for _u in ssh sshd; do
+    if systemctl cat "$_u".service >/dev/null 2>&1; then echo "$_u"; return 0; fi
+  done
+  echo ssh
+}
+# Write settings where they actually win: a drop-in that sorts before the distro's own.
+ssh_set() {
+  _k="$1"; _v="$2"
+  if grep -qE "^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/" /etc/ssh/sshd_config \
+     && [ -d /etc/ssh/sshd_config.d ]; then
+    _f=/etc/ssh/sshd_config.d/00-serverally.conf
+    touch "$_f"; chmod 600 "$_f"
+    sed -i "/^${_k}[[:space:]]/d" "$_f"
+    echo "${_k} ${_v}" >> "$_f"
+  else
+    sed -i "s/^#*${_k}[[:space:]].*/${_k} ${_v}/" /etc/ssh/sshd_config
+    grep -qE "^${_k}[[:space:]]" /etc/ssh/sshd_config || echo "${_k} ${_v}" >> /etc/ssh/sshd_config
+  fi
+}
+ssh_backup() { cp -a /etc/ssh/sshd_config "/root/sshd_config.serverally-$(date +%s)" 2>/dev/null || true; }
+# Apply, but never leave the server without a working sshd.
+ssh_apply() {
+  if ! sshd -t 2>/tmp/sm_sshd.err; then
+    echo ">>> ERROR: those SSH settings would not load, so nothing was applied:"
+    sed 's/^/    /' /tmp/sm_sshd.err
+    rm -f /etc/ssh/sshd_config.d/00-serverally.conf
+    return 1
+  fi
+  _u="$(ssh_unit)"
+  systemctl reload "$_u" 2>/dev/null || systemctl restart "$_u"
+  sleep 1
+  if [ "$(systemctl is-active "$_u")" != active ] && [ "$(systemctl is-active ssh.socket)" != active ]; then
+    echo ">>> ERROR: SSH did not come back up. Undoing the change."
+    rm -f /etc/ssh/sshd_config.d/00-serverally.conf
+    systemctl restart "$_u" || true
+    return 1
+  fi
+  return 0
+}
+"""
+
+
 # ── The apt lock ──────────────────────────────────────────────────────────────
 # A brand-new Ubuntu runs its OWN updater (unattended-upgrades) on first boot and holds the
 # apt lock for minutes. Racing it is how a customer's very first setup of a brand-new server
@@ -162,19 +218,26 @@ apt() { apt_wait || return 1; command apt -o DPkg::Lock::Timeout=600 "$@"; }
 """
 
 
-def _with_apt_guard(script: str) -> str:
-    """Make every apt call in a playbook wait for the server's own updater.
+def _with_prelude(script: str, prelude: str) -> str:
+    """Insert a helper block directly after the shebang.
 
     Anchored on the shebang rather than ``set -euo pipefail``: three playbooks use
-    ``set -uo pipefail`` instead, and anchoring on the stricter line put the guard
+    ``set -uo pipefail`` instead, and anchoring on the stricter line put the block
     ABOVE the shebang, which stops it being a shebang at all.
     """
-    if "--- ServerAlly apt lock guard ---" in script:
+    if prelude in script:
         return script
     first, sep, rest = script.partition("\n")
     if first.startswith("#!"):
-        return first + sep + _APT_GUARD + rest
-    return _APT_GUARD + script
+        return first + sep + prelude + rest
+    return prelude + script
+
+
+def _with_apt_guard(script: str) -> str:
+    """Make every apt call in a playbook wait for the server's own updater."""
+    if "--- ServerAlly apt lock guard ---" in script:
+        return script
+    return _with_prelude(script, _APT_GUARD)
 
 
 # ── Multi-distro layer (Update 22, Tier 2) ────────────────────────────────────
@@ -657,6 +720,8 @@ def _script_for(item: dict) -> str | None:
         script = _with_docker(script)
     if item.get("needs_preflight"):
         script = _with_preflight(script)
+    if item.get("needs_ssh_safe"):
+        script = _with_prelude(script, _SSH_SAFE)
     script = _with_apt_guard(script)
     script = _with_noninteractive(script)
     return script
@@ -1077,18 +1142,52 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "script_type": "bash",
         "est_runtime_sec": 120,
         "tags": ["security", "hardening", "ssh", "firewall"],
+        "needs_ssh_safe": True,
         "variables": [
-            {"name": "SSH_PORT", "label": "SSH Port", "default": "22", "required": True}
+            {"name": "SSH_PORT", "label": "SSH Port", "default": "22", "required": True},
+            # How ServerAlly itself gets in. Turning off the door we came through is the
+            # one mistake here that cannot be undone from inside.
+            {"name": "LOGIN_USER", "label": "Account ServerAlly connects as",
+             "default": "root", "required": False},
+            {"name": "AUTH_TYPE", "label": "How ServerAlly authenticates (password|key)",
+             "default": "password", "required": False},
         ],
         "script_bash": (
             "#!/bin/bash\n"
             "set -euo pipefail\n"
             'SSH_PORT="{{SSH_PORT}}"\n'
+            'LOGIN_USER="{{LOGIN_USER}}"\n'
+            'AUTH_TYPE="{{AUTH_TYPE}}"\n'
             'echo "=== Hardening SSH ==="\n'
-            "sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config\n"
-            "sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config\n"
-            "sed -i 's/^#*X11Forwarding.*/X11Forwarding no/' /etc/ssh/sshd_config\n"
-            "systemctl restart sshd\n"
+            "ssh_backup\n"
+            "ssh_set X11Forwarding no\n"
+            # Only turn off password logins when a key is genuinely in place AND that key
+            # is how we get in — otherwise the very next connection is refused, and the
+            # only way back is the provider's console.
+            'LOGIN_HOME="$(getent passwd "$LOGIN_USER" | cut -d: -f6)"\n'
+            'KEYS="${LOGIN_HOME:-/root}/.ssh/authorized_keys"\n'
+            'if [ "$AUTH_TYPE" = key ] && [ -s "$KEYS" ]; then\n'
+            "  ssh_set PasswordAuthentication no\n"
+            '  echo "Password logins turned off — your key still works."\n'
+            "else\n"
+            '  echo "Left password logins ON: ServerAlly signs in to this server with a"\n'
+            '  echo "password, and turning them off would lock it out. Add an SSH key first,"\n'
+            '  echo "then run this again to close it."\n'
+            "fi\n"
+            # Same reasoning for root: if root is the account we manage the server with,
+            # "PermitRootLogin no" locks ServerAlly out for good.
+            'if [ "$LOGIN_USER" = root ]; then\n'
+            '  if [ "$AUTH_TYPE" = key ] && [ -s "$KEYS" ]; then\n'
+            "    ssh_set PermitRootLogin prohibit-password\n"
+            '    echo "Root can now sign in by key only."\n'
+            "  else\n"
+            '    echo "Left root login enabled: it is how ServerAlly reaches this server."\n'
+            "  fi\n"
+            "else\n"
+            "  ssh_set PermitRootLogin no\n"
+            '  echo "Root login turned off — you sign in as ${LOGIN_USER}."\n'
+            "fi\n"
+            "ssh_apply\n"
             'echo "=== Installing unattended-upgrades ==="\n'
             "apt-get install -y -qq unattended-upgrades apt-listchanges\n"
             "dpkg-reconfigure -plow unattended-upgrades\n"
@@ -1147,15 +1246,40 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "script_type": "bash",
         "est_runtime_sec": 15,
         "tags": ["ssh", "security", "keys"],
-        "variables": [],
+        "needs_ssh_safe": True,
+        "variables": [
+            {"name": "LOGIN_USER", "label": "Account ServerAlly connects as",
+             "default": "root", "required": False},
+            {"name": "AUTH_TYPE", "label": "How ServerAlly authenticates (password|key)",
+             "default": "password", "required": False},
+        ],
         "script_bash": (
             "#!/bin/bash\n"
             "set -euo pipefail\n"
-            "sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config\n"
-            "sed -i 's/^#*ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config\n"
-            "sed -i 's/^#*UsePAM.*/UsePAM yes/' /etc/ssh/sshd_config\n"
-            "sshd -t && systemctl reload sshd\n"
-            'echo "SSH password authentication disabled. Key-only login enforced."\n'
+            'LOGIN_USER="{{LOGIN_USER}}"\n'
+            'AUTH_TYPE="{{AUTH_TYPE}}"\n'
+            # The description says "run only after verifying your key works" — but a
+            # sentence in a description is not a safeguard, so check it for real. Getting
+            # this wrong needs the provider's console to undo.
+            'LOGIN_HOME="$(getent passwd "$LOGIN_USER" | cut -d: -f6)"\n'
+            'KEYS="${LOGIN_HOME:-/root}/.ssh/authorized_keys"\n'
+            'if [ ! -s "$KEYS" ]; then\n'
+            '  echo ">>> Stopping: ${LOGIN_USER} has no SSH key on this server, so turning off"\n'
+            '  echo "    password logins would lock everyone out. Add a key first."\n'
+            "  exit 1\n"
+            "fi\n"
+            'if [ "$AUTH_TYPE" != key ]; then\n'
+            '  echo ">>> Stopping: ServerAlly signs in to this server with a password, so"\n'
+            '  echo "    turning password logins off would lock it out. Switch this server to"\n'
+            '  echo "    key authentication in its settings first."\n'
+            "  exit 1\n"
+            "fi\n"
+            "ssh_backup\n"
+            "ssh_set PasswordAuthentication no\n"
+            "ssh_set KbdInteractiveAuthentication no\n"
+            "ssh_set UsePAM yes\n"
+            "ssh_apply\n"
+            'echo "Password logins are off. Key-only login is enforced."\n'
         ),
     },
 

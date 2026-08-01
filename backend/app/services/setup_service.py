@@ -78,7 +78,7 @@ PURPOSES = {
 }
 
 
-def _base(ssh_port: int, timezone: str) -> list[Step]:
+def _base(ssh_port: int, timezone: str, login_user: str, auth_type: str) -> list[Step]:
     """What every server gets, whatever it is for.
 
     Order matters. Hardening and the firewall come first so the machine is not sitting
@@ -94,8 +94,11 @@ def _base(ssh_port: int, timezone: str) -> list[Step]:
         Step("set-timezone", "Setting the clock", {"TIMEZONE": timezone}, seconds=10),
         Step("swap-file", "Adding swap space", {"SWAP_SIZE": "2G"}, seconds=30),
         # The real port, not the installer's default of 22.
+        # How ServerAlly itself signs in travels with the step: hardening that turns off
+        # the door we came through cannot be undone without the provider's console.
         Step("initial-hardening", "Securing the login",
-             {"SSH_PORT": str(ssh_port)}, seconds=120),
+             {"SSH_PORT": str(ssh_port), "LOGIN_USER": login_user,
+              "AUTH_TYPE": auth_type}, seconds=120),
         Step("ufw-setup", "Turning on the firewall",
              {"SSH_PORT": str(ssh_port), "ALLOW_HTTP": "yes", "ALLOW_HTTPS": "yes"},
              seconds=60),
@@ -105,12 +108,13 @@ def _base(ssh_port: int, timezone: str) -> list[Step]:
 
 
 def build_recipe(purpose: str, *, ssh_port: int = 22, timezone: str = "UTC",
-                 monitoring: bool = True) -> Recipe:
+                 monitoring: bool = True, login_user: str = "root",
+                 auth_type: str = "password") -> Recipe:
     """The ordered list of steps for what this server is for."""
     if purpose not in PURPOSES:
         raise SetupRefused(f"“{purpose}” is not something we know how to set up.")
     title, description = PURPOSES[purpose]
-    steps = _base(ssh_port, timezone)
+    steps = _base(ssh_port, timezone, login_user, auth_type)
 
     if purpose == "websites":
         # Order: the stack first, then everything that needs PHP to already exist.

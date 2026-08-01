@@ -100,7 +100,9 @@ async def start(server_id: str, body: StartBody, request: Request,
         setup_service.check_server(server, installed=facts, force=body.force)
         recipe = setup_service.build_recipe(
             body.purpose, ssh_port=server.port or 22,
-            timezone=body.timezone, monitoring=body.monitoring)
+            timezone=body.timezone, monitoring=body.monitoring,
+            login_user=server.username or "root",
+            auth_type=server.auth_type or "password")
     except setup_service.SetupRefused as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
