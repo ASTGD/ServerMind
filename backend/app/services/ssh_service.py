@@ -122,16 +122,54 @@ def is_auth_error(exc: BaseException | None = None, message: str | None = None) 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _make_client(host: str, port: int, username: str, auth_type: str, credential: str) -> tuple[paramiko.SSHClient, str]:
-    """Open an authenticated SSHClient and capture its host-key fingerprint (blocking).
+#: Every host-key algorithm we might negotiate. A server offers SEVERAL — a fresh Ubuntu
+#: has RSA, ECDSA and ED25519 — and SSH picks one per connection. That is the whole reason
+#: a fingerprint has to be pinned WITH its type: pinning the bare fingerprint of whichever
+#: key happened to be chosen means the next connection can legitimately negotiate a
+#: different key, produce a different fingerprint, and be refused as an impostor.
+_KEY_TYPES = ("ssh-ed25519", "rsa-sha2-512", "rsa-sha2-256", "ssh-rsa",
+              "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521")
+
+
+def _split_pin(pin: str | None) -> tuple[str | None, str | None]:
+    """A stored pin, as (key type, fingerprint).
+
+    Pins written before host keys were pinned by type are a bare ``SHA256:...`` with no
+    type. Those still verify — they just cannot ask for the right key up front, so the
+    caller falls back to trying each type and re-pins with the type once it matches.
+    """
+    if not pin:
+        return None, None
+    parts = pin.strip().split()
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return None, parts[0] if parts else None
+
+
+def _only(keytype: str) -> dict:
+    """Disable every host-key algorithm except this one, so the server must present it."""
+    others = [k for k in _KEY_TYPES if k != keytype]
+    # rsa-sha2-* are signature variants of the same ssh-rsa key, so pinning ssh-rsa must
+    # not disable them or the handshake has nothing left to agree on.
+    if keytype == "ssh-rsa":
+        others = [k for k in others if not k.startswith("rsa-sha2-")]
+    return {"keys": others}
+
+
+def _make_client(host: str, port: int, username: str, auth_type: str, credential: str,
+                 keytype: str | None = None) -> tuple[paramiko.SSHClient, str, str]:
+    """Open an authenticated SSHClient and capture its host key (blocking).
+
+    Returns the client, the fingerprint, and the key TYPE it was taken from.
 
     AutoAddPolicy accepts the key at the transport level; identity verification
     against a pinned fingerprint happens in _get_client (Risk 3)."""
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    extra = {"disabled_algorithms": _only(keytype)} if keytype else {}
 
     if auth_type == "password":
-        client.connect(host, port=port, username=username, password=credential, timeout=15, banner_timeout=15)
+        client.connect(host, port=port, username=username, password=credential, timeout=15, banner_timeout=15, **extra)
     else:
         # auth_type == "key" — credential is the PEM private key string
         key_file = io.StringIO(credential)
@@ -145,10 +183,10 @@ def _make_client(host: str, port: int, username: str, auth_type: str, credential
                 continue
         if pkey is None:
             raise ValueError("Unrecognised private key format")
-        client.connect(host, port=port, username=username, pkey=pkey, timeout=15, banner_timeout=15)
+        client.connect(host, port=port, username=username, pkey=pkey, timeout=15, banner_timeout=15, **extra)
 
     host_key = client.get_transport().get_remote_server_key()
-    return client, _key_fingerprint(host_key)
+    return client, _key_fingerprint(host_key), host_key.get_name()
 
 
 def _get_client(
@@ -164,14 +202,55 @@ def _get_client(
     existing = _pool.get(server_id)
     if existing and existing.get_transport() and existing.get_transport().is_active():
         return existing
-    client, fingerprint = _make_client(host, port, username, auth_type, credential)
-    if expected_fingerprint and fingerprint != expected_fingerprint:
+
+    want_type, want_fp = _split_pin(expected_fingerprint)
+
+    # Ask for the SAME key type that was pinned. Without this the comparison is not
+    # like-for-like: a server offers several host keys, SSH picks one per connection, and a
+    # connection that legitimately negotiates a different key than the one pinned produces a
+    # different fingerprint and is refused as an impostor. Seen live — a healthy server
+    # reported "identity changed" because the pin was taken from its RSA key while ordinary
+    # connections negotiate ed25519.
+    client, fingerprint, keytype = _make_client(
+        host, port, username, auth_type, credential, keytype=want_type)
+
+    if want_fp and fingerprint != want_fp:
+        # An OLD pin has no type recorded, so we cannot ask for the right key up front. Try
+        # each type before concluding the server is not itself. This does NOT weaken the
+        # check: an exact fingerprint match against the pin is still required, and an
+        # impostor cannot produce one. It just stops a legitimate server being accused
+        # because of which algorithm was negotiated.
+        healed = None
+        if want_type is None:
+            for candidate in _KEY_TYPES:
+                if candidate == keytype:
+                    continue
+                try:
+                    alt, alt_fp, alt_type = _make_client(
+                        host, port, username, auth_type, credential, keytype=candidate)
+                except Exception:  # noqa: BLE001 — that type is simply not offered
+                    continue
+                if alt_fp == want_fp:
+                    healed = (alt, alt_fp, alt_type)
+                    break
+                try:
+                    alt.close()
+                except Exception:
+                    pass
+        if healed is None:
+            try:
+                client.close()
+            except Exception:
+                pass
+            raise HostKeyMismatch(expected_fingerprint, fingerprint)
         try:
             client.close()
         except Exception:
             pass
-        raise HostKeyMismatch(expected_fingerprint, fingerprint)
-    _fingerprints[server_id] = fingerprint
+        client, fingerprint, keytype = healed
+
+    # Stored WITH its type so every later connection can ask for the same key.
+    _fingerprints[server_id] = f"{keytype} {fingerprint}"
     _pool[server_id] = client
     return client
 
