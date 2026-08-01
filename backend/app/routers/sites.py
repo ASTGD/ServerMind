@@ -924,6 +924,25 @@ async def serve_site_from_deploy(site_id: str, db: DBDep,
     return {"serving": True, "message": message[0]}
 
 
+@router.get("/sites/{site_id}/database")
+async def site_database(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """The database this site uses, and whether it can actually reach it.
+
+    The server's database screen answers "what is on this machine". On a box with forty
+    databases that is the wrong question — this one answers "which is THIS site's, and is
+    it the reason the site is broken".
+
+    Nothing here can carry a password: the probe reads one from the site's own config to
+    make the connection attempt, on the server, and returns a single word.
+    """
+    from app.services import site_database_service
+
+    site, server = await _site_and_server(site_id, current_user, db)
+    if server.connection_type != "ssh":
+        return {"ok": False, "reason": "This needs a Linux server we reach over SSH."}
+    return await site_database_service.read(server, site.app_type, site.doc_root or "")
+
+
 @router.get("/sites/{site_id}/cron")
 async def site_cron(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     """The scheduled jobs that belong to this site.

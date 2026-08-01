@@ -394,3 +394,28 @@ export async function serveSiteFromDeploy(
   const { data } = await apiClient.post(`/api/sites/${siteId}/deploy/serve`)
   return data
 }
+
+/**
+ * The database this site uses.
+ *
+ * There is no password in this shape and there cannot be: the probe reads one on the
+ * server to make the connection attempt and returns a single word.
+ */
+export interface SiteDatabase {
+  ok: boolean
+  reason?: string
+  name?: string
+  user?: string
+  host?: string
+  /** Whether the site could actually connect. Only meaningful when `tested`. */
+  reachable?: boolean
+  /** False when there was no client to test with — not the same as failing. */
+  tested?: boolean
+  tables?: number | null
+  size_mb?: number | null
+}
+
+export async function getSiteDatabase(siteId: string): Promise<SiteDatabase> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/database`)
+  return data
+}

@@ -1,5 +1,5 @@
 import {
-  Activity, Boxes, Clock, Code2, Cog, FileText, GitBranch, LayoutDashboard,
+  Activity, Boxes, Clock, Code2, Cog, Database, FileText, GitBranch, LayoutDashboard,
   Layers, Lock,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
@@ -53,6 +53,10 @@ export const SITE_MENU: SiteMenuItem[] = [
   { path: "", label: "Overview", icon: LayoutDashboard },
   // Certificates on a panel server are the panel's own job, renewed by it.
   { path: "https", label: "HTTPS", icon: Lock, needs: "shell", excludes: "panel" },
+  // The server has a database screen too, and it answers a different question: "what is on
+  // this machine". On a box with forty databases that cannot tell anyone which one belongs
+  // to the website in front of them.
+  { path: "database", label: "Database", icon: Database, needs: "shell" },
   { path: "logs", label: "Logs", icon: FileText, needs: "shell" },
   { path: "cron", label: "Scheduled jobs", icon: Clock, needs: "shell" },
   // A control panel owns its vhost and rewrites it on its own schedule, so a document root
