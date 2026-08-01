@@ -208,3 +208,33 @@ def test_a_plugin_name_that_is_not_a_plugin_name_is_refused_not_escaped(payload)
                                   "wp2fa", "yith_wishlist", "some.plugin"])
 def test_real_plugin_names_are_accepted(good):
     assert wp.valid_slug(good) is True
+
+
+# ── The installer must produce a site this screen can manage ─────────────────
+
+def test_installing_wordpress_also_installs_the_tool_it_is_managed_with():
+    """Our own installer produced sites our own WordPress screen could not read.
+
+    Found while wiring the screen up: `wordpress-site` never installed wp-cli, so every
+    site ServerAlly created answered "wp-cli is not installed on this server".
+    """
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS
+
+    pb = next(p for p in OFFICIAL_PLAYBOOKS if p["slug"] == "wordpress-site")
+    script = pb["script_bash"]
+    assert "wp-cli.phar" in script
+    assert "/usr/local/bin/wp" in script
+    # Not installed twice on a server that already has it.
+    assert "command -v wp >/dev/null" in script
+
+
+def test_a_failed_wp_cli_download_does_not_fail_a_working_wordpress():
+    """WordPress runs perfectly well without wp-cli. Losing the whole install over a tool
+    the site itself does not need would be the wrong trade."""
+    from app.services.playbook_service import OFFICIAL_PLAYBOOKS
+
+    script = next(p for p in OFFICIAL_PLAYBOOKS
+                  if p["slug"] == "wordpress-site")["script_bash"]
+    block = script[script.index("wp-cli.phar"):script.index("mysql -e \"CREATE DATABASE")]
+    assert "exit 1" not in block, "a missing wp-cli must not abort the install"
+    assert "could not be downloaded" in block, "and it must say so rather than go quiet"
