@@ -112,6 +112,71 @@ def _with_preflight(script: str) -> str:
     return script[:cut] + _PREFLIGHT + script[cut:]
 
 
+# ── The apt lock ──────────────────────────────────────────────────────────────
+# A brand-new Ubuntu runs its OWN updater (unattended-upgrades) on first boot and holds the
+# apt lock for minutes. Racing it is how a customer's very first setup of a brand-new server
+# fails — the step gets nowhere and the watchdog kills it with nothing to show.
+#
+# This is injected into EVERY playbook rather than wired into each one by hand, because the
+# failure mode of hand-wiring is silent: a playbook that forgets simply races, and no test
+# notices. Shadowing the commands themselves means a playbook cannot forget.
+_APT_GUARD = r"""# --- ServerAlly apt lock guard ---
+apt_busy() {
+  if command -v fuser >/dev/null 2>&1; then
+    fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock \
+          /var/cache/apt/archives/lock >/dev/null 2>&1 && return 0
+  fi
+  # fuser ships in psmisc, which a minimal image often lacks — and a check that silently
+  # finds nothing puts us straight back to racing the updater, which is the whole bug.
+  # pgrep (procps, effectively always present) carries the fallback.
+  for _p in apt apt-get dpkg unattended-upgrade; do
+    pgrep -x "$_p" >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
+apt_wait() {
+  # type -P searches PATH only, so it sees the real binary and not the wrapper below.
+  type -P apt-get >/dev/null 2>&1 || return 0
+  _w=0
+  while apt_busy; do
+    if [ "$_w" = 0 ]; then
+      echo ">>> Waiting for the server's own updater to finish (normal on a new server)"
+    fi
+    _w=$((_w + 5))
+    # Bounded. A lock still held after twenty minutes is a stuck dpkg, not a busy one, and
+    # waiting forever would just move the failure somewhere less clear.
+    if [ "$_w" -gt 1200 ]; then
+      echo ">>> The package manager has been busy for 20 minutes. Something else on this"
+      echo "    server is holding it - nothing was changed."
+      return 1
+    fi
+    sleep 5
+  done
+  if [ "$_w" -gt 0 ]; then echo ">>> The updater finished after ${_w}s - carrying on"; fi
+  return 0
+}
+# `command` reaches the real binary. The lock timeout covers a race that starts in the
+# window between the check above and apt actually taking the lock.
+apt-get() { apt_wait || return 1; command apt-get -o DPkg::Lock::Timeout=600 "$@"; }
+apt() { apt_wait || return 1; command apt -o DPkg::Lock::Timeout=600 "$@"; }
+"""
+
+
+def _with_apt_guard(script: str) -> str:
+    """Make every apt call in a playbook wait for the server's own updater.
+
+    Anchored on the shebang rather than ``set -euo pipefail``: three playbooks use
+    ``set -uo pipefail`` instead, and anchoring on the stricter line put the guard
+    ABOVE the shebang, which stops it being a shebang at all.
+    """
+    if "--- ServerAlly apt lock guard ---" in script:
+        return script
+    first, sep, rest = script.partition("\n")
+    if first.startswith("#!"):
+        return first + sep + _APT_GUARD + rest
+    return _APT_GUARD + script
+
+
 # ── Multi-distro layer (Update 22, Tier 2) ────────────────────────────────────
 # Web-stack playbooks used to hard-code apt + mysql-server + a pinned PHP version,
 # so they broke on Debian (no mysql-server), newer Ubuntu (php8.2 missing), and every
@@ -131,54 +196,14 @@ case " $OS_ID $OS_LIKE " in
 esac
 if [ "$FAMILY" = rhel ] && ! command -v dnf >/dev/null 2>&1; then PM=yum; fi
 echo ">>> Detected ${OS_ID:-linux} (${FAMILY} family)."
-# A brand-new Ubuntu runs its OWN updater (unattended-upgrades) on first boot, and it holds
-# the apt lock. Every first setup of a fresh server therefore starts by queueing behind it —
-# so this waits for the lock deliberately, and says what it is waiting for, instead of
-# racing it and being killed by a watchdog with nothing to show.
-# Detecting the lock must not depend on a package that might be missing. fuser is the precise
-# answer but ships in psmisc, which a minimal image often lacks — and a check that silently
-# finds nothing puts us straight back to racing the updater, which is the bug this exists to
-# fix. So pgrep (procps, effectively always present) is the fallback.
-apt_busy() {
-  if command -v fuser >/dev/null 2>&1; then
-    fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock \
-          /var/cache/apt/archives/lock >/dev/null 2>&1 && return 0
-  fi
-  for _p in apt apt-get dpkg unattended-upgrade; do
-    pgrep -x "$_p" >/dev/null 2>&1 && return 0
-  done
-  return 1
-}
-apt_wait() {
-  [ "$FAMILY" = debian ] || return 0
-  _w=0
-  while apt_busy; do
-    if [ "$_w" = 0 ]; then
-      echo ">>> Waiting for the server's own updater to finish (this is normal on a new server)"
-    fi
-    _w=$((_w + 5))
-    # Bounded. A lock still held after twenty minutes is a stuck dpkg, not a busy one, and
-    # waiting forever would just move the failure somewhere less clear.
-    if [ "$_w" -gt 1200 ]; then
-      echo ">>> The package manager has been busy for 20 minutes. Something else on this"
-      echo "    server is holding it — nothing was changed."
-      return 1
-    fi
-    sleep 5
-  done
-  [ "$_w" -gt 0 ] && echo ">>> The updater finished after ${_w}s — carrying on"
-  return 0
-}
 pkg_refresh() {
   if [ "$FAMILY" = debian ]; then
     export DEBIAN_FRONTEND=noninteractive
-    apt_wait || return 1
-    # apt waits for the lock itself too, so a race that starts mid-command does not fail.
-    apt-get -o DPkg::Lock::Timeout=600 update -qq
+    apt-get update -qq
   else "$PM" -y makecache >/dev/null 2>&1 || true; fi
 }
 pkg_install() {
-  if [ "$FAMILY" = debian ]; then apt_wait || return 1; DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y -qq "$@"
+  if [ "$FAMILY" = debian ]; then DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@"
   else "$PM" install -y "$@"; fi
 }
 svc_enable() { systemctl enable --now "$1" >/dev/null 2>&1 || systemctl enable --now "$1"; }
@@ -632,6 +657,7 @@ def _script_for(item: dict) -> str | None:
         script = _with_docker(script)
     if item.get("needs_preflight"):
         script = _with_preflight(script)
+    script = _with_apt_guard(script)
     script = _with_noninteractive(script)
     return script
 
@@ -2063,11 +2089,11 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
             "#!/bin/bash\n"
             "set -euo pipefail\n"
             'echo "=== Updating package list ==="\n'
-            "apt_wait || exit 1\napt-get -o DPkg::Lock::Timeout=600 update\n"
+            "apt-get update\n"
             'echo "=== Upgrading packages ==="\n'
-            "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 upgrade -y\n"
+            "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y\n"
             'echo "=== Removing unused packages ==="\n'
-            "apt-get -o DPkg::Lock::Timeout=600 autoremove -y\n"
+            "apt-get autoremove -y\n"
             "apt-get autoclean\n"
             'if [ -f /var/run/reboot-required ]; then\n'
             '  echo "NOTICE: A reboot is required."\n'
