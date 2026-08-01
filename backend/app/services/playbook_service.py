@@ -199,10 +199,12 @@ apt_wait() {
       echo ">>> Waiting for the server's own updater to finish (normal on a new server)"
     fi
     _w=$((_w + 5))
-    # Bounded. A lock still held after twenty minutes is a stuck dpkg, not a busy one, and
-    # waiting forever would just move the failure somewhere less clear.
-    if [ "$_w" -gt 1200 ]; then
-      echo ">>> The package manager has been busy for 20 minutes. Something else on this"
+    # Bounded, and deliberately shorter than setup_runner's per-step watchdog: a wait that
+    # can outlive its own watchdog hands the customer a generic "took too long" instead of
+    # the sentence below, which actually says what to look at. A lock still held after ten
+    # minutes is a stuck dpkg, not a busy one.
+    if [ "$_w" -gt 600 ]; then
+      echo ">>> The package manager has been busy for 10 minutes. Something else on this"
       echo "    server is holding it - nothing was changed."
       return 1
     fi

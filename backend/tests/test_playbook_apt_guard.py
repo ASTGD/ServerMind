@@ -78,9 +78,14 @@ def test_guard_is_syntactically_valid_bash() -> None:
         assert r.returncode == 0, f"{slug}: {r.stderr.strip()[:200]}"
 
 
-def test_wait_is_bounded() -> None:
-    """Waiting forever would just move the failure somewhere less clear."""
-    assert "-gt 1200" in ps._APT_GUARD
+def test_wait_is_bounded_below_the_step_watchdog() -> None:
+    """Waiting forever would move the failure somewhere less clear — and so would waiting
+    longer than the watchdog, which replaces our explanation with "took too long"."""
+    from app.workers import setup_runner
+
+    bound = re.search(r'\$_w" -gt (\d+)', ps._APT_GUARD)
+    assert bound, "the wait is not bounded at all"
+    assert int(bound.group(1)) < setup_runner._STEP_TIMEOUT
 
 
 def test_detection_does_not_depend_on_an_optional_package() -> None:
@@ -92,3 +97,21 @@ def test_detection_does_not_depend_on_an_optional_package() -> None:
     code = "\n".join(ln for ln in ps._APT_GUARD.splitlines()
                      if not ln.lstrip().startswith("#"))
     assert "pgrep -x" in code
+
+
+def test_every_setup_step_can_actually_be_prepared() -> None:
+    """A step whose variables cannot be filled kills the run before it starts.
+
+    "Websites" shipped with a MySQL root password the recipe never supplied, so the
+    stack step raised while the run was being prepared — outside the per-step handler,
+    which is why the customer saw "something went wrong" and no failed step at all.
+    """
+    by_slug = {i["slug"]: i for i in ps.OFFICIAL_PLAYBOOKS}
+    for purpose in ss.PURPOSES:
+        for step in ss.build_recipe(purpose, ssh_port=22).steps:
+            item = by_slug.get(step.slug)
+            assert item, f"setup step {step.slug} has no playbook"
+            pb = ps._build_playbook(item)
+            variables = {**ps.declared_defaults(pb), **(step.variables or {})}
+            # Raises UnresolvedVariables if anything is still unfilled.
+            ps.substitute_variables(pb.script_bash, variables)

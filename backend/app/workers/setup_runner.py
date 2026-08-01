@@ -25,7 +25,11 @@ from app.services import connection_manager, playbook_service, setup_service
 
 logger = logging.getLogger(__name__)
 
-_STEP_TIMEOUT = 900          # a cold apt install on a small VPS is genuinely slow
+# A cold apt install on a small VPS is genuinely slow, and a step may first spend up to
+# ten minutes queued behind the server's own updater (see the apt guard in
+# playbook_service). This has to comfortably exceed that wait, or the customer gets a
+# bare "took too long" in place of a message that says what is actually holding things up.
+_STEP_TIMEOUT = 1800
 _MAX_OUTPUT = 4000           # per step; the log is for diagnosis, not archaeology
 
 
@@ -41,7 +45,12 @@ async def _script_for(db, step: setup_service.Step, server: Server) -> str | Non
     raw = pb.script_bash
     if not raw:
         return None
-    return playbook_service.substitute_variables(raw, step.variables or {})
+    # The installer's own declared defaults first, then what this step chose. Without them
+    # a variable the playbook treats as optional — an empty MySQL root password, say — has
+    # no value at all, and substitution refuses rather than guessing. Every other caller
+    # goes through these defaults; this was the one that did not.
+    variables = {**playbook_service.declared_defaults(pb), **(step.variables or {})}
+    return playbook_service.substitute_variables(raw, variables)
 
 
 async def _run_steps(setup_id, steps: list[setup_service.Step], server: Server) -> None:
@@ -50,7 +59,15 @@ async def _run_steps(setup_id, steps: list[setup_service.Step], server: Server) 
             setup = await db.get(ServerSetup, setup_id)
             if setup is None or setup.status != "running":
                 return                                   # stopped, or the record is gone
-            script = await _script_for(db, step, server)
+            # Resolving the script can fail (an unfilled variable, a missing installer),
+            # and it used to do so out here — which killed the whole run before the step
+            # was even marked, so the customer got "something went wrong" while the real
+            # reason went only to our log. A step's problem belongs to that step.
+            script, prepare_error = None, ""
+            try:
+                script = await _script_for(db, step, server)
+            except Exception as exc:                     # noqa: BLE001
+                prepare_error = str(exc)[:200]
             rows = list(setup.steps or [])
             rows[index] = {**rows[index], "state": "running",
                            "started_at": _now().isoformat()}
@@ -58,7 +75,9 @@ async def _run_steps(setup_id, steps: list[setup_service.Step], server: Server) 
             setup.current = index
             await db.commit()
 
-        if script is None:
+        if prepare_error:
+            state, note = ("skipped" if step.optional else "failed"), prepare_error
+        elif script is None:
             state, note = ("skipped" if step.optional else "failed"), "installer not found"
         else:
             try:

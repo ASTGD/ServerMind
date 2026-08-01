@@ -137,8 +137,11 @@ def build_recipe(purpose: str, *, ssh_port: int = 22, timezone: str = "UTC",
             Step("redis-cache", "Installing Redis and Memcached", seconds=60,
                  optional=True),
             Step("supervisor", "Setting up background jobs", seconds=45, optional=True),
-            Step("letsencrypt", "Preparing HTTPS certificates",
-                 {"WEBSERVER": "nginx"}, seconds=120, optional=True),
+            # No HTTPS step here on purpose. A certificate is issued for a domain, and at
+            # setup time this server has no sites — the step could only ever fail, and a
+            # step that cannot succeed is worse than no step. Turning on HTTPS belongs to
+            # the site, where there is a real domain to secure; that path installs certbot
+            # itself when it needs it.
         ]
     elif purpose == "nodejs":
         steps += [Step("nodejs-pm2", "Installing Node.js", seconds=60)]

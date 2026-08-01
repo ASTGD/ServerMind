@@ -130,9 +130,16 @@ def test_optional_steps_are_the_ones_a_server_works_without():
     recipe = s.build_recipe("websites")
     by_slug = {x.slug: x for x in recipe.steps}
     assert by_slug["netdata"].optional is True
-    assert by_slug["letsencrypt"].optional is True
+    assert by_slug["supervisor"].optional is True
     assert by_slug["lemp-stack"].optional is False
     assert by_slug["ufw-setup"].optional is False
+
+
+def test_setting_up_a_server_never_tries_to_secure_a_domain():
+    """A certificate is issued for a domain, and a fresh server has no sites yet — the
+    step could only ever fail. HTTPS belongs to the site, where a real domain exists."""
+    for purpose in s.PURPOSES:
+        assert "letsencrypt" not in [x.slug for x in s.build_recipe(purpose).steps]
 
 
 def test_an_unknown_purpose_is_refused_rather_than_guessed():
