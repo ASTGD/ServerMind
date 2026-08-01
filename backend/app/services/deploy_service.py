@@ -342,3 +342,123 @@ def should_deploy(payload: dict, branch: str) -> tuple[bool, str]:
     if pushed != branch:
         return False, f"Push was to “{pushed}”, this deploys “{branch}” — ignored."
     return True, f"Push to {pushed}."
+
+
+# --- Pointing a site at its deployed code -------------------------------------------------
+#
+# A deploy builds into `<root>/releases/<stamp>` and moves `<root>/current`. None of that
+# reaches a visitor until the web server is looking through `current` — so a site that
+# already exists has to be repointed exactly once, and that is the one genuinely dangerous
+# thing in this feature: get it wrong and a live website serves nothing.
+#
+# It is therefore done in the same shape as the PHP version switch, which has the same risk:
+# keep a copy, change one line, ask the web server to check its own config, reload, then
+# prove the site still serves REAL CONTENT — and put the old file back if it does not. A
+# status code alone is not proof; a misdirected root very often answers 200 with an index
+# listing or an error page.
+
+
+def valid_web_dir(value: str | None) -> str:
+    """Where inside the repository the web server should look.
+
+    Empty means the repository root. Anything else must be a plain relative folder —
+    validated rather than escaped, because this ends up inside a web-server config where a
+    stray quote or newline would not fail loudly, it would change what the config MEANS.
+    """
+    web = (value or "").strip().strip("/")
+    if not web:
+        return ""
+    if len(web) > 100 or ".." in web:
+        raise InvalidDeploy("The web directory must be a folder inside the repository.")
+    for part in web.split("/"):
+        if not part or not all(c.isalnum() or c in "-_." for c in part):
+            raise InvalidDeploy(
+                f"'{value}' is not a valid folder name. Use something like 'public'.")
+    return web
+
+
+def deploy_root_for(doc_root: str) -> str:
+    """The folder a site's deploys should live in, derived from where it is served from.
+
+    A site served from ``/var/www/shop.com/public`` belongs to ``/var/www/shop.com`` — the
+    releases go beside the current files, not inside the folder the web server is reading.
+    Anything else is its own root.
+    """
+    root = (doc_root or "").rstrip("/")
+    if not root:
+        raise InvalidDeploy("This site has no folder on the server yet.")
+    return root[:-len("/public")] if root.endswith("/public") else root
+
+
+def served_path(root: str, web_dir: str | None) -> str:
+    """The path the web server must point at once deploys are live."""
+    web = valid_web_dir(web_dir)
+    return f"{valid_path(root)}/current" + (f"/{web}" if web else "")
+
+
+def build_point_command(config_path: str, domain: str, root: str,
+                        web_dir: str | None) -> str:
+    """Point one site's config at its deployed code, and undo it if the site breaks.
+
+    Deliberately refuses before it changes anything if there is nothing to point AT. The
+    order matters: a site keeps serving its existing files right up until there is a
+    finished release to switch to, so a failed first deploy costs nothing.
+    """
+    target = served_path(root, web_dir)
+    cfg = shlex.quote(config_path)
+    dom = shlex.quote(domain)
+    tgt = shlex.quote(target)
+    return (
+        f'set -e; CFG={cfg}; DOM={dom}; TGT={tgt}; '
+        # Nothing has been deployed yet, or the last deploy failed. Repointing now would
+        # take a working site down to serve a folder that does not exist.
+        f'if [ ! -d "$TGT" ]; then '
+        f'  echo "There is no finished deploy to point at yet."; exit 3; fi; '
+        # Read the CURRENT root out of the config before changing it. Apache grants access
+        # per folder, so its vhost names that path twice — once as DocumentRoot and again in
+        # a <Directory> block — and moving only the first leaves the second granting access
+        # to a folder nobody is served from, which answers 403 for every visitor. Comments
+        # are stripped first so a commented-out root is never mistaken for the real one.
+        f'OLD="$(sed -E "s/#.*$//" "$CFG" 2>/dev/null '
+        f'  | grep -oE "(root|DocumentRoot|docRoot)[[:space:]]+[^;[:space:]]+" | head -1 '
+        f'  | awk "{{print \\$2}}")"; '
+        f'BK="$CFG.serverally.$(date +%s).bak"; cp -p "$CFG" "$BK"; '
+        # Only the document root changes; everything else in the config is left alone.
+        f'sed -i -E "s#^([[:space:]]*)root[[:space:]]+[^;]+;#\\1root $TGT;#; '
+        f's#^([[:space:]]*)DocumentRoot[[:space:]]+.*#\\1DocumentRoot $TGT#; '
+        f's#^([[:space:]]*)docRoot[[:space:]]+.*#\\1docRoot                   $TGT#" "$CFG"; '
+        f'if [ -n "$OLD" ] && [ "$OLD" != "$TGT" ]; then '
+        f'  sed -i "s#<Directory ${{OLD}}>#<Directory $TGT>#g" "$CFG"; fi; '
+        f'if ! (nginx -t 2>/dev/null || apachectl configtest 2>/dev/null); then '
+        f'  cp -p "$BK" "$CFG"; rm -f "$BK"; '
+        f'  echo "The web server rejected the change, so it was undone."; exit 4; fi; '
+        f'systemctl reload nginx 2>/dev/null || systemctl reload apache2 2>/dev/null '
+        f'  || systemctl reload httpd 2>/dev/null || true; '
+        # Retried, because a reload returns before the workers have swapped and an
+        # immediate request can still be answered by the old configuration.
+        f'OK=no; for i in 1 2 3 4 5 6; do '
+        f'  C="$(curl -s -o /dev/null -w "%{{http_code}}" --max-time 5 -H "Host: $DOM" '
+        f'       http://127.0.0.1/ 2>/dev/null || echo 000)"; '
+        f'  B="$(curl -s --max-time 5 -H "Host: $DOM" http://127.0.0.1/ 2>/dev/null '
+        f'       | head -c 400 || true)"; '
+        # Content, not just a code. A root pointing at the wrong folder answers 200 with a
+        # directory listing or an error page just as happily as it answers with a website.
+        f'  case "$C" in 2*|3*) [ -n "$B" ] && OK=yes && break ;; esac; sleep 2; done; '
+        f'if [ "$OK" != yes ]; then '
+        f'  cp -p "$BK" "$CFG"; rm -f "$BK"; '
+        f'  systemctl reload nginx 2>/dev/null || systemctl reload apache2 2>/dev/null || true; '
+        f'  echo "$DOM stopped working when pointed at the deployed code, so it was put back."; '
+        f'  exit 5; fi; '
+        f'rm -f "$BK"; echo "$DOM is now served from $TGT."'
+    )
+
+
+POINT_OUTCOMES: dict[int, str] = {
+    3: ("Nothing has been deployed yet, so there is nothing to point the site at. Deploy "
+        "once first — the site keeps serving its current files until then."),
+    4: ("The web server refused the new configuration, so it was undone. Your other "
+        "websites are unaffected."),
+    5: ("The site stopped working when pointed at the deployed code, so it was put back. "
+        "The web directory is most likely wrong — a Laravel or Symfony app is usually "
+        "served from 'public'."),
+}

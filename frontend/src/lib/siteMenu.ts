@@ -1,5 +1,6 @@
 import {
-  Activity, Boxes, Clock, Code2, Cog, FileText, LayoutDashboard, Layers, Lock,
+  Activity, Boxes, Clock, Code2, Cog, FileText, GitBranch, LayoutDashboard,
+  Layers, Lock,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type { SiteDetail } from "@/api/sites"
@@ -54,8 +55,10 @@ export const SITE_MENU: SiteMenuItem[] = [
   { path: "https", label: "HTTPS", icon: Lock, needs: "shell", excludes: "panel" },
   { path: "logs", label: "Logs", icon: FileText, needs: "shell" },
   { path: "cron", label: "Scheduled jobs", icon: Clock, needs: "shell" },
-  // Deployments are still per-server; a site-scoped one needs deploy targets linked to a
-  // site, which is its own piece of work. Left out until then rather than shown and dead.
+  // A control panel owns its vhost and rewrites it on its own schedule, so a document root
+  // we changed behind its back would be silently reverted — taking the site down at a
+  // moment nobody could connect it to anything we did.
+  { path: "deploy", label: "Deploy", icon: GitBranch, needs: "shell", excludes: "panel" },
   { path: "uptime", label: "Uptime", icon: Activity },
   { path: "settings", label: "Settings", icon: Cog },
 ]

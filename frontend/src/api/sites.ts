@@ -341,3 +341,56 @@ export async function runSiteAppAction(
   const { data } = await apiClient.post(`/api/sites/${siteId}/app/action`, { action, target })
   return data
 }
+
+/**
+ * Deploying code to a site.
+ *
+ * A site has at most one repository connected: "deploy my code here" is one question about
+ * one website, and two targets pointing at the same folder would be two things fighting
+ * over one symlink.
+ */
+export interface SiteDeployTarget {
+  id: string
+  repo: string
+  branch: string
+  path: string
+  web_dir: string
+  auto_deploy: boolean
+  /** Whether the web server has actually been pointed at the deployed code. */
+  serving: boolean
+  current_release: string | null
+  last_status: string | null
+  last_deployed_at: string | null
+  served_from: string
+}
+
+export interface SiteDeployInfo {
+  target: SiteDeployTarget | null
+  /** Worked out from the site, so the form does not ask what we already know. */
+  suggested?: { path: string; web_dir: string }
+  can_deploy: boolean
+}
+
+export async function getSiteDeploy(siteId: string): Promise<SiteDeployInfo> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/deploy`)
+  return data
+}
+
+export async function connectSiteDeploy(
+  siteId: string,
+  body: {
+    repo: string; branch: string; web_dir: string
+    build_commands?: string[]; after_commands?: string[]; shared_paths?: string[]
+  },
+): Promise<{ id: string; path: string; served_from: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/deploy`, body)
+  return data
+}
+
+/** Point the web server at the deployed code. The one step a visitor can see. */
+export async function serveSiteFromDeploy(
+  siteId: string,
+): Promise<{ serving: boolean; message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/deploy/serve`)
+  return data
+}

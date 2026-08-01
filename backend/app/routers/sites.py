@@ -12,6 +12,7 @@ deliberately no create, no delete and no edit: making a site is a control panel'
 from __future__ import annotations
 
 import logging
+import secrets
 import uuid
 from typing import Annotated
 
@@ -761,6 +762,166 @@ async def site_app_action(site_id: str, body: AppActionIn, db: DBDep,
                               target_type="server", target_id=str(server.id),
                               meta={"domain": site.domain, "target": body.target})
     return result
+
+
+class SiteDeployIn(BaseModel):
+    """Connect a repository to this site."""
+    repo: str = Field(max_length=500)
+    branch: str = Field(default="main", max_length=120)
+    #: Where inside the repository the web server should look. "" is the repo root.
+    web_dir: str = Field(default="public", max_length=120)
+    build_commands: list[str] = []
+    after_commands: list[str] = []
+    shared_paths: list[str] = []
+
+
+@router.get("/sites/{site_id}/deploy")
+async def site_deploy(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """This site's deployment, if it has one.
+
+    A site has at most one: "deploy my code here" is one question about one website, and a
+    second target pointing at the same folder would be two things fighting over one symlink.
+    """
+    from app.models.deployment import DeployTarget
+    from app.services import deploy_service
+
+    site, server = await _site_and_server(site_id, current_user, db)
+    target = (await db.execute(
+        select(DeployTarget).where(DeployTarget.site_id == site.id)
+    )).scalars().first()
+
+    if target is None:
+        # What the form should suggest, worked out from the site rather than typed again.
+        try:
+            root = deploy_service.deploy_root_for(site.doc_root or "")
+        except deploy_service.InvalidDeploy:
+            root = ""
+        return {
+            "target": None,
+            "suggested": {
+                "path": root,
+                # Laravel and Symfony serve from public/; a plain PHP or static repo does
+                # not. The site's own type is the best guess available.
+                "web_dir": "public" if site.app_type in ("laravel",) else "",
+            },
+            "can_deploy": server.connection_type == "ssh" and not server.panel_type,
+        }
+
+    return {
+        "target": {
+            "id": str(target.id), "repo": target.repo, "branch": target.branch,
+            "path": target.path, "web_dir": target.web_dir or "",
+            "auto_deploy": target.auto_deploy, "serving": target.serving,
+            "current_release": target.current_release,
+            "last_status": target.last_status,
+            "last_deployed_at": target.last_deployed_at.isoformat()
+            if target.last_deployed_at else None,
+            "served_from": deploy_service.served_path(target.path, target.web_dir),
+        },
+        "can_deploy": True,
+    }
+
+
+@router.post("/sites/{site_id}/deploy", status_code=201)
+async def connect_site_deploy(site_id: str, body: SiteDeployIn, db: DBDep,
+                              current_user: CurrentUser) -> dict:
+    """Connect a repository to this site. Does not touch the live site yet.
+
+    Creating this changes nothing a visitor can see: the site keeps serving its current
+    files until something has actually been deployed AND the owner asks for it to be used.
+    """
+    from app.models.deployment import DeployTarget
+    from app.services import crypto_service, deploy_service
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    if server.connection_type != "ssh":
+        raise HTTPException(400, "Deploying code needs a Linux server we reach over SSH.")
+    if server.panel_type:
+        # The panel owns this vhost and rewrites it on its own schedule; a document root we
+        # changed behind its back would be silently reverted, and the site would go down at
+        # a moment nobody could connect to anything we did.
+        raise HTTPException(
+            400, f"This site is managed by {server.panel_type}, which owns its web-server "
+                 f"settings. Deploy through the panel instead.")
+
+    existing = (await db.execute(
+        select(DeployTarget).where(DeployTarget.site_id == site.id)
+    )).scalars().first()
+    if existing is not None:
+        raise HTTPException(409, "This site already has a repository connected.")
+
+    try:
+        path = deploy_service.deploy_root_for(site.doc_root or "")
+        target = DeployTarget(
+            user_id=current_user.id, server_id=server.id, site_id=site.id,
+            name=site.domain,
+            repo=deploy_service.valid_repo(body.repo),
+            branch=deploy_service.valid_branch(body.branch),
+            path=deploy_service.valid_path(path),
+            web_dir=deploy_service.valid_web_dir(body.web_dir),
+            shared_paths=deploy_service.valid_shared(body.shared_paths),
+            build_commands=deploy_service.valid_commands(body.build_commands, label="build"),
+            after_commands=deploy_service.valid_commands(body.after_commands,
+                                                        label="after-deploy"),
+            webhook_secret=crypto_service.encrypt(secrets.token_hex(24)),
+        )
+    except deploy_service.InvalidDeploy as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    db.add(target)
+    await db.commit()
+    await db.refresh(target)
+    await audit_service.audit(db, current_user, "site.deploy.connected",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "repo": target.repo})
+    return {"id": str(target.id), "path": target.path,
+            "served_from": deploy_service.served_path(target.path, target.web_dir)}
+
+
+@router.post("/sites/{site_id}/deploy/serve")
+async def serve_site_from_deploy(site_id: str, db: DBDep,
+                                 current_user: CurrentUser) -> dict:
+    """Point the site's web server at the deployed code.
+
+    The one step here a visitor can see, and the only dangerous one — so it is done exactly
+    like the PHP version switch: keep a copy of the config, change the document root, let
+    the web server check its own config, reload, then prove the site still serves real
+    content. Anything else and the old file goes back.
+
+    It refuses outright when nothing has been deployed yet, which is why the site can sit
+    happily on its existing files through as many failed first deploys as it takes.
+    """
+    from app.models.deployment import DeployTarget
+    from app.services import connection_manager, deploy_service, site_service
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    target = (await db.execute(
+        select(DeployTarget).where(DeployTarget.site_id == site.id)
+    )).scalars().first()
+    if target is None:
+        raise HTTPException(404, "This site has no repository connected.")
+
+    facts = await site_service.probe_details(server, site)
+    config_path = facts.get("config_path")
+    if not config_path:
+        raise HTTPException(
+            422, "We could not find this site's web-server configuration, so nothing was "
+                 "changed.")
+
+    command = deploy_service.build_point_command(
+        config_path, site.domain, target.path, target.web_dir)
+    stdout, stderr, code = await connection_manager.execute(server, command)
+    message = (stdout or stderr or "").strip().splitlines()[-1:] or [""]
+
+    if code != 0:
+        raise HTTPException(422, deploy_service.POINT_OUTCOMES.get(code, message[0]))
+
+    target.serving = True
+    await db.commit()
+    await audit_service.audit(db, current_user, "site.deploy.serving",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain})
+    return {"serving": True, "message": message[0]}
 
 
 @router.get("/sites/{site_id}/cron")
