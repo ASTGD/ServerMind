@@ -15,7 +15,7 @@ import uuid
 import pytest
 
 from app.models.site import STATUSES, Site
-from app.services import site_service as ss
+from app.services import playbook_service, site_service, site_service as ss
 
 
 class _FakeDb:
@@ -881,3 +881,192 @@ def test_the_customer_is_never_asked_about_takeover():
     by_slug = {p["slug"]: p for p in OFFICIAL_PLAYBOOKS}
     for item in ss.catalogue(by_slug):
         assert "TAKEOVER" not in [f["name"] for f in item["fields"]], item["id"]
+
+
+# ── Every installer must be runnable from the site path ──────────────────────
+#
+# Adding a site sends ONE thing — a domain. Everything else the script needs has to come
+# from the playbook's own declared defaults. This was broken in exactly the way an offline
+# test cannot notice: the code was right, the playbooks were right, and the join between
+# them was missing, so creating a site failed with "This installer still needs WEB_ROOT".
+
+class _FakePlaybook:
+    def __init__(self, variables):
+        self.variables = variables
+
+
+def test_declared_defaults_are_read_off_the_playbook():
+    pb = _FakePlaybook([
+        {"name": "WEB_ROOT", "default": "/var/www", "required": True},
+        {"name": "APP_PORT", "default": "3000", "required": True},
+    ])
+    assert playbook_service.declared_defaults(pb) == {
+        "WEB_ROOT": "/var/www", "APP_PORT": "3000"}
+
+
+def test_an_optional_variable_with_an_empty_default_means_empty():
+    """The opposite case, and the one that made "Web application" un-installable.
+
+    ``create-app`` writes ``if [ -n "$START_CMD" ]`` — the script is built to receive
+    nothing there. Leaving it unsubstituted made the guard refuse a valid install, which
+    only the per-type test below noticed.
+    """
+    pb = _FakePlaybook([{"name": "START_CMD", "default": "", "required": False}])
+    defaults = playbook_service.declared_defaults(pb)
+    assert defaults == {"START_CMD": ""}
+    assert playbook_service.substitute_variables("CMD={{START_CMD}}", defaults) == "CMD="
+
+
+def test_a_required_variable_with_an_empty_default_stays_missing():
+    """``DB_PASS`` declares "" meaning "you must supply this".
+
+    Treating that as a default is how a playbook once set a database root password to the
+    literal text of an unfilled placeholder. It must stay missing so the guard refuses.
+    """
+    pb = _FakePlaybook([
+        {"name": "DB_PASS", "default": "", "required": True},
+        {"name": "DB_NAME", "default": "wordpress", "required": True},
+    ])
+    defaults = playbook_service.declared_defaults(pb)
+    assert "DB_PASS" not in defaults
+    assert defaults == {"DB_NAME": "wordpress"}
+
+    with pytest.raises(playbook_service.UnresolvedVariables):
+        playbook_service.substitute_variables(
+            "PASS='{{DB_PASS}}'", {**defaults, "DOMAIN": "x.com"})
+
+
+def test_declared_defaults_survive_a_playbook_with_junk_variables():
+    """A row read back from the database may hold anything."""
+    assert playbook_service.declared_defaults(_FakePlaybook(None)) == {}
+    assert playbook_service.declared_defaults(_FakePlaybook([])) == {}
+    assert playbook_service.declared_defaults(_FakePlaybook(["not-a-dict"])) == {}
+    assert playbook_service.declared_defaults(
+        _FakePlaybook([{"default": "orphan"}, {"name": "OK", "default": 42}])) == {}
+
+
+@pytest.mark.parametrize("site_type", sorted(site_service.SITE_TYPES))
+def test_every_offered_installer_runs_with_only_a_domain(site_type):
+    """The real regression test: for each type the chooser offers, the playbook's own
+    defaults plus the domain plus the type's fixed values must fill EVERY placeholder.
+
+    Anything left over is a type that cannot be installed from its own page — which is
+    what "The site could not be added" turned out to mean.
+    """
+    spec = site_service.SITE_TYPES[site_type]
+    row = next((p for p in playbook_service.OFFICIAL_PLAYBOOKS
+                if p["slug"] == spec["playbook"]), None)
+    assert row is not None, f"{site_type} names a playbook that does not exist"
+    pb = _FakePlaybook(row.get("variables"))
+
+    # Fields the customer is genuinely asked for (a password) are supplied the way the
+    # chooser's form supplies them. The point of the test is that nothing ELSE is missing.
+    from_the_form = {
+        v["name"]: "supplied-by-the-form"
+        for v in (row.get("variables") or [])
+        if v.get("required") and v.get("default") == "" and v["name"] != "DOMAIN"
+    }
+
+    # Assembled by the SERVICE, not rebuilt here — a copy of this merge in the test is what
+    # let the original bug pass: the test proved its own dict was complete, never the one
+    # the code actually builds.
+    variables = site_service.install_variables(
+        pb, spec, "shop.example.com", from_the_form, takeover=True)
+
+    script = playbook_service.substitute_variables(row["script_bash"], variables)
+    assert "{{" not in script
+
+
+def test_the_values_this_feature_decides_cannot_be_overridden_by_the_caller():
+    """A request that names its own TAKEOVER or DOMAIN must not win.
+
+    Takeover is what allows an installer to clear a folder. It is granted because this site
+    is a known-empty one WE built, not because it was asked for.
+    """
+    pb = _FakePlaybook([{"name": "WEB_ROOT", "default": "/var/www", "required": True}])
+    spec = {"extra": {"WITH_PHP": "no", "TAKEOVER": "no"}}
+    got = site_service.install_variables(
+        pb, spec, "real.example.com",
+        {"DOMAIN": "attacker.example.com", "TAKEOVER": "yes", "WEB_ROOT": "/srv"},
+        takeover=False)
+    assert got["DOMAIN"] == "real.example.com"
+    assert got["TAKEOVER"] == "no"
+    # A field the customer legitimately answers still wins over the playbook's default.
+    assert got["WEB_ROOT"] == "/srv"
+
+
+# ── A scan confirms; it never erases ─────────────────────────────────────────
+#
+# All three of these were live findings on one real Apache server: scanning it relabelled a
+# site WE built as "found on the server", blanked its document root, and downgraded what it
+# runs to Unknown. The cause is shared — the scan wrote what it could see over what we knew.
+
+async def _scan(row, **seen):
+    """Run the REAL sync over one existing row and one scan result.
+
+    Deliberately not a local copy of the update branch — a test that reimplements the code
+    it is checking passes when that code is reverted, which is how the variable-defaults bug
+    survived its first test in this same file.
+    """
+    found = ss.DiscoveredSite(domain=row.domain, aliases=[], app_version="", **seen)
+    await ss.sync(_FakeDb([row]), _server(), found=[found])
+    return row
+
+
+@pytest.mark.asyncio
+async def test_a_site_we_built_is_never_relabelled_as_discovered():
+    """Provenance is not something looking at the server can answer.
+
+    It also governs whether we may remove the site — that permission means "we built it, so
+    we know its layout" — and a scan silently revoked it.
+    """
+    row = _row("shop.example.com")
+    row.source = "manual"
+    await _scan(row, source="apache", doc_root="", app_type="unknown")
+    assert row.source == "manual"
+
+
+@pytest.mark.asyncio
+async def test_a_site_we_found_keeps_tracking_which_web_server_reports_it():
+    row = _row("shop.example.com")
+    row.source = "nginx"
+    await _scan(row, source="apache", doc_root="/var/www/shop", app_type="php")
+    assert row.source == "apache"
+
+
+@pytest.mark.asyncio
+async def test_a_scan_that_cannot_see_a_document_root_does_not_blank_the_one_we_have():
+    """Apache's ``-S`` reports no document root at all, so every Apache scan hit this."""
+    row = _row("shop.example.com")
+    row.doc_root = "/var/www/shop.example.com"
+    await _scan(row, source="apache", doc_root="", app_type="unknown")
+    assert row.doc_root == "/var/www/shop.example.com"
+
+
+@pytest.mark.asyncio
+async def test_a_scan_that_can_see_a_better_document_root_wins():
+    row = _row("shop.example.com")
+    row.doc_root = "/var/www/old"
+    await _scan(row, source="nginx", doc_root="/var/www/new", app_type="php")
+    assert row.doc_root == "/var/www/new"
+
+
+@pytest.mark.asyncio
+async def test_unknown_means_could_not_tell_and_never_overwrites_what_we_know():
+    row = _row("shop.example.com")
+    row.app_type, row.app_version = "wordpress", "6.9"
+    await _scan(row, source="apache", doc_root="", app_type="unknown")
+    assert row.app_type == "wordpress"
+    assert row.app_version == "6.9"
+
+
+@pytest.mark.asyncio
+async def test_a_scan_that_really_identifies_an_app_updates_it():
+    """The customer installed WordPress by hand onto an empty site — the scan is right."""
+    row = _row("shop.example.com")
+    row.app_type = "static"
+    found = ss.DiscoveredSite(domain="shop.example.com", aliases=[],
+                              doc_root="/var/www/shop", source="nginx",
+                              app_type="wordpress", app_version="6.9.1")
+    await ss.sync(_FakeDb([row]), _server(), found=[found])
+    assert row.app_type == "wordpress" and row.app_version == "6.9.1"

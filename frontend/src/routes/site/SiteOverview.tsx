@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react"
 import { APP_LABEL, type SiteDetail } from "@/api/sites"
 import SiteInstaller from "@/components/sites/SiteInstaller"
 import SiteHttps from "@/components/sites/SiteHttps"
+import SiteInformation from "@/components/sites/SiteInformation"
 import { canInstallOnto, wasCreatedHere } from "@/lib/siteInstall"
 
 /**
@@ -63,6 +64,11 @@ export default function SiteOverview() {
       {!installing && site.server.connection_type === "ssh" && !site.server.panel_type && (
         <SiteHttps siteId={site.id} domain={site.domain} hasSsl={site.has_ssl} />
       )}
+
+      <SiteInformation
+        siteId={site.id}
+        sshServer={site.server.connection_type === "ssh"}
+      />
     </div>
   )
 }

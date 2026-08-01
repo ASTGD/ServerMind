@@ -379,3 +379,146 @@ server {
     assert site_lines, f"probe emitted no site lines: {output!r}"
     for line in site_lines:
         assert len(line.split("|")) == 5, f"wrong field count: {line!r}"
+
+
+# ── The per-site detail probe ────────────────────────────────────────────────
+#
+# One site's facts: where its files are, who owns them, which PHP, how big. Same three
+# guarantees as every other probe in this file — read-only, valid shell, fail-open — plus
+# the parsing, because two web servers write a document root two different ways.
+
+def test_the_detail_probe_contains_no_mutating_verb():
+    """It runs whenever anyone opens a site page. Looking at a website must never change it."""
+    cmd = sites.build_detail_command("shop.example.com", "/var/www/shop")
+    mutators = (
+        "rm", "rmdir", "mv", "cp", "dd", "mkfs", "chmod", "chown", "chattr", "tee",
+        "truncate", "install", "apt", "yum", "dnf", "systemctl", "service", "kill",
+        "pkill", "reboot", "shutdown", "curl", "wget", "nc", "scp", "mysql", "psql",
+        "crontab", "useradd", "usermod",
+    )
+    found = [m for m in mutators
+             if re.search(r"(?<![\w-])" + re.escape(m) + r"(?![\w-])", cmd)]
+    assert not found, f"mutating verb(s) in the detail probe: {found}"
+    assert "sed -i" not in cmd, "in-place edit in a read-only probe"
+
+
+def test_the_detail_probe_is_valid_shell():
+    import subprocess
+    result = subprocess.run(
+        ["bash", "-n"], text=True, capture_output=True,
+        input=sites.build_detail_command("shop.example.com", "/var/www/shop"))
+    assert result.returncode == 0, result.stderr
+
+
+def test_the_detail_probe_survives_a_server_with_no_timeout_binary():
+    """`du` is the one bounded call here. If `timeout` is absent the probe must still run —
+    silently emitting nothing would show the site as having no files at all."""
+    cmd = sites.build_detail_command("shop.example.com", "/var/www/shop")
+    assert "command -v timeout" in cmd and 'else "$@"' in cmd
+
+
+def test_a_domain_with_shell_characters_cannot_become_a_second_command():
+    """The domain is the one piece of customer input that reaches this probe.
+
+    Asserting the payload is ABSENT from the command would be the wrong test — quoting
+    keeps the text and removes its power. So parse the generated line the way a shell
+    does and check the payload arrives as ONE argument to grep, with no second command
+    behind it.
+    """
+    import shlex
+    payload = "evil.com; touch /tmp/pwned"
+    line = next(ln for ln in sites.build_detail_command(payload, None).splitlines()
+                if ln.startswith("CONF="))
+    inner = line[line.index("(") + 1:line.rindex("|")]      # the grep, before the pipe
+    argv = shlex.split(inner)
+    assert payload in argv, f"the domain did not survive as one argument: {argv}"
+    assert "touch" not in argv, f"the payload became its own command: {argv}"
+
+
+def test_it_reads_an_nginx_document_root_and_php_version():
+    out = "\n".join([
+        "___SM_SITEDETAIL___|config|/etc/nginx/sites-enabled/shop.conf",
+        "___SM_SITEDETAIL___|public|/var/www/shop.example.com/public",
+        "___SM_SITEDETAIL___|path|/var/www/shop.example.com",
+        "___SM_SITEDETAIL___|user|www-data",
+        "___SM_SITEDETAIL___|sizekb|20480",
+        "___SM_SITEDETAIL___|php|8.3",
+    ])
+    d = sites.parse_detail(out)
+    assert d["public_path"] == "/var/www/shop.example.com/public"
+    assert d["server_path"] == "/var/www/shop.example.com"
+    assert d["system_user"] == "www-data"
+    assert d["size_kb"] == 20480
+    assert d["php_version"] == "8.3"
+
+
+def test_a_fact_the_server_could_not_answer_is_absent_rather_than_wrong():
+    """A static site has no PHP and an unreadable folder has no size. Reporting a default —
+    "PHP 8.1", "0 MB" — would be a made-up number someone acts on."""
+    d = sites.parse_detail("___SM_SITEDETAIL___|public|/var/www/x\n"
+                           "___SM_SITEDETAIL___|sizekb|\n")
+    assert d["public_path"] == "/var/www/x"
+    assert d["php_version"] is None
+    assert d["size_kb"] is None
+    assert d["system_user"] is None
+
+
+def test_junk_output_never_raises():
+    """An unreachable-mid-command server returns half a line. The page must still draw."""
+    assert sites.parse_detail("")["public_path"] is None
+    assert sites.parse_detail("bash: nginx: not found")["public_path"] is None
+    assert sites.parse_detail("___SM_SITEDETAIL___|sizekb|not-a-number")["size_kb"] is None
+    assert sites.parse_detail("___SM_SITEDETAIL___|truncated")["public_path"] is None
+
+
+# ── Apache prints its vhosts three different ways ────────────────────────────
+#
+# Captured from a real Ubuntu 24.04 box. `namevhost` only appears once a port carries
+# SEVERAL name-based vhosts, so matching that word alone reported ZERO sites on a server
+# with exactly one — the first site on a fresh server, which is the case that matters most.
+# Live testing found it; no offline test had a single-vhost sample to notice it.
+
+_APACHE_ONE = """VirtualHost configuration:
+*:80                   pass1.example.com (/etc/apache2/sites-enabled/pass1.example.com.conf:2)
+ServerRoot: "/etc/apache2"
+Main DocumentRoot: "/var/www/html"
+Mutex default: dir="/var/run/apache2/" mechanism=default
+User: name="www-data" id=33
+"""
+
+_APACHE_MANY = """VirtualHost configuration:
+*:80                   is a NameVirtualHost
+         default server a.example.com (/etc/apache2/sites-enabled/a.conf:1)
+         port 80 namevhost a.example.com (/etc/apache2/sites-enabled/a.conf:1)
+         port 80 namevhost b.example.com (/etc/apache2/sites-enabled/b.conf:1)
+ServerRoot: "/etc/apache2"
+"""
+
+
+def _apache_probe(sample: str) -> list[str]:
+    """Run the probe's OWN awk program over a sample, the way the server runs it.
+
+    Re-implementing the extraction in Python here would prove nothing about the shell that
+    actually runs on the box — which is exactly how the single-vhost case slipped through.
+    """
+    import re
+    import subprocess
+    prog = re.search(r"\| awk '(\{ for.*?\})'", sites.build_discovery_command(), re.S).group(1)
+    out = subprocess.run(["awk", prog], input=sample, text=True, capture_output=True).stdout
+    found, _ = sites.parse_discovery(out)
+    return sorted(s.domain for s in found)
+
+
+def test_a_server_with_exactly_one_apache_site_reports_that_site():
+    assert _apache_probe(_APACHE_ONE) == ["pass1.example.com"]
+
+
+def test_a_server_with_several_apache_sites_reports_all_of_them_once():
+    assert _apache_probe(_APACHE_MANY) == ["a.example.com", "b.example.com"]
+
+
+def test_apaches_own_noise_is_not_mistaken_for_a_site():
+    """`ServerRoot`, `Main DocumentRoot` and the NameVirtualHost header all sit in the same
+    output. A site list full of things nobody can visit is worse than a short one."""
+    for junk in ("NameVirtualHost", "ServerRoot", "DocumentRoot", "default", "*:80"):
+        assert junk not in _apache_probe(_APACHE_ONE) + _apache_probe(_APACHE_MANY)

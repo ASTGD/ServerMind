@@ -2404,6 +2404,39 @@ class UnresolvedVariables(Exception):
 _PLACEHOLDER = re.compile(r"\{\{([A-Z_][A-Z0-9_]*)\}\}")
 
 
+def declared_defaults(playbook) -> dict[str, str]:
+    """The default value a playbook declares for each of its variables.
+
+    A playbook already states what it wants when nobody says otherwise — ``WEB_ROOT`` is
+    ``/var/www``, an app listens on ``3000``, a Laravel database is called ``laravel``. The
+    normal run-a-playbook screen applies these by putting them in the form; a caller that
+    builds its variables in code (creating a site, for one) had no way to see them, so
+    adding a variable to a playbook silently broke every such caller. This is that one way.
+
+    Whether an EMPTY default counts turns on whether the variable is required, and the two
+    cases are opposite:
+
+    - **required** and empty means *you must supply this*. ``DB_PASS`` is that — treating
+      its empty default as an answer is how a playbook once set a database root password to
+      the literal text of an unfilled placeholder. It stays missing so the guard below
+      refuses to run rather than inventing a password.
+    - **optional** and empty means *empty is a real answer*. ``START_CMD`` is that — the
+      script says ``if [ -n "$START_CMD" ]``, so it is written to receive nothing. Leaving
+      it unsubstituted made the guard refuse a perfectly valid install.
+    """
+    out: dict[str, str] = {}
+    for var in (getattr(playbook, "variables", None) or []):
+        if not isinstance(var, dict):
+            continue
+        name, default = var.get("name"), var.get("default")
+        if not name or not isinstance(default, str):
+            continue
+        if default == "" and bool(var.get("required", True)):
+            continue
+        out[name] = default
+    return out
+
+
 def substitute_variables(script: str, variables: dict) -> str:
     """Replace {{VAR_NAME}} placeholders with provided values.
 

@@ -116,14 +116,39 @@ export const MENU: MenuItem[] = [
  * the only landing place there is, so it stays. Nothing is deleted either way; which page
  * is home is simply decided by what the asset can do, like the rest of this menu.
  */
+/**
+ * A panel section is named after the panel, because that is the word the customer knows.
+ *
+ * Someone who bought a CyberPanel server thinks "CyberPanel", not "control panel" — the
+ * generic label makes them stop and work out which of the two site-ish sections they want.
+ * Same reasoning that made Sites stop being called Websites.
+ */
+const PANEL_LABEL: Record<string, string> = {
+  cyberpanel: "CyberPanel",
+  cpanel: "cPanel",
+  whm: "WHM",
+  plesk: "Plesk",
+  directadmin: "DirectAdmin",
+  hestiacp: "HestiaCP",
+  aapanel: "aaPanel",
+  cloudpanel: "CloudPanel",
+}
+
 export function menuFor(server: Server): MenuItem[] {
   const caps = capabilitiesOf(server)
   const items = MENU.filter(
     (item) => (!item.needs || caps.has(item.needs))
       && !(item.excludes && caps.has(item.excludes)),
   )
-  const hasSites = items.some((i) => i.path === "sites")
-  return hasSites ? items.filter((i) => i.path !== "") : items
+  const named = items.map((item) => {
+    if (item.path !== "hosting") return item
+    // A panel we do not have a name for keeps the generic label rather than showing a raw
+    // database value like "directadmin_v2" to a customer.
+    const label = PANEL_LABEL[(server.panel_type ?? "").toLowerCase()]
+    return label ? { ...item, label } : item
+  })
+  const hasSites = named.some((i) => i.path === "sites")
+  return hasSites ? named.filter((i) => i.path !== "") : named
 }
 
 /** Where this asset should land when opened. */

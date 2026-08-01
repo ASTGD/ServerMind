@@ -165,6 +165,29 @@ export async function getSite(siteId: string): Promise<SiteDetail> {
   return data
 }
 
+/**
+ * Where a site's files live, who owns them, which PHP it runs, how big it is.
+ *
+ * Every field is optional because every one of them is something the server might not be
+ * able to answer — a static site has no PHP, an unreadable folder has no size. A missing
+ * field is shown as unknown; it is never filled with a plausible default.
+ */
+export interface SiteFacts {
+  reachable: boolean
+  config_path?: string | null
+  server_path?: string | null
+  public_path?: string | null
+  system_user?: string | null
+  size_kb?: number | null
+  php_version?: string | null
+}
+
+/** Read live from the server, because all of it changes without us. */
+export async function getSiteFacts(siteId: string): Promise<SiteFacts> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/details`)
+  return data
+}
+
 /** Put an application onto a site that already exists. */
 export async function installOnSite(
   siteId: string,

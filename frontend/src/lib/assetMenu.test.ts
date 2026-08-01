@@ -19,6 +19,8 @@ function asset(over: Partial<Server> = {}): Server {
 }
 
 const labels = (s: Server) => menuFor(s).map((i) => i.label)
+/** A section's stable identity. Labels are customer-facing wording and change. */
+const paths = (s: Server) => menuFor(s).map((i) => i.path)
 
 describe("what an asset can do", () => {
   it("gives a plain Linux server the full set", () => {
@@ -29,8 +31,10 @@ describe("what an asset can do", () => {
   })
 
   it("offers no control-panel section until a panel is actually there", () => {
-    expect(labels(asset())).not.toContain("Control panel")
-    expect(labels(asset({ panel_type: "cyberpanel" }))).toContain("Control panel")
+    // Asserted on the path, not the label: the label is named after the panel and is
+    // meant to change, while the section's identity is not.
+    expect(paths(asset())).not.toContain("hosting")
+    expect(paths(asset({ panel_type: "cyberpanel" }))).toContain("hosting")
   })
 
   it("keeps Sites and Control panel as separate ideas", () => {
@@ -38,9 +42,9 @@ describe("what an asset can do", () => {
     // its own web server config; Control panel is the panel's own records and operations.
     // A CyberPanel box legitimately has both, and naming the second one "Websites" made
     // two items compete for one meaning.
-    const items = labels(asset({ panel_type: "cyberpanel" }))
-    expect(items).toContain("Sites")
-    expect(items).toContain("Control panel")
+    const items = paths(asset({ panel_type: "cyberpanel" }))
+    expect(items).toContain("sites")
+    expect(items).toContain("hosting")
     expect(items).not.toContain("Websites")
   })
 
@@ -48,14 +52,14 @@ describe("what an asset can do", () => {
     // The common real case: CyberPanel installed on a box we also have SSH to. It is both,
     // and a per-type list would have to pick one.
     const items = labels(asset({ connection_type: "ssh", panel_type: "cyberpanel" }))
-    expect(items).toContain("Control panel")
+    expect(items).toContain("CyberPanel")
     expect(items).toContain("Files")
     expect(items).toContain("Firewall & keys")
   })
 
   it("gives a hosting-only account its panel but not a Linux firewall", () => {
     const items = labels(asset({ connection_type: "hosting", panel_type: "cpanel" }))
-    expect(items).toContain("Control panel")
+    expect(items).toContain("cPanel")
     expect(items).not.toContain("Firewall & keys")
     expect(items).not.toContain("Files") // no SFTP to an API-only panel
   })
@@ -216,7 +220,7 @@ describe("a section a control panel owns itself", () => {
   })
 
   it("still shows the panel's own section there instead", () => {
-    expect(labels(asset({ panel_type: "cyberpanel" }))).toContain("Control panel")
+    expect(paths(asset({ panel_type: "cyberpanel" }))).toContain("hosting")
   })
 })
 
@@ -252,5 +256,30 @@ describe("databases and cron", () => {
     const paths = menuFor(asset({ connection_type: "rdp", port: 3389 })).map((i) => i.path)
     expect(paths).not.toContain("databases")
     expect(paths).not.toContain("cron")
+  })
+})
+
+describe("the panel section is named after the panel", () => {
+  it("says CyberPanel on a CyberPanel box, not 'Control panel'", () => {
+    const l = labels(asset({ panel_type: "cyberpanel" }))
+    expect(l).toContain("CyberPanel")
+    expect(l).not.toContain("Control panel")
+  })
+
+  it("names cPanel and Plesk too", () => {
+    expect(labels(asset({ panel_type: "cpanel" }))).toContain("cPanel")
+    expect(labels(asset({ panel_type: "plesk" }))).toContain("Plesk")
+  })
+
+  it("keeps the generic label for a panel we have no name for", () => {
+    // Better a slightly vague heading than a raw database value shown to a customer.
+    const l = labels(asset({ panel_type: "something-new" }))
+    expect(l).toContain("Control panel")
+  })
+
+  it("still shows nothing panel-ish on a server with no panel", () => {
+    const l = labels(asset({ panel_type: null }))
+    expect(l).not.toContain("Control panel")
+    expect(l).not.toContain("CyberPanel")
   })
 })

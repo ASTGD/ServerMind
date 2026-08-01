@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shlex
 from dataclasses import dataclass, field
 
 from app.models.server import Server
@@ -102,11 +103,25 @@ def build_discovery_command() -> str:
         f'/^[[:space:]]*}}/ {{ if(d!="") print "{_SENTINEL}|nginx|" d "|" r "|" s; d="" }}\'; fi; '
     )
 
-    # Apache: `-S` lists every vhost with its config file and ServerName.
+    # Apache: `-S` lists every vhost with the config file it came from.
+    #
+    # It prints them in three different shapes, and matching only one of them is how a
+    # server with a SINGLE site reported having none — the first site on a fresh server,
+    # which is the case that matters most:
+    #
+    #     *:80          shop.example.com (/etc/apache2/sites-enabled/shop.conf:2)
+    #     default server shop.example.com (/etc/.../shop.conf:1)
+    #     port 80 namevhost other.example.com (/etc/.../other.conf:1)
+    #
+    # The `namevhost` wording appears only once a port has SEVERAL name-based vhosts. What
+    # every shape does share is the trailing `(/path/to/conf:LINE)`, so the name is taken as
+    # the field before it. `is_real_domain` throws out anything that is not a hostname.
     apache = (
         f'for a in apachectl apache2ctl httpd; do '
         f'if command -v $a >/dev/null 2>&1; then '
-        f'_t {_T} $a -S 2>/dev/null | grep -oE "namevhost [^ ]+" | awk \'{{print "{_SENTINEL}|apache|" $2 "||no"}}\'; '
+        f'_t {_T} $a -S 2>/dev/null | awk \''
+        f'{{ for (i = 2; i <= NF; i++) if ($i ~ /^\\(\\//) '
+        f'{{ print "{_SENTINEL}|apache|" $(i-1) "||no"; break }} }}\'; '
         f'break; fi; done; '
     )
 
@@ -285,11 +300,26 @@ async def sync(db, server: Server, found: list[DiscoveredSite]) -> dict:
             ))
             added += 1
         else:
+            # A scan may CONFIRM and UPDATE what it can see. It must never replace something
+            # we know with something it could not determine — the three fields below are all
+            # cases where it would, and each was wrong on a real server.
             row.aliases = site.aliases
-            row.doc_root = site.doc_root or None
-            row.source = site.source
-            row.app_type = site.app_type
-            row.app_version = site.app_version or None
+            # Apache's `-S` reports no document root at all, so a scan of an Apache box
+            # would blank the path we recorded when we built the site.
+            if site.doc_root:
+                row.doc_root = site.doc_root
+            # `source` is PROVENANCE — did we build this site, or find it? — and no amount
+            # of looking at the server can change the answer. Overwriting it relabelled our
+            # own sites as "found on the server", which also revoked our right to remove
+            # them, since that permission is exactly "we built it, so we know its layout".
+            if row.source != "manual":
+                row.source = site.source
+            # `unknown` means "I could not tell", not "nothing is installed". Without a doc
+            # root there is nothing to match an app against, so an Apache scan downgraded
+            # every site it saw to Unknown.
+            if site.app_type and site.app_type != "unknown":
+                row.app_type = site.app_type
+                row.app_version = site.app_version or None
             row.has_ssl = site.has_ssl
             row.last_seen = now
             # A site that came back is present again — a restored config or a fixed web server.
@@ -594,6 +624,32 @@ def catalogue(playbooks_by_slug: dict) -> list[dict]:
     return out
 
 
+def install_variables(playbook, spec: dict, domain: str,
+                      supplied: dict | None, *, takeover: bool) -> dict:
+    """Everything an installer script needs, assembled in one place.
+
+    Pure, and shared by both paths that run one — creating a site and installing onto an
+    existing one — because they were assembling it separately and drifted. Adding a site
+    sends only a DOMAIN, so anything the script also needs has to come from the playbook's
+    own declared defaults; when that link was missing, creating any site at all failed with
+    *"This installer still needs WEB_ROOT"*.
+
+    Order is the meaning: the playbook's defaults are the weakest, the customer's answers
+    beat them, and the values this feature decides — the domain, what the chosen type
+    fixes, whether an empty site may be replaced — beat everything, because they are not
+    the customer's to override.
+    """
+    from app.services import playbook_service  # imported here, as elsewhere in this file
+
+    return {
+        **playbook_service.declared_defaults(playbook),
+        **(supplied or {}),
+        "DOMAIN": domain,
+        **spec["extra"],
+        **({"TAKEOVER": "yes"} if takeover else {}),
+    }
+
+
 class SiteError(Exception):
     """Something the customer can read and act on."""
 
@@ -650,7 +706,7 @@ async def create(db, server, user, *, domain: str, site_type: str,
         raise SiteError(
             f"The installer for {spec['label']} is not available on this ServerAlly.")
 
-    variables = {**(variables or {}), "DOMAIN": domain, **spec["extra"]}
+    variables = install_variables(pb, spec, domain, variables, takeover=False)
     raw = pb.script_bash
     if not raw:
         raise SiteError(f"The {spec['label']} installer has no script for this server.")
@@ -717,8 +773,7 @@ async def install(db, server, user, site, *, site_type: str, variables: dict | N
     if not pb.script_bash:
         raise SiteError(f"The {spec['label']} installer has no script for this server.")
 
-    variables = {**(variables or {}), "DOMAIN": site.domain, **spec["extra"],
-                 "TAKEOVER": "yes"}
+    variables = install_variables(pb, spec, site.domain, variables, takeover=True)
     script = playbook_service.substitute_variables(pb.script_bash, variables)
 
     run = PlaybookRun(server_id=server.id, user_id=user.id, playbook_id=pb.id,
@@ -766,3 +821,95 @@ async def reconcile_installs(db, user_id) -> int:
     if changed:
         await db.commit()
     return changed
+
+
+# --- What this one site actually is -------------------------------------------------------
+#
+# The fleet scan answers "which domains does this server serve" and has to stay cheap — it
+# runs across every site on the box. These are the facts you want when looking at ONE site:
+# who owns its files, where they are, which PHP it runs, how much disk it uses. `du` on a
+# large site is slow enough that asking it for seventy sites at once would make the list
+# crawl, so it is asked here, for one site, when its page is open.
+
+_DETAIL_SENTINEL = "___SM_SITEDETAIL___"
+
+
+def build_detail_command(domain: str, doc_root: str | None) -> str:
+    """One read-only round trip for a single site's facts.
+
+    The domain is used only to find its config file, and is quoted. Every path acted on is
+    read back OUT of that config rather than built from the domain, so a site whose files
+    live somewhere unusual reports the truth instead of a guess.
+    """
+    d = shlex.quote(domain)
+    root_hint = shlex.quote(doc_root or "")
+    s = _DETAIL_SENTINEL
+    return f"""
+_t() {{ local n=$1; shift; if command -v timeout >/dev/null 2>&1; then timeout "$n" "$@"; else "$@"; fi; }}
+CONF=$(grep -rl -- {d} /etc/nginx /etc/apache2 /etc/httpd 2>/dev/null | head -1)
+ROOT=""
+if [ -n "$CONF" ]; then
+  echo "{s}|config|$CONF"
+  # The document root as the WEB SERVER sees it — the only authority on where a site lives.
+  ROOT=$(sed -nE 's/^[[:space:]]*(root|DocumentRoot)[[:space:]]+"?([^";]+)"?;?.*/\\2/p' \\
+         "$CONF" 2>/dev/null | head -1 | tr -d ' ')
+fi
+[ -z "$ROOT" ] && ROOT={root_hint}
+[ -n "$ROOT" ] && echo "{s}|public|$ROOT"
+# Laravel and friends serve from public/; the SITE is the folder above it.
+SITE="$ROOT"
+case "$ROOT" in */public) SITE=$(dirname "$ROOT") ;; esac
+if [ -n "$SITE" ] && [ -d "$SITE" ]; then
+  echo "{s}|path|$SITE"
+  # Who owns the files is read, never assumed — it is what an upload has to be writable by.
+  echo "{s}|user|$(stat -c%U "$SITE" 2>/dev/null)"
+  # Bounded: du over a very large tree is the slowest thing here, and -k is everywhere
+  # while -b is not.
+  echo "{s}|sizekb|$(_t 15 du -sk "$SITE" 2>/dev/null | cut -f1)"
+fi
+# The PHP THIS site runs, from the socket its own config points at — not the server
+# default, which is a different number on a box with three PHP versions installed.
+if [ -n "$CONF" ]; then
+  SOCK=$(grep -oE 'unix:[^;"]*php[^;"]*\\.sock' "$CONF" 2>/dev/null | head -1)
+  [ -n "$SOCK" ] && echo "{s}|php|$(echo "$SOCK" | grep -oE '[0-9]+\\.[0-9]+' | head -1)"
+fi
+true
+"""
+
+
+def parse_detail(stdout: str) -> dict:
+    """Turn the probe's lines into the facts the Information block shows."""
+    out: dict = {"config_path": None, "server_path": None, "public_path": None,
+                 "system_user": None, "size_kb": None, "php_version": None}
+    keys = {"config": "config_path", "path": "server_path", "public": "public_path",
+            "user": "system_user", "php": "php_version"}
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith(_DETAIL_SENTINEL):
+            continue
+        parts = line.split("|", 2)
+        if len(parts) < 3:
+            continue
+        kind, value = parts[1], parts[2].strip()
+        if not value:
+            continue
+        if kind == "sizekb":
+            try:
+                out["size_kb"] = int(value)
+            except ValueError:
+                pass
+        elif kind in keys:
+            out[keys[kind]] = value
+    return out
+
+
+async def probe_details(server, site) -> dict:
+    """One site's facts. Never raises — an unreachable server returns empty fields, which
+    the page shows as "not known" rather than as an error nobody can act on."""
+    try:
+        stdout, _stderr, _code = await connection_manager.execute(
+            server, build_detail_command(site.domain, site.doc_root))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Site detail probe failed for %s: %s", site.domain, exc)
+        return {"reachable": False}
+    return {**parse_detail(stdout), "reachable": True}

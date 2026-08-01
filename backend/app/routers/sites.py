@@ -31,7 +31,7 @@ from app.models.mail_health import MailHealthRecord
 from app.models.site import Site
 from app.models.uptime import UptimeMonitor
 from app.models.user import User
-from app.services import site_service, team_service
+from app.services import playbook_service, site_service, team_service
 
 router = APIRouter(prefix="/api", tags=["sites"])
 logger = logging.getLogger(__name__)
@@ -267,7 +267,7 @@ async def create_site(server_id: str, body: CreateSiteIn, db: DBDep,
         site, run_id, script = await site_service.create(
             db, server, current_user,
             domain=body.domain, site_type=body.site_type, variables=body.variables)
-    except site_service.SiteError as exc:
+    except (site_service.SiteError, playbook_service.UnresolvedVariables) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # Enqueued AFTER the commit inside create(), so the worker can always find the run.
@@ -442,6 +442,30 @@ async def get_site(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     }
 
 
+@router.get("/sites/{site_id}/details")
+async def site_details(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Where this site's files are, who owns them, which PHP it runs, how big it is.
+
+    Read from the server every time rather than stored. All of it changes without us —
+    somebody uploads, somebody switches PHP, an update lands — and a stored path shown for
+    a site that has since moved is worse than no path, because someone will `cd` to it.
+
+    Deliberately its own request, not part of the site page's first load: it is an SSH
+    round trip with a `du` in it, and the page should draw immediately and fill this in.
+    """
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+
+    server = await resolve_server(str(site.server_id), current_user, db)
+    if server.connection_type != "ssh":
+        # Nothing dishonest to report — we have no way to look inside this kind of server.
+        return {"reachable": False}
+    return await site_service.probe_details(server, site)
+
+
 @router.post("/sites/{site_id}/install")
 async def install_on_site(site_id: str, body: InstallIn, db: DBDep,
                           current_user: CurrentUser) -> dict:
@@ -468,7 +492,7 @@ async def install_on_site(site_id: str, body: InstallIn, db: DBDep,
         site, run_id, script = await site_service.install(
             db, server, current_user, site,
             site_type=body.site_type, variables=body.variables)
-    except site_service.SiteError as exc:
+    except (site_service.SiteError, playbook_service.UnresolvedVariables) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # Enqueued after the commit inside install(), so the worker can always find the run.

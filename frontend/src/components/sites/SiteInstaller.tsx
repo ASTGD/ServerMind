@@ -60,8 +60,12 @@ export default function SiteInstaller({ siteId, serverId, panelOnly }: Props) {
       setError(e.response?.data?.detail ?? "It could not be installed."),
   })
 
-  const popular = (catalogue?.types ?? []).filter((t) => t.popular)
-  const rest = (catalogue?.types ?? []).filter((t) => !t.popular)
+  // This chooser only ever appears on a site that is already empty, so "Empty website"
+  // would install exactly what is already there. Offering a tile that does nothing makes
+  // the screen look like it is not paying attention.
+  const offerable = (catalogue?.types ?? []).filter((t) => t.id !== "static")
+  const popular = offerable.filter((t) => t.popular)
+  const rest = offerable.filter((t) => !t.popular)
 
   function pick(type: SiteType) {
     setChosen(type)
@@ -173,7 +177,7 @@ export default function SiteInstaller({ siteId, serverId, panelOnly }: Props) {
               {showAll ? (
                 <div className="space-y-4">
                   {catalogue?.groups.map((group) => {
-                    const items = catalogue.types.filter((t) => t.group === group.id)
+                    const items = offerable.filter((t) => t.group === group.id)
                     if (!items.length) return null
                     const Icon = GROUP_ICON[group.id] ?? Globe
                     return (
@@ -199,7 +203,7 @@ export default function SiteInstaller({ siteId, serverId, panelOnly }: Props) {
                   className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border py-2 text-caption text-muted-foreground hover:bg-accent hover:text-foreground"
                 >
                   <ChevronDown size={13} />
-                  Show all {(catalogue?.types.length ?? 0)} options
+                  Show all {offerable.length} options
                 </button>
               )}
             </>
