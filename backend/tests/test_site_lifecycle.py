@@ -1070,3 +1070,34 @@ async def test_a_scan_that_really_identifies_an_app_updates_it():
                               app_type="wordpress", app_version="6.9.1")
     await ss.sync(_FakeDb([row]), _server(), found=[found])
     assert row.app_type == "wordpress" and row.app_version == "6.9.1"
+
+
+# ── An installer must not send the customer away to do something first ───────
+
+def test_installing_laravel_also_installs_composer():
+    """A fresh Ubuntu 24.04 has neither Composer nor unzip, so refusing until somebody
+    installs them is refusing on every new server. Same mistake the WordPress playbook made
+    about wp-cli, and the same fix: a product whose point is not needing expertise should
+    not stop and ask for some.
+    """
+    script = next(p for p in playbook_service.OFFICIAL_PLAYBOOKS
+                  if p["slug"] == "laravel-site")["script_bash"]
+    assert "getcomposer.org/installer" in script
+    assert "pkg_install unzip" in script, "Composer cannot unpack anything without it"
+    assert "command -v composer >/dev/null" in script, "not reinstalled when already there"
+
+
+def test_the_composer_installer_is_verified_before_it_is_run_as_root():
+    """It downloads a PHP script and executes it as root. Composer publishes the hash for
+    exactly that reason; skipping the check would mean running whatever the network
+    returned. Proven on a real Ubuntu 24.04 both ways — it installs when the signature
+    matches, and refuses with nothing changed when it cannot be fetched.
+    """
+    script = next(p for p in playbook_service.OFFICIAL_PLAYBOOKS
+                  if p["slug"] == "laravel-site")["script_bash"]
+    block = script[script.index("Installing Composer"):script.index("Composer installed")]
+    assert "composer.github.io/installer.sig" in block
+    assert "hash_file('sha384'" in block
+    # Fails CLOSED: an empty signature is a failure to verify, not permission to proceed.
+    assert '[ -z "$EXPECTED" ]' in block
+    assert "exit 1" in block
