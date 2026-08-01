@@ -248,6 +248,15 @@ async def test_server(
         server.last_seen = datetime.now(timezone.utc)
         if result.fingerprint and not server.fingerprint:
             server.fingerprint = result.fingerprint  # trust-on-first-use pin
+        elif (result.fingerprint and server.fingerprint
+              and result.fingerprint.endswith(server.fingerprint)
+              and result.fingerprint != server.fingerprint):
+            # The same key, now recorded WITH its type. An older pin is a bare fingerprint,
+            # so every cold connection has to try each key type until one matches before it
+            # can proceed. Writing the type back makes that a one-time cost instead of a
+            # permanent one — and it is provably the same key, because the fingerprint the
+            # connection verified against is the one already stored.
+            server.fingerprint = result.fingerprint
     elif is_auth_error(message=result.error):
         server.status = "auth_failed"
     else:

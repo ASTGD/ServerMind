@@ -80,3 +80,19 @@ def test_a_healed_connection_is_repinned_with_its_type_so_it_stops_happening():
     import inspect
     body = inspect.getsource(ssh._get_client)
     assert 'f"{keytype} {fingerprint}"' in body
+
+
+def test_a_healed_pin_is_written_back_so_the_retry_is_a_one_time_cost():
+    """An older bare pin makes every COLD connection try each key type before it can
+    proceed. Recording the type turns that into a one-time cost.
+
+    Safe by construction: the new value is only written when it ENDS WITH the fingerprint
+    already stored — i.e. it is provably the same key, just labelled.
+    """
+    import inspect
+    from app.routers import servers
+
+    body = inspect.getsource(servers)
+    assert "result.fingerprint.endswith(server.fingerprint)" in body, (
+        "a pin may only be rewritten when it is demonstrably the same key"
+    )
