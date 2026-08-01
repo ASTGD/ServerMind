@@ -36,10 +36,13 @@ export default function SiteAppPage() {
       setNote(null)
       setBusy(target || action)
     },
-    onSuccess: () => {
+    // Held busy until the re-read finishes. Clearing it the moment wp-cli returns leaves
+    // "Done." sitting above the OLD version numbers for as long as the SSH round trip
+    // takes, which reads as a failure.
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["site-app", site.id] })
       setBusy(null)
       setNote({ ok: true, text: "Done." })
-      qc.invalidateQueries({ queryKey: ["site-app", site.id] })
     },
     // wp-cli's own message names the actual problem far better than anything written here.
     onError: (e: { response?: { data?: { detail?: string } } }) => {

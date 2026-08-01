@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { ChevronRight } from "lucide-react"
 import { getServer } from "@/api/servers"
 import { getSite } from "@/api/sites"
+import { APP_SECTIONS } from "@/lib/siteMenu"
 
 /** Human labels for known path segments. Unknown segments are title-cased;
  *  opaque ids (server/playbook/token) are resolved or shown as "Details". */
@@ -77,7 +78,12 @@ export default function Breadcrumbs() {
     })
     crumbs.push({ label: site?.domain ?? "…", to: `/sites/${siteId}` })
     seg.slice(2).forEach((s) => {
-      crumbs.push({ label: LABELS[s] ?? titleCase(s), to: `/sites/${siteId}/${s}` })
+      // The application section is named after the application, the same as its menu row —
+      // somebody with a WordPress site is looking for the word WordPress, not "App".
+      const label = s === "app"
+        ? (APP_SECTIONS[(site?.app_type || "").toLowerCase()]?.label ?? "Application")
+        : LABELS[s] ?? titleCase(s)
+      crumbs.push({ label, to: `/sites/${siteId}/${s}` })
     })
     return <Trail crumbs={crumbs} />
   }
