@@ -1,5 +1,5 @@
 import {
-  Activity, Boxes, Clock, Cog, FileText, LayoutDashboard, Lock,
+  Activity, Boxes, Clock, Code2, Cog, FileText, LayoutDashboard, Layers, Lock,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type { SiteDetail } from "@/api/sites"
@@ -68,11 +68,16 @@ export const SITE_MENU: SiteMenuItem[] = [
  * application section at all, rather than an empty one: the same "absent, not disabled" rule
  * the rest of both menus follow.
  *
- * `php`, `static` and `unknown` are deliberately not applications. They say how a site is
- * served, and a section for them would hold nothing that Files, Logs and HTTPS do not.
+ * `static` and `unknown` get nothing: a folder of files has nothing to operate, and
+ * "unknown" means the scan could not tell — a section for it would be guessing.
  */
 export const APP_SECTIONS: Record<string, { label: string; icon: LucideIcon }> = {
   wordpress: { label: "WordPress", icon: Boxes },
+  laravel: { label: "Laravel", icon: Layers },
+  // A runtime rather than an application, and it earns a row for one reason: the limits a
+  // site actually runs under answer "why does my upload fail", and they are per-pool — so
+  // the SERVER's PHP page, which reports the server default, cannot answer them here.
+  php: { label: "PHP", icon: Code2 },
 }
 
 export function menuForSite(site: SiteDetail): SiteMenuItem[] {

@@ -708,7 +708,8 @@ async def site_app(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     answers ``app: null`` and shows no section at all — rather than an empty one implying
     the feature exists and is merely switched off.
     """
-    from app.services import app_registry, wordpress_service
+    from app.services import (app_registry, laravel_service, php_site_service,
+                              wordpress_service)
 
     site, server = await _site_and_server(site_id, current_user, db)
     spec = app_registry.app_for(site.app_type)
@@ -719,28 +720,41 @@ async def site_app(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
                 "reason": f"{spec.label} is managed over SSH, and this server is not "
                           f"reached that way."}
 
+    root = site.doc_root or ""
     if spec.id == "wordpress":
-        data = await wordpress_service.read(server, site.doc_root or "")
-        return {"app": spec.id, "label": spec.label, **data}
-    return {"app": spec.id, "label": spec.label, "ok": False,
-            "reason": f"{spec.label} has no screen yet."}
+        data = await wordpress_service.read(server, root)
+    elif spec.id == "laravel":
+        data = await laravel_service.read(server, root)
+    elif spec.id == "php":
+        data = await php_site_service.read(server, root, site.domain)
+    else:
+        data = {"ok": False, "reason": f"{spec.label} has no screen yet."}
+    return {"app": spec.id, "label": spec.label, **data}
 
 
 @router.post("/sites/{site_id}/app/action")
 async def site_app_action(site_id: str, body: AppActionIn, db: DBDep,
                           current_user: CurrentUser) -> dict:
     """Run one named action on this site's application. Needs execute permission (Rule 7)."""
-    from app.services import app_registry, wordpress_service
+    from app.services import app_registry, laravel_service, wordpress_service
 
     site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
     spec = app_registry.app_for(site.app_type)
     if spec is None or server.connection_type != "ssh":
         raise HTTPException(422, "There is nothing here we can manage.")
 
+    root = site.doc_root or ""
     try:
-        result = await wordpress_service.act(
-            server, site.doc_root or "", body.action, body.target)
-    except wordpress_service.WordPressError as exc:
+        if spec.id == "wordpress":
+            result = await wordpress_service.act(server, root, body.action, body.target)
+        elif spec.id == "laravel":
+            result = await laravel_service.act(server, root, body.action)
+        else:
+            # PHP is read-only by design: a pool limit is shared by every site using it, so
+            # changing one belongs to the server's PHP screen, not to one site's page.
+            raise HTTPException(422, f"There is nothing to change on a {spec.label} site "
+                                     f"from here.")
+    except (wordpress_service.WordPressError, laravel_service.LaravelError) as exc:
         raise HTTPException(422, str(exc)) from exc
 
     await audit_service.audit(db, current_user, f"site.{spec.id}.{body.action}",

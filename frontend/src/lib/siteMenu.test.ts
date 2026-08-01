@@ -82,7 +82,7 @@ describe("the section for the application running on the site", () => {
   it("is absent for an application we have no tools for", () => {
     // Absent, not disabled: a permanently dead row implies the feature exists and is
     // merely switched off. Mirrors app_registry on the server, which actually decides.
-    for (const app_type of ["laravel", "php", "static", "unknown", ""]) {
+    for (const app_type of ["static", "unknown", "", "ghost", "nextcloud"]) {
       expect(paths(site({ app_type }))).not.toContain("app")
     }
   })
@@ -96,5 +96,29 @@ describe("the section for the application running on the site", () => {
     // Discovery sets app_type from what it finds, so we did not have to build the site.
     const found = site({ source: "nginx", requested_type: null, app_type: "wordpress" })
     expect(paths(found)).toContain("app")
+  })
+})
+
+describe("the registry now covers three applications", () => {
+  it("names Laravel and PHP after themselves too", () => {
+    expect(menuForSite(site({ app_type: "laravel" })).map((i) => i.label)).toContain("Laravel")
+    expect(menuForSite(site({ app_type: "php" })).map((i) => i.label)).toContain("PHP")
+  })
+
+  it("still gives a folder of files nothing to manage", () => {
+    // `static` has no application; `unknown` means the scan could not tell, and a section
+    // for it would be guessing at what is there.
+    for (const app_type of ["static", "unknown", ""]) {
+      expect(paths(site({ app_type }))).not.toContain("app")
+    }
+  })
+
+  it("keeps the site's PHP section separate from the server's", () => {
+    // They answer different questions: the server's page is about which versions are
+    // installed and switching between them; this one is about the limits THIS site runs
+    // under, which are per-pool and are what break an upload.
+    const p = paths(site({ app_type: "php" }))
+    expect(p).toContain("app")
+    expect(p).not.toContain("php")
   })
 })

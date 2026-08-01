@@ -30,10 +30,14 @@ def test_a_site_running_something_we_support_gets_a_section():
     assert spec is not None and spec.label == "WordPress"
 
 
-@pytest.mark.parametrize("app_type", ["php", "static", "unknown", "", None, "laravel"])
+@pytest.mark.parametrize("app_type", ["static", "unknown", "", None, "ghost", "nextcloud"])
 def test_a_site_we_have_no_tools_for_gets_no_section(app_type):
-    """Absent, not disabled. A dead row implies the feature exists and is switched off — and
-    `php`/`static` are not applications at all, they are how a site is served."""
+    """Absent, not disabled — a dead row implies the feature exists and is switched off.
+
+    `static` has no application to operate and `unknown` means the scan could not tell; the
+    others are real applications we simply have no tools for yet, and the registry is the
+    single place that decides.
+    """
     assert app_registry.app_for(app_type) is None
 
 
@@ -122,7 +126,7 @@ def test_a_real_but_genuinely_bare_install_still_reads_as_working():
 
 
 @pytest.mark.parametrize("marker,fragment", [
-    ("nowp", "wp-load.php"), ("nocli", "wp-cli is not installed"), ("nosudo", "owns this site"),
+    ("noapp", "wp-load.php"), ("nocli", "wp-cli is not installed"), ("nosudo", "owns this site"),
 ])
 def test_each_reason_we_cannot_manage_a_site_is_named(marker, fragment):
     parsed = wp.parse_probe(f"{S}|error|{marker}")

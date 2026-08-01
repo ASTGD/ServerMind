@@ -1,0 +1,271 @@
+import {
+  ArrowUpCircle, CheckCircle2, ExternalLink, Loader2, Power, Trash2, Users,
+} from "lucide-react"
+import type { SiteApp } from "@/api/sites"
+import { Button } from "@/components/ui"
+
+/**
+ * A WordPress site: what it runs, what is out of date, who can sign in.
+ *
+ * Shaped around an inventory, because that is what WordPress is — plugins, themes, users.
+ * The Laravel screen beside it looks nothing like this, which is the point of giving each
+ * application its own rather than one screen that half-fits both.
+ */
+export default function WordPressPanel({ data, domain, onAct, busy, note }: {
+  data: SiteApp
+  domain: string
+  onAct: (action: string, target?: string) => void
+  busy: string | null
+  note: { ok: boolean; text: string } | null
+}) {
+  // The files are there but nobody has opened install.php, so there is no database behind it
+  // yet. Everything below would be empty, and an empty plugin list under "everything up to
+  // date" is reassurance about a site that does not exist yet.
+  if (data.set_up === false) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-4">
+        <p className="text-sm font-medium text-foreground">
+          {data.label} {data.core_version} is installed, but not set up yet
+        </p>
+        <p className="mt-1 text-small text-muted-foreground">
+          Nobody has chosen an administrator account yet, so there is nothing to manage here
+          so far. Finish the setup and this page fills in.
+        </p>
+        <a
+          href={`http://${domain}/wp-admin/install.php`}
+          target="_blank" rel="noopener noreferrer"
+          className="mt-3 inline-flex items-center gap-1.5 text-small text-primary hover:underline"
+        >
+          Open the setup page <ExternalLink size={13} />
+        </a>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <Summary data={data} onAct={onAct} busy={busy} />
+
+      {note && (
+        <p
+          className={`rounded-lg border-l-2 px-3 py-2 text-small ${
+            note.ok
+              ? "border-emerald-500 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
+              : "border-destructive bg-destructive/5 text-destructive"
+          }`}
+        >
+          {note.text}
+        </p>
+      )}
+
+      <Extensions
+        title="Plugins"
+        blurb="Out-of-date plugins are the most common way a WordPress site is broken into."
+        rows={data.plugins ?? []}
+        onUpdate={(name) => onAct("update_plugin", name)}
+        onToggle={(name, active) =>
+          onAct(active ? "deactivate_plugin" : "activate_plugin", name)}
+        busy={busy}
+      />
+
+      <Extensions
+        title="Themes"
+        rows={data.themes ?? []}
+        onUpdate={(name) => onAct("update_theme", name)}
+        busy={busy}
+      />
+
+      <Admins admins={data.admins ?? []} />
+    </div>
+  )
+}
+
+function Summary({ data, onAct, busy }: {
+  data: SiteApp
+  onAct: (action: string, target?: string) => void
+  busy: string | null
+}) {
+  const waiting = data.updates_waiting ?? 0
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">
+            {data.title || data.label} · {data.label} {data.core_version}
+          </p>
+          <p className="mt-0.5 text-small text-muted-foreground">
+            {data.core_update
+              ? `Version ${data.core_update} is available.`
+              : data.core_update_known
+                ? "WordPress itself is up to date."
+                // A check we could not complete is not the same as good news.
+                : "We could not check for a WordPress update just now."}
+            {data.runs_as && (
+              <> Commands run as <span className="font-mono">{data.runs_as}</span>.</>
+            )}
+          </p>
+        </div>
+        {data.core_update && (
+          <Button size="sm" disabled={busy !== null}
+                  onClick={() => onAct("update_core")}>
+            {busy === "update_core"
+              ? <Loader2 size={14} className="animate-spin" />
+              : <ArrowUpCircle size={14} />}
+            Update to {data.core_update}
+          </Button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-2.5">
+        <span className={`rounded-full px-2 py-0.5 text-caption ${
+          waiting > 0
+            ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+            : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}>
+          {waiting > 0 ? `${waiting} update${waiting === 1 ? "" : "s"} waiting` : "Everything up to date"}
+        </span>
+
+        {data.maintenance && (
+          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-caption text-amber-700 dark:text-amber-400">
+            Maintenance mode is on — visitors see a holding page
+          </span>
+        )}
+        {data.debug && (
+          <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-caption text-destructive">
+            Debug mode is on — errors may be shown to visitors
+          </span>
+        )}
+
+        <span className="flex-1" />
+
+        <Button size="sm" variant="outline" disabled={busy !== null}
+                onClick={() => onAct(data.maintenance ? "maintenance_off" : "maintenance_on")}>
+          <Power size={13} />
+          {data.maintenance ? "Turn off maintenance mode" : "Turn on maintenance mode"}
+        </Button>
+        <Button size="sm" variant="ghost" disabled={busy !== null}
+                onClick={() => onAct("flush_cache")}>
+          <Trash2 size={13} /> Clear cache
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+interface Row {
+  name: string
+  title?: string
+  status: string
+  version: string
+  update_available: boolean
+  update_version: string
+}
+
+function Extensions({ title, blurb, rows, onUpdate, onToggle, busy }: {
+  title: string
+  blurb?: string
+  rows: Row[]
+  onUpdate: (name: string) => void
+  onToggle?: (name: string, active: boolean) => void
+  busy: string | null
+}) {
+  if (!rows.length) return null
+  const stale = rows.filter((r) => r.update_available).length
+
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <div className="border-b border-border px-4 py-3">
+        <p className="text-sm font-medium text-foreground">
+          {title} <span className="text-muted-foreground">({rows.length})</span>
+          {stale > 0 && (
+            <span className="ml-2 rounded-full bg-amber-500/10 px-2 py-0.5 text-caption text-amber-700 dark:text-amber-400">
+              {stale} out of date
+            </span>
+          )}
+        </p>
+        {blurb && <p className="mt-0.5 text-caption text-muted-foreground">{blurb}</p>}
+      </div>
+
+      <table className="w-full text-small">
+        <tbody>
+          {/* Out-of-date first: it is the only reason most people open this screen. */}
+          {[...rows].sort((a, b) => Number(b.update_available) - Number(a.update_available))
+            .map((r) => {
+              const active = r.status === "active"
+              return (
+                <tr key={r.name} className="border-t border-border first:border-t-0">
+                  <td className="px-4 py-2.5">
+                    <span className="text-foreground">{r.title || r.name}</span>
+                    <span className="ml-2 text-caption text-muted-foreground">
+                      {active ? "active" : r.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                    {r.update_available
+                      ? <span className="text-amber-700 dark:text-amber-400">
+                          {r.version} → {r.update_version}
+                        </span>
+                      : r.version}
+                  </td>
+                  <td className="w-px whitespace-nowrap px-4 py-2.5 text-right">
+                    {r.update_available && (
+                      <Button size="sm" variant="outline" disabled={busy !== null}
+                              onClick={() => onUpdate(r.name)}>
+                        {busy === r.name
+                          ? <Loader2 size={13} className="animate-spin" />
+                          : <ArrowUpCircle size={13} />}
+                        Update
+                      </Button>
+                    )}
+                    {onToggle && !r.update_available && (
+                      <button
+                        onClick={() => onToggle(r.name, active)}
+                        disabled={busy !== null}
+                        className="text-caption text-muted-foreground hover:text-foreground disabled:opacity-50"
+                      >
+                        {active ? "Deactivate" : "Activate"}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function Admins({ admins }: { admins: { id: string; login: string; email: string }[] }) {
+  if (!admins.length) return null
+  // An administrator can do anything to the site, so this list IS the site's access control
+  // — and on a site nobody audits, it is where a break-in shows up first as accounts that
+  // should not be there. Worth stating plainly rather than leaving as a bare list.
+  const many = admins.length > 5
+
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <Users size={14} className="text-muted-foreground" />
+        <p className="text-sm font-medium text-foreground">
+          Administrators <span className="text-muted-foreground">({admins.length})</span>
+        </p>
+        {many ? (
+          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-caption text-amber-700 dark:text-amber-400">
+            More than most sites need — check you know every one
+          </span>
+        ) : (
+          <CheckCircle2 size={14} className="text-emerald-600 dark:text-emerald-400" />
+        )}
+      </div>
+      <div className="max-h-72 overflow-y-auto">
+        {admins.map((a) => (
+          <div key={a.id || a.login}
+               className="flex items-baseline justify-between gap-4 border-t border-border px-4 py-2 first:border-t-0">
+            <span className="font-mono text-small text-foreground">{a.login}</span>
+            <span className="truncate text-small text-muted-foreground">{a.email}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}

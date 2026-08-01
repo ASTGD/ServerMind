@@ -25,7 +25,7 @@ import logging
 import shlex
 
 from app.models.server import Server
-from app.services import connection_manager
+from app.services import app_registry, connection_manager
 
 logger = logging.getLogger(__name__)
 
@@ -46,43 +46,16 @@ def _wp_prelude(doc_root: str) -> str:
     The ownership choice is the whole point. Getting it wrong does not fail — it succeeds
     and leaves the site unable to write to its own uploads folder, days later.
     """
-    root = shlex.quote(doc_root or "")
-    return f"""
-_t() {{ local n=$1; shift; if command -v timeout >/dev/null 2>&1; then timeout "$n" "$@"; else "$@"; fi; }}
-
-# The document root usually IS the WordPress root, but a site served from public/ keeps
-# wp-load.php a level up. Look, rather than assume.
-WP_PATH=""
-for d in {root} {root}/.. ; do
-  if [ -f "$d/wp-load.php" ]; then WP_PATH=$(cd "$d" && pwd); break; fi
-done
-if [ -z "$WP_PATH" ]; then echo "{_S}|error|nowp"; exit 0; fi
-echo "{_S}|path|$WP_PATH"
-
+    return app_registry.owner_prelude(doc_root, marker="wp-load.php", sentinel=_S) + f"""
+WP_PATH="$APP_PATH"
 # Resolved to an ABSOLUTE path, because the command below may run through sudo — and sudo
 # replaces PATH with its own secure_path. Looking wp up as ourselves and then running it as
 # somebody else is how a check passes and the command that follows it fails.
 WP_BIN=$(command -v wp 2>/dev/null || true)
 if [ -z "$WP_BIN" ]; then echo "{_S}|error|nocli"; exit 0; fi
 
-# Run as whoever owns the files. wp-cli run as root writes root-owned files into
-# wp-content, and WordPress — running as the web-server user — can then no longer write
-# there: uploads stop working and the next update fails from inside the admin. The damage
-# shows up days after the command that caused it.
-ME=$(id -un)
-OWNER=$(stat -c%U "$WP_PATH" 2>/dev/null || echo "")
-[ -z "$OWNER" ] && OWNER="$ME"
-echo "{_S}|owner|$OWNER"
-
-RUNAS=""
-if [ "$OWNER" != "$ME" ]; then
-  # -n so a server without passwordless sudo fails immediately rather than waiting for a
-  # password nobody is there to type.
-  if ! sudo -n -u "$OWNER" true 2>/dev/null; then echo "{_S}|error|nosudo"; exit 0; fi
-  RUNAS="sudo -n -u $OWNER --"
-fi
 # wp-cli REFUSES to run as root without this, so a root-owned site needs it — and only a
-# root-owned site, since the flag is exactly the thing that makes the damage above possible.
+# root-owned site, since the flag is exactly the thing that makes root-owned files possible.
 ROOTFLAG=""
 [ "$OWNER" = root ] && ROOTFLAG="--allow-root"
 # --path is not optional. wp-cli finds an install by walking UP from the working directory,
@@ -132,7 +105,7 @@ true
 
 
 _ERRORS = {
-    "nowp": "This site does not look like a WordPress install — no wp-load.php in its folder.",
+    "noapp": "This site does not look like a WordPress install — no wp-load.php in its folder.",
     "nocli": "wp-cli is not installed on this server, so WordPress cannot be managed from "
              "here. Ask Ally to install it.",
     "nosudo": "We could not run commands as the account that owns this site's files. "

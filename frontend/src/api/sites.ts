@@ -276,7 +276,35 @@ export interface WpTheme {
   update_version: string
 }
 
-export interface SiteApp {
+/** Laravel's state: not what is installed, but what condition the deployment is in. */
+export interface LaravelState {
+  version?: string
+  php_version?: string
+  environment?: string
+  debug?: boolean
+  /** The one that matters most — a debug page prints the database password to visitors. */
+  debug_in_production?: boolean
+  pending_migrations?: number
+  /** False when we could not reach the database; not the same as "none pending". */
+  migrations_known?: boolean
+  cache_config?: boolean
+  cache_routes?: boolean
+  cache_events?: boolean
+  storage_link?: boolean
+  queue_worker?: boolean
+  scheduler?: boolean
+}
+
+/** What PHP a site actually runs under, read through the site's own pool. */
+export interface PhpState {
+  version?: string
+  sapi?: string
+  cli_version?: string
+  settings?: { name: string; label: string; value: string }[]
+  extensions?: string[]
+}
+
+export interface SiteApp extends LaravelState, PhpState {
   app: string | null
   label?: string
   ok?: boolean
