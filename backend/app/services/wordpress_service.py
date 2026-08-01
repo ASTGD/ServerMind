@@ -104,6 +104,12 @@ def build_probe_command(doc_root: str) -> str:
     return _wp_prelude(doc_root) + f"""
 echo "{_S}|cli|$(_t 10 $WP --version {common} 2>/dev/null | head -1)"
 echo "{_S}|core|$(_t {_T} $WP core version {common} 2>/dev/null)"
+# The files can be in place while the site has never been SET UP — nobody has opened
+# install.php, so there are no database tables. Everything below then returns nothing, and
+# a screen saying "0 plugins, everything up to date" is reassurance about a site that does
+# not exist yet. This is the one call that tells the two apart.
+_t {_T} $WP core is-installed {common} 2>/dev/null && echo "{_S}|setup|yes" \
+  || echo "{_S}|setup|no"
 echo "{_S}|title|$(_t {_T} $WP option get blogname {common} 2>/dev/null)"
 echo "{_S}|siteurl|$(_t {_T} $WP option get siteurl {common} 2>/dev/null)"
 
@@ -204,6 +210,8 @@ def parse_probe(stdout: str) -> dict:
 
     return {
         "ok": True,
+        # False means the files are there but nobody has finished the WordPress setup.
+        "set_up": fields.get("setup") == "yes",
         "path": fields.get("path", ""),
         "runs_as": fields.get("owner", ""),
         "cli": fields.get("cli", ""),

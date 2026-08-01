@@ -238,3 +238,25 @@ def test_a_failed_wp_cli_download_does_not_fail_a_working_wordpress():
     block = script[script.index("wp-cli.phar"):script.index("mysql -e \"CREATE DATABASE")]
     assert "exit 1" not in block, "a missing wp-cli must not abort the install"
     assert "could not be downloaded" in block, "and it must say so rather than go quiet"
+
+
+def test_files_in_place_but_never_set_up_is_not_reported_as_healthy():
+    """Found on production, on a site this product had just installed.
+
+    WordPress's files can be present while nobody has opened install.php, so there is no
+    database behind it. Every list then comes back empty and the screen said "0 plugins,
+    everything up to date" — reassurance about a site that does not exist yet.
+    """
+    out = f"{S}|core|7.0.2\n{S}|setup|no\n{S}|plugins|\n{S}|admins|\n"
+    p = wp.parse_probe(out)
+    assert p["ok"] is True, "the install is readable — it is just unfinished"
+    assert p["set_up"] is False
+
+
+def test_a_finished_site_says_so():
+    p = wp.parse_probe(_REAL + f"{S}|setup|yes\n")
+    assert p["set_up"] is True
+
+
+def test_the_probe_asks_whether_setup_was_ever_completed():
+    assert "core is-installed" in wp.build_probe_command("/var/www/x")

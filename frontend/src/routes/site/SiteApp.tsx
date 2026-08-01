@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  AlertTriangle, ArrowUpCircle, CheckCircle2, Loader2, Power, Trash2, Users,
+  AlertTriangle, ArrowUpCircle, CheckCircle2, ExternalLink, Loader2, Power, Trash2, Users,
 } from "lucide-react"
 import { getSiteApp, runSiteAppAction, type SiteApp, type SiteDetail } from "@/api/sites"
 import { Button, EmptyState } from "@/components/ui"
@@ -77,6 +77,30 @@ export default function SiteAppPage() {
   }
 
   const act = (action: string, target?: string) => run.mutate({ action, target })
+
+  // The files are there but nobody has opened install.php, so there is no database behind
+  // it yet. Everything below would be empty, and an empty plugin list under "everything up
+  // to date" is reassurance about a site that does not exist yet.
+  if (data.set_up === false) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-4">
+        <p className="text-sm font-medium text-foreground">
+          {data.label} {data.core_version} is installed, but not set up yet
+        </p>
+        <p className="mt-1 text-small text-muted-foreground">
+          Nobody has chosen an administrator account yet, so there is nothing to manage here
+          so far. Finish the setup and this page fills in.
+        </p>
+        <a
+          href={`http://${site.domain}/wp-admin/install.php`}
+          target="_blank" rel="noopener noreferrer"
+          className="mt-3 inline-flex items-center gap-1.5 text-small text-primary hover:underline"
+        >
+          Open the setup page <ExternalLink size={13} />
+        </a>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">

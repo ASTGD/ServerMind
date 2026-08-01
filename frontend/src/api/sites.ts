@@ -281,6 +281,8 @@ export interface SiteApp {
   label?: string
   ok?: boolean
   reason?: string
+  /** False when the files are there but nobody finished the WordPress setup. */
+  set_up?: boolean
   path?: string
   runs_as?: string
   cli?: string
