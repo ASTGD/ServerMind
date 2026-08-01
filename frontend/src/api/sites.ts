@@ -252,3 +252,62 @@ export async function getSiteCron(siteId: string): Promise<{ jobs: SiteCronJob[]
   const { data } = await apiClient.get(`/api/sites/${siteId}/cron`)
   return data
 }
+
+/**
+ * The application running on a site — WordPress today, whatever the registry gains next.
+ *
+ * `app` is null when there is nothing we have tools for, which is how the menu knows not to
+ * offer a section rather than offering an empty one.
+ */
+export interface WpPlugin {
+  name: string
+  title: string
+  status: string
+  version: string
+  update_available: boolean
+  update_version: string
+}
+
+export interface WpTheme {
+  name: string
+  status: string
+  version: string
+  update_available: boolean
+  update_version: string
+}
+
+export interface SiteApp {
+  app: string | null
+  label?: string
+  ok?: boolean
+  reason?: string
+  path?: string
+  runs_as?: string
+  cli?: string
+  core_version?: string
+  core_update?: string
+  core_update_known?: boolean
+  title?: string
+  site_url?: string
+  plugins?: WpPlugin[]
+  themes?: WpTheme[]
+  admins?: { id: string; login: string; email: string; name: string }[]
+  maintenance?: boolean
+  debug?: boolean
+  updates_waiting?: number
+}
+
+export async function getSiteApp(siteId: string): Promise<SiteApp> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/app`)
+  return data
+}
+
+/** One named action. The caller never composes a command. */
+export async function runSiteAppAction(
+  siteId: string,
+  action: string,
+  target = "",
+): Promise<{ output: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/app/action`, { action, target })
+  return data
+}

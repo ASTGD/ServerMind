@@ -1,5 +1,5 @@
 import {
-  Activity, Clock, Cog, FileText, LayoutDashboard, Lock,
+  Activity, Boxes, Clock, Cog, FileText, LayoutDashboard, Lock,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type { SiteDetail } from "@/api/sites"
@@ -60,10 +60,33 @@ export const SITE_MENU: SiteMenuItem[] = [
   { path: "settings", label: "Settings", icon: Cog },
 ]
 
+/**
+ * A section for the APPLICATION running on the site, named after it.
+ *
+ * One entry per application we genuinely have tools for — mirroring `app_registry` on the
+ * server, which is what actually decides. A site running something not listed here gets no
+ * application section at all, rather than an empty one: the same "absent, not disabled" rule
+ * the rest of both menus follow.
+ *
+ * `php`, `static` and `unknown` are deliberately not applications. They say how a site is
+ * served, and a section for them would hold nothing that Files, Logs and HTTPS do not.
+ */
+export const APP_SECTIONS: Record<string, { label: string; icon: LucideIcon }> = {
+  wordpress: { label: "WordPress", icon: Boxes },
+}
+
 export function menuForSite(site: SiteDetail): SiteMenuItem[] {
   const caps = capabilitiesOf(site)
-  return SITE_MENU.filter(
+  const items = SITE_MENU.filter(
     (item) => (!item.needs || caps.has(item.needs))
       && !(item.excludes && caps.has(item.excludes)),
   )
+
+  // Everything the application screen does runs through its own command-line tool over SSH,
+  // so a site on a server we cannot get a shell on does not get one.
+  const app = APP_SECTIONS[(site.app_type || "").toLowerCase()]
+  if (!app || !caps.has("shell")) return items
+
+  // Second, straight after Overview: it is what someone came to this site to work on.
+  return [items[0], { path: "app", label: app.label, icon: app.icon }, ...items.slice(1)]
 }

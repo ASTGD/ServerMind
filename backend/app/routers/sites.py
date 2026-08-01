@@ -683,6 +683,72 @@ async def site_logs(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     return {"logs": logs, "reachable": True, "server_id": str(server.id)}
 
 
+class AppActionIn(BaseModel):
+    """One named operation, never a command the caller composes."""
+    action: str = Field(max_length=40)
+    target: str = Field(default="", max_length=100)
+
+
+async def _site_and_server(site_id: str, current_user, db, *, need_execute: bool = False):
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+    server = await resolve_server(str(site.server_id), current_user, db,
+                                  need_execute=need_execute)
+    return site, server
+
+
+@router.get("/sites/{site_id}/app")
+async def site_app(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """The application running on this site, and everything its own screen shows.
+
+    Dispatched through ``app_registry``, so a site running something we have no tools for
+    answers ``app: null`` and shows no section at all — rather than an empty one implying
+    the feature exists and is merely switched off.
+    """
+    from app.services import app_registry, wordpress_service
+
+    site, server = await _site_and_server(site_id, current_user, db)
+    spec = app_registry.app_for(site.app_type)
+    if spec is None:
+        return {"app": None}
+    if server.connection_type != "ssh":
+        return {"app": spec.id, "label": spec.label, "ok": False,
+                "reason": f"{spec.label} is managed over SSH, and this server is not "
+                          f"reached that way."}
+
+    if spec.id == "wordpress":
+        data = await wordpress_service.read(server, site.doc_root or "")
+        return {"app": spec.id, "label": spec.label, **data}
+    return {"app": spec.id, "label": spec.label, "ok": False,
+            "reason": f"{spec.label} has no screen yet."}
+
+
+@router.post("/sites/{site_id}/app/action")
+async def site_app_action(site_id: str, body: AppActionIn, db: DBDep,
+                          current_user: CurrentUser) -> dict:
+    """Run one named action on this site's application. Needs execute permission (Rule 7)."""
+    from app.services import app_registry, wordpress_service
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    spec = app_registry.app_for(site.app_type)
+    if spec is None or server.connection_type != "ssh":
+        raise HTTPException(422, "There is nothing here we can manage.")
+
+    try:
+        result = await wordpress_service.act(
+            server, site.doc_root or "", body.action, body.target)
+    except wordpress_service.WordPressError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    await audit_service.audit(db, current_user, f"site.{spec.id}.{body.action}",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "target": body.target})
+    return result
+
+
 @router.get("/sites/{site_id}/cron")
 async def site_cron(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     """The scheduled jobs that belong to this site.

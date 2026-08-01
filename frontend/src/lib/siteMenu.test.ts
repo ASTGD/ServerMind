@@ -48,7 +48,7 @@ describe("a site's own menu", () => {
   it("never offers a section that has nowhere to go", () => {
     // Every path in the menu must have a route behind it. A row that leads nowhere is the
     // same broken promise as one that leads somewhere that cannot work.
-    const ROUTED = new Set(["", "https", "logs", "cron", "uptime", "settings"])
+    const ROUTED = new Set(["", "app", "https", "logs", "cron", "uptime", "settings"])
     for (const s of [site(), site({ source: "nginx", requested_type: null }),
                      site({}, { panel_type: "cyberpanel" })]) {
       for (const p of paths(s)) expect(ROUTED.has(p)).toBe(true)
@@ -66,5 +66,35 @@ describe("a site's own menu", () => {
   it("never offers a section twice", () => {
     const p = paths(site())
     expect(new Set(p).size).toBe(p.length)
+  })
+})
+
+describe("the section for the application running on the site", () => {
+  it("is named after the application, not called 'App'", () => {
+    // Someone with a WordPress site is looking for the word WordPress.
+    expect(menuForSite(site()).map((i) => i.label)).toContain("WordPress")
+  })
+
+  it("sits straight after Overview, because it is what people came for", () => {
+    expect(paths(site()).slice(0, 2)).toEqual(["", "app"])
+  })
+
+  it("is absent for an application we have no tools for", () => {
+    // Absent, not disabled: a permanently dead row implies the feature exists and is
+    // merely switched off. Mirrors app_registry on the server, which actually decides.
+    for (const app_type of ["laravel", "php", "static", "unknown", ""]) {
+      expect(paths(site({ app_type }))).not.toContain("app")
+    }
+  })
+
+  it("is absent when we have no shell, because it runs a command-line tool", () => {
+    const noShell = site({}, { connection_type: "hosting", panel_type: "cpanel" })
+    expect(paths(noShell)).not.toContain("app")
+  })
+
+  it("appears on a site somebody installed WordPress onto by hand", () => {
+    // Discovery sets app_type from what it finds, so we did not have to build the site.
+    const found = site({ source: "nginx", requested_type: null, app_type: "wordpress" })
+    expect(paths(found)).toContain("app")
   })
 })

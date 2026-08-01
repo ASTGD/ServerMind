@@ -28,6 +28,7 @@ import SiteLogs from "./routes/site/SiteLogs"
 import SiteCron from "./routes/site/SiteCron"
 import SiteSettings from "./routes/site/SiteSettings"
 import SiteRedirect from "./routes/site/SiteRedirect"
+import SiteAppPage from "./routes/site/SiteApp"
 import ServerDatabases from "./routes/ServerDatabases"
 import ServerPhp from "./routes/ServerPhp"
 import ServerMonitoring from "./routes/ServerMonitoring"
@@ -113,6 +114,8 @@ export default function App() {
           <Route path="sites" element={<Sites />} />
           <Route path="sites/:siteId" element={<SiteLayout />}>
             <Route index element={<SiteOverview />} />
+            {/* Whatever application runs here; the registry decides if it is offered. */}
+            <Route path="app" element={<SiteAppPage />} />
             <Route path="https" element={<SiteHttpsTab />} />
             <Route path="logs" element={<SiteLogs />} />
             <Route path="cron" element={<SiteCron />} />
