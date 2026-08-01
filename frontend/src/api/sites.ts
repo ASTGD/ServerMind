@@ -107,7 +107,9 @@ export async function scanServerSites(serverId: string): Promise<ScanResult> {
   return res.data
 }
 
-export async function listServerSites(serverId: string): Promise<{ sites: Site[]; count: number }> {
+export async function listServerSites(
+  serverId: string,
+): Promise<{ sites: Site[]; count: number; stale_because?: string | null }> {
   const res = await apiClient.get(`/api/servers/${serverId}/sites`)
   return res.data
 }

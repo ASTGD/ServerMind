@@ -60,6 +60,10 @@ export default function ServerSites() {
   const sites = data?.sites ?? []
   // An empty server has nothing to look at, so it opens straight into the form.
   const showForm = choosing || creating || (!isLoading && sites.length === 0)
+  // The server cannot be looked at, so everything below is the last thing we saw rather
+  // than the current truth. Without saying so the page showed four sites from a server
+  // that had been wiped, each with a confident reason for being down.
+  const stale = data?.stale_because ?? null
   const down = sites.filter((s) => s.uptime?.status === "down").length
 
   return (
@@ -82,7 +86,7 @@ export default function ServerSites() {
             {sites.length === 0
               ? "nothing hosted here yet"
               : `${sites.length} site${sites.length === 1 ? "" : "s"}`}
-            {down > 0 && (
+            {down > 0 && !stale && (
               <span className="ml-1 font-medium text-red-600 dark:text-red-400">
                 · {down} down
               </span>
@@ -107,6 +111,17 @@ export default function ServerSites() {
         <p className="rounded-lg bg-muted/50 px-3 py-2 text-[12.5px] text-foreground">
           Found {scan.data.found} site{scan.data.found === 1 ? "" : "s"}
           {scan.data.added > 0 && `, ${scan.data.added} new`}.
+        </p>
+      )}
+
+      {stale && sites.length > 0 && (
+        <p className="rounded-lg border-l-2 border-amber-500 bg-amber-500/5 px-3 py-2 text-small text-foreground">
+          {stale === "host_changed"
+            ? "This server's identity changed, so we cannot look at it. "
+            : stale === "auth_failed"
+              ? "We cannot sign in to this server at the moment. "
+              : "This server is not answering. "}
+          What is listed below is the last thing we saw — it may no longer be true.
         </p>
       )}
 

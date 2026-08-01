@@ -91,6 +91,12 @@ async def list_sites(
     were given. Team-scoped through ``accessible_servers`` — the same Rule 7 path everything
     else uses — so a member sees sites on exactly the servers they can see.
     """
+    # A site whose installer FAILED must stop claiming to be building. Nothing else runs
+    # this: the reconciler existed, worked and was tested, and had no callers at all — so a
+    # failed install showed "Setting up…" indefinitely. It is cheap (one join) and belongs
+    # wherever somebody is about to be told what state a site is in.
+    await site_service.reconcile_installs(db, current_user.id)
+
     servers = await team_service.accessible_servers(db, current_user)
     names = {s.id: s.name for s in servers}
     if not servers:
@@ -282,13 +288,24 @@ async def create_site(server_id: str, body: CreateSiteIn, db: DBDep,
 @router.get("/servers/{server_id}/sites")
 async def server_sites(server_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     """The sites on one server — for the server's own detail page."""
+    await site_service.reconcile_installs(db, current_user.id)
     server = await resolve_server(server_id, current_user, db)
     rows = (await db.execute(
         select(Site).where(Site.server_id == server.id, Site.is_present.is_(True))
         .order_by(Site.domain)
     )).scalars().all()
     uptime = await _uptime_by_host(db, current_user.id)
+    # A server whose identity changed or whose credentials stopped working cannot be looked
+    # at, so every row below is the last thing we saw rather than the current truth. Saying
+    # so is the difference between a stale list and a lying one — without it the page showed
+    # four sites from a server that had been wiped, each with a confident-sounding reason
+    # for being down.
+    unreachable = server.status if server.status in ("host_changed", "auth_failed",
+                                                     "offline") else None
     return {
+        # Null when the server is reachable. Otherwise the reason, so the page can say the
+        # list is the last thing we saw rather than presenting it as current.
+        "stale_because": unreachable,
         "sites": [
             site_service.serialize(r, server_name=server.name,
                                    uptime=uptime.get(r.domain.lower()))
@@ -425,6 +442,7 @@ async def get_site(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     when it is opened directly from a link or a bookmark — which is how someone returns to
     a site they were told about.
     """
+    await site_service.reconcile_installs(db, current_user.id)
     site = (await db.execute(
         select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
     )).scalar_one_or_none()

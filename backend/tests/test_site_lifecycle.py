@@ -1101,3 +1101,54 @@ def test_the_composer_installer_is_verified_before_it_is_run_as_root():
     # Fails CLOSED: an empty signature is a failure to verify, not permission to proceed.
     assert '[ -z "$EXPECTED" ]' in block
     assert "exit 1" in block
+
+
+# ── A repair function nobody calls repairs nothing ───────────────────────────
+
+def test_the_install_reconciler_is_actually_called_by_something():
+    """It existed, worked, was tested — and had NO callers anywhere.
+
+    So a site whose installer failed sat at "Setting up…" indefinitely. A customer watched
+    one claim to be building for two hours after it had failed. This is the second time in
+    this codebase that a correct repair function turned out to be dead code, which is why
+    the wiring is now asserted rather than assumed.
+    """
+    import pathlib
+
+    router = pathlib.Path(__file__).resolve().parents[1] / "app" / "routers" / "sites.py"
+    text = router.read_text()
+    calls = text.count("reconcile_installs(")
+    assert calls >= 3, (
+        f"only {calls} caller(s): every path that TELLS somebody a site's state must "
+        f"reconcile first — the fleet list, the per-server list, and the site's own page"
+    )
+
+
+def test_every_path_that_reports_a_sites_state_reconciles_first():
+    """Named individually, because the per-server list is the one the customer was looking
+    at when they saw a two-hour-old "Setting up…", and wiring only the fleet list would
+    have left exactly that page wrong."""
+    import pathlib
+    import re
+
+    text = (pathlib.Path(__file__).resolve().parents[1]
+            / "app" / "routers" / "sites.py").read_text()
+    for endpoint in ("async def list_sites", "async def server_sites", "async def get_site"):
+        start = text.index(endpoint)
+        body = text[start:start + 1400]
+        assert "reconcile_installs" in body, f"{endpoint} does not reconcile"
+
+
+def test_a_site_list_from_an_unreachable_server_says_it_cannot_be_trusted():
+    """A server whose identity changed cannot be looked at, so its site list is the last
+    thing we saw. Without saying so the page showed four sites from a wiped server, each
+    with a confident-sounding reason for being down — stale data presented as current."""
+    import pathlib
+
+    text = (pathlib.Path(__file__).resolve().parents[1]
+            / "app" / "routers" / "sites.py").read_text()
+    body = text[text.index("async def server_sites"):]
+    body = body[:body.index("\n@router")]
+    assert "stale_because" in body
+    for status in ("host_changed", "auth_failed", "offline"):
+        assert status in body, f"{status} must count as 'cannot be looked at'"
