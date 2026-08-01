@@ -72,8 +72,10 @@ def test_the_probe_never_reads_the_whole_env_file():
     """`.env` holds the database password. Two named non-secret lines are extracted; the
     file itself is never read, the same rule the discovery probe follows for wp-config."""
     cmd = lv.build_probe_command("/var/www/acme")
-    assert "grep -m1 '^APP_ENV='" in cmd
-    assert "grep -m1 '^APP_DEBUG='" in cmd
+    # Anchored to the start of a line and to one named key, so it can only ever match the
+    # variable it was asked for.
+    assert 'grep -m1 "^$1="' in cmd
+    assert "_envval APP_ENV" in cmd and "_envval APP_DEBUG" in cmd
     for secret in ("DB_PASSWORD", "cat \"$APP_PATH/.env\"", "DB_USERNAME", "APP_KEY"):
         assert secret not in cmd
 
@@ -205,3 +207,84 @@ def test_migrations_run_unattended_and_are_marked_as_the_destructive_one():
     assert "--force" in cmd
     assert "migrate" in lv.DESTRUCTIVE
     assert lv.DESTRUCTIVE == {"migrate"}, "only the one that can lose data"
+
+
+# ── Three bugs found by pointing this at a real production Laravel ────────────
+#
+# Every one of them read as reassurance. None was visible from the code.
+
+def test_a_commented_env_line_does_not_hide_debug_being_on():
+    """A real .env carried:
+
+        APP_DEBUG=false     # MUST be false in production
+
+    Everything after the "=" was taken, comment included. Harmless for "false" — but
+    reverse it and the value stops equalling "true", so debug reads OFF on a site that has
+    it ON. A false negative on the most important finding on the screen.
+
+    Exercised by running the generated helper against a real file, because the bug lives in
+    the shell, not in Python.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    cmd = lv.build_probe_command("/var/www/a/public")
+    start = cmd.index("_envval() {")
+    helper = cmd[start:cmd.index("\n", cmd.index("; }", start))]
+
+    d = tempfile.mkdtemp()
+    with open(os.path.join(d, ".env"), "w") as fh:
+        fh.write('APP_ENV=production   # do not change\n'
+                 'APP_DEBUG=true                   # turn off before launch\n'
+                 'DB_PASSWORD=super-secret\n')
+    r = subprocess.run(
+        ["bash"], text=True, capture_output=True,
+        input=f'APP_PATH={d}\n{helper}\necho "[$(_envval APP_ENV)][$(_envval APP_DEBUG)]"')
+    assert r.stdout.strip() == "[production][true]", r.stdout + r.stderr
+
+
+def test_a_commented_env_line_still_parses_when_it_is_quoted():
+    import os
+    import subprocess
+    import tempfile
+
+    cmd = lv.build_probe_command("/var/www/a")
+    start = cmd.index("_envval() {")
+    helper = cmd[start:cmd.index("\n", cmd.index("; }", start))]
+    d = tempfile.mkdtemp()
+    with open(os.path.join(d, ".env"), "w") as fh:
+        fh.write('APP_ENV="local"\nAPP_DEBUG=false\n')
+    r = subprocess.run(["bash"], text=True, capture_output=True,
+                       input=f'APP_PATH={d}\n{helper}\necho "[$(_envval APP_ENV)]"')
+    assert r.stdout.strip() == "[local]"
+
+
+def test_the_cache_state_is_read_whether_it_is_a_boolean_or_a_word():
+    """Laravel 11/12 report `"config": true`; older ones report `"config": "CACHED"`.
+
+    Reading only the string form called a fully cached production application uncached —
+    found on a real Laravel 12 app whose caches were all warm.
+    """
+    modern = _healthy(about=json.dumps({
+        "environment": {"environment": "production", "debug_mode": False},
+        "cache": {"config": True, "routes": True, "events": False}}))
+    assert modern["cache_config"] is True
+    assert modern["cache_routes"] is True
+    assert modern["cache_events"] is False
+
+    older = _healthy(about=json.dumps({
+        "environment": {"environment": "production", "debug_mode": False},
+        "cache": {"config": "CACHED", "routes": "NOT CACHED", "events": "NOT CACHED"}}))
+    assert older["cache_config"] is True
+    assert older["cache_routes"] is False
+
+
+def test_the_queue_check_cannot_count_the_shell_that_is_running_it():
+    """`pgrep -f` matches on the whole command line, and our own shell's arguments contain
+    this pattern's text. It happens not to match today only because the parentheses are
+    regex syntax — luck, and a self-matching grep is a mistake made here before."""
+    cmd = lv.build_probe_command("/var/www/a")
+    queue_line = next(l for l in cmd.splitlines() if "pgrep -f" in l)
+    assert '"$$"' in queue_line and '"$PPID"' in queue_line, \
+        "the probe must exclude its own process and its parent"

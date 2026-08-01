@@ -70,8 +70,18 @@ echo "{_S}|about|$(_t {_T} $ART about --json --no-ansi 2>/dev/null | tr -d '\\n'
 # Fallback for Laravel 8 and older, which has no `about`. Only these two lines are read out
 # of .env, never the file — it also holds the database password, and this screen has no
 # business carrying one (the same rule the discovery probe follows about wp-config.php).
-echo "{_S}|env|$(grep -m1 '^APP_ENV=' "$APP_PATH/.env" 2>/dev/null | cut -d= -f2- | tr -d '\\"'\\''' )"
-echo "{_S}|debug|$(grep -m1 '^APP_DEBUG=' "$APP_PATH/.env" 2>/dev/null | cut -d= -f2- | tr -d '\\"'\\''' )"
+# A .env line carries whatever follows the value:
+#     APP_DEBUG=false     # MUST be false in production
+# Taking everything after the "=" swallows the comment too. Harmless for "false" — but
+# reverse it, `APP_DEBUG=true  # turn off before launch`, and the value stops equalling
+# "true", so debug reads as OFF on a site that has it ON. That is a false negative on the
+# most important finding here, and it was found on a real .env that carries exactly that
+# comment.
+_envval() {{ grep -m1 "^$1=" "$APP_PATH/.env" 2>/dev/null | cut -d= -f2- \\
+  | sed -e 's/[[:space:]]*#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \\
+  | tr -d '\\"'\\'''; }}
+echo "{_S}|env|$(_envval APP_ENV)"
+echo "{_S}|debug|$(_envval APP_DEBUG)"
 
 # Which of the production caches are warm. A cached config that no longer matches .env is
 # the classic "my change did nothing" — so it is shown, not hidden.
@@ -92,8 +102,14 @@ ls "$APP_PATH"/bootstrap/cache/routes*.php >/dev/null 2>&1 \\
 echo "{_S}|migrations|$(_t {_T} $ART migrate:status --no-ansi 2>/dev/null | tr -d '\\r' | tr '\\n' '~')"
 
 # Something has to be running these, and on most broken Laravel sites nothing is.
-pgrep -f "artisan queue:(work|listen)" >/dev/null 2>&1 \\
-  && echo "{_S}|queue|yes" || echo "{_S}|queue|no"
+# Our own shell's arguments contain this pattern's text, so it must not count itself. It
+# happens not to today — the parentheses are regex syntax rather than literal characters —
+# but that is luck, and a self-matching grep is a mistake this codebase has made before.
+if pgrep -f "artisan queue:(work|listen)" 2>/dev/null | grep -qvx -e "$$" -e "$PPID"; then
+  echo "{_S}|queue|yes"
+else
+  echo "{_S}|queue|no"
+fi
 (crontab -l 2>/dev/null; crontab -l -u "$OWNER" 2>/dev/null; cat /etc/cron.d/* 2>/dev/null) \\
   | grep -q "schedule:run" && echo "{_S}|scheduler|yes" || echo "{_S}|scheduler|no"
 true
@@ -158,13 +174,19 @@ def _about(raw: str) -> dict:
 def _cached(about: dict, what: str, fallback: str | None) -> bool:
     """Whether one of the production caches is warm.
 
-    ``about`` groups these under a "cache" section whose values are ``CACHED`` /
-    ``NOT CACHED`` — note that the flattened lookup would collide with other keys, so the
-    section is read directly.
+    ``about`` groups these under a "cache" section, read directly because the flattened
+    lookup would collide with other keys. Its values are a real BOOLEAN in Laravel 11/12 and
+    the strings ``CACHED``/``NOT CACHED`` in older ones — reading only the strings called a
+    fully cached production application uncached.
     """
     section = about.get("__section__cache")
     if isinstance(section, dict) and what in {str(k).lower() for k in section}:
         value = next(v for k, v in section.items() if str(k).lower() == what)
+        # Laravel 11/12 report a real boolean here; older versions report the strings
+        # CACHED / NOT CACHED. Reading only the strings called a fully cached production
+        # application uncached, which was found by looking at a real one.
+        if isinstance(value, bool):
+            return value
         return str(value).strip().upper() == "CACHED"
     return fallback == "yes"
 
