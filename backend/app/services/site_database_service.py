@@ -97,6 +97,13 @@ for c in mysql mariadb; do
 done
 if [ -z "$CLIENT" ]; then echo "{_S}|reach|noclient"; exit 0; fi
 
+# --no-defaults is not optional. The client reads option files before anything we pass,
+# and a server set up by a control panel has /root/.my.cnf with the ADMINISTRATOR's
+# credentials in it — which silently replace the site's and get refused. The result was a
+# red "this site cannot reach its database" on a site that was perfectly healthy, which is
+# the worst thing this screen could do: a false alarm here teaches somebody to ignore the
+# real one. Found on a real CyberPanel server.
+#
 # Through MYSQL_PWD, so the password is never in the process list — the same rule the
 # backup service follows. Everything the client might print is discarded: one word comes
 # back, and nothing that could carry a credential with it.
@@ -106,12 +113,12 @@ case "${{DB_HOST:-localhost}}" in
   *:*) HOSTARG="-h ${{DB_HOST%%:*}} -P ${{DB_HOST##*:}}" ;;
   *) HOSTARG="-h ${{DB_HOST}}" ;;
 esac
-if MYSQL_PWD="$DB_PASS" _t 15 "$CLIENT" -u "$DB_USER" $HOSTARG \\
+if MYSQL_PWD="$DB_PASS" _t 15 "$CLIENT" --no-defaults -u "$DB_USER" $HOSTARG \\
      -N -B -e "SELECT 1" "$DB_NAME" >/dev/null 2>&1; then
   echo "{_S}|reach|yes"
   # Asked with the SITE's own access rather than an administrator's, so this reports what
   # the application can actually see.
-  SUM=$(MYSQL_PWD="$DB_PASS" _t 20 "$CLIENT" -u "$DB_USER" $HOSTARG -N -B -e \\
+  SUM=$(MYSQL_PWD="$DB_PASS" _t 20 "$CLIENT" --no-defaults -u "$DB_USER" $HOSTARG -N -B -e \\
     "SELECT COUNT(*), COALESCE(ROUND(SUM(data_length+index_length)/1048576,1),0) \\
      FROM information_schema.tables WHERE table_schema='$DB_NAME'" 2>/dev/null)
   echo "{_S}|tables|$(printf '%s' "$SUM" | awk '{{print $1}}')"

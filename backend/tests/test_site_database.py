@@ -50,8 +50,9 @@ def test_the_probe_cannot_change_anything():
     for statement in ("DROP ", "DELETE ", "TRUNCATE", "INSERT ", "UPDATE ", "ALTER ",
                       "CREATE ", "GRANT "):
         assert statement not in cmd.upper(), f"the probe contains {statement.strip()}"
-    for verb in ("rm ", "mv ", "chmod", "chown", "systemctl", "apt "):
-        assert verb not in cmd, f"the probe contains {verb.strip()}"
+    for verb in ("rm", "mv", "chmod", "chown", "systemctl", "apt", "dd", "tee"):
+        assert not re.search(r"(?<![\w-])" + verb + r"(?![\w-])", cmd), \
+            f"the probe contains {verb}"
 
 
 def test_the_probe_is_valid_shell():
@@ -173,3 +174,23 @@ def test_the_probe_accepts_either_client_name():
     cmd = sdb.build_probe_command("wordpress", "/var/www/x")
     assert "for c in mysql mariadb" in cmd
     assert '"$CLIENT"' in cmd
+
+
+def test_the_client_ignores_option_files_so_an_admin_config_cannot_hijack_it():
+    """The client reads option files BEFORE anything we pass, and a control-panel server
+    has /root/.my.cnf holding the administrator's credentials — which silently replace the
+    site's and are refused.
+
+    The result was a red "this site cannot reach its database" on a perfectly healthy site,
+    which is the worst thing this screen could do: a false alarm here teaches somebody to
+    ignore the real one. Found on a real CyberPanel server, where --no-defaults turned a
+    refusal into a connection.
+    """
+    cmd = sdb.build_probe_command("laravel", "/var/www/app/public")
+    # Only the lines that actually RUN the client — a line merely naming the variable is
+    # not an invocation and has nothing to ignore option files for.
+    calls = [l for l in cmd.splitlines() if 'MYSQL_PWD=' in l and '"$CLIENT"' in l]
+    assert calls, "no client invocation found at all"
+    for call in calls:
+        assert "--no-defaults" in call, \
+            f"a client call reads option files: {call.strip()}"
