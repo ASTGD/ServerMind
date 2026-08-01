@@ -131,12 +131,54 @@ case " $OS_ID $OS_LIKE " in
 esac
 if [ "$FAMILY" = rhel ] && ! command -v dnf >/dev/null 2>&1; then PM=yum; fi
 echo ">>> Detected ${OS_ID:-linux} (${FAMILY} family)."
+# A brand-new Ubuntu runs its OWN updater (unattended-upgrades) on first boot, and it holds
+# the apt lock. Every first setup of a fresh server therefore starts by queueing behind it —
+# so this waits for the lock deliberately, and says what it is waiting for, instead of
+# racing it and being killed by a watchdog with nothing to show.
+# Detecting the lock must not depend on a package that might be missing. fuser is the precise
+# answer but ships in psmisc, which a minimal image often lacks — and a check that silently
+# finds nothing puts us straight back to racing the updater, which is the bug this exists to
+# fix. So pgrep (procps, effectively always present) is the fallback.
+apt_busy() {
+  if command -v fuser >/dev/null 2>&1; then
+    fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock \
+          /var/cache/apt/archives/lock >/dev/null 2>&1 && return 0
+  fi
+  for _p in apt apt-get dpkg unattended-upgrade; do
+    pgrep -x "$_p" >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
+apt_wait() {
+  [ "$FAMILY" = debian ] || return 0
+  _w=0
+  while apt_busy; do
+    if [ "$_w" = 0 ]; then
+      echo ">>> Waiting for the server's own updater to finish (this is normal on a new server)"
+    fi
+    _w=$((_w + 5))
+    # Bounded. A lock still held after twenty minutes is a stuck dpkg, not a busy one, and
+    # waiting forever would just move the failure somewhere less clear.
+    if [ "$_w" -gt 1200 ]; then
+      echo ">>> The package manager has been busy for 20 minutes. Something else on this"
+      echo "    server is holding it — nothing was changed."
+      return 1
+    fi
+    sleep 5
+  done
+  [ "$_w" -gt 0 ] && echo ">>> The updater finished after ${_w}s — carrying on"
+  return 0
+}
 pkg_refresh() {
-  if [ "$FAMILY" = debian ]; then export DEBIAN_FRONTEND=noninteractive; apt-get update -qq
+  if [ "$FAMILY" = debian ]; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt_wait || return 1
+    # apt waits for the lock itself too, so a race that starts mid-command does not fail.
+    apt-get -o DPkg::Lock::Timeout=600 update -qq
   else "$PM" -y makecache >/dev/null 2>&1 || true; fi
 }
 pkg_install() {
-  if [ "$FAMILY" = debian ]; then DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@"
+  if [ "$FAMILY" = debian ]; then apt_wait || return 1; DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y -qq "$@"
   else "$PM" install -y "$@"; fi
 }
 svc_enable() { systemctl enable --now "$1" >/dev/null 2>&1 || systemctl enable --now "$1"; }
@@ -2021,11 +2063,11 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
             "#!/bin/bash\n"
             "set -euo pipefail\n"
             'echo "=== Updating package list ==="\n'
-            "apt-get update\n"
+            "apt_wait || exit 1\napt-get -o DPkg::Lock::Timeout=600 update\n"
             'echo "=== Upgrading packages ==="\n'
-            "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y\n"
+            "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 upgrade -y\n"
             'echo "=== Removing unused packages ==="\n'
-            "apt-get autoremove -y\n"
+            "apt-get -o DPkg::Lock::Timeout=600 autoremove -y\n"
             "apt-get autoclean\n"
             'if [ -f /var/run/reboot-required ]; then\n'
             '  echo "NOTICE: A reboot is required."\n'
