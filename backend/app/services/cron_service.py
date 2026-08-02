@@ -207,15 +207,29 @@ def build_read_command(user: str) -> str:
 def build_user_list_command() -> str:
     """Which accounts on this server could plausibly own a scheduled job.
 
-    Read-only. root, plus any account with a real login shell and a home directory —
-    which is what a site user looks like, and excludes the several dozen system accounts
-    nobody schedules anything as.
+    Read-only, from three sources.
+
+    root, plus any account with a real login shell — which is what a site user looks like
+    on a panel server, and excludes the several dozen system accounts nobody schedules
+    anything as.
+
+    And then every account that ACTUALLY HAS a crontab, whatever its shell or its uid.
+    That third source is not a nicety: on a plain Ubuntu server the websites run as
+    ``www-data``, which has uid 33 and ``/usr/sbin/nologin``, so the first two rules miss
+    it twice over. Its jobs were on the server, running every minute, and invisible here —
+    including one added moments earlier through this very screen.
     """
+    spools = "/var/spool/cron/crontabs /var/spool/cron"
     return (
         f'echo "{_SENTINEL}|user|root"; '
         "getent passwd 2>/dev/null | "
         "awk -F: '$3 >= 1000 && $3 < 65534 && $7 !~ /(nologin|false|sync)$/ {print $1}' | "
-        f'while read -r u; do echo "{_SENTINEL}|user|$u"; done; true'
+        f'while read -r u; do echo "{_SENTINEL}|user|$u"; done; '
+        f'for _d in {spools}; do '
+        '  for _f in "$_d"/*; do '
+        f'    [ -f "$_f" ] && echo "{_SENTINEL}|user|${{_f##*/}}"; '
+        "  done; "
+        "done 2>/dev/null; true"
     )
 
 

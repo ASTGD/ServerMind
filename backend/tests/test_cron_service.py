@@ -385,3 +385,39 @@ def test_a_job_that_only_mentions_the_domain_still_counts():
 def test_a_site_with_nothing_scheduled_gets_an_empty_list_not_everything():
     assert cron.jobs_for_site(SITE_CRONTAB, "unrelated.example.com",
                               "/var/www/unrelated.example.com") == []
+
+
+# ── Which accounts we look at ────────────────────────────────────────────────
+
+def test_discovery_finds_an_account_that_has_a_crontab_whatever_its_shell(tmp_path):
+    """The rule "a site user has a real login shell" holds on a panel server and is wrong
+    on a plain one: websites there run as `www-data`, uid 33, /usr/sbin/nologin — missed
+    twice over. Its jobs were running every minute and invisible on the screen that had
+    just added one of them.
+
+    Run with the spool paths pointed at a temp directory, so this exercises the actual
+    shell rather than asserting on the text of it; the real paths are checked below.
+    """
+    import subprocess
+
+    spool = tmp_path / "crontabs"
+    spool.mkdir()
+    (spool / "www-data").write_text("* * * * * echo hi\n")
+    (spool / "deploy").write_text("* * * * * echo x\n")
+    (spool / "adir").mkdir()          # the spool's own subdirectory is not an account
+
+    command = cron.build_user_list_command().replace(
+        "/var/spool/cron/crontabs /var/spool/cron", str(spool))
+    out = subprocess.run(["bash", "-c", command], capture_output=True, text=True).stdout
+    found = {ln.split("|")[2] for ln in out.splitlines() if "|user|" in ln}
+
+    assert "www-data" in found
+    assert "deploy" in found
+    assert "adir" not in found, "a directory in the spool is not an account"
+    assert "root" in found
+
+
+def test_discovery_looks_where_crontabs_actually_live():
+    command = cron.build_user_list_command()
+    assert "/var/spool/cron/crontabs" in command   # Debian and Ubuntu
+    assert "/var/spool/cron" in command            # RHEL family
