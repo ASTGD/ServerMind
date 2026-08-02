@@ -505,3 +505,42 @@ export async function switchSitePhp(
   const { data } = await apiClient.post(`/api/sites/${siteId}/php`, { version })
   return data
 }
+
+/** A process kept running for this site. */
+export interface SiteDaemon {
+  unit: string
+  name: string
+  running: boolean
+  state: string
+  at_boot: boolean
+  description: string
+  command: string
+}
+
+export interface SiteDaemonSuggestion {
+  name: string
+  command: string
+  title: string
+  why: string
+}
+
+export async function getSiteDaemons(siteId: string): Promise<{
+  daemons: SiteDaemon[]; suggested: SiteDaemonSuggestion | null; working_dir: string
+}> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/daemons`)
+  return data
+}
+
+export async function addSiteDaemon(
+  siteId: string, body: { name: string; command: string; description?: string },
+): Promise<{ ok: boolean; unit: string; message: string; log?: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/daemons`, body)
+  return data
+}
+
+export async function actOnSiteDaemon(
+  siteId: string, unit: string, action: "start" | "stop" | "restart" | "remove",
+): Promise<{ ok: boolean; output: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/daemons/action`, { unit, action })
+  return data
+}

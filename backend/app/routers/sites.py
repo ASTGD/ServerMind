@@ -1005,6 +1005,148 @@ async def site_cron(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     }
 
 
+async def _daemon_context(site_id: str, db, current_user, *, need_execute: bool):
+    """The site, its server, and the two facts every daemon write needs."""
+    from app.services import connection_manager, site_cron_service
+
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+    server = await resolve_server(str(site.server_id), current_user, db,
+                                  need_execute=need_execute)
+    if server.connection_type != "ssh":
+        raise HTTPException(
+            status_code=400,
+            detail="Background jobs need a Linux server we reach over SSH.")
+    if not site.doc_root:
+        raise HTTPException(
+            status_code=422,
+            detail="We do not know where this site's files are. Scan the server first.")
+
+    # The same rule as its scheduled jobs, for the same reason: a worker run as root
+    # leaves root-owned files inside the site, and the site breaks days later.
+    root = site_cron_service.app_root(site.app_type, site.doc_root)
+    stdout, _e, _c = await connection_manager.execute(
+        server, site_cron_service.build_owner_command(root))
+    owner = site_cron_service.parse_owner(stdout)
+    if need_execute and not owner:
+        raise HTTPException(
+            status_code=422,
+            detail="We could not tell which account owns this site's files, so we will "
+                   "not guess which one should run a background job.")
+    return site, server, root, owner
+
+
+@router.get("/sites/{site_id}/daemons")
+async def site_daemons(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """The background processes kept running for this site."""
+    from app.services import connection_manager, site_cron_service, site_daemon_service
+
+    site, server, root, _owner = await _daemon_context(
+        site_id, db, current_user, need_execute=False)
+    stdout, _e, _c = await connection_manager.execute(
+        server, site_daemon_service.build_list_command(site.domain))
+    daemons = site_daemon_service.parse_list(stdout)
+    running = {d["command"] for d in daemons}
+    suggested = site_daemon_service.suggested(
+        site.app_type, site_cron_service.app_root(site.app_type, site.doc_root or ""))
+    if suggested and any(suggested["command"] in c for c in running):
+        suggested = None
+    return {"daemons": daemons, "suggested": suggested, "working_dir": root}
+
+
+class DaemonIn(BaseModel):
+    name: str = Field(max_length=31)
+    command: str = Field(max_length=500)
+    description: str = Field(default="", max_length=120)
+
+
+@router.post("/sites/{site_id}/daemons", status_code=201)
+async def add_site_daemon(site_id: str, body: DaemonIn, db: DBDep,
+                          current_user: CurrentUser) -> dict:
+    """Keep a command running for this site, and restart it if it stops."""
+    from app.services import connection_manager, site_daemon_service
+
+    site, server, root, owner = await _daemon_context(
+        site_id, db, current_user, need_execute=True)
+
+    try:
+        unit = site_daemon_service.unit_name(site.domain, body.name)
+        content = site_daemon_service.build_unit(
+            domain=site.domain,
+            description=body.description or f"{body.name} for {site.domain}",
+            command=body.command.strip(), working_dir=root, run_as=owner or "",
+            unit=unit)
+        script = site_daemon_service.build_script(root, body.command)
+    except site_daemon_service.DaemonError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    existing = site_daemon_service.parse_list((await connection_manager.execute(
+        server, site_daemon_service.build_list_command(site.domain)))[0])
+    if any(d["unit"] == unit for d in existing):
+        raise HTTPException(
+            status_code=409,
+            detail=f"This site already has a background job called “{body.name}”. "
+                   f"Remove it first, or use a different name.")
+
+    out, err, _code = await connection_manager.execute(
+        server, site_daemon_service.build_install_command(unit, content, script))
+    text = (out or "") + (err or "")
+    await audit_service.audit(db, current_user, "site.daemon_added",
+                              target_type="server", target_id=str(server.id),
+                              meta={"site": site.domain, "unit": unit})
+
+    if "SM_DAEMON_OK" in text:
+        return {"ok": True, "unit": unit,
+                "message": f"“{body.name}” is running and will start again on boot."}
+    # Started is not the same as running: a command with a typo starts, exits at once, and
+    # systemd calls the start successful. The unit is left in place with its own log, which
+    # is the only thing that says why.
+    log = "\n".join(ln for ln in text.splitlines()
+                    if not ln.startswith("SM_DAEMON"))[-1500:]
+    return {"ok": False, "unit": unit,
+            "message": f"“{body.name}” was set up but did not stay running.",
+            "log": log.strip()}
+
+
+class DaemonActionIn(BaseModel):
+    unit: str = Field(max_length=120)
+    action: str = Field(max_length=10)
+
+
+@router.post("/sites/{site_id}/daemons/action")
+async def act_on_site_daemon(site_id: str, body: DaemonActionIn, db: DBDep,
+                             current_user: CurrentUser) -> dict:
+    """Start, stop, restart or remove one of this site's background jobs."""
+    from app.services import connection_manager, site_daemon_service
+
+    site, server, _root, _owner = await _daemon_context(
+        site_id, db, current_user, need_execute=True)
+
+    # The guard that keeps this a site page rather than a systemd editor. Without it a
+    # wrong name here stops nginx, or the database every other site on the box uses.
+    if not site_daemon_service.owns(body.unit, site.domain):
+        raise HTTPException(
+            status_code=422,
+            detail="That is not one of this site's background jobs. The server's Services "
+                   "screen manages everything else on this machine.")
+
+    try:
+        cmd = (site_daemon_service.build_remove_command(body.unit)
+               if body.action == "remove"
+               else site_daemon_service.build_action_command(body.unit, body.action))
+    except site_daemon_service.DaemonError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    out, err, _code = await connection_manager.execute(server, cmd)
+    await audit_service.audit(db, current_user, f"site.daemon_{body.action}",
+                              target_type="server", target_id=str(server.id),
+                              meta={"site": site.domain, "unit": body.unit})
+    return {"ok": True, "output": ((out or "") + (err or "")).strip()[-500:]}
+
+
 @router.get("/sites/{site_id}/php")
 async def site_php(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     """Which PHP runs this site, and what else this server has installed."""

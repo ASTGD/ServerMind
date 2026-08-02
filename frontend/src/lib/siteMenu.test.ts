@@ -48,8 +48,8 @@ describe("a site's own menu", () => {
   it("never offers a section that has nowhere to go", () => {
     // Every path in the menu must have a route behind it. A row that leads nowhere is the
     // same broken promise as one that leads somewhere that cannot work.
-    const ROUTED = new Set(["", "app", "https", "php", "logs", "cron", "database",
-                            "deploy", "uptime", "settings"])
+    const ROUTED = new Set(["", "app", "https", "php", "logs", "cron", "daemons",
+                            "database", "deploy", "uptime", "settings"])
     for (const s of [site(), site({ source: "nginx", requested_type: null }),
                      site({}, { panel_type: "cyberpanel" })]) {
       for (const p of paths(s)) expect(ROUTED.has(p)).toBe(true)
@@ -62,6 +62,14 @@ describe("a site's own menu", () => {
     expect(paths(found)).toContain("")
     expect(paths(found)).toContain("logs")
     expect(paths(found)).toContain("settings")
+  })
+
+  it("tells the two kinds of job apart by name", () => {
+    // One runs at a time and finishes; the other runs continuously. "Background jobs"
+    // beside "Scheduled jobs" would not tell anyone which is which.
+    const labels = menuForSite(site()).map((i) => i.label)
+    expect(labels).toContain("Scheduled jobs")
+    expect(labels).toContain("Always running")
   })
 
   it("never offers a section twice", () => {

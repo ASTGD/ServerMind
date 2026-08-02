@@ -1,6 +1,6 @@
 import {
   Activity, Boxes, Clock, Code2, Cog, Database, FileText, GitBranch, LayoutDashboard,
-  Layers, Lock,
+  Layers, Lock, Repeat,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type { SiteDetail } from "@/api/sites"
@@ -62,6 +62,9 @@ export const SITE_MENU: SiteMenuItem[] = [
   { path: "php", label: "PHP version", icon: Code2, needs: "shell", excludes: "panel" },
   { path: "logs", label: "Logs", icon: FileText, needs: "shell" },
   { path: "cron", label: "Scheduled jobs", icon: Clock, needs: "shell" },
+  // Named for the guarantee rather than for systemd. "Scheduled jobs" run at times; these
+  // run continuously, and "Background jobs" beside it would not tell anyone which is which.
+  { path: "daemons", label: "Always running", icon: Repeat, needs: "shell" },
   // A control panel owns its vhost and rewrites it on its own schedule, so a document root
   // we changed behind its back would be silently reverted — taking the site down at a
   // moment nobody could connect it to anything we did.
