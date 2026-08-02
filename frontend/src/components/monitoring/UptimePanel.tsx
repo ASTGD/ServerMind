@@ -162,15 +162,23 @@ function MonitorRow({ monitor }: { monitor: UptimeMonitor }) {
   const check = useMutation({ mutationFn: () => checkMonitorNow(monitor.id), onSuccess: refresh })
   const remove = useMutation({ mutationFn: () => deleteMonitor(monitor.id), onSuccess: refresh })
 
-  const down = monitor.current_status === "down"
+  // A paused check is not reporting anything, so it must not read as a verdict. Its last
+  // words are frozen at whatever it saw before we stopped — showing those in red says the
+  // site is down right now, which we have no idea about and are no longer asking.
+  const paused = !monitor.is_active
+  const down = !paused && monitor.current_status === "down"
   return (
-    <li className={`rounded-lg border px-3 py-2.5 ${down ? "border-red-500/40 bg-red-500/5" : "border-border bg-background"}`}>
+    <li className={`rounded-lg border px-3 py-2.5 ${down ? "border-red-500/40 bg-red-500/5" : "border-border bg-background"} ${paused ? "opacity-60" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <StatusIcon status={monitor.current_status} />
+            <StatusIcon status={paused ? "unknown" : monitor.current_status} />
             <span className="truncate text-sm font-medium">{monitor.name}</span>
-            {monitor.current_status !== "unknown" && (
+            {paused ? (
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                paused — this site is not on the server
+              </span>
+            ) : monitor.current_status !== "unknown" && (
               <span className={`text-[11px] font-medium ${down ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
                 {down ? "DOWN" : "up"}
               </span>
@@ -220,7 +228,9 @@ export default function UptimePanel({ serverId }: { serverId?: string }) {
     queryFn: () => listMonitors(serverId),
     refetchInterval: 30_000,
   })
-  const downCount = monitors.filter((m) => m.current_status === "down").length
+  const downCount = monitors.filter(
+    (m) => m.is_active && m.current_status === "down").length
+  const pausedCount = monitors.filter((m) => !m.is_active).length
 
   return (
     <div className="rounded-xl border border-border bg-card p-4">
@@ -231,6 +241,11 @@ export default function UptimePanel({ serverId }: { serverId?: string }) {
           {downCount > 0 && (
             <span className="rounded-full bg-red-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 dark:text-red-400">
               {downCount} down
+            </span>
+          )}
+          {pausedCount > 0 && (
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+              {pausedCount} paused
             </span>
           )}
         </h3>
