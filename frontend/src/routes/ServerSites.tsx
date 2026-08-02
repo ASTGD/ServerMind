@@ -67,8 +67,10 @@ export default function ServerSites() {
   const stale = data?.stale_because ?? null
   // Same split as the fleet page: a setup that never finished is not an outage.
   const unfinished = sites.filter((s) => siteState(s) === "failed").length
+  const unpointed = sites.filter((s) => siteState(s) === "unpointed").length
   const down = sites.filter(
-    (s) => siteState(s) !== "failed" && s.uptime?.status === "down").length
+    (s) => !["failed", "unpointed"].includes(siteState(s))
+      && s.uptime?.status === "down").length
 
   return (
     <div className="space-y-4">
@@ -99,6 +101,9 @@ export default function ServerSites() {
               <span className="ml-1 font-medium text-red-600 dark:text-red-400">
                 · {unfinished} unfinished
               </span>
+            )}
+            {unpointed > 0 && !stale && (
+              <span className="ml-1">· {unpointed} not pointed here yet</span>
             )}
           </p>
         </div>
@@ -185,6 +190,14 @@ export default function ServerSites() {
 /** Up/down comes from the uptime monitor, which checks from outside — where a visitor is. */
 function StatusDot({ site }: { site: Site }) {
   const status = site.uptime?.status
+  // A domain nobody has pointed here yet is not a fault, so it does not get the fault
+  // colour. Leaving it red next to a calm row would just make the row look wrong.
+  if (siteState(site) === "unpointed")
+    return (
+      <span title="This domain is not pointed at this server yet">
+        <CircleDashed size={14} className="shrink-0 text-muted-foreground" />
+      </span>
+    )
   if (!site.uptime) {
     return (
       <span title="No uptime monitor for this site yet">
@@ -263,6 +276,11 @@ function SiteRow({ site, serverId }: { site: Site; serverId: string }) {
           {state === "failed" && (
             <span className="flex items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
               <CircleAlert size={9} /> Setup failed
+            </span>
+          )}
+          {state === "unpointed" && (
+            <span className="flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              <Globe size={9} /> Not pointed here yet
             </span>
           )}
           {state === "absent" && (

@@ -21,6 +21,14 @@ import { cn } from "@/lib/utils"
 /** Up/down comes from the uptime monitor, which checks from outside — where a visitor is. */
 function StatusDot({ site }: { site: Site }) {
   const status = site.uptime?.status
+  // A domain nobody has pointed here yet is not a fault, so it does not get the fault
+  // colour. Leaving it red next to a calm row would just make the row look wrong.
+  if (siteState(site) === "unpointed")
+    return (
+      <span title="This domain is not pointed at this server yet">
+        <CircleDashed size={15} className="shrink-0 text-muted-foreground" />
+      </span>
+    )
   if (!site.uptime)
     return (
       <span title="No uptime monitor for this site yet">
@@ -189,6 +197,11 @@ function SiteRow({ site }: { site: Site }) {
                   <CircleAlert size={9} /> Setup failed
                 </span>
               )}
+              {state === "unpointed" && (
+                <span className="flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  <Globe size={9} /> Not pointed here yet
+                </span>
+              )}
               {state === "absent" && (
                 <span className="flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                   <EyeOff size={9} /> No longer found
@@ -310,8 +323,12 @@ export default function Sites() {
   // Counted apart on purpose. A site that failed to install was never up, so folding it
   // into "down" both overstates an outage and hides a job that is waiting to be finished.
   const unfinished = shown.filter((s) => siteState(s) === "failed").length
+  // Counted apart for the same reason as unfinished: a domain nobody has pointed here yet
+  // was never up, so calling it down both overstates an outage and hides the actual step.
+  const unpointed = shown.filter((s) => siteState(s) === "unpointed").length
   const down = shown.filter(
-    (s) => siteState(s) !== "failed" && s.uptime?.status === "down").length
+    (s) => !["failed", "unpointed"].includes(siteState(s))
+      && s.uptime?.status === "down").length
   const noMail = (data?.sites ?? []).filter((s) => !s.mail).length
   const badMail = shown.filter(
     (s) => s.mail?.verdict === "failing" || s.mail?.verdict === "at risk").length
@@ -333,6 +350,11 @@ export default function Sites() {
           {unfinished > 0 && (
             <span className="ml-1 font-medium text-red-600 dark:text-red-400">
               {unfinished} {unfinished === 1 ? "setup" : "setups"} did not finish.
+            </span>
+          )}
+          {unpointed > 0 && (
+            <span className="ml-1 font-medium text-foreground">
+              {unpointed} {unpointed === 1 ? "domain is" : "domains are"} not pointed here yet.
             </span>
           )}
           {badMail > 0 && (

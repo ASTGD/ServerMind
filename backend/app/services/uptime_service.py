@@ -136,6 +136,15 @@ async def probe(monitor) -> ProbeResult:
         return result
 
 
+#: Said in one place, so the screens that have to RECOGNISE it are matching the exact
+#: thing we produce rather than a copy of the sentence that can drift out of step.
+#:
+#: It is its own case because it needs a completely different fix from everything else
+#: here — point the domain, rather than repair the server — and because for a site that
+#: has never resolved it is not a fault at all, only a step nobody has done yet.
+DNS_FAILURE = "The domain name could not be resolved — check the site's DNS."
+
+
 def _friendly_transport_error(exc: Exception) -> str:
     """Say what an owner can act on, not the exception class name."""
     name = type(exc).__name__
@@ -152,7 +161,7 @@ def _friendly_transport_error(exc: Exception) -> str:
     )
     low = text.lower()
     if "NameResolution" in name or any(sign in low for sign in _DNS_SIGNS):
-        return "The domain name could not be resolved — check the site's DNS."
+        return DNS_FAILURE
     if "SSL" in name or "certificate" in text.lower():
         return "The HTTPS certificate could not be verified."
     if "Connect" in name or "Connection" in name:

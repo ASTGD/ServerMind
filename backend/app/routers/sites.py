@@ -32,7 +32,8 @@ from app.models.mail_health import MailHealthRecord
 from app.models.site import Site
 from app.models.uptime import UptimeMonitor
 from app.models.user import User
-from app.services import playbook_service, site_cron_service, site_service, team_service
+from app.services import (playbook_service, site_cron_service, site_service,
+                          team_service, uptime_service)
 
 router = APIRouter(prefix="/api", tags=["sites"])
 logger = logging.getLogger(__name__)
@@ -46,11 +47,31 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 _monitor_key = site_service.monitor_host
 
 
+async def _ever_up(db: AsyncSession, monitor_ids: list) -> set:
+    """Which of these monitors has ever seen the site answer.
+
+    One grouped query, the same shape the uptime screen already uses. It is what separates
+    "this domain was never pointed here" from "it was working and has stopped" — the same
+    words from the checker, and two completely different situations.
+    """
+    from app.models.uptime import UptimeCheck
+
+    if not monitor_ids:
+        return set()
+    rows = (await db.execute(
+        select(UptimeCheck.monitor_id)
+        .where(UptimeCheck.monitor_id.in_(monitor_ids), UptimeCheck.status == "up")
+        .group_by(UptimeCheck.monitor_id)
+    )).all()
+    return {r[0] for r in rows}
+
+
 async def _uptime_by_host(db: AsyncSession, user_id) -> dict[str, dict]:
     """Every monitor of this user's, keyed by hostname."""
     rows = (await db.execute(
         select(UptimeMonitor).where(UptimeMonitor.user_id == user_id)
     )).scalars().all()
+    seen_up = await _ever_up(db, [m.id for m in rows])
     out: dict[str, dict] = {}
     for monitor in rows:
         host = _monitor_key(monitor.url)
@@ -64,6 +85,11 @@ async def _uptime_by_host(db: AsyncSession, user_id) -> dict[str, dict]:
             "error": monitor.last_error,
             "cert_days_left": monitor.cert_days_left,
             "cert_state": monitor.cert_state,
+            # Classified here rather than by matching the sentence in the browser: the
+            # words live in one place, and a screen that has to recognise them by copying
+            # them is a screen that stops recognising them the day they are reworded.
+            "unresolved": (monitor.last_error or "") == uptime_service.DNS_FAILURE,
+            "ever_up": monitor.id in seen_up,
         }
     return out
 

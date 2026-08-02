@@ -16,7 +16,12 @@ const dnsDown = {
   monitor_id: "m", status: "down", last_checked: null, response_ms: null,
   error: "The domain name could not be resolved — check the site's DNS.",
   cert_days_left: null, cert_state: null,
+  // Classified server-side. `ever_up: true` means it WAS working, so this is an outage.
+  unresolved: true, ever_up: true,
 }
+
+/** The same words from the checker, for a domain that has never answered. */
+const neverPointed = { ...dnsDown, ever_up: false }
 
 describe("siteState", () => {
   it("knows a site that is still being built", () => {
@@ -91,5 +96,52 @@ describe("siteLooksBroken", () => {
 
   it("leaves a healthy site alone", () => {
     expect(siteLooksBroken(site())).toBe(false)
+  })
+})
+
+
+describe("a domain that was never pointed here", () => {
+  it("is not called down, because it was never up", () => {
+    // Every site is in this state the moment it is created. Calling it down makes a
+    // brand-new site look broken before its owner has touched their DNS.
+    expect(siteState(site({ uptime: neverPointed }))).toBe("unpointed")
+    expect(siteLooksBroken(site({ uptime: neverPointed }))).toBe(false)
+  })
+
+  it("says what to do rather than what failed", () => {
+    const said = siteProblem(site({ uptime: neverPointed })) ?? ""
+    expect(said).toContain("not pointed anywhere yet")
+    // The checker's own words are about DNS resolution, which reads as a fault.
+    expect(said).not.toContain("could not be resolved")
+  })
+
+  it("still calls it down when the site WAS working", () => {
+    // Same words from the checker, completely different situation: a live site whose DNS
+    // was deleted is an emergency, and must not be filed under "not set up yet".
+    const s = site({ uptime: dnsDown })
+    expect(siteState(s)).toBe("normal")
+    expect(siteLooksBroken(s)).toBe(true)
+    expect(siteProblem(s)).toBe(dnsDown.error)
+  })
+
+  it("does not claim it of a site that is down for any other reason", () => {
+    const http500 = { ...dnsDown, unresolved: false, ever_up: false,
+                      error: "Returned HTTP 500 (expected 200)." }
+    expect(siteState(site({ uptime: http500 }))).toBe("normal")
+    expect(siteLooksBroken(site({ uptime: http500 }))).toBe(true)
+  })
+
+  it("leaves an older answer alone when the server has not told us yet", () => {
+    // `ever_up` absent — an older payload. Guessing "never pointed" from silence would
+    // quietly downgrade a real outage, so the strict check is on false, not on falsy.
+    const legacy = { ...dnsDown, ever_up: undefined }
+    expect(siteState(site({ uptime: legacy }))).toBe("normal")
+  })
+
+  it("a failed install still outranks it", () => {
+    const s = site({ status: "failed", install_error: "no web server is running",
+                     uptime: neverPointed })
+    expect(siteState(s)).toBe("failed")
+    expect(siteProblem(s)).toBe("no web server is running")
   })
 })

@@ -8,6 +8,10 @@ export interface SiteUptime {
   error: string | null
   cert_days_left: number | null
   cert_state: string | null
+  /** The domain does not resolve. Classified server-side so nothing here matches a sentence. */
+  unresolved?: boolean
+  /** Whether this domain has EVER answered. What separates "never pointed here" from "it broke". */
+  ever_up?: boolean
 }
 
 /** What can be installed on a server, served by the backend so the list has one home. */
