@@ -1005,6 +1005,94 @@ async def site_cron(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     }
 
 
+@router.get("/sites/{site_id}/php")
+async def site_php(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Which PHP runs this site, and what else this server has installed."""
+    from app.services import php_service
+
+    site, server = await _site_and_server(site_id, current_user, db)
+    if server.connection_type != "ssh":
+        return {"ok": False, "reason": "This needs a Linux server we reach over SSH."}
+
+    state = await php_service.read(server)
+    config = php_service.config_for_site(
+        state.get("sites", []), site.doc_root, site.domain)
+    if config is None:
+        return {
+            "ok": False,
+            "versions": state.get("versions", []),
+            "reason": "We could not work out which of this server's configuration files "
+                      "serves this site, so we will not change one and hope. The server's "
+                      "PHP screen lists them all.",
+        }
+    return {
+        "ok": True,
+        "version": config.get("version"),
+        "config": config.get("config"),
+        "versions": state.get("versions", []),
+        "running": state.get("running", []),
+        "cli_default": state.get("cli_default"),
+    }
+
+
+class SitePhpIn(BaseModel):
+    version: str = Field(max_length=10)
+
+
+@router.post("/sites/{site_id}/php")
+async def switch_site_php(site_id: str, body: SitePhpIn, db: DBDep,
+                          current_user: CurrentUser) -> dict:
+    """Change which PHP version serves this site, and put it back if the site breaks.
+
+    The config to rewrite is resolved HERE, from the site, and never accepted from the
+    caller. A path from the client would make this endpoint able to rewrite any file on
+    the server; resolving it from the site also means the page cannot switch a neighbour.
+    """
+    from app.services import connection_manager, php_service
+
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+    server = await resolve_server(str(site.server_id), current_user, db, need_execute=True)
+    if server.connection_type != "ssh":
+        raise HTTPException(status_code=400,
+                            detail="This server is not managed over SSH.")
+
+    try:
+        version = php_service.valid_version(body.version)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    state = await php_service.read(server)
+    config = php_service.config_for_site(
+        state.get("sites", []), site.doc_root, site.domain)
+    if config is None:
+        raise HTTPException(
+            status_code=422,
+            detail="We could not work out which configuration file serves this site, so "
+                   "nothing was changed.")
+    if version not in state.get("versions", []):
+        raise HTTPException(
+            status_code=422,
+            detail=f"PHP {version} is not installed on this server. Install it first.")
+
+    cmd = php_service.build_switch_command(config["config"], version, site.domain)
+    out, err, code = await connection_manager.execute(server, cmd)
+    ok, message = php_service.explain_switch(code, out or err)
+
+    await audit_service.audit(
+        db, current_user, "php.site_switched" if ok else "php.site_switch_failed",
+        target_type="server", target_id=str(server.id),
+        meta={"site": site.domain, "version": version, "ok": ok})
+
+    if not ok:
+        # 409, not 500: nothing is broken — the change was refused, or made and undone.
+        raise HTTPException(status_code=409, detail=message)
+    return {"ok": True, "message": message}
+
+
 class SiteDatabaseIn(BaseModel):
     """A database for this site. Every field optional — the point is not having to decide."""
     engine: str = Field(default="mysql", max_length=20)

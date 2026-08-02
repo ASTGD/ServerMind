@@ -48,7 +48,8 @@ describe("a site's own menu", () => {
   it("never offers a section that has nowhere to go", () => {
     // Every path in the menu must have a route behind it. A row that leads nowhere is the
     // same broken promise as one that leads somewhere that cannot work.
-    const ROUTED = new Set(["", "app", "https", "logs", "cron", "database", "deploy", "uptime", "settings"])
+    const ROUTED = new Set(["", "app", "https", "php", "logs", "cron", "database",
+                            "deploy", "uptime", "settings"])
     for (const s of [site(), site({ source: "nginx", requested_type: null }),
                      site({}, { panel_type: "cyberpanel" })]) {
       for (const p of paths(s)) expect(ROUTED.has(p)).toBe(true)
@@ -102,7 +103,8 @@ describe("the section for the application running on the site", () => {
 describe("the registry now covers three applications", () => {
   it("names Laravel and PHP after themselves too", () => {
     expect(menuForSite(site({ app_type: "laravel" })).map((i) => i.label)).toContain("Laravel")
-    expect(menuForSite(site({ app_type: "php" })).map((i) => i.label)).toContain("PHP")
+    expect(menuForSite(site({ app_type: "php" })).map((i) => i.label))
+      .toContain("PHP settings")
   })
 
   it("still gives a folder of files nothing to manage", () => {
@@ -113,12 +115,32 @@ describe("the registry now covers three applications", () => {
     }
   })
 
-  it("keeps the site's PHP section separate from the server's", () => {
-    // They answer different questions: the server's page is about which versions are
-    // installed and switching between them; this one is about the limits THIS site runs
-    // under, which are per-pool and are what break an upload.
+  it("separates the version this site runs from the settings it runs under", () => {
+    // Two different questions, and for a while only one of them had an answer here. The
+    // app panel reports the limits THIS site runs under — per-pool, and what breaks an
+    // upload. `php` chooses which version serves it, which every PHP site needs and not
+    // only the ones whose application IS php.
     const p = paths(site({ app_type: "php" }))
     expect(p).toContain("app")
-    expect(p).not.toContain("php")
+    expect(p).toContain("php")
+
+    const labels = menuForSite(site({ app_type: "php" })).map((i) => i.label)
+    expect(labels).toContain("PHP settings")
+    expect(labels).toContain("PHP version")
+    // Two rows both called "PHP" is the collision that made the panel row get named after
+    // the panel. Whatever they are called, they must not be called the same thing.
+    expect(new Set(labels).size).toBe(labels.length)
+  })
+
+  it("offers the version switch to a WordPress or Laravel site too", () => {
+    for (const app_type of ["wordpress", "laravel"]) {
+      expect(paths(site({ app_type }))).toContain("php")
+    }
+  })
+
+  it("leaves a panel's sites to the panel", () => {
+    // A panel decides its own sites' PHP version and rewrites the vhost on its own
+    // schedule, so a change made behind its back is silently reverted later.
+    expect(paths(site({ app_type: "php" }, { panel_type: "cyberpanel" }))).not.toContain("php")
   })
 })

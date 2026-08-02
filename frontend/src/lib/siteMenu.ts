@@ -57,6 +57,9 @@ export const SITE_MENU: SiteMenuItem[] = [
   // this machine". On a box with forty databases that cannot tell anyone which one belongs
   // to the website in front of them.
   { path: "database", label: "Database", icon: Database, needs: "shell" },
+  // A panel decides its own sites' PHP version and rewrites the vhost on its own
+  // schedule, so a change we made behind its back would be silently reverted.
+  { path: "php", label: "PHP version", icon: Code2, needs: "shell", excludes: "panel" },
   { path: "logs", label: "Logs", icon: FileText, needs: "shell" },
   { path: "cron", label: "Scheduled jobs", icon: Clock, needs: "shell" },
   // A control panel owns its vhost and rewrites it on its own schedule, so a document root
@@ -84,7 +87,7 @@ export const APP_SECTIONS: Record<string, { label: string; icon: LucideIcon }> =
   // A runtime rather than an application, and it earns a row for one reason: the limits a
   // site actually runs under answer "why does my upload fail", and they are per-pool — so
   // the SERVER's PHP page, which reports the server default, cannot answer them here.
-  php: { label: "PHP", icon: Code2 },
+  php: { label: "PHP settings", icon: Code2 },
 }
 
 export function menuForSite(site: SiteDetail): SiteMenuItem[] {

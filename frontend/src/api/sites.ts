@@ -481,3 +481,27 @@ export async function getSiteDatabase(siteId: string): Promise<SiteDatabase> {
   const { data } = await apiClient.get(`/api/sites/${siteId}/database`)
   return data
 }
+
+/** Which PHP runs this site, and what else this server has. */
+export interface SitePhp {
+  ok: boolean
+  reason?: string
+  version?: string | null
+  config?: string
+  versions: string[]
+  running?: string[]
+  cli_default?: string | null
+}
+
+export async function getSitePhp(siteId: string): Promise<SitePhp> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/php`)
+  return data
+}
+
+/** Change which PHP serves this site. The config to rewrite is resolved on the server. */
+export async function switchSitePhp(
+  siteId: string, version: string,
+): Promise<{ ok: boolean; message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/php`, { version })
+  return data
+}

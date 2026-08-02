@@ -31,6 +31,7 @@ import SiteRedirect from "./routes/site/SiteRedirect"
 import SiteAppPage from "./routes/site/SiteApp"
 import SiteDeploy from "./routes/site/SiteDeploy"
 import SiteDatabase from "./routes/site/SiteDatabase"
+import SitePhp from "./routes/site/SitePhp"
 import ServerDatabases from "./routes/ServerDatabases"
 import ServerPhp from "./routes/ServerPhp"
 import ServerMonitoring from "./routes/ServerMonitoring"
@@ -122,6 +123,7 @@ export default function App() {
             <Route path="logs" element={<SiteLogs />} />
             <Route path="cron" element={<SiteCron />} />
             <Route path="database" element={<SiteDatabase />} />
+            <Route path="php" element={<SitePhp />} />
             <Route path="deploy" element={<SiteDeploy />} />
             <Route path="uptime" element={<SiteUptime />} />
             <Route path="settings" element={<SiteSettings />} />

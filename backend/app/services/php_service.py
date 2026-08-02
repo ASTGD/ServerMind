@@ -69,7 +69,13 @@ def build_probe() -> str:
         # confident wrong answer, and the state a switch would be judged against.
         f'    s="$(sed -E "s/#.*$//" "$f" 2>/dev/null '
         f'         | grep -hoE "php[0-9.]*-?fpm[^;\\" ]*\\.sock" | head -1)"; '
-        f'    [ -n "$s" ] && echo "{_SENTINEL}|site|$f|$s"; '
+        # The folder this config serves. Matching a site to its config on the document
+        # root is the only way that cannot aim a switch at the wrong site: a filename
+        # convention holds for the vhosts we write and for nobody else's.
+        f'    r="$(sed -E "s/#.*$//" "$f" 2>/dev/null '
+        f'         | grep -oE "(root|DocumentRoot)[[:space:]]+[^;[:space:]]+" | head -1 '
+        f'         | awk "{{print \\$2}}")"; '
+        f'    [ -n "$s" ] && echo "{_SENTINEL}|site|$f|$s|$r"; '
         f'  done; done 2>/dev/null; '
         f'echo "{_SENTINEL}|done|"'
     )
@@ -80,7 +86,7 @@ def parse_probe(output: str) -> dict:
     versions: set[str] = set()
     fpm: dict[str, str] = {}
     cli: str | None = None
-    sites: dict[str, str] = {}
+    sites: dict[str, tuple[str, str]] = {}
 
     for line in (output or "").splitlines():
         line = line.strip()
@@ -107,8 +113,9 @@ def parse_probe(output: str) -> dict:
             # itself reported. A basename would have to be re-resolved against a guessed
             # directory, which is a way to aim the rewrite at the wrong file.
             path, sock = parts[2].strip(), parts[3].strip()
+            root = parts[4].strip() if len(parts) > 4 else ""
             if path.startswith("/etc/"):
-                sites[path] = sock
+                sites[path] = (sock, root)
 
     def version_of(sock: str) -> str | None:
         m = re.search(r"php(\d+\.\d+)-fpm", sock)
@@ -120,8 +127,8 @@ def parse_probe(output: str) -> dict:
         "cli_default": cli,
         "sites": [
             {"config": path, "name": path.rsplit("/", 1)[-1],
-             "socket": sock, "version": version_of(sock)}
-            for path, sock in sorted(sites.items())
+             "socket": sock, "root": root or None, "version": version_of(sock)}
+            for path, (sock, root) in sorted(sites.items())
         ],
     }
 
@@ -138,6 +145,38 @@ async def read(server: Server) -> dict:
 
 
 # ── switching one site ───────────────────────────────────────────────────────
+def config_for_site(sites: list[dict], doc_root: str | None,
+                    domain: str) -> dict | None:
+    """Which of this server's configs serves this site — or nothing.
+
+    Returning nothing is a real answer and the reason this is a function rather than a
+    lookup. Switching the wrong site's PHP version takes down a site nobody was touching,
+    and on a server with forty vhosts the odds of a near-miss are not small. So the match
+    has to be something that decides the question, and when nothing does, the screen says
+    it cannot tell rather than picking the closest.
+
+    The document root decides it: a config that serves this folder IS this site's config.
+    The filename is a fallback for a server whose configs we cannot read a root out of —
+    it holds for the vhosts we write ourselves and for nobody else's, so it is second.
+    """
+    if not sites:
+        return None
+
+    want = (doc_root or "").rstrip("/")
+    if want:
+        exact = [s for s in sites if (s.get("root") or "").rstrip("/") == want]
+        if len(exact) == 1:
+            return exact[0]
+        if len(exact) > 1:
+            # Two configs serving one folder is a real thing (an http and an https vhost),
+            # and picking one of them at random is how only half a site gets switched.
+            return None
+
+    named = [s for s in sites
+             if s.get("name") in (domain, f"{domain}.conf") and not (s.get("root") or "")]
+    return named[0] if len(named) == 1 else None
+
+
 def valid_version(value: str) -> str:
     """A version reaches a filesystem path and a config file, so it is validated, not escaped."""
     v = (value or "").strip()
