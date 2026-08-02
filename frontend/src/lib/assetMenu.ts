@@ -109,12 +109,14 @@ export const MENU: MenuItem[] = [
 /**
  * The sections this particular asset can actually use.
  *
- * Overview is the FALLBACK home, not a peer section. Everything on it is a preview of
- * another section — live metrics duplicate Monitoring, the services panel duplicates
- * Services, "Installed" duplicates Installed — so on an asset that has Sites it is pure
- * duplication and is dropped. On an asset with no Sites (a Windows box, an RDP box) it is
- * the only landing place there is, so it stays. Nothing is deleted either way; which page
- * is home is simply decided by what the asset can do, like the rest of this menu.
+ * Overview is a **one-time** page on a Linux server. While the machine is clean it asks the
+ * question that decides everything else — is ServerAlly the control panel here, or are we
+ * installing a real one and watching it? Once that is answered it has nothing left to say,
+ * so it leaves the menu and the server's home becomes Sites. Every other thing that used to
+ * be on it (specs, installed software, metrics, services) has its own section.
+ *
+ * An asset that cannot host — Windows, Remote Desktop, a hosting account — never faces the
+ * question and has no Sites, so Overview stays as its only page.
  */
 /**
  * A panel section is named after the panel, because that is the word the customer knows.
@@ -134,7 +136,7 @@ const PANEL_LABEL: Record<string, string> = {
   cloudpanel: "CloudPanel",
 }
 
-export function menuFor(server: Server): MenuItem[] {
+export function menuFor(server: Server, opts: { decided?: boolean } = {}): MenuItem[] {
   const caps = capabilitiesOf(server)
   const items = MENU.filter(
     (item) => (!item.needs || caps.has(item.needs))
@@ -147,13 +149,11 @@ export function menuFor(server: Server): MenuItem[] {
     const label = PANEL_LABEL[(server.panel_type ?? "").toLowerCase()]
     return label ? { ...item, label } : item
   })
+  // Defaults to NOT decided, so the question stays on screen until we know otherwise —
+  // a menu that hides the fork while the answer is still loading would flash it away on
+  // the one server that needs it.
   const hasSites = named.some((i) => i.path === "sites")
-  return hasSites ? named.filter((i) => i.path !== "") : named
-}
-
-/** Where this asset should land when opened. */
-export function homePathFor(server: Server): string {
-  return menuFor(server).some((i) => i.path === "sites") ? "sites" : ""
+  return hasSites && opts.decided ? named.filter((i) => i.path !== "") : named
 }
 
 /** Which quick actions belong in the asset header. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  actionsFor, capabilitiesOf, homePathFor, installerOptionsFor, menuFor, MENU,
+  actionsFor, capabilitiesOf, installerOptionsFor, menuFor, MENU,
 } from "./assetMenu"
 import type { Server } from "@/types"
 
@@ -127,15 +127,23 @@ describe("the registry itself", () => {
     expect(MENU[0].path).toBe("sites")
   })
 
-  it("keeps Overview as the FALLBACK home, never a duplicate section", () => {
-    // Everything on Overview is a preview of another section: live metrics duplicate
-    // Monitoring, the services panel duplicates Services, its Installed card duplicates
-    // Installed. So on an asset that has Sites it is pure duplication and is dropped; on an
-    // asset with no Sites it is the only landing place there is and must stay.
-    expect(labels(asset())).not.toContain("Overview")                       // Linux: has Sites
-    expect(labels(asset({ connection_type: "rdp" }))).toContain("Overview") // RDP: nothing else
-    expect(labels(asset({ connection_type: "winrm" }))).toContain("Overview")
-    expect(labels(asset({ connection_type: "hosting" }))).toContain("Overview")
+  it("shows Overview on a Linux server only until the question is answered", () => {
+    // Overview is the one-time fork: which panel runs this box, ours or a real one. While
+    // it is unanswered the row has to be there, because landing straight on Sites answers
+    // it silently on the customer's behalf and the answer is close to irreversible. Once
+    // it IS answered the page has nothing left to say, so the row goes.
+    expect(labels(asset())).toContain("Overview")
+    expect(menuFor(asset(), { decided: true }).map((i) => i.label))
+      .not.toContain("Overview")
+  })
+
+  it("keeps Overview forever on an asset that never faces the question", () => {
+    // Windows, Remote Desktop and hosting accounts have no Sites, so Overview is the only
+    // page they have — "decided" must not take it away from them.
+    for (const c of ["winrm", "rdp", "hosting"] as const) {
+      expect(menuFor(asset({ connection_type: c }), { decided: true }).map((i) => i.label))
+        .toContain("Overview")
+    }
   })
 
   it("never leaves an asset with nowhere to land", () => {
@@ -146,11 +154,13 @@ describe("the registry itself", () => {
     }
   })
 
-  it("sends anything that can host to Sites, and everything else to Overview", () => {
-    expect(homePathFor(asset())).toBe("sites")
-    expect(homePathFor(asset({ connection_type: "rdp" }))).toBe("")
-    expect(homePathFor(asset({ connection_type: "winrm" }))).toBe("")
-    expect(homePathFor(asset({ connection_type: "hosting" }))).toBe("")
+  it("keeps Overview on every asset, including the ones that have Sites", () => {
+    // Overview is the home of everything now, because it is the only page that says
+    // whether ServerAlly or a real panel runs this server. Dropping it on a server with
+    // Sites is what quietly answered that question for the customer.
+    for (const c of ["ssh", "winrm", "rdp", "hosting"] as const) {
+      expect(labels(asset({ connection_type: c }))).toContain("Overview")
+    }
   })
 
   it("has no duplicate destinations", () => {

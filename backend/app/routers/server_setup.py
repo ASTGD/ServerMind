@@ -57,6 +57,55 @@ async def _latest(server_id, db: AsyncSession) -> ServerSetup | None:
         .order_by(ServerSetup.started_at.desc()).limit(1))).scalar_one_or_none()
 
 
+@router.get("/role")
+async def role(server_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Is ServerAlly the control panel for this server, or is a real panel?
+
+    Lives beside setup because it reads the same facts, and because the answer decides
+    whether setup should be offered at all: running it installs nginx, PHP and a database,
+    which shuts the control-panel door for good.
+
+    Every field is derived. Nothing here is stored, so the page cannot disagree with the
+    machine — see `server_role`.
+    """
+    from sqlalchemy import func
+
+    from app.models.site import Site
+    from app.services import server_role
+
+    server = await resolve_server(server_id, current_user, db)
+    latest = await _latest(server.id, db)
+    site_count = (await db.execute(
+        select(func.count()).select_from(Site)
+        .where(Site.server_id == server.id, Site.is_present == True)  # noqa: E712
+    )).scalar() or 0
+
+    out = server_role.decide(
+        connection_type=server.connection_type,
+        panel_type=server.panel_type,
+        setup_done=bool(latest and latest.status == "done"),
+        setup_running=bool(latest and latest.status == "running"),
+        site_count=int(site_count),
+    )
+    # What the customer would be choosing between, read from the playbooks this deployment
+    # actually has rather than from a list written out again here — an installer we do not
+    # ship must never appear as a door.
+    out["panels"] = await _panel_installers(db) if out["can_choose"] else []
+    return out
+
+
+async def _panel_installers(db: AsyncSession) -> list[dict]:
+    from app.models.playbook import Playbook
+
+    rows = (await db.execute(
+        select(Playbook).where(Playbook.category == "control-panel",
+                               Playbook.is_official == True)  # noqa: E712
+        .order_by(Playbook.title)
+    )).scalars().all()
+    return [{"id": str(p.id), "slug": p.slug, "title": p.title,
+             "description": p.description} for p in rows]
+
+
 @router.get("")
 async def status(server_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     """What can be set up here, and how the last attempt went."""

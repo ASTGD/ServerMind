@@ -1,5 +1,4 @@
 import { useOutletContext } from "react-router-dom"
-import ServerSetupPanel from "@/components/server/ServerSetupPanel"
 import { Monitor } from "lucide-react"
 import ServerMetrics from "@/components/server/ServerMetrics"
 import ServicesPanel from "@/components/monitoring/ServicesPanel"
@@ -13,8 +12,16 @@ import RecentActivityWidget from "@/components/server/widgets/RecentActivityWidg
 import MemoryWidget from "@/components/server/widgets/MemoryWidget"
 import type { Server } from "@/types"
 
-/** The default tab of the server hub — a read-only dashboard of widgets. The server is
- * provided by the ServerDetail shell via the router outlet context. */
+/**
+ * The whole page for an asset that cannot host websites — Windows, Remote Desktop, a
+ * hosting account. It is the only section those assets have, so it carries everything:
+ * facts, what is installed, and the live widgets.
+ *
+ * A Linux server does NOT land here. Its home is the one-time question on `ServerHome`,
+ * and after that its home is Sites — every widget below duplicates a section that server
+ * already has in its menu. The server is provided by the ServerDetail shell via the
+ * router outlet context.
+ */
 export default function ServerOverview() {
   const { server } = useOutletContext<{ server: Server }>()
 
@@ -43,9 +50,6 @@ export default function ServerOverview() {
   return (
     <div className={`grid grid-cols-1 gap-4 ${isRdp ? "" : "lg:grid-cols-3"}`}>
       <div className={`space-y-4 ${isRdp ? "" : "lg:col-span-2"}`}>
-        {/* First thing on the page for a server that is not ready yet — it is the first
-            thing the customer needs to do. It hides itself once the work is done. */}
-        {server.connection_type === "ssh" && <ServerSetupPanel server={server} />}
         <div className="rounded-lg border border-border bg-card p-4">
           <h3 className="mb-3 text-sm font-medium text-foreground">Server info</h3>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">

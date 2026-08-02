@@ -120,3 +120,25 @@ export async function getAllActiveRuns(): Promise<ActiveRunSummary[]> {
   const { data } = await apiClient.get<ActiveRunSummary[]>("/api/active-runs")
   return data
 }
+
+/**
+ * What ServerAlly is to one server: its control panel, or the thing watching a real one.
+ *
+ * Derived on the server from what is actually installed, never stored — see
+ * `server_role.py`. `can_choose` is only true while the machine is still clean.
+ */
+export interface ServerRole {
+  applies: boolean
+  role: "undecided" | "serverally" | "panel" | null
+  can_choose: boolean
+  panel: string | null
+  panel_label: string | null
+  why: string | null
+  /** The control-panel installers this deployment actually ships. */
+  panels: { id: string; slug: string; title: string; description: string | null }[]
+}
+
+export async function getServerRole(serverId: string): Promise<ServerRole> {
+  const { data } = await apiClient.get(`/api/servers/${serverId}/setup/role`)
+  return data
+}

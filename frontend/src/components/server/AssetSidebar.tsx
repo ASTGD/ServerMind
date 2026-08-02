@@ -1,7 +1,7 @@
 import { Link, NavLink } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft } from "lucide-react"
-import { getMetrics } from "@/api/servers"
+import { getMetrics, getServerRole } from "@/api/servers"
 import type { Server } from "@/types"
 import { categoryForServer } from "@/lib/assetCategories"
 import { menuFor, type MenuItem } from "@/lib/assetMenu"
@@ -81,7 +81,16 @@ function Load({ server }: { server: Server }) {
 }
 
 export default function AssetSidebar({ server }: { server: Server }) {
-  const items = menuFor(server)
+  // Overview is a one-time page — see menuFor. The same query the home page uses, so it is
+  // already cached by the time the menu draws.
+  const { data: role } = useQuery({
+    queryKey: ["server-role", server.id],
+    queryFn: () => getServerRole(server.id),
+    enabled: server.connection_type === "ssh",
+  })
+  const items = menuFor(server, {
+    decided: !!role?.applies && role.role !== "undecided",
+  })
   const cat = categoryForServer(server)
 
   // Only render a group heading where there is a group above it to separate from.
