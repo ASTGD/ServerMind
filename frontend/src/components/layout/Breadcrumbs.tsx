@@ -29,6 +29,10 @@ const LABELS: Record<string, string> = {
   https: "HTTPS",
   cron: "Scheduled jobs",
   uptime: "Uptime",
+  // Title-casing turns this into "Php", which is not how anybody writes it.
+  php: "PHP version",
+  database: "Database",
+  deploy: "Deploy",
 }
 
 function titleCase(s: string): string {
