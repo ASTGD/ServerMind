@@ -33,6 +33,7 @@ import SiteDeploy from "./routes/site/SiteDeploy"
 import SiteDatabase from "./routes/site/SiteDatabase"
 import SitePhp from "./routes/site/SitePhp"
 import SiteDaemons from "./routes/site/SiteDaemons"
+import SiteRedirects from "./routes/site/SiteRedirects"
 import ServerDatabases from "./routes/ServerDatabases"
 import ServerPhp from "./routes/ServerPhp"
 import ServerMonitoring from "./routes/ServerMonitoring"
@@ -126,6 +127,7 @@ export default function App() {
             <Route path="database" element={<SiteDatabase />} />
             <Route path="php" element={<SitePhp />} />
             <Route path="daemons" element={<SiteDaemons />} />
+            <Route path="redirects" element={<SiteRedirects />} />
             <Route path="deploy" element={<SiteDeploy />} />
             <Route path="uptime" element={<SiteUptime />} />
             <Route path="settings" element={<SiteSettings />} />

@@ -1,6 +1,6 @@
 import {
-  Activity, Boxes, Clock, Code2, Cog, Database, FileText, GitBranch, LayoutDashboard,
-  Layers, Lock, Repeat,
+  Activity, Boxes, Clock, Code2, Cog, CornerUpRight, Database, FileText, GitBranch,
+  LayoutDashboard, Layers, Lock, Repeat,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type { SiteDetail } from "@/api/sites"
@@ -60,6 +60,11 @@ export const SITE_MENU: SiteMenuItem[] = [
   // A panel decides its own sites' PHP version and rewrites the vhost on its own
   // schedule, so a change we made behind its back would be silently reverted.
   { path: "php", label: "PHP version", icon: Code2, needs: "shell", excludes: "panel" },
+  // A control panel owns the vhost and rewrites it on its own schedule, so a redirect we
+  // wrote behind its back would be silently reverted — the same reason PHP and Deploy are
+  // absent there.
+  { path: "redirects", label: "Redirects", icon: CornerUpRight, needs: "shell",
+    excludes: "panel" },
   { path: "logs", label: "Logs", icon: FileText, needs: "shell" },
   { path: "cron", label: "Scheduled jobs", icon: Clock, needs: "shell" },
   // Named for the guarantee rather than for systemd. "Scheduled jobs" run at times; these
