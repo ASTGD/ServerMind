@@ -32,6 +32,26 @@ PANEL_LABELS = {
 }
 
 
+#: What makes a machine "not fresh" for this decision.
+#:
+#: Runtimes and open ports are deliberately excluded. python3 and sshd are on every Ubuntu
+#: that has ever booted, so counting them would mean no server is ever fresh and the word
+#: would stop meaning anything — while a web server, a database, a container or a panel are
+#: each something one of the two paths would install over or fight with.
+NOT_FRESH = ("web_servers", "databases", "containers", "panels")
+
+
+def is_fresh(found: dict | None) -> bool | None:
+    """Is this machine empty enough that both paths are honest?
+
+    ``None`` when we could not look. Not the same as True, and the page must not treat it
+    as such: "we could not check" and "there is nothing here" lead somewhere different.
+    """
+    if found is None:
+        return None
+    return not any(found.get(key) for key in NOT_FRESH)
+
+
 def panel_label(panel_type: str | None) -> str:
     """The word the customer knows. A panel we have no name for keeps a generic one rather
     than showing a raw database value."""

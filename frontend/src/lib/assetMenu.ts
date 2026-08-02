@@ -1,6 +1,6 @@
 import {
   Activity, Archive, CalendarClock, Clock, Cog, Database, FileText, FolderOpen, Globe, HeartPulse,
-  KeyRound, Code2, LayoutDashboard, LayoutPanelTop, Package, Rocket, ShieldCheck,
+  Flag, KeyRound, Code2, LayoutDashboard, LayoutPanelTop, Package, Rocket, ShieldCheck,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type { Server } from "@/types"
@@ -75,8 +75,9 @@ export interface MenuItem {
 /**
  * The registry. Order inside a group is the order shown.
  *
- * Sites leads, because a server exists to serve something and that is what an owner opens
- * first. It is on the way to becoming the server's home outright.
+ * "Start here" leads while it exists, because on a fresh server it is the one thing that
+ * has to happen before anything else means anything. It disappears once answered, and then
+ * Sites leads — a server exists to serve something, and that is what an owner opens.
  *
  * Note the deliberate split between "Sites" and "Control panel". They sound similar and are
  * not: Sites is what this machine actually serves — discovered from its own web server
@@ -84,9 +85,17 @@ export interface MenuItem {
  * operations (its website records, databases, email). A CyberPanel box legitimately has
  * both, and calling the second one "Websites" made two items compete for the same meaning.
  */
+/** On a Linux server the home page is a one-time question, so it is named as one. */
+export const HOME_LABEL_START = "Start here"
+/** On an asset that never faces that question it really is an overview, so it says so. */
+export const HOME_LABEL_OVERVIEW = "Overview"
+
 export const MENU: MenuItem[] = [
+  // Labelled by what it IS, which differs by asset — see the rename in `menuFor`.
+  // "Overview" was the old name for both and it was misleading: on a Linux server this
+  // page is a one-time decision, not a summary of anything.
+  { path: "", label: HOME_LABEL_START, icon: Flag, group: "manage" },
   { path: "sites", label: "Sites", icon: Globe, needs: "sftp", group: "manage" },
-  { path: "", label: "Overview", icon: LayoutDashboard, group: "manage" },
   { path: "hosting", label: "Control panel", icon: LayoutPanelTop, needs: "panel", group: "manage" },
   { path: "files", label: "Files", icon: FolderOpen, needs: "sftp", group: "manage" },
   { path: "installed", label: "Installed", icon: Package, needs: "sftp", group: "manage" },
@@ -153,7 +162,14 @@ export function menuFor(server: Server, opts: { decided?: boolean } = {}): MenuI
   // a menu that hides the fork while the answer is still loading would flash it away on
   // the one server that needs it.
   const hasSites = named.some((i) => i.path === "sites")
-  return hasSites && opts.decided ? named.filter((i) => i.path !== "") : named
+  if (hasSites && opts.decided) return named.filter((i) => i.path !== "")
+  // An asset with no Sites never faces the question, so its home page is a genuine
+  // overview — calling it "Start here" would promise a choice it will never be offered.
+  return hasSites
+    ? named
+    : named.map((i) => (i.path === ""
+      ? { ...i, label: HOME_LABEL_OVERVIEW, icon: LayoutDashboard }
+      : i))
 }
 
 /** Which quick actions belong in the asset header. */

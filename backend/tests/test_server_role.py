@@ -104,3 +104,41 @@ def test_a_finished_setup_beats_a_running_one():
     """A re-run on a server we already set up must not reopen the question."""
     out = role(setup_done=True, setup_running=True)
     assert out["role"] == "serverally" and out["can_choose"] is False
+
+
+# ── Is the machine actually empty? ───────────────────────────────────────────
+#
+# The page's whole first sentence turns on this. Somebody adds a server they have been
+# running for a year and being told "this is a clean server" is the page being confidently
+# wrong about the one thing it exists to decide.
+
+def _found(**kw):
+    base = {"os": "Ubuntu 22.04", "web_servers": [], "databases": [], "containers": [],
+            "runtimes": [], "panels": []}
+    return {**base, **kw}
+
+
+def test_a_genuinely_empty_machine_is_fresh():
+    assert sr.is_fresh(_found()) is True
+
+
+def test_python_and_an_open_port_do_not_make_a_server_dirty():
+    """Every Ubuntu that has ever booted has python3 and sshd. Counting them would mean no
+    server is ever fresh, and the word would stop meaning anything."""
+    assert sr.is_fresh(_found(runtimes=["python 3.10.12"], ports=["22"])) is True
+
+
+@pytest.mark.parametrize("kw", [
+    {"containers": ["some-worker (ghcr.io/x:tag)"]},   # the Docker box that started this
+    {"web_servers": ["nginx 1.24"]},
+    {"databases": ["mariadb 10.11"]},
+    {"panels": ["cyberpanel"]},
+])
+def test_anything_either_path_would_fight_with_makes_it_not_fresh(kw):
+    assert sr.is_fresh(_found(**kw)) is False
+
+
+def test_not_looking_is_not_the_same_as_finding_nothing():
+    """"We could not check" and "there is nothing here" lead somewhere different, so the
+    page must be able to tell them apart."""
+    assert sr.is_fresh(None) is None

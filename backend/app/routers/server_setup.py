@@ -91,7 +91,33 @@ async def role(server_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     # actually has rather than from a list written out again here — an installer we do not
     # ship must never appear as a door.
     out["panels"] = await _panel_installers(db) if out["can_choose"] else []
+
+    # A server is only "fresh" if we LOOKED. Somebody adds a box they have been using for a
+    # year, and telling them it is a clean machine — while it runs Docker, or nginx, or a
+    # database — is the page being confidently wrong about the one thing it is for.
+    if out["can_choose"]:
+        out.update(await _whats_on_it(server))
     return out
+
+
+async def _whats_on_it(server) -> dict:
+    """A live look at the machine, for the one page where the answer changes the decision.
+
+    Best-effort by construction: a server that cannot be reached still gets its two doors,
+    with the page saying honestly that it could not look rather than implying the box is
+    empty. One SSH round trip, on a page each server shows once.
+    """
+    from app.services import server_role
+
+    try:
+        found = await installed_service.scan_server(server)
+    except Exception:  # noqa: BLE001 - unreachable, refused, timed out: all the same here
+        logger.info("Start-here scan failed for %s", server.id, exc_info=True)
+        return {"found": None, "is_clean": None, "scan_failed": True}
+
+    shown = {k: found.get(k) for k in
+             ("os", "web_servers", "databases", "containers", "runtimes", "panels")}
+    return {"found": shown, "is_clean": server_role.is_fresh(found), "scan_failed": False}
 
 
 async def _panel_installers(db: AsyncSession) -> list[dict]:

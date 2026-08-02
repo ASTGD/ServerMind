@@ -1,8 +1,8 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { Globe, LayoutPanelTop, TriangleAlert } from "lucide-react"
-import { getServerRole } from "@/api/servers"
+import { Globe, LayoutPanelTop, Search, TriangleAlert } from "lucide-react"
+import { getServerRole, type ServerRole } from "@/api/servers"
 import ServerSetupPanel from "@/components/server/ServerSetupPanel"
 import { Button } from "@/components/ui"
 import type { Server } from "@/types"
@@ -66,10 +66,20 @@ export default function ServerRoleCard({ server }: { server: Server }) {
           How should this server be run?
         </h3>
         <p className="mt-0.5 text-caption text-muted-foreground">
-          This is a clean server, so both are still open. Pick one and ServerAlly follows
-          it from here.
+          {data.scan_failed
+            ? "We could not look inside this server just now, so check what is on it "
+              + "before choosing."
+            : data.is_clean
+              ? "This is a clean server, so both are still open. Pick one and ServerAlly "
+                + "follows it from here."
+              : "This server is not empty. Have a look at what is already on it before "
+                + "choosing — both paths change how it serves websites."}
         </p>
       </header>
+
+      {/* What is actually on the machine, read live. Without this the page tells somebody
+          who added a server they have been running for a year that it is clean. */}
+      {data.found && <WhatIsOnIt found={data.found} clean={data.is_clean} />}
 
       <div className="grid gap-3 p-5 sm:grid-cols-2">
         <Door
@@ -88,7 +98,10 @@ export default function ServerRoleCard({ server }: { server: Server }) {
           blurb="CyberPanel, cPanel, Plesk and others. That panel then owns the websites and
                  the certificates, and ServerAlly watches over it — monitoring, backups,
                  security scans and Ally."
-          note="Best if you already know a panel, or your customers need its own logins."
+          note={data.is_clean === false
+            ? "A control panel wants a machine with nothing on it. On this one the "
+              + "installer may refuse, or fight with what is already here."
+            : "Best if you already know a panel, or your customers need its own logins."}
           onPick={() => setGoing("panel")}
           cta="Choose a panel"
           picked={going === "panel"}
@@ -128,6 +141,49 @@ export default function ServerRoleCard({ server }: { server: Server }) {
         </p>
       </footer>
     </section>
+  )
+}
+
+/** Everything the live look found, grouped so the answer is readable at a glance. */
+function WhatIsOnIt({ found, clean }: {
+  found: NonNullable<ServerRole["found"]>
+  clean: boolean | null
+}) {
+  const groups: [string, string[]][] = [
+    ["Web server", found.web_servers ?? []],
+    ["Database", found.databases ?? []],
+    ["Containers", found.containers ?? []],
+    ["Control panel", found.panels ?? []],
+    ["Runtimes", found.runtimes ?? []],
+  ].filter(([, v]) => v.length > 0) as [string, string[]][]
+
+  return (
+    <div className="border-b border-border bg-muted/30 px-5 py-3">
+      <p className="flex items-center gap-1.5 text-caption font-medium text-foreground">
+        <Search size={12} className="text-muted-foreground" />
+        What is on this server now
+      </p>
+      <p className="mt-0.5 text-caption text-muted-foreground">
+        {found.os ?? "Linux"}
+        {/* Said in words as well as shown, because a list of names does not tell a
+            non-technical owner whether it matters. */}
+        {clean === false && " — and software that both paths would change."}
+      </p>
+      {groups.length === 0 ? (
+        <p className="mt-1.5 text-caption text-muted-foreground">
+          Nothing else installed — no web server, no database, no containers.
+        </p>
+      ) : (
+        <dl className="mt-2 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+          {groups.map(([label, values]) => (
+            <div key={label} className="flex gap-2 text-caption">
+              <dt className="shrink-0 text-muted-foreground">{label}</dt>
+              <dd className="min-w-0 font-mono text-foreground">{values.join(", ")}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
   )
 }
 

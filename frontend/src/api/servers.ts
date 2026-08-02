@@ -136,6 +136,18 @@ export interface ServerRole {
   why: string | null
   /** The control-panel installers this deployment actually ships. */
   panels: { id: string; slug: string; title: string; description: string | null }[]
+  /** A live look at the machine. Null when we could not reach it. */
+  found: {
+    os: string | null
+    web_servers: string[]
+    databases: string[]
+    containers: string[]
+    runtimes: string[]
+    panels: string[]
+  } | null
+  /** Nothing on it that either path would fight with. Null when the look failed. */
+  is_clean: boolean | null
+  scan_failed?: boolean
 }
 
 export async function getServerRole(serverId: string): Promise<ServerRole> {

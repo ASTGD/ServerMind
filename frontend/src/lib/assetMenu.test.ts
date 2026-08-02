@@ -123,8 +123,19 @@ describe("capabilities", () => {
 })
 
 describe("the registry itself", () => {
-  it("leads with Sites, because a server exists to serve something", () => {
-    expect(MENU[0].path).toBe("sites")
+  it("leads with Start here, the one thing that has to happen first", () => {
+    expect(MENU[0].path).toBe("")
+    expect(MENU[0].label).toBe("Start here")
+  })
+
+  it("names the home page for what it actually is on that asset", () => {
+    // A Linux server is being asked a question; a Windows or RDP box never will be, so
+    // promising it a choice would be a row that leads to a page it does not have.
+    const label = (a: Server) => menuFor(a).find((i) => i.path === "")?.label
+    expect(label(asset())).toBe("Start here")
+    for (const c of ["winrm", "rdp", "hosting"] as const) {
+      expect(label(asset({ connection_type: c }))).toBe("Overview")
+    }
   })
 
   it("shows Overview on a Linux server only until the question is answered", () => {
@@ -132,9 +143,10 @@ describe("the registry itself", () => {
     // it is unanswered the row has to be there, because landing straight on Sites answers
     // it silently on the customer's behalf and the answer is close to irreversible. Once
     // it IS answered the page has nothing left to say, so the row goes.
-    expect(labels(asset())).toContain("Overview")
-    expect(menuFor(asset(), { decided: true }).map((i) => i.label))
-      .not.toContain("Overview")
+    // By path, not label: the row is named for what it is on that asset, so the label
+    // varies while the row is the same one.
+    expect(menuFor(asset()).map((i) => i.path)).toContain("")
+    expect(menuFor(asset(), { decided: true }).map((i) => i.path)).not.toContain("")
   })
 
   it("keeps Overview forever on an asset that never faces the question", () => {
@@ -159,7 +171,7 @@ describe("the registry itself", () => {
     // whether ServerAlly or a real panel runs this server. Dropping it on a server with
     // Sites is what quietly answered that question for the customer.
     for (const c of ["ssh", "winrm", "rdp", "hosting"] as const) {
-      expect(labels(asset({ connection_type: c }))).toContain("Overview")
+      expect(menuFor(asset({ connection_type: c })).map((i) => i.path)).toContain("")
     }
   })
 
