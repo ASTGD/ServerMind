@@ -15,6 +15,7 @@ import { listServers } from "@/api/servers"
 import { checkMailNow, watchMail } from "@/api/mail"
 import { Button, EmptyState } from "@/components/ui"
 import { useAssistantStore } from "@/store/assistantStore"
+import { siteLooksBroken, siteProblem, siteState } from "@/lib/siteStatus"
 import { cn } from "@/lib/utils"
 
 /** Up/down comes from the uptime monitor, which checks from outside — where a visitor is. */
@@ -155,13 +156,15 @@ function MailFindings({ site, onClose }: { site: Site; onClose: () => void }) {
 function SiteRow({ site }: { site: Site }) {
   const askAlly = useAssistantStore((s) => s.askAlly)
   const down = site.uptime?.status === "down"
+  const state = siteState(site)
+  const problem = siteProblem(site)
   const [showMail, setShowMail] = useState(false)
 
   return (
     <li className={cn(
       "rounded-xl border bg-card p-3",
-      down ? "border-red-500/40 bg-red-500/[0.03]" : "border-border",
-      !site.is_present && "opacity-60",
+      siteLooksBroken(site) ? "border-red-500/40 bg-red-500/[0.03]" : "border-border",
+      state === "absent" && "opacity-60",
     )}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex min-w-0 gap-2.5">
@@ -176,7 +179,17 @@ function SiteRow({ site }: { site: Site }) {
               </Link>
               <CertChip site={site} />
               <MailChip site={site} onClick={() => setShowMail((v) => !v)} />
-              {!site.is_present && (
+              {state === "installing" && (
+                <span className="flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                  <Loader2 size={9} className="animate-spin" /> Setting up…
+                </span>
+              )}
+              {state === "failed" && (
+                <span className="flex items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                  <CircleAlert size={9} /> Setup failed
+                </span>
+              )}
+              {state === "absent" && (
                 <span className="flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                   <EyeOff size={9} /> No longer found
                 </span>
@@ -191,8 +204,8 @@ function SiteRow({ site }: { site: Site }) {
                 {site.app_version ? ` ${site.app_version}` : ""}
               </span>
               {site.aliases.length > 0 && <span>also {site.aliases.slice(0, 2).join(", ")}</span>}
-              {down && site.uptime?.error && (
-                <span className="text-red-600 dark:text-red-400">{site.uptime.error}</span>
+              {problem && (
+                <span className="text-red-600 dark:text-red-400">{problem}</span>
               )}
             </p>
           </div>
@@ -201,9 +214,13 @@ function SiteRow({ site }: { site: Site }) {
         <Button
           size="sm" variant="ghost"
           onClick={() => askAlly(
-            down
-              ? `${site.domain} on ${site.server_name} is down — find out why and fix it`
-              : `Check ${site.domain} on ${site.server_name} and tell me if anything needs attention`,
+            // Hand Ally the reason we already know, so it does not start by rediscovering
+            // it — a failed install is a different job from a site that has gone down.
+            state === "failed"
+              ? `Setting up ${site.domain} on ${site.server_name} failed: ${problem}. Finish it.`
+              : down
+                ? `${site.domain} on ${site.server_name} is down — find out why and fix it`
+                : `Check ${site.domain} on ${site.server_name} and tell me if anything needs attention`,
           )}
         >
           <Sparkles size={13} /> Ask Ally
@@ -290,7 +307,11 @@ export default function Sites() {
 
   const scannable = servers.filter((s) => s.connection_type === "ssh")
   const unwatched = (data?.sites ?? []).filter((s) => !s.uptime).length
-  const down = shown.filter((s) => s.uptime?.status === "down").length
+  // Counted apart on purpose. A site that failed to install was never up, so folding it
+  // into "down" both overstates an outage and hides a job that is waiting to be finished.
+  const unfinished = shown.filter((s) => siteState(s) === "failed").length
+  const down = shown.filter(
+    (s) => siteState(s) !== "failed" && s.uptime?.status === "down").length
   const noMail = (data?.sites ?? []).filter((s) => !s.mail).length
   const badMail = shown.filter(
     (s) => s.mail?.verdict === "failing" || s.mail?.verdict === "at risk").length
@@ -307,6 +328,11 @@ export default function Sites() {
           {down > 0 && (
             <span className="ml-1 font-medium text-red-600 dark:text-red-400">
               {down} {down === 1 ? "site is" : "sites are"} down.
+            </span>
+          )}
+          {unfinished > 0 && (
+            <span className="ml-1 font-medium text-red-600 dark:text-red-400">
+              {unfinished} {unfinished === 1 ? "setup" : "setups"} did not finish.
             </span>
           )}
           {badMail > 0 && (

@@ -11,6 +11,7 @@ import RunRecipeModal from "@/components/recipes/RunRecipeModal"
 import AddSiteForm from "@/components/sites/AddSiteForm"
 import { Button } from "@/components/ui"
 import { installerOptionsFor } from "@/lib/assetMenu"
+import { siteLooksBroken, siteProblem, siteState } from "@/lib/siteStatus"
 import { cn } from "@/lib/utils"
 import type { Server } from "@/types"
 
@@ -64,7 +65,10 @@ export default function ServerSites() {
   // than the current truth. Without saying so the page showed four sites from a server
   // that had been wiped, each with a confident reason for being down.
   const stale = data?.stale_because ?? null
-  const down = sites.filter((s) => s.uptime?.status === "down").length
+  // Same split as the fleet page: a setup that never finished is not an outage.
+  const unfinished = sites.filter((s) => siteState(s) === "failed").length
+  const down = sites.filter(
+    (s) => siteState(s) !== "failed" && s.uptime?.status === "down").length
 
   return (
     <div className="space-y-4">
@@ -89,6 +93,11 @@ export default function ServerSites() {
             {down > 0 && !stale && (
               <span className="ml-1 font-medium text-red-600 dark:text-red-400">
                 · {down} down
+              </span>
+            )}
+            {unfinished > 0 && !stale && (
+              <span className="ml-1 font-medium text-red-600 dark:text-red-400">
+                · {unfinished} unfinished
               </span>
             )}
           </p>
@@ -225,15 +234,16 @@ function CertChip({ site }: { site: Site }) {
 }
 
 function SiteRow({ site, serverId }: { site: Site; serverId: string }) {
-  const down = site.uptime?.status === "down"
+  const state = siteState(site)
+  const problem = siteProblem(site)
   return (
     <Link
       to={`/servers/${serverId}/sites/${site.id}`}
       className={cn(
       "flex flex-wrap items-center gap-3 border-t border-border px-3 py-2.5 first:border-t-0",
       "transition-colors hover:bg-accent",
-      down && "bg-red-500/[0.03]",
-      !site.is_present && "opacity-60",
+      siteLooksBroken(site) && "bg-red-500/[0.03]",
+      state === "absent" && "opacity-60",
     )}>
       <StatusDot site={site} />
       <div className="min-w-0 flex-1">
@@ -245,29 +255,29 @@ function SiteRow({ site, serverId }: { site: Site; serverId: string }) {
           {/* A site being built must SAY so. The status existed in the API and nowhere on
               screen, so a half-installed site looked exactly like a finished one — which
               defeats the point of recording the state at all. */}
-          {site.status === "installing" && (
+          {state === "installing" && (
             <span className="flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
               <Loader2 size={9} className="animate-spin" /> Setting up…
             </span>
           )}
-          {site.status === "failed" && (
+          {state === "failed" && (
             <span className="flex items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
               <CircleAlert size={9} /> Setup failed
             </span>
           )}
-          {!site.is_present && site.status !== "installing" && site.status !== "failed" && (
+          {state === "absent" && (
             <span className="flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
               <EyeOff size={9} /> No longer found
             </span>
           )}
         </p>
         <p className="truncate text-[11.5px] text-muted-foreground">
-          {site.status === "failed" && site.install_error
-            ? site.install_error
+          {state === "failed"
+            ? problem
             : <>{APP_LABEL[site.app_type] ?? site.app_type}
           {site.app_version ? ` ${site.app_version}` : ""}
           {site.doc_root ? ` · ${site.doc_root}` : ""}
-          {down && site.uptime?.error ? ` · ${site.uptime.error}` : ""}</>}
+          {problem ? ` · ${problem}` : ""}</>}
         </p>
       </div>
     </Link>
