@@ -197,7 +197,13 @@ export async function getSiteFacts(siteId: string): Promise<SiteFacts> {
 /** Put an application onto a site that already exists. */
 export async function installOnSite(
   siteId: string,
-  body: { site_type: string; variables: Record<string, string> },
+  body: {
+    site_type: string
+    variables: Record<string, string>
+    /** Delete what is on the site first. Needs `confirm` to be the site's own domain. */
+    replace?: boolean
+    confirm?: string
+  },
 ): Promise<{ run_id: string }> {
   const { data } = await apiClient.post(`/api/sites/${siteId}/install`, body)
   return data
@@ -546,5 +552,38 @@ export async function actOnSiteDaemon(
   siteId: string, unit: string, action: "start" | "stop" | "restart" | "remove",
 ): Promise<{ ok: boolean; output: string }> {
   const { data } = await apiClient.post(`/api/sites/${siteId}/daemons/action`, { unit, action })
+  return data
+}
+
+/** A redirect on one site. `type` is nginx's own rewrite flag, which is what it becomes. */
+export interface SiteRedirectRule {
+  id: string
+  from: string
+  to: string
+  type: "redirect" | "permanent"
+  type_label: string
+  /** Whether it is really in the web server's configuration, not just recorded here. */
+  is_applied: boolean
+}
+
+export async function listSiteRedirects(siteId: string): Promise<{
+  ok: boolean; reason: string | null; redirects: SiteRedirectRule[]
+}> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/redirects`)
+  return data
+}
+
+export async function addSiteRedirect(
+  siteId: string,
+  body: { redirect_from: string; redirect_to: string; redirect_type: string },
+): Promise<SiteRedirectRule> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/redirects`, body)
+  return data
+}
+
+export async function removeSiteRedirect(
+  siteId: string, redirectId: string,
+): Promise<{ ok: boolean; message: string }> {
+  const { data } = await apiClient.delete(`/api/sites/${siteId}/redirects/${redirectId}`)
   return data
 }

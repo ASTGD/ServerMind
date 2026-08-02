@@ -454,6 +454,13 @@ class InstallIn(BaseModel):
     """What to put on a site that already exists."""
     site_type: str
     variables: dict[str, str] = {}
+    #: Delete what is on the site first. Defaults to off, so a client that has never heard
+    #: of this field cannot destroy a site by omission.
+    replace: bool = False
+    #: The domain, typed by the person doing it. Required only for a replace, and required
+    #: for the same reason it is on cloud destroy: the loss here is rarely "I meant not
+    #: to", it is "I did it to the wrong one".
+    confirm: str | None = None
 
 
 @router.get("/sites/{site_id}")
@@ -529,10 +536,18 @@ async def install_on_site(site_id: str, body: InstallIn, db: DBDep,
             status_code=400,
             detail="Applications can only be installed on a Linux server we reach over SSH.")
 
+    # Checked here rather than inside the service, because it is a fact about the person at
+    # the keyboard rather than about the site. Compared against the domain the SERVER holds,
+    # so a client that sent the wrong site's id cannot satisfy its own confirmation.
+    if body.replace and (body.confirm or "").strip().lower() != site.domain.lower():
+        raise HTTPException(
+            status_code=422,
+            detail=f"To replace what is on this site, type its domain exactly: {site.domain}")
+
     try:
         site, run_id, script = await site_service.install(
             db, server, current_user, site,
-            site_type=body.site_type, variables=body.variables)
+            site_type=body.site_type, variables=body.variables, replace=body.replace)
     except (site_service.SiteError, playbook_service.UnresolvedVariables) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -540,7 +555,8 @@ async def install_on_site(site_id: str, body: InstallIn, db: DBDep,
     run_playbook_task.delay(run_id, str(server.id), script)
     await audit_service.audit(db, current_user, "site.installed",
                               target_type="server", target_id=str(server.id),
-                              meta={"domain": site.domain, "type": body.site_type})
+                              meta={"domain": site.domain, "type": body.site_type,
+                                    "replaced": body.replace})
     return {**site_service.serialize(site, server_name=server.name), "run_id": run_id}
 
 
@@ -1266,6 +1282,188 @@ async def switch_site_php(site_id: str, body: SitePhpIn, db: DBDep,
         # 409, not 500: nothing is broken — the change was refused, or made and undone.
         raise HTTPException(status_code=409, detail=message)
     return {"ok": True, "message": message}
+
+
+# ── Redirects ────────────────────────────────────────────────────────────────
+
+async def _redirect_rules(db, site_id) -> list[dict]:
+    """Every redirect this site has, oldest first — the order they are matched in."""
+    from app.models.site_redirect import SiteRedirect
+
+    rows = (await db.execute(
+        select(SiteRedirect).where(SiteRedirect.site_id == site_id)
+        .order_by(SiteRedirect.created_at)
+    )).scalars().all()
+    return [{"row": r, "from": r.redirect_from, "to": r.redirect_to,
+             "type": r.redirect_type} for r in rows]
+
+
+def _serialize_redirect(r) -> dict:
+    from app.services import redirect_service
+
+    return {
+        "id": str(r.id),
+        "from": r.redirect_from,
+        "to": r.redirect_to,
+        "type": r.redirect_type,
+        "type_label": redirect_service.label_for(r.redirect_type),
+        "is_applied": r.is_applied,
+    }
+
+
+async def _resolve_site_config(server, site) -> tuple[str | None, bool, str | None]:
+    """Which configuration file serves this site, and whether it is Apache.
+
+    Resolved on the SERVER from the site, never accepted from the caller: a path from the
+    client would make these endpoints able to rewrite any file on the machine, and would
+    let one site's page edit a neighbour's.
+    """
+    from app.services import php_service
+
+    state = await php_service.read(server)
+    config = php_service.config_for_site(state.get("sites", []), site.doc_root, site.domain)
+    if config is None:
+        return None, False, (
+            "We could not work out which of this server's configuration files serves this "
+            "site, so we will not edit one and hope.")
+    path = config["config"]
+    return path, ("/apache2/" in path or "/httpd/" in path), None
+
+
+async def _apply_redirects(db, server, site, current_user, *,
+                           without=None) -> tuple[bool, str]:
+    """Write the whole set into the config. Adding, changing and removing are all this.
+
+    ``without`` is the row being deleted. It is excluded from what gets written but is NOT
+    yet gone from the table, so a failed write leaves the list and the server still saying
+    the same thing. Deleting the row first and writing afterwards produces the dangerous
+    disagreement instead: the write fails, the config is restored with the rule still in it,
+    and our screen now claims a redirect is gone while visitors are still being sent away.
+    """
+    from app.services import connection_manager, redirect_service
+
+    path, apache, why = await _resolve_site_config(server, site)
+    if path is None:
+        return False, why or "The site's configuration could not be found."
+
+    rules = [r for r in await _redirect_rules(db, site.id)
+             if without is None or r["row"].id != without.id]
+    cmd = redirect_service.build_apply_command(
+        path, site.domain, [{"from": r["from"], "to": r["to"], "type": r["type"]}
+                            for r in rules],
+        apache=apache)
+    out, err, code = await connection_manager.execute(server, cmd)
+    ok, message = redirect_service.explain(code, (out or "") + (err or ""))
+
+    # Never left claiming to be live when the write failed — that is the difference the dot
+    # on each row is showing.
+    for r in rules:
+        r["row"].is_applied = ok
+    await db.commit()
+    return ok, message
+
+
+@router.get("/sites/{site_id}/redirects")
+async def list_site_redirects(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """This site's redirects. Reads the table, so the page opens even when the server is not
+    reachable — with each row saying honestly whether it is live."""
+    site, server = await _site_and_server(site_id, current_user, db)
+    rules = await _redirect_rules(db, site.id)
+    return {
+        "ok": server.connection_type == "ssh" and not server.panel_type,
+        "reason": (
+            f"This site is managed by {server.panel_type}, which owns its web-server "
+            f"settings. Add redirects in the panel instead."
+            if server.panel_type else
+            "Redirects need a Linux server we reach over SSH."
+            if server.connection_type != "ssh" else None),
+        "redirects": [_serialize_redirect(r["row"]) for r in rules],
+    }
+
+
+class SiteRedirectIn(BaseModel):
+    """Ploi's three fields, with their own value names for the type."""
+    redirect_from: str = Field(max_length=500)
+    redirect_to: str = Field(max_length=500)
+    redirect_type: str = Field(default="redirect", max_length=20)
+
+
+@router.post("/sites/{site_id}/redirects", status_code=201)
+async def add_site_redirect(site_id: str, body: SiteRedirectIn, db: DBDep,
+                            current_user: CurrentUser) -> dict:
+    """Send one path on this site to another address."""
+    from app.models.site_redirect import SiteRedirect
+    from app.services import redirect_service
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    if server.connection_type != "ssh" or server.panel_type:
+        raise HTTPException(
+            status_code=400,
+            detail="Redirects are written into the web server's own configuration, which "
+                   "needs a Linux server we reach over SSH and no control panel.")
+
+    try:
+        src = redirect_service.valid_from(body.redirect_from)
+        dst = redirect_service.valid_to(body.redirect_to)
+        kind = redirect_service.valid_type(body.redirect_type)
+    except redirect_service.RedirectError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    existing = await _redirect_rules(db, site.id)
+    if any(r["from"] == src for r in existing):
+        raise HTTPException(
+            status_code=409,
+            detail=f"There is already a redirect from {src} on this site. Remove it first "
+                   f"if you want to send it somewhere else.")
+
+    row = SiteRedirect(site_id=site.id, user_id=current_user.id, redirect_from=src,
+                       redirect_to=dst, redirect_type=kind, is_applied=False)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+
+    ok, message = await _apply_redirects(db, server, site, current_user)
+    await audit_service.audit(db, current_user,
+                              "site.redirect_added" if ok else "site.redirect_failed",
+                              target_type="server", target_id=str(server.id),
+                              meta={"site": site.domain, "from": src, "to": dst,
+                                    "type": kind, "ok": ok})
+    if not ok:
+        # The row is kept and shown as not live, rather than vanishing with an error — the
+        # owner can see what was attempted and try again.
+        await db.refresh(row)
+        raise HTTPException(status_code=409, detail=message)
+    await db.refresh(row)
+    return _serialize_redirect(row)
+
+
+@router.delete("/sites/{site_id}/redirects/{redirect_id}", status_code=200)
+async def remove_site_redirect(site_id: str, redirect_id: str, db: DBDep,
+                               current_user: CurrentUser) -> dict:
+    """Remove one redirect and rewrite the block without it."""
+    from app.models.site_redirect import SiteRedirect
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    row = (await db.execute(
+        select(SiteRedirect).where(SiteRedirect.id == redirect_id,
+                                   SiteRedirect.site_id == site.id)
+    )).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such redirect.")
+
+    # Written to the server first, and the row is only dropped once that succeeded — see
+    # the note on _apply_redirects. Nothing here is a two-place change that can half-happen.
+    was = row.redirect_from
+    ok, message = await _apply_redirects(db, server, site, current_user, without=row)
+    await audit_service.audit(db, current_user, "site.redirect_removed",
+                              target_type="server", target_id=str(server.id),
+                              meta={"site": site.domain, "from": was, "ok": ok})
+    if not ok:
+        raise HTTPException(status_code=409, detail=message)
+
+    await db.delete(row)
+    await db.commit()
+    return {"ok": True, "message": "Removed."}
 
 
 class SiteDatabaseIn(BaseModel):

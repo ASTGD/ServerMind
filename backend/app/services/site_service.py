@@ -638,6 +638,27 @@ def takes_over() -> frozenset[str]:
     )
 
 
+#: Variables this feature decides and never asks about. They control whether an install may
+#: overwrite what is already on the domain, so a form field for them would be handing the
+#: customer a switch whose only safe setting we already know.
+_DECIDED_HERE = frozenset({"TAKEOVER", "REPLACE"})
+
+
+def occupied(site) -> bool:
+    """Is something actually on this site, as opposed to it being an empty shell?
+
+    Reads what was REQUESTED, never what a scan concluded. ``app_type`` is the scan's guess
+    and it labels anything it cannot identify as ``unknown`` — a hand-built PHP app, a plain
+    HTML site — so "unknown means empty" is exactly how an offer to install over somebody's
+    real website gets onto the screen.
+
+    A site we merely found is occupied by definition: it was there before we were.
+    """
+    if getattr(site, "source", None) != "manual":
+        return True
+    return (getattr(site, "requested_type", None) or "") not in ("", "static")
+
+
 def catalogue(playbooks_by_slug: dict) -> list[dict]:
     """What can be installed here, with the questions each one needs.
 
@@ -668,7 +689,7 @@ def catalogue(playbooks_by_slug: dict) -> list[dict]:
             name = var.get("name") if isinstance(var, dict) else None
             if not name or name == "DOMAIN":
                 continue  # the domain is always asked for, separately
-            if name in spec["extra"]:
+            if name in spec["extra"] or name in _DECIDED_HERE:
                 continue  # decided by the choice of type, not by the customer
             fields.append({
                 "name": name,
@@ -697,7 +718,8 @@ def catalogue(playbooks_by_slug: dict) -> list[dict]:
 
 
 def install_variables(playbook, spec: dict, domain: str,
-                      supplied: dict | None, *, takeover: bool) -> dict:
+                      supplied: dict | None, *, takeover: bool,
+                      replace: bool = False) -> dict:
     """Everything an installer script needs, assembled in one place.
 
     Pure, and shared by both paths that run one — creating a site and installing onto an
@@ -719,6 +741,10 @@ def install_variables(playbook, spec: dict, domain: str,
         "DOMAIN": domain,
         **spec["extra"],
         **({"TAKEOVER": "yes"} if takeover else {}),
+        # Stated on every run, never left to a default. An unsubstituted `{{REPLACE}}` reads
+        # as a literal string in the shell, not as "no" — and the one thing this flag must
+        # never be is accidentally true.
+        "REPLACE": "yes" if replace else "no",
     }
 
 
@@ -804,7 +830,8 @@ async def create(db, server, user, *, domain: str, site_type: str,
     return site, str(run.id), script
 
 
-async def install(db, server, user, site, *, site_type: str, variables: dict | None = None):
+async def install(db, server, user, site, *, site_type: str, variables: dict | None = None,
+                  replace: bool = False):
     """Put an application onto a site that already exists.
 
     This is the second half of how a site is made: you add the domain, which builds an
@@ -816,6 +843,17 @@ async def install(db, server, user, site, *, site_type: str, variables: dict | N
     which lets the shared site guards replace the empty site's own configuration — and only
     that: the guard additionally requires our marker in the existing config and refuses any
     folder that has anything in it, so this can never overwrite a site in use.
+
+    ``replace`` is how someone deliberately starts a site over — putting WordPress on a
+    domain that currently runs Laravel. It DELETES the site's files, so it carries its own
+    refusals rather than being a wider reading of the flag above:
+
+    * only a site ServerAlly created. One we merely found could be anything, laid out any
+      way, with content nobody has a copy of;
+    * only when something is actually there, so the word never appears on a screen where
+      it would mean nothing;
+    * the database is deliberately left behind. It costs nothing to keep and it is the only
+      way back from a replacement someone regrets.
     """
     from sqlalchemy import select
 
@@ -834,6 +872,16 @@ async def install(db, server, user, site, *, site_type: str, variables: dict | N
             f"{site.domain} is still being set up. Wait for that to finish before "
             f"installing something else on it."
         )
+    if replace:
+        if site.source != "manual":
+            raise SiteError(
+                f"{site.domain} was already on this server when ServerAlly found it, so it "
+                f"is not replaced from here — we did not build it and cannot know what is "
+                f"in it. Ask Ally if you need to change what it runs."
+            )
+        if not occupied(site):
+            raise SiteError(
+                f"There is nothing on {site.domain} to replace yet.")
 
     pb = (await db.execute(
         select(Playbook).where(Playbook.slug == spec["playbook"],
@@ -845,7 +893,8 @@ async def install(db, server, user, site, *, site_type: str, variables: dict | N
     if not pb.script_bash:
         raise SiteError(f"The {spec['label']} installer has no script for this server.")
 
-    variables = install_variables(pb, spec, site.domain, variables, takeover=True)
+    variables = install_variables(pb, spec, site.domain, variables,
+                                  takeover=True, replace=replace)
     script = playbook_service.substitute_variables(pb.script_bash, variables)
 
     run = PlaybookRun(server_id=server.id, user_id=user.id, playbook_id=pb.id,

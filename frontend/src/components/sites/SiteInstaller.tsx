@@ -31,14 +31,29 @@ interface Props {
   serverId: string
   /** A control panel owns its own sites, so nothing here can be written behind its back. */
   panelOnly?: boolean
+  /**
+   * Something is already on this site, so installing means DELETING it first.
+   *
+   * The tiles are the same tiles — hiding them left the page saying only what could not be
+   * done — but the heading, the button and a typed confirmation all change, because the
+   * customer has to know they are starting over before they press anything.
+   */
+  replacing?: boolean
+  /** Typed back by the customer to confirm a replacement. Only used when `replacing`. */
+  domain?: string
 }
 
-export default function SiteInstaller({ siteId, serverId, panelOnly }: Props) {
+export default function SiteInstaller({
+  siteId, serverId, panelOnly, replacing, domain = "",
+}: Props) {
   const qc = useQueryClient()
   const [chosen, setChosen] = useState<SiteType | null>(null)
   const [values, setValues] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
+  const [confirm, setConfirm] = useState("")
+
+  const confirmed = !replacing || confirm.trim().toLowerCase() === domain.toLowerCase()
 
   const { data: catalogue, isLoading } = useQuery({
     queryKey: ["site-catalogue"],
@@ -48,7 +63,10 @@ export default function SiteInstaller({ siteId, serverId, panelOnly }: Props) {
   })
 
   const install = useMutation({
-    mutationFn: () => installOnSite(siteId, { site_type: chosen!.id, variables: values }),
+    mutationFn: () => installOnSite(siteId, {
+      site_type: chosen!.id, variables: values,
+      ...(replacing ? { replace: true, confirm } : {}),
+    }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["site", siteId] })
       qc.invalidateQueries({ queryKey: ["server-sites", serverId] })
@@ -60,10 +78,11 @@ export default function SiteInstaller({ siteId, serverId, panelOnly }: Props) {
       setError(e.response?.data?.detail ?? "It could not be installed."),
   })
 
-  // This chooser only ever appears on a site that is already empty, so "Empty website"
-  // would install exactly what is already there. Offering a tile that does nothing makes
-  // the screen look like it is not paying attention.
-  const offerable = (catalogue?.types ?? []).filter((t) => t.id !== "static")
+  // On an empty site, "Empty website" would install exactly what is already there —
+  // offering a tile that does nothing makes the screen look like it is not paying
+  // attention. On an occupied one it is a real choice: strip this back to a blank site.
+  const offerable = (catalogue?.types ?? [])
+    .filter((t) => t.id !== "static" || replacing)
   const popular = offerable.filter((t) => t.popular)
   const rest = offerable.filter((t) => !t.popular)
 
@@ -101,9 +120,15 @@ export default function SiteInstaller({ siteId, serverId, panelOnly }: Props) {
   return (
     <section className="rounded-xl border border-border bg-card">
       <header className="border-b border-border px-4 py-3">
-        <h3 className="text-sm font-medium text-foreground">Install something here</h3>
+        <h3 className="text-sm font-medium text-foreground">
+          {replacing ? "Start this site over" : "Install something here"}
+        </h3>
         <p className="text-caption text-muted-foreground">
-          {chosen ? chosen.blurb : "Nothing runs on this site yet. Choose what should."}
+          {chosen
+            ? chosen.blurb
+            : replacing
+              ? "Choose what should be here instead. Its files are deleted; its database is left alone."
+              : "Nothing runs on this site yet. Choose what should."}
         </p>
       </header>
 
@@ -153,6 +178,29 @@ export default function SiteInstaller({ siteId, serverId, panelOnly }: Props) {
                 </Field>
               ))}
 
+              {/* Typing the domain, for the same reason cloud destroy asks for it: the loss
+                  here is rarely "I meant not to", it is "I did it to the wrong site". */}
+              {replacing && (
+                <div className="rounded-lg border-l-2 border-destructive bg-destructive/5 p-3">
+                  <p className="text-small font-medium text-foreground">
+                    This deletes the site that is on {domain} now
+                  </p>
+                  <p className="mt-0.5 text-caption text-muted-foreground">
+                    Its files are removed and replaced. Its database is left where it is, so
+                    nothing you have stored is lost — but nothing will be reading it either.
+                  </p>
+                  <label className="mt-2 block text-caption text-muted-foreground">
+                    Type <span className="font-mono text-foreground">{domain}</span> to confirm
+                  </label>
+                  <input
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    autoComplete="off"
+                    className={INPUT}
+                  />
+                </div>
+              )}
+
               {error && (
                 <p className="rounded-lg border-l-2 border-destructive bg-destructive/5 px-3 py-2 text-small text-destructive">
                   {error}
@@ -160,8 +208,11 @@ export default function SiteInstaller({ siteId, serverId, panelOnly }: Props) {
               )}
 
               <div className="flex items-center gap-3 pt-1">
-                <Button type="submit" disabled={install.isPending}>
-                  {install.isPending ? "Starting…" : `Install ${chosen.label}`}
+                <Button type="submit" disabled={install.isPending || !confirmed}
+                        variant={replacing ? "danger" : "primary"}>
+                  {install.isPending
+                    ? "Starting…"
+                    : replacing ? `Replace with ${chosen.label}` : `Install ${chosen.label}`}
                 </Button>
                 <p className="text-caption text-muted-foreground">
                   It runs in the background — you can leave this page.
