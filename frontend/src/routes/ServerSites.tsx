@@ -161,11 +161,11 @@ export default function ServerSites() {
         </div>
       )}
 
-      {/* This page is the sites on this server and the way to add one — nothing else. An
-          empty server therefore opens straight into the form rather than showing a card
-          that says there is nothing here and a button to begin: on a page with one purpose,
-          that is a click asking permission to do the only available thing. */}
-      {showForm || isLoading ? null : (
+      {/* This page is the sites on this server and the way to add one — nothing else. The
+          list used to be hidden whenever the form was showing, which was fine while the
+          form was something a button revealed; now that the card is always here, that
+          hid every site on the server. */}
+      {!isLoading && sites.length > 0 && (
         <div className="overflow-hidden rounded-xl border border-border bg-card">
           {sites.map((s) => <SiteRow key={s.id} site={s} serverId={server.id} />)}
         </div>
