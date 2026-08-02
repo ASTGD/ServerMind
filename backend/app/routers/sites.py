@@ -32,7 +32,7 @@ from app.models.mail_health import MailHealthRecord
 from app.models.site import Site
 from app.models.uptime import UptimeMonitor
 from app.models.user import User
-from app.services import playbook_service, site_service, team_service
+from app.services import playbook_service, site_cron_service, site_service, team_service
 
 router = APIRouter(prefix="/api", tags=["sites"])
 logger = logging.getLogger(__name__)
@@ -977,8 +977,121 @@ async def site_cron(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
         return {"jobs": [], "reachable": False}
 
     listing = await cron_service.list_jobs(server)
+    jobs = cron_service.jobs_for_site(
+        listing.get("users", []), site.domain, site.doc_root)
+    # What this application needs but does not have. Offered, never added on its own, and
+    # withheld once something is already doing the job.
+    suggested = None
+    if not site_cron_service.already_scheduled(site.app_type, jobs):
+        suggested = site_cron_service.suggested_job(site.app_type, site.doc_root or "")
     return {
-        "jobs": cron_service.jobs_for_site(listing.get("users", []), site.domain, site.doc_root),
+        "jobs": jobs,
         "reachable": listing.get("reachable", False),
         "server_id": str(server.id),
+        "suggested": suggested,
     }
+
+
+class SiteCronIn(BaseModel):
+    """A job to schedule for this site.
+
+    ``user`` is deliberately absent: the caller does not choose who runs it. It runs as the
+    owner of the site's files, which is a correctness rule rather than a preference — see
+    site_cron_service.
+    """
+    schedule: str = Field(max_length=100)
+    command: str = Field(max_length=500)
+    note: str = Field(default="", max_length=120)
+    #: What the screen was showing, so a job added behind our back is not overwritten.
+    expect: str | None = Field(default=None, max_length=64)
+
+
+class SiteCronRemoveIn(BaseModel):
+    user: str = Field(max_length=32)
+    raw_line: str = Field(max_length=600)
+    expect: str | None = Field(default=None, max_length=64)
+
+
+async def _site_for_cron(site_id: str, db, current_user, *, need_execute: bool):
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+    server = await resolve_server(str(site.server_id), current_user, db,
+                                  need_execute=need_execute)
+    if server.connection_type != "ssh":
+        raise HTTPException(
+            status_code=400,
+            detail="Scheduled jobs need a Linux server we reach over SSH.")
+    return site, server
+
+
+@router.post("/sites/{site_id}/cron", status_code=201)
+async def add_site_cron(site_id: str, body: SiteCronIn, db: DBDep,
+                        current_user: CurrentUser) -> dict:
+    """Schedule a job for this site, running as the account that owns its files."""
+    from app.services import connection_manager, cron_service
+
+    site, server = await _site_for_cron(site_id, db, current_user, need_execute=True)
+    if not site.doc_root:
+        raise HTTPException(
+            status_code=422,
+            detail="We do not know where this site's files are, so we cannot tell which "
+                   "account a job should run as. Scan the server first.")
+
+    # Whose files these are decides who runs the job. Guessing here is how a scheduler
+    # ends up writing root-owned files into a site that then cannot write them itself.
+    stdout, _err, _code = await connection_manager.execute(
+        server, site_cron_service.build_owner_command(site.doc_root))
+    owner = site_cron_service.parse_owner(stdout)
+    if not owner:
+        raise HTTPException(
+            status_code=422,
+            detail="We could not tell which account owns this site's files, so we will "
+                   "not guess which one should run its scheduled jobs.")
+
+    try:
+        result = await cron_service.add_job(
+            server, user=owner, schedule=body.schedule, command=body.command,
+            note=body.note or site.domain, expect=body.expect)
+    except cron_service.CronError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    await audit_service.audit(db, current_user, "cron.added",
+                              target_type="server", target_id=str(server.id),
+                              meta={"user": owner, "schedule": body.schedule,
+                                    "site": site.domain})
+    return {**result, "user": owner}
+
+
+@router.post("/sites/{site_id}/cron/remove")
+async def remove_site_cron(site_id: str, body: SiteCronRemoveIn, db: DBDep,
+                           current_user: CurrentUser) -> dict:
+    """Remove one of this site's scheduled jobs, matched by its exact line."""
+    from app.services import cron_service
+
+    site, server = await _site_for_cron(site_id, db, current_user, need_execute=True)
+
+    # A site page may only remove jobs that are this site's. Without this it would be a
+    # crontab editor that happens to be reached from a site, and a mistyped line could take
+    # out a neighbour's backup.
+    listing = await cron_service.list_jobs(server)
+    mine = cron_service.jobs_for_site(
+        listing.get("users", []), site.domain, site.doc_root)
+    if not any(j.get("raw") == body.raw_line and j.get("user") == body.user for j in mine):
+        raise HTTPException(
+            status_code=422,
+            detail="That job does not belong to this site. Remove it from the server's "
+                   "own Cron jobs screen if you meant to.")
+
+    try:
+        result = await cron_service.remove_job(
+            server, user=body.user, raw_line=body.raw_line, expect=body.expect)
+    except cron_service.CronError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    await audit_service.audit(db, current_user, "cron.removed",
+                              target_type="server", target_id=str(server.id),
+                              meta={"user": body.user, "site": site.domain})
+    return result

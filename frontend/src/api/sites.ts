@@ -248,10 +248,44 @@ export interface SiteCronJob {
   note: string | null
   parsed: boolean
   user: string
+  /** The crontab as it was when we read it, so an edit made behind our back is refused. */
+  fingerprint?: string
 }
 
-export async function getSiteCron(siteId: string): Promise<{ jobs: SiteCronJob[]; reachable: boolean; server_id: string }> {
+/** The job this application needs and does not have. Absent once something is doing it. */
+export interface SiteCronSuggestion {
+  schedule: string
+  command: string
+  title: string
+  why: string
+}
+
+export interface SiteCronList {
+  jobs: SiteCronJob[]
+  reachable: boolean
+  server_id: string
+  suggested: SiteCronSuggestion | null
+}
+
+export async function getSiteCron(siteId: string): Promise<SiteCronList> {
   const { data } = await apiClient.get(`/api/sites/${siteId}/cron`)
+  return data
+}
+
+/** Schedule a job for this site. Which account runs it is decided on the server. */
+export async function addSiteCron(
+  siteId: string,
+  body: { schedule: string; command: string; note?: string; expect?: string | null },
+): Promise<{ user: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/cron`, body)
+  return data
+}
+
+export async function removeSiteCron(
+  siteId: string,
+  body: { user: string; raw_line: string; expect?: string | null },
+): Promise<unknown> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/cron/remove`, body)
   return data
 }
 
