@@ -2,7 +2,7 @@ import { useState } from "react"
 import { Link, useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  Globe, Loader2, Plus, RefreshCw, ShieldAlert, ShieldCheck,
+  Globe, Loader2, RefreshCw, ShieldAlert, ShieldCheck,
 } from "lucide-react"
 import { listServerSites, scanServerSites, APP_LABEL, type Site } from "@/api/sites"
 import { listRecipes } from "@/api/recipes"
@@ -29,7 +29,7 @@ import type { Server } from "@/types"
 export default function ServerSites() {
   const { server } = useOutletContext<{ server: Server }>()
   const qc = useQueryClient()
-  const [choosing, setChoosing] = useState(false)
+  //: The Ally route, which takes over the card while it runs.
   const [creating, setCreating] = useState(false)
 
   const { data, isLoading } = useQuery({
@@ -59,7 +59,9 @@ export default function ServerSites() {
   const doors = installerOptionsFor(server)
   const sites = data?.sites ?? []
   // An empty server has nothing to look at, so it opens straight into the form.
-  const showForm = choosing || creating || (!isLoading && sites.length === 0)
+  // The New site card is always on the page, the way the list is. It used to be behind a
+  // button, which put a click in front of the one thing this section exists to do.
+  const showForm = !creating
   // The server cannot be looked at, so everything below is the last thing we saw rather
   // than the current truth. Without saying so the page showed four sites from a server
   // that had been wiped, each with a confident reason for being down.
@@ -114,9 +116,6 @@ export default function ServerSites() {
               : <RefreshCw size={13} />}
             Look for sites
           </Button>
-          <Button size="sm" onClick={() => setChoosing(true)}>
-            <Plus size={13} /> New site
-          </Button>
         </div>
       </div>
 
@@ -138,15 +137,12 @@ export default function ServerSites() {
         </p>
       )}
 
-      {showForm && !creating && (
+      {showForm && (
         <AddSiteForm
           serverId={server.id}
           // A panel owns its own sites, so nothing can be written behind its back.
           panelOnly={!doors.direct}
-          onAsk={doors.ally && siteRecipe
-            ? () => { setChoosing(false); setCreating(true) }
-            : undefined}
-          onClose={sites.length ? () => setChoosing(false) : undefined}
+          onAsk={doors.ally && siteRecipe ? () => setCreating(true) : undefined}
           // Only worth offering when there is nothing listed — that is the moment someone
           // has connected a server whose sites we have not looked for yet.
           showFind={sites.length === 0 && !scan.data}
