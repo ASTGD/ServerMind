@@ -31,6 +31,7 @@ const LABELS: Record<string, string> = {
   uptime: "Uptime",
   // Title-casing turns this into "Php", which is not how anybody writes it.
   php: "PHP version",
+  daemons: "Always running",
   database: "Database",
   deploy: "Deploy",
 }
