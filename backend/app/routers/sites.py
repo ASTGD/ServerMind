@@ -949,12 +949,25 @@ async def site_database(site_id: str, db: DBDep, current_user: CurrentUser) -> d
     Nothing here can carry a password: the probe reads one from the site's own config to
     make the connection attempt, on the server, and returns a single word.
     """
-    from app.services import site_database_service
+    from app.services import database_service, site_database_naming, site_database_service
 
     site, server = await _site_and_server(site_id, current_user, db)
     if server.connection_type != "ssh":
         return {"ok": False, "reason": "This needs a Linux server we reach over SSH."}
-    return await site_database_service.read(server, site.app_type, site.doc_root or "")
+
+    result = await site_database_service.read(server, site.app_type, site.doc_root or "")
+    if result.get("ok"):
+        return result
+
+    # A site with no configuration we can read — a plain PHP site — leaves the page unable
+    # to see even a database we made for it ourselves, so it would offer to make another
+    # and fail on the name. Looking for one named after the site closes that, and is
+    # reported as the guess it is.
+    listing = await database_service.list_databases(server)
+    match = site_database_naming.find_named_after(site.domain, listing.get("engines", []))
+    if match:
+        result = {**result, "named_after_site": match}
+    return result
 
 
 @router.get("/sites/{site_id}/cron")
@@ -1035,6 +1048,19 @@ async def create_site_database(site_id: str, body: SiteDatabaseIn, db: DBDep,
             detail=f"This site already uses the database “{existing['name']}”. Adding a "
                    f"second one here would leave no way to say which it should use — the "
                    f"server's Databases screen can add one if you mean to.")
+
+    # A site with no readable configuration cannot tell us what it uses, so check whether
+    # we have already been here — otherwise a second press fails on the name clash and
+    # explains nothing about why.
+    listing = await database_service.list_databases(server)
+    already = site_database_naming.find_named_after(site.domain, listing.get("engines", []))
+    if already:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A database called “{already['name']}” already exists on this server. "
+                   f"If it is this site's, put its details into the site's settings — this "
+                   f"site's own configuration does not name a database, which is why we "
+                   f"cannot tell from here.")
 
     name = body.name or site_database_naming.suggest_name(site.domain)
     user = body.user or site_database_naming.suggest_user(name)

@@ -64,23 +64,40 @@ export default function SiteDatabase() {
         )}
         <EmptyState
           icon={Database}
-          title="No database for this site"
+          title="No database in this site's settings"
           description={data?.reason ?? "We could not read this site's database settings."}
         />
-        <div className="rounded-xl border border-border bg-card p-4">
-          <p className="text-sm font-medium text-foreground">Make one for this site</p>
-          <p className="mt-1 text-small text-muted-foreground">
-            A database of its own, with its own account and password, named after this
-            site. Nothing else on the server can sign in to it.
-          </p>
-          <Button size="sm" className="mt-2.5" disabled={create.isPending}
-            onClick={() => create.mutate()}>
-            {create.isPending
-              ? <Loader2 size={13} className="animate-spin" />
-              : <Plus size={13} />}
-            Create a database
-          </Button>
-        </div>
+        {/* A site with no configuration we can read cannot tell us what it uses — not even
+            a database we made for it ourselves. Saying what is there, and being clear it
+            is a guess, beats offering to make a second one that fails on the name. */}
+        {data?.named_after_site ? (
+          <div className="rounded-xl border border-border bg-card p-4">
+            <p className="text-sm font-medium text-foreground">
+              There is a database called{" "}
+              <span className="font-mono">{data.named_after_site.name}</span> on this server
+            </p>
+            <p className="mt-1 text-small text-muted-foreground">
+              It is named after this site, so it is probably this site's — but this site's
+              own settings do not name a database, so we cannot be sure from here. Put its
+              details into the application's settings and this page will read them back.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border bg-card p-4">
+            <p className="text-sm font-medium text-foreground">Make one for this site</p>
+            <p className="mt-1 text-small text-muted-foreground">
+              A database of its own, with its own account and password, named after this
+              site. Nothing else on the server can sign in to it.
+            </p>
+            <Button size="sm" className="mt-2.5" disabled={create.isPending}
+              onClick={() => create.mutate()}>
+              {create.isPending
+                ? <Loader2 size={13} className="animate-spin" />
+                : <Plus size={13} />}
+              Create a database
+            </Button>
+          </div>
+        )}
       </div>
     )
   }

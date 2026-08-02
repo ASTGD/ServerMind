@@ -43,3 +43,23 @@ def suggest_user(db_name: str) -> str:
 def generate_password(length: int = 24) -> str:
     """A password nobody has to think of, long enough that nobody has to worry about it."""
     return "".join(secrets.choice(_ALPHABET) for _ in range(length))
+
+
+def find_named_after(domain: str, engines: list[dict]) -> dict | None:
+    """A database on this server named after this site, if there is one.
+
+    Needed because a plain PHP site has no configuration file to read, so after we make a
+    database for it the page cannot see what it just made — it would say "no database" and
+    offer to make another, which then fails with a name clash and explains nothing.
+
+    A guess, and labelled as one wherever it is shown: a matching name is evidence that a
+    database belongs to this site, not proof, because the site's own settings are the only
+    thing that actually decides.
+    """
+    wanted = suggest_name(domain)
+    for engine in engines or []:
+        for db in engine.get("databases") or []:
+            name = db.get("name") if isinstance(db, dict) else db
+            if name == wanted:
+                return {"engine": engine.get("engine"), "name": name}
+    return None

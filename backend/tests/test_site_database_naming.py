@@ -72,3 +72,33 @@ def test_the_password_survives_being_put_into_sql_unchanged():
 
 def test_two_passwords_are_not_the_same():
     assert len({naming.generate_password() for _ in range(50)}) == 50
+
+
+# ── Recognising one we already made ──────────────────────────────────────────
+
+def _engines(*names):
+    return [{"engine": "mysql", "databases": [{"name": n} for n in names]}]
+
+
+def test_a_database_named_after_the_site_is_recognised():
+    """A plain PHP site has no configuration to read, so without this the page cannot see
+    even a database we made for it — it would offer to make another and fail on the name."""
+    found = naming.find_named_after("plain1.serverally.org", _engines(
+        "information_schema", "plain1_serverally_org", "laravel"))
+    assert found == {"engine": "mysql", "name": "plain1_serverally_org"}
+
+
+def test_a_database_belonging_to_another_site_is_not_claimed():
+    assert naming.find_named_after("plain1.serverally.org", _engines("laravel", "shop")) is None
+
+
+def test_a_near_miss_is_not_a_match():
+    """Close is not the same. Claiming the wrong database would send someone to put the
+    wrong details into their application."""
+    assert naming.find_named_after(
+        "shop.example.com", _engines("shop_example_com_old")) is None
+
+
+def test_nothing_on_the_server_is_not_an_error():
+    assert naming.find_named_after("shop.example.com", []) is None
+    assert naming.find_named_after("shop.example.com", [{"engine": "mysql"}]) is None

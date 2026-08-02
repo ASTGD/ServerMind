@@ -268,6 +268,12 @@ export interface SiteCronList {
 }
 
 /** What a database we just made looks like. The password is here ONCE and nowhere else. */
+/** A database on the server named after this site — evidence, not proof. */
+export interface NamedAfterSite {
+  engine: string
+  name: string
+}
+
 export interface NewSiteDatabase {
   engine: string
   name: string
@@ -466,6 +472,9 @@ export interface SiteDatabase {
   tested?: boolean
   tables?: number | null
   size_mb?: number | null
+  /** Only when the site's own settings name no database: one on the server that shares
+   *  this site's name. Evidence it is this site's, not proof — the settings decide. */
+  named_after_site?: NamedAfterSite | null
 }
 
 export async function getSiteDatabase(siteId: string): Promise<SiteDatabase> {
