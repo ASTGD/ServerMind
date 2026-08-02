@@ -19,6 +19,9 @@ import type { Server } from "@/types"
  * putting them here made the decision share a page with a stale summary of a machine that
  * has not been set up yet.
  *
+ * Once answered it hands over to the door that answer opened: Sites when ServerAlly runs
+ * the machine, the panel's own section when a panel does.
+ *
  * An asset that cannot host — Windows, Remote Desktop, a hosting account — never faces the
  * question, and Overview is the only page it has, so it keeps the full one.
  */
@@ -31,6 +34,10 @@ export default function ServerHome() {
     enabled: server.connection_type === "ssh",
   })
 
+  // A panel owns this machine's websites, so the panel's own page is its home — checked
+  // from the server itself rather than the role, both because it holds for a hosting
+  // account that has no SSH at all, and because it needs no round trip to know.
+  if (server.panel_type) return <Navigate to="hosting" replace />
   if (server.connection_type !== "ssh") return <ServerOverview />
 
   if (isLoading) {
@@ -41,9 +48,10 @@ export default function ServerHome() {
     )
   }
 
-  // Decided. Nothing left to ask, so this page steps aside rather than showing a summary of
-  // pages that are one click away in the menu.
-  if (data?.applies && data.role !== "undecided") return <Navigate to="sites" replace />
+  // Decided. This page steps aside and hands over to whichever door the answer opened —
+  // a panel's own section is where ITS websites live, so sending a panel server to our
+  // Sites view would land it on a list it does not own.
+  if (data?.applies && data.role === "serverally") return <Navigate to="sites" replace />
 
   return <ServerRoleCard server={server} />
 }

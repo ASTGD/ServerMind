@@ -23,7 +23,7 @@ const LABELS: Record<string, string> = {
   security: "Security",
   backups: "Backups",
   scheduler: "Scheduler",
-  hosting: "Hosting",
+  hosting: "Control panel",
   installed: "Installed",
   sites: "Sites",
   https: "HTTPS",

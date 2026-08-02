@@ -88,9 +88,7 @@ export default function AssetSidebar({ server }: { server: Server }) {
     queryFn: () => getServerRole(server.id),
     enabled: server.connection_type === "ssh",
   })
-  const items = menuFor(server, {
-    decided: !!role?.applies && role.role !== "undecided",
-  })
+  const items = menuFor(server, { role: role?.applies ? role.role : undefined })
   const cat = categoryForServer(server)
 
   // Only render a group heading where there is a group above it to separate from.

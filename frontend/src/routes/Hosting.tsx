@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react"
-import { useParams } from "react-router-dom"
+import { useOutletContext, useParams } from "react-router-dom"
 import { Button } from "@/components/ui"
+import { PANEL_LABEL } from "@/lib/assetMenu"
+import type { Server } from "@/types"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Globe,
@@ -101,6 +103,8 @@ function FieldModal({
 
 export default function Hosting() {
   const { id: serverId } = useParams<{ id: string }>()
+  // Provided by the asset shell, the same way every other section reads it.
+  const { server: ctxServer } = useOutletContext<{ server: Server }>()
   const qc = useQueryClient()
   const [tab, setTab] = useState<Tab>("websites")
   const [modal, setModal] = useState<"website" | "database" | "email" | null>(null)
@@ -161,16 +165,25 @@ export default function Hosting() {
 
   const activeQ = tab === "websites" ? websitesQ : tab === "databases" ? databasesQ : emailQ
 
+  // The same map the menu reads, so the row and the page can never disagree about what
+  // the panel is called.
+  const panelName = PANEL_LABEL[(ctxServer?.panel_type ?? "").toLowerCase()] ?? "Control panel"
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
+          {/* Named after the panel, like its menu row — this IS the websites list for
+              this server now, and "Hosting" made the customer work out which of two
+              similar-sounding words they had landed on. */}
           <h1 className="text-h1 text-foreground flex items-center gap-2">
             <ServerIcon className="h-6 w-6 text-primary" />
-            Hosting
+            {panelName}
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage websites, databases, and email through your control panel.</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            The websites, databases and email on this server, managed through {panelName}.
+          </p>
         </div>
         <Button
           onClick={() => setModal(tab === "websites" ? "website" : tab === "databases" ? "database" : "email")}

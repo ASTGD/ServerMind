@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   actionsFor, capabilitiesOf, installerOptionsFor, menuFor, MENU,
+  type ServerRoleName,
 } from "./assetMenu"
 import type { Server } from "@/types"
 
@@ -24,7 +25,8 @@ const paths = (s: Server) => menuFor(s).map((i) => i.path)
 
 describe("what an asset can do", () => {
   it("gives a plain Linux server the full set", () => {
-    const items = labels(asset())
+    // Once it has said ServerAlly runs it — Sites is that answer made visible.
+    const items = menuFor(asset(), { role: "serverally" }).map((i) => i.label)
     for (const expected of ["Sites", "Files", "Security", "Firewall & keys", "Backups", "Logs", "Settings"]) {
       expect(items).toContain(expected)
     }
@@ -37,15 +39,19 @@ describe("what an asset can do", () => {
     expect(paths(asset({ panel_type: "cyberpanel" }))).toContain("hosting")
   })
 
-  it("keeps Sites and Control panel as separate ideas", () => {
-    // They sound alike and are not. Sites is what the machine actually serves, read from
-    // its own web server config; Control panel is the panel's own records and operations.
-    // A CyberPanel box legitimately has both, and naming the second one "Websites" made
-    // two items compete for one meaning.
+  it("gives a panel server ONE list of websites, the panel's own", () => {
+    // This reverses an earlier decision, deliberately. The two were kept apart on the
+    // grounds that Sites is what the machine serves and Control panel is the panel's own
+    // records — true, but two menu rows that both list websites is a distinction the
+    // owner has to hold in their head on every visit. The panel's page is where its sites
+    // are created, deleted and given certificates, so it wins on its own server.
+    //
+    // What that costs, and it is real: our Sites view carries uptime and certificate
+    // expiry, which the panel's list does not. Both live on the fleet-wide Sites page,
+    // which is also how the per-site pages stay reachable.
     const items = paths(asset({ panel_type: "cyberpanel" }))
-    expect(items).toContain("sites")
+    expect(items).not.toContain("sites")
     expect(items).toContain("hosting")
-    expect(items).not.toContain("Websites")
   })
 
   it("treats a panel reached over SSH as a panel", () => {
@@ -133,45 +139,71 @@ describe("the registry itself", () => {
     // promising it a choice would be a row that leads to a page it does not have.
     const label = (a: Server) => menuFor(a).find((i) => i.path === "")?.label
     expect(label(asset())).toBe("Start here")
-    for (const c of ["winrm", "rdp", "hosting"] as const) {
+    for (const c of ["winrm", "rdp"] as const) {
       expect(label(asset({ connection_type: c }))).toBe("Overview")
     }
+    // A hosting account IS its panel — there is no machine of ours to overview, so its
+    // home is the panel's own page rather than a row that would summarise nothing.
+    const hosting = asset({ connection_type: "hosting", panel_type: "cpanel" })
+    expect(label(hosting)).toBeUndefined()
+    expect(paths(hosting)).toContain("hosting")
   })
 
-  it("shows Overview on a Linux server only until the question is answered", () => {
-    // Overview is the one-time fork: which panel runs this box, ours or a real one. While
-    // it is unanswered the row has to be there, because landing straight on Sites answers
-    // it silently on the customer's behalf and the answer is close to irreversible. Once
-    // it IS answered the page has nothing left to say, so the row goes.
-    // By path, not label: the row is named for what it is on that asset, so the label
-    // varies while the row is the same one.
+  it("shows only the door the answer opened", () => {
+    // The whole rule in one test. Unanswered: the question and nothing about websites,
+    // because Sites would be a way to walk straight past a near-irreversible decision.
+    // Answered our way: Sites, question retired. Answered with a panel: the panel's own
+    // section, which IS its site list — two rows both listing websites is the confusion
+    // this removes.
+    const paths = (a: Server, role?: ServerRoleName) =>
+      menuFor(a, { role }).map((i) => i.path)
+
+    expect(paths(asset(), "undecided")).toContain("")
+    expect(paths(asset(), "undecided")).not.toContain("sites")
+
+    expect(paths(asset(), "serverally")).toContain("sites")
+    expect(paths(asset(), "serverally")).not.toContain("")
+
+    const panel = asset({ panel_type: "cyberpanel" })
+    expect(paths(panel, "panel")).toContain("hosting")
+    expect(paths(panel, "panel")).not.toContain("sites")
+    expect(paths(panel, "panel")).not.toContain("")
+  })
+
+  it("keeps the question up while the answer is still loading", () => {
+    // The menu draws before the role query resolves. Hiding the fork by default would
+    // flash it away on the one server that has to see it.
     expect(menuFor(asset()).map((i) => i.path)).toContain("")
-    expect(menuFor(asset(), { decided: true }).map((i) => i.path)).not.toContain("")
+    expect(menuFor(asset(), { role: undefined }).map((i) => i.path)).toContain("")
   })
 
   it("keeps Overview forever on an asset that never faces the question", () => {
-    // Windows, Remote Desktop and hosting accounts have no Sites, so Overview is the only
-    // page they have — "decided" must not take it away from them.
-    for (const c of ["winrm", "rdp", "hosting"] as const) {
-      expect(menuFor(asset({ connection_type: c }), { decided: true }).map((i) => i.label))
-        .toContain("Overview")
+    // Windows and Remote Desktop cannot host anything, so Overview is the only page they
+    // have — no answer to the question may take it away from them.
+    for (const c of ["winrm", "rdp"] as const) {
+      for (const role of ["undecided", "serverally", "panel"] as const) {
+        expect(menuFor(asset({ connection_type: c }), { role }).map((i) => i.label))
+          .toContain("Overview")
+      }
     }
   })
 
   it("never leaves an asset with nowhere to land", () => {
-    // The whole point of the fallback: every asset must have a home page.
-    for (const c of ["ssh", "winrm", "rdp", "hosting"] as const) {
-      const items = labels(asset({ connection_type: c }))
-      expect(items.includes("Sites") || items.includes("Overview")).toBe(true)
-    }
-  })
-
-  it("keeps Overview on every asset, including the ones that have Sites", () => {
-    // Overview is the home of everything now, because it is the only page that says
-    // whether ServerAlly or a real panel runs this server. Dropping it on a server with
-    // Sites is what quietly answered that question for the customer.
-    for (const c of ["ssh", "winrm", "rdp", "hosting"] as const) {
-      expect(menuFor(asset({ connection_type: c })).map((i) => i.path)).toContain("")
+    // Every asset must have a home, and there are exactly three: the question while it is
+    // open, Sites once ServerAlly runs the machine, the panel's own page when a panel
+    // does. A combination that lands on none of them is an asset you cannot open.
+    const homes = ["", "sites", "hosting"]
+    const cases: [Server, ServerRoleName][] = [
+      [asset(), "undecided"],
+      [asset(), "serverally"],
+      [asset({ panel_type: "cyberpanel" }), "panel"],
+      [asset({ connection_type: "hosting", panel_type: "cpanel" }), undefined],
+      [asset({ connection_type: "winrm" }), undefined],
+      [asset({ connection_type: "rdp" }), undefined],
+    ]
+    for (const [a, role] of cases) {
+      const items = menuFor(a, { role }).map((i) => i.path)
+      expect(items.some((p) => homes.includes(p))).toBe(true)
     }
   })
 

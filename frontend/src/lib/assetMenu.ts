@@ -118,14 +118,23 @@ export const MENU: MenuItem[] = [
 /**
  * The sections this particular asset can actually use.
  *
- * Overview is a **one-time** page on a Linux server. While the machine is clean it asks the
- * question that decides everything else — is ServerAlly the control panel here, or are we
- * installing a real one and watching it? Once that is answered it has nothing left to say,
- * so it leaves the menu and the server's home becomes Sites. Every other thing that used to
- * be on it (specs, installed software, metrics, services) has its own section.
+ * A Linux server's menu follows its answer to one question, and shows only the one door
+ * that answer opened:
  *
- * An asset that cannot host — Windows, Remote Desktop, a hosting account — never faces the
- * question and has no Sites, so Overview stays as its only page.
+ * - **not answered yet** — "Start here" and nothing about websites. Sites would be a way
+ *   to walk straight past the decision, and on a machine with no web server it is a dead
+ *   end anyway;
+ * - **ServerAlly runs it** — Sites, and Start here retires;
+ * - **a panel runs it** — the panel's own section, named after the panel, and NOT Sites.
+ *   Two menu rows that both list websites is the confusion this removes; the panel's page
+ *   is where its websites are created, deleted and given certificates.
+ *
+ * The cost of that last rule, stated because it is real: our Sites view carries uptime and
+ * certificate expiry, which the panel's own list does not. Both still exist on the
+ * fleet-wide Sites page, which is also where the per-site pages are reached from.
+ *
+ * An asset that cannot host — Windows, Remote Desktop — never faces the question, so
+ * Overview stays as its only page.
  */
 /**
  * A panel section is named after the panel, because that is the word the customer knows.
@@ -134,7 +143,7 @@ export const MENU: MenuItem[] = [
  * generic label makes them stop and work out which of the two site-ish sections they want.
  * Same reasoning that made Sites stop being called Websites.
  */
-const PANEL_LABEL: Record<string, string> = {
+export const PANEL_LABEL: Record<string, string> = {
   cyberpanel: "CyberPanel",
   cpanel: "cPanel",
   whm: "WHM",
@@ -145,7 +154,10 @@ const PANEL_LABEL: Record<string, string> = {
   cloudpanel: "CloudPanel",
 }
 
-export function menuFor(server: Server, opts: { decided?: boolean } = {}): MenuItem[] {
+/** Which answer this server has given, if any. See `server_role` on the backend. */
+export type ServerRoleName = "undecided" | "serverally" | "panel" | null | undefined
+
+export function menuFor(server: Server, opts: { role?: ServerRoleName } = {}): MenuItem[] {
   const caps = capabilitiesOf(server)
   const items = MENU.filter(
     (item) => (!item.needs || caps.has(item.needs))
@@ -161,15 +173,29 @@ export function menuFor(server: Server, opts: { decided?: boolean } = {}): MenuI
   // Defaults to NOT decided, so the question stays on screen until we know otherwise —
   // a menu that hides the fork while the answer is still loading would flash it away on
   // the one server that needs it.
-  const hasSites = named.some((i) => i.path === "sites")
-  if (hasSites && opts.decided) return named.filter((i) => i.path !== "")
-  // An asset with no Sites never faces the question, so its home page is a genuine
-  // overview — calling it "Start here" would promise a choice it will never be offered.
-  return hasSites
-    ? named
-    : named.map((i) => (i.path === ""
+  // Defaults to undecided, so the question stays on screen until we know otherwise — a
+  // menu that hides the fork while the answer is still loading would flash it away on the
+  // one server that needs it.
+  const undecided = opts.role === "undecided" || opts.role == null
+
+  // A panel owns this machine's websites. Its own section IS the site list, so ours would
+  // be a second row meaning the same thing.
+  if (caps.has("panel")) return named.filter((i) => i.path !== "" && i.path !== "sites")
+
+  // Nothing here can host at all — Windows, Remote Desktop. There is no question to ask,
+  // so the home page is a genuine overview and says so.
+  if (!caps.has("sftp")) {
+    return named.map((i) => (i.path === ""
       ? { ...i, label: HOME_LABEL_OVERVIEW, icon: LayoutDashboard }
       : i))
+  }
+
+  // Sites is the ServerAlly answer made visible, so it appears only once that answer is
+  // given — otherwise it is a way to walk past the decision, and on a machine with no web
+  // server it leads somewhere that cannot work.
+  return undecided
+    ? named.filter((i) => i.path !== "sites")
+    : named.filter((i) => i.path !== "")
 }
 
 /** Which quick actions belong in the asset header. */
