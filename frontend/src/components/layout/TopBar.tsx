@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { History, Menu, Activity } from "lucide-react"
@@ -16,22 +15,16 @@ export default function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
   // toggles the floating activity drawer. Only shown to users who've connected an AI client.
   const mcpOpen = useMcpDrawerStore((s) => s.open)
   const toggleMcp = useMcpDrawerStore((s) => s.toggle)
-  const setMcpOpen = useMcpDrawerStore((s) => s.setOpen)
-  const mcpSuppressed = useMcpDrawerStore((s) => s.suppressed)
-  const setMcpSuppressed = useMcpDrawerStore((s) => s.setSuppressed)
   const { data: conns } = useQuery({ queryKey: ["mcp-connections"], queryFn: listMcpConnections })
   const hasMcp = (conns?.length ?? 0) > 0
   const { data: activity = [] } = useMcpActivity(mcpOpen, hasMcp)
   const runningCount = activity.filter((a) => a.status === "running").length
 
-  // Auto-slide the drawer down when a NEW run-burst starts (0 → running), unless the user
-  // just collapsed it; reset that suppression once the fleet goes idle again.
-  const prevRunning = useRef(0)
-  useEffect(() => {
-    if (runningCount > 0 && prevRunning.current === 0 && !mcpSuppressed) setMcpOpen(true)
-    if (runningCount === 0 && mcpSuppressed) setMcpSuppressed(false)
-    prevRunning.current = runningCount
-  }, [runningCount, mcpSuppressed, setMcpOpen, setMcpSuppressed])
+  // The drawer is opened by hand, never by itself. It used to slide down whenever a new
+  // burst of activity started, which meant it reappeared over the page every few minutes
+  // and covered the right-hand side of whatever was being read. The badge below already
+  // says something is running — that is the notification; this is the detail, and asking
+  // for the detail is the reader's decision.
 
   return (
     <header className="relative z-20 flex h-14 items-center justify-between gap-4 border-b border-border bg-card px-4 shadow-[0_4px_14px_-3px_rgba(15,23,42,0.12)] sm:px-6">
