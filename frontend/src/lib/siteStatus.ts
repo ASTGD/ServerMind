@@ -63,3 +63,44 @@ export function siteLooksBroken(site: Site): boolean {
   if (state === "installing" || state === "unpointed") return false
   return state === "failed" || site.uptime?.status === "down"
 }
+
+/**
+ * Where this site stands, in the fewest words that are exactly true.
+ *
+ * A list needs a status in its own right, not a sentence about a problem: a healthy site
+ * was saying nothing at all, so a row with no red on it could equally have meant "fine",
+ * "never checked" or "we have no idea".
+ */
+export function siteStatusLabel(site: Site): string {
+  switch (siteState(site)) {
+    case "installing": return "Setting up"
+    case "failed": return "Setup failed"
+    case "absent": return "No longer found"
+    case "unpointed": return "Not pointed here yet"
+    default: break
+  }
+  if (!site.uptime) return "Not checked"
+  if (site.uptime.status === "up") return "Up"
+  if (site.uptime.status === "down") return "Down"
+  return "Not checked"
+}
+
+export type SiteTone = "good" | "bad" | "calm"
+
+/** The colour that status earns. Only a real fault is allowed to be red. */
+export function siteTone(site: Site): SiteTone {
+  if (siteLooksBroken(site)) return "bad"
+  return site.uptime?.status === "up" ? "good" : "calm"
+}
+
+/**
+ * The extra sentence, or nothing when the status already says it.
+ *
+ * "Not pointed here yet" followed by "this domain is not pointed anywhere yet" is the same
+ * fact twice, and in a list that is what makes rows tall and hard to scan.
+ */
+export function siteDetail(site: Site): string | null {
+  const state = siteState(site)
+  if (state === "unpointed" || state === "absent" || state === "installing") return null
+  return siteProblem(site)
+}

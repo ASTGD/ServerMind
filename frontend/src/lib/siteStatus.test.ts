@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import type { Site } from "@/api/sites"
-import { siteLooksBroken, siteProblem, siteState } from "./siteStatus"
+import {
+  siteDetail, siteLooksBroken, siteProblem, siteState, siteStatusLabel, siteTone,
+} from "./siteStatus"
 
 function site(over: Partial<Site> = {}): Site {
   return {
@@ -143,5 +145,43 @@ describe("a domain that was never pointed here", () => {
                      uptime: neverPointed })
     expect(siteState(s)).toBe("failed")
     expect(siteProblem(s)).toBe("no web server is running")
+  })
+})
+
+describe("the status a list can show", () => {
+  it("says something exact for every state", () => {
+    expect(siteStatusLabel(site({ uptime: { ...dnsDown, status: "up", error: null } }))).toBe("Up")
+    expect(siteStatusLabel(site({ uptime: dnsDown }))).toBe("Down")
+    expect(siteStatusLabel(site({ uptime: neverPointed }))).toBe("Not pointed here yet")
+    expect(siteStatusLabel(site({ status: "failed" }))).toBe("Setup failed")
+    expect(siteStatusLabel(site({ status: "installing" }))).toBe("Setting up")
+    expect(siteStatusLabel(site({ is_present: false }))).toBe("No longer found")
+  })
+
+  it("does not call an unchecked site healthy", () => {
+    // A row with no red on it could otherwise mean "fine", "never checked" or "no idea".
+    expect(siteStatusLabel(site({ uptime: null }))).toBe("Not checked")
+  })
+
+  it("colours only a real fault red", () => {
+    expect(siteTone(site({ uptime: { ...dnsDown, status: "up", error: null } }))).toBe("good")
+    expect(siteTone(site({ uptime: dnsDown }))).toBe("bad")
+    expect(siteTone(site({ status: "failed" }))).toBe("bad")
+    expect(siteTone(site({ uptime: neverPointed }))).toBe("calm")
+    expect(siteTone(site({ status: "installing" }))).toBe("calm")
+    expect(siteTone(site({ uptime: null }))).toBe("calm")
+  })
+
+  it("does not repeat the status as a sentence underneath it", () => {
+    // "Not pointed here yet" over "this domain is not pointed anywhere yet" is the same
+    // fact twice, and that is what makes a list tall and hard to scan.
+    expect(siteDetail(site({ uptime: neverPointed }))).toBeNull()
+    expect(siteDetail(site({ is_present: false }))).toBeNull()
+  })
+
+  it("keeps the sentence when it says more than the status does", () => {
+    expect(siteDetail(site({ uptime: dnsDown }))).toBe(dnsDown.error)
+    expect(siteDetail(site({ status: "failed", install_error: "no web server" })))
+      .toBe("no web server")
   })
 })

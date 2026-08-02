@@ -2,8 +2,7 @@ import { useState } from "react"
 import { Link, useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  CircleAlert, CircleCheck, CircleDashed, EyeOff, Globe, Loader2, Plus,
-  RefreshCw, ShieldAlert, ShieldCheck,
+  Globe, Loader2, Plus, RefreshCw, ShieldAlert, ShieldCheck,
 } from "lucide-react"
 import { listServerSites, scanServerSites, APP_LABEL, type Site } from "@/api/sites"
 import { listRecipes } from "@/api/recipes"
@@ -11,7 +10,7 @@ import RunRecipeModal from "@/components/recipes/RunRecipeModal"
 import AddSiteForm from "@/components/sites/AddSiteForm"
 import { Button } from "@/components/ui"
 import { installerOptionsFor } from "@/lib/assetMenu"
-import { siteLooksBroken, siteProblem, siteState } from "@/lib/siteStatus"
+import { siteDetail, siteState, siteStatusLabel, siteTone } from "@/lib/siteStatus"
 import { cn } from "@/lib/utils"
 import type { Server } from "@/types"
 
@@ -188,26 +187,16 @@ export default function ServerSites() {
 }
 
 /** Up/down comes from the uptime monitor, which checks from outside — where a visitor is. */
-function StatusDot({ site }: { site: Site }) {
-  const status = site.uptime?.status
-  // A domain nobody has pointed here yet is not a fault, so it does not get the fault
-  // colour. Leaving it red next to a calm row would just make the row look wrong.
-  if (siteState(site) === "unpointed")
-    return (
-      <span title="This domain is not pointed at this server yet">
-        <CircleDashed size={14} className="shrink-0 text-muted-foreground" />
-      </span>
-    )
-  if (!site.uptime) {
-    return (
-      <span title="No uptime monitor for this site yet">
-        <CircleDashed size={14} className="shrink-0 text-muted-foreground/60" />
-      </span>
-    )
-  }
-  if (status === "up") return <CircleCheck size={14} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
-  if (status === "down") return <CircleAlert size={14} className="shrink-0 text-red-600 dark:text-red-400" />
-  return <CircleDashed size={14} className="shrink-0 text-muted-foreground" />
+function ToneDot({ site }: { site: Site }) {
+  const tone = siteTone(site)
+  return (
+    <span title={siteStatusLabel(site)} className={cn(
+      "size-2 shrink-0 rounded-full",
+      tone === "bad" ? "bg-red-500"
+        : tone === "good" ? "bg-emerald-500"
+          : "bg-muted-foreground/40",
+    )} />
+  )
 }
 
 /** The certificate a visitor actually receives, not the one named in the config. */
@@ -248,57 +237,60 @@ function CertChip({ site }: { site: Site }) {
 
 function SiteRow({ site, serverId }: { site: Site; serverId: string }) {
   const state = siteState(site)
-  const problem = siteProblem(site)
+  const detail = siteDetail(site)
+  const tone = siteTone(site)
+  const to = `/servers/${serverId}/sites/${site.id}`
+
   return (
-    <Link
-      to={`/servers/${serverId}/sites/${site.id}`}
-      className={cn(
-      "flex flex-wrap items-center gap-3 border-t border-border px-3 py-2.5 first:border-t-0",
-      "transition-colors hover:bg-accent",
-      siteLooksBroken(site) && "bg-red-500/[0.03]",
+    <div className={cn(
+      "group flex items-center gap-4 border-t border-border px-4 py-3 first:border-t-0",
+      "transition-colors hover:bg-accent/50",
       state === "absent" && "opacity-60",
     )}>
-      <StatusDot site={site} />
+      <ToneDot site={site} />
+
+      {/* What it is. The domain leads, because that is what somebody is looking for. */}
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-[14px] font-medium text-foreground">
+          <Link to={to}
+            className="truncate text-[14px] font-medium text-foreground hover:underline">
             {site.domain}
-          </span>
+          </Link>
           <CertChip site={site} />
-          {/* A site being built must SAY so. The status existed in the API and nowhere on
-              screen, so a half-installed site looked exactly like a finished one — which
-              defeats the point of recording the state at all. */}
-          {state === "installing" && (
-            <span className="flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-              <Loader2 size={9} className="animate-spin" /> Setting up…
-            </span>
-          )}
-          {state === "failed" && (
-            <span className="flex items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-              <CircleAlert size={9} /> Setup failed
-            </span>
-          )}
-          {state === "unpointed" && (
-            <span className="flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              <Globe size={9} /> Not pointed here yet
-            </span>
-          )}
-          {state === "absent" && (
-            <span className="flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              <EyeOff size={9} /> No longer found
-            </span>
-          )}
         </p>
-        <p className="truncate text-[11.5px] text-muted-foreground">
-          {state === "failed"
-            ? problem
-            : <>{APP_LABEL[site.app_type] ?? site.app_type}
+        <p className="truncate text-caption text-muted-foreground">
+          {APP_LABEL[site.app_type] ?? site.app_type}
           {site.app_version ? ` ${site.app_version}` : ""}
           {site.doc_root ? ` · ${site.doc_root}` : ""}
-          {problem ? ` · ${problem}` : ""}</>}
         </p>
       </div>
-    </Link>
+
+      {/* Where it stands. Its own column, so a healthy row says "Up" rather than saying
+          nothing — silence read equally as fine, never checked, and no idea. */}
+      <div className="hidden w-[200px] shrink-0 text-right sm:block">
+        <p className={cn("text-small font-medium",
+          tone === "bad" ? "text-red-600 dark:text-red-400"
+            : tone === "good" ? "text-emerald-600 dark:text-emerald-400"
+              : "text-muted-foreground")}>
+          {siteStatusLabel(site)}
+        </p>
+        {detail && (
+          <p className="truncate text-caption text-muted-foreground" title={detail}>
+            {detail}
+          </p>
+        )}
+      </div>
+
+      {/* Somewhere to go. The whole row used to be a link with nothing saying so. */}
+      <Link to={to}
+        className={cn(
+          "shrink-0 rounded-lg border border-border px-2.5 py-1 text-caption font-medium",
+          "text-muted-foreground transition-colors",
+          "hover:border-primary/40 hover:bg-primary/5 hover:text-foreground",
+        )}>
+        View
+      </Link>
+    </div>
   )
 }
 
