@@ -267,6 +267,23 @@ export interface SiteCronList {
   suggested: SiteCronSuggestion | null
 }
 
+/** What a database we just made looks like. The password is here ONCE and nowhere else. */
+export interface NewSiteDatabase {
+  engine: string
+  name: string
+  user: string
+  password: string
+  host: string
+}
+
+export async function createSiteDatabase(
+  siteId: string,
+  body: { engine?: string; name?: string; user?: string; password?: string } = {},
+): Promise<NewSiteDatabase> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/database`, body)
+  return data
+}
+
 export async function getSiteCron(siteId: string): Promise<SiteCronList> {
   const { data } = await apiClient.get(`/api/sites/${siteId}/cron`)
   return data

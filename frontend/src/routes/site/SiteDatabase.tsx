@@ -1,8 +1,13 @@
+import { useState } from "react"
 import { useOutletContext } from "react-router-dom"
-import { useQuery } from "@tanstack/react-query"
-import { AlertTriangle, CheckCircle2, Database, Loader2, XCircle } from "lucide-react"
-import { getSiteDatabase, type SiteDetail } from "@/api/sites"
-import { EmptyState } from "@/components/ui"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  AlertTriangle, CheckCircle2, Database, Loader2, Plus, XCircle,
+} from "lucide-react"
+import {
+  createSiteDatabase, getSiteDatabase, type NewSiteDatabase, type SiteDetail,
+} from "@/api/sites"
+import { Button, EmptyState } from "@/components/ui"
 
 /**
  * Which database this site uses, and whether it can reach it.
@@ -12,15 +17,31 @@ import { EmptyState } from "@/components/ui"
  * that is not running — and without this there is no way to tell that apart from an
  * application bug except by opening a terminal.
  *
- * Read-only by design. Dropping a site's own database from its own page is a footgun with
- * no undo anywhere in this system; the server's database screen does it, behind a typed
- * name, where the person doing it has the whole machine in view.
+ * A site with none can be given one here. Deleting is deliberately not offered: dropping a
+ * site's own database from its own page is a footgun with no undo anywhere in this system,
+ * and the server's database screen does it behind a typed name, where the person doing it
+ * has the whole machine in view.
  */
 export default function SiteDatabase() {
   const { site } = useOutletContext<{ site: SiteDetail }>()
+  const qc = useQueryClient()
+  const [made, setMade] = useState<NewSiteDatabase | null>(null)
+  const [error, setError] = useState("")
+
   const { data, isLoading } = useQuery({
     queryKey: ["site-database", site.id],
     queryFn: () => getSiteDatabase(site.id),
+  })
+
+  const create = useMutation({
+    mutationFn: () => createSiteDatabase(site.id),
+    onSuccess: (r) => {
+      setMade(r); setError("")
+      qc.invalidateQueries({ queryKey: ["site-database", site.id] })
+    },
+    onError: (e) => setError(
+      (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      || "That database could not be created."),
   })
 
   if (isLoading) {
@@ -31,13 +52,36 @@ export default function SiteDatabase() {
     )
   }
 
+  if (made) return <Credentials made={made} />
+
   if (!data?.ok) {
     return (
-      <EmptyState
-        icon={Database}
-        title="No database for this site"
-        description={data?.reason ?? "We could not read this site's database settings."}
-      />
+      <div className="space-y-3">
+        {error && (
+          <p className="rounded-lg border-l-2 border-destructive bg-destructive/5 px-3 py-2 text-small text-foreground">
+            {error}
+          </p>
+        )}
+        <EmptyState
+          icon={Database}
+          title="No database for this site"
+          description={data?.reason ?? "We could not read this site's database settings."}
+        />
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-sm font-medium text-foreground">Make one for this site</p>
+          <p className="mt-1 text-small text-muted-foreground">
+            A database of its own, with its own account and password, named after this
+            site. Nothing else on the server can sign in to it.
+          </p>
+          <Button size="sm" className="mt-2.5" disabled={create.isPending}
+            onClick={() => create.mutate()}>
+            {create.isPending
+              ? <Loader2 size={13} className="animate-spin" />
+              : <Plus size={13} />}
+            Create a database
+          </Button>
+        </div>
+      </div>
     )
   }
 
@@ -104,6 +148,48 @@ export default function SiteDatabase() {
         The password stays on the server. It is read there to make the connection attempt
         and is never sent here, stored, or written to any log.
       </p>
+    </div>
+  )
+}
+
+/**
+ * The one time these details are ever shown.
+ *
+ * We keep no copy — not in our database, not in the log, not in the audit entry, which
+ * records that a database was made rather than how to get into it. So this says so
+ * plainly, instead of offering a "show it again" that would have to be a lie.
+ */
+function Credentials({ made }: { made: NewSiteDatabase }) {
+  const block = [
+    `DB_DATABASE=${made.name}`,
+    `DB_USERNAME=${made.user}`,
+    `DB_PASSWORD=${made.password}`,
+    `DB_HOST=${made.host}`,
+  ].join("\n")
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start gap-3 rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-4">
+        <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+        <div>
+          <p className="text-sm font-medium text-foreground">
+            The database “{made.name}” is ready
+          </p>
+          <p className="mt-0.5 text-small text-muted-foreground">
+            Put these into your application's settings. This is the only time the password
+            is shown — we keep no copy of it anywhere, so there is nothing to show again.
+          </p>
+        </div>
+      </div>
+
+      <pre className="overflow-x-auto rounded-xl border border-border bg-muted/40 p-4 font-mono text-small text-foreground">
+        {block}
+      </pre>
+
+      <Button size="sm" variant="outline"
+        onClick={() => navigator.clipboard?.writeText(block)}>
+        Copy these details
+      </Button>
     </div>
   )
 }

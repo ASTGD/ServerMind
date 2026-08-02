@@ -992,6 +992,72 @@ async def site_cron(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     }
 
 
+class SiteDatabaseIn(BaseModel):
+    """A database for this site. Every field optional — the point is not having to decide."""
+    engine: str = Field(default="mysql", max_length=20)
+    name: str | None = Field(default=None, max_length=63)
+    user: str | None = Field(default=None, max_length=63)
+    #: Supplied only if the customer wants their own. Otherwise generated and shown once.
+    password: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/sites/{site_id}/database", status_code=201)
+async def create_site_database(site_id: str, body: SiteDatabaseIn, db: DBDep,
+                               current_user: CurrentUser) -> dict:
+    """Create a database and its own account for a site that has none.
+
+    Only for a site that has none. A site already using one is left alone on purpose: two
+    databases and no way to say which the application should use is a worse position than
+    the one it started in, and the server's own Databases screen is there for the case
+    where somebody genuinely means it.
+
+    The password is returned ONCE and stored nowhere. We hold no copy, which is also why
+    there is no "show it again" — saying so is more honest than pretending to have lost it.
+    """
+    from app.services import database_service, site_database_naming, site_database_service
+
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+    server = await resolve_server(str(site.server_id), current_user, db, need_execute=True)
+    if server.connection_type != "ssh":
+        raise HTTPException(
+            status_code=400,
+            detail="Databases need a Linux server we reach over SSH.")
+
+    existing = await site_database_service.read(
+        server, site.app_type, site.doc_root or "")
+    if existing.get("ok") and existing.get("name"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"This site already uses the database “{existing['name']}”. Adding a "
+                   f"second one here would leave no way to say which it should use — the "
+                   f"server's Databases screen can add one if you mean to.")
+
+    name = body.name or site_database_naming.suggest_name(site.domain)
+    user = body.user or site_database_naming.suggest_user(name)
+    password = body.password or site_database_naming.generate_password()
+
+    try:
+        result = await database_service.create_database(
+            server, engine=body.engine, db_name=name, user=user, password=password)
+    except database_service.DatabaseError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    await audit_service.audit(db, current_user, "database.created",
+                              target_type="server", target_id=str(server.id),
+                              meta={"database": name, "site": site.domain})
+    return {
+        **result,
+        # Shown once. Never written to our database, never logged, and not in the audit
+        # entry above — which records that a database was made, not how to get into it.
+        "password": password,
+        "host": "127.0.0.1",
+    }
+
+
 class SiteCronIn(BaseModel):
     """A job to schedule for this site.
 
