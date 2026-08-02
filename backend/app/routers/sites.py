@@ -689,10 +689,17 @@ async def remove_site(site_id: str, body: RemoveIn, db: DBDep,
     db.add(run)
     # The row goes when the server confirms it is gone, not before: a site removed from the
     # list while it is still being served is a site nobody knows about any more.
-    site.status = "installing"
+    #
+    # Its own status, and pointed at THIS run. It used to reuse "installing" and leave
+    # install_run_id on the original install, so the reconciler judged the removal by a run
+    # that had nothing to do with it and put the site straight back to "Setup failed" — the
+    # site was gone from the server and still on the screen.
+    site.status = "removing"
     site.install_error = None
     await db.commit()
     await db.refresh(run)
+    site.install_run_id = run.id
+    await db.commit()
 
     run_playbook_task.delay(str(run.id), str(server.id), script)
     await audit_service.audit(db, current_user, "site.removed",

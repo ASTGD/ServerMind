@@ -866,12 +866,19 @@ async def install(db, server, user, site, *, site_type: str, variables: dict | N
 
 
 async def reconcile_installs(db, user_id) -> int:
-    """Move sites out of ``installing`` once their run has actually finished, and leave
-    each site's uptime check matching whether the site is really there.
+    """Conclude the runs that decide what a site currently is, and leave each site's uptime
+    check matching whether the site is really there.
 
-    Only FAILURE is concluded here. A run that exited 0 does NOT make a site live — that
-    happens when a scan sees it on the server, because an installer reporting success while
-    the site does not serve is exactly the failure mode this product exists to catch.
+    An INSTALL only concludes on failure. A run that exited 0 does NOT make a site live —
+    that happens when a scan sees it on the server, because an installer reporting success
+    while the site does not serve is exactly the failure mode this product exists to catch.
+
+    A REMOVAL is the opposite: its success is what we were waiting for, and the row goes
+    then. Nothing did that, so pressing Remove ran the removal, removed the site from the
+    server, and left the row on screen for ever — the customer's whole view of it was that
+    nothing had happened. The scan cannot finish the job either: it deliberately never
+    buries a row that is not ``live``, which is the rule that stops a site being marked
+    missing halfway through its own install.
 
     The uptime step rides along rather than sitting in its own function called from three
     places: the last two bugs in this area were both a correct routine that some call site
@@ -879,18 +886,38 @@ async def reconcile_installs(db, user_id) -> int:
     """
     from sqlalchemy import select
 
-    from app.models.playbook import PlaybookRun
+    from app.models.playbook import Playbook, PlaybookRun
     from app.models.site import Site
 
     rows = (await db.execute(
-        select(Site, PlaybookRun)
+        select(Site, PlaybookRun, Playbook.slug)
         .join(PlaybookRun, Site.install_run_id == PlaybookRun.id)
-        .where(Site.user_id == user_id, Site.status == "installing")
+        .outerjoin(Playbook, PlaybookRun.playbook_id == Playbook.id)
+        .where(Site.user_id == user_id, Site.status.in_(("installing", "removing")))
     )).all()
 
     changed = 0
-    for site, run in rows:
-        if (run.status or "").lower() in ("failed", "error"):
+    for site, run, slug in rows:
+        failed = (run.status or "").lower() in ("failed", "error")
+        if site.status == "removing":
+            # The run has to BE the removal. This row previously kept pointing at the
+            # original install, so a finished install was read as a finished removal — and
+            # a site that had just been asked to go was put back to "Setup failed".
+            # Concluding from the wrong run is worse than concluding late, so an
+            # unexpected one is left alone rather than acted on.
+            if slug != "site-remove":
+                continue
+            if failed:
+                # Still on the server, and the customer has to be told why rather than
+                # left with a row that quietly went back to looking normal.
+                site.status = "remove_failed"
+                site.install_error = (
+                    (run.failure_reason or "The removal did not finish.").strip()[:500])
+                changed += 1
+            elif (run.status or "").lower() == "success":
+                await db.delete(site)
+                changed += 1
+        elif failed:
             site.status = "failed"
             site.install_error = (
                 (run.failure_reason or "The installer did not finish.").strip()[:500])

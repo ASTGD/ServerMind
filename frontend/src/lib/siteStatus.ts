@@ -13,11 +13,15 @@ import type { Site } from "@/api/sites"
  * in the other.
  */
 
-export type SiteState = "installing" | "failed" | "absent" | "unpointed" | "normal"
+export type SiteState =
+  | "installing" | "removing" | "failed" | "remove_failed"
+  | "absent" | "unpointed" | "normal"
 
 export function siteState(site: Site): SiteState {
   if (site.status === "installing") return "installing"
+  if (site.status === "removing") return "removing"
   if (site.status === "failed") return "failed"
+  if (site.status === "remove_failed") return "remove_failed"
   // Only once the install has settled does "we cannot find it" mean anything. A site
   // being built is not missing; it has not finished.
   if (!site.is_present) return "absent"
@@ -43,7 +47,11 @@ export function siteProblem(site: Site): string | null {
   if (state === "failed") {
     return site.install_error || "The setup did not finish."
   }
-  if (state === "installing") return null
+  if (state === "remove_failed") {
+    // It is still on the server. Saying nothing would leave a row that looks ordinary.
+    return site.install_error || "The removal did not finish."
+  }
+  if (state === "installing" || state === "removing") return null
   // The chip already says we can no longer find it, and its check is paused once we know
   // that — so the last thing the monitor said is frozen in time and only adds noise.
   if (state === "absent") return null
@@ -60,8 +68,9 @@ export function siteLooksBroken(site: Site): boolean {
   const state = siteState(site)
   // Neither of these is a fault. One has not finished arriving; the other has not been
   // pointed here. Painting them red teaches people to ignore red.
-  if (state === "installing" || state === "unpointed") return false
-  return state === "failed" || site.uptime?.status === "down"
+  if (state === "installing" || state === "removing" || state === "unpointed") return false
+  return state === "failed" || state === "remove_failed"
+    || site.uptime?.status === "down"
 }
 
 /**
@@ -74,7 +83,9 @@ export function siteLooksBroken(site: Site): boolean {
 export function siteStatusLabel(site: Site): string {
   switch (siteState(site)) {
     case "installing": return "Setting up"
+    case "removing": return "Removing"
     case "failed": return "Setup failed"
+    case "remove_failed": return "Removal failed"
     case "absent": return "No longer found"
     case "unpointed": return "Not pointed here yet"
     default: break
@@ -101,6 +112,7 @@ export function siteTone(site: Site): SiteTone {
  */
 export function siteDetail(site: Site): string | null {
   const state = siteState(site)
-  if (state === "unpointed" || state === "absent" || state === "installing") return null
+  if (state === "unpointed" || state === "absent"
+      || state === "installing" || state === "removing") return null
   return siteProblem(site)
 }

@@ -161,13 +161,26 @@ def test_every_site_type_declares_a_known_app_type():
 
 
 def test_the_statuses_are_the_ones_the_code_actually_uses():
-    assert set(STATUSES) == {"installing", "live", "failed"}
+    assert set(STATUSES) == {"installing", "live", "failed", "removing", "remove_failed"}
+
+
+def test_every_status_the_service_can_write_is_declared():
+    """The guard that matters, rather than a copy of the tuple: a state the code can set
+    and the model does not know about is a state no reader can find."""
+    import inspect
+
+    from app.services import site_service
+    from app.routers import sites as sites_router
+
+    source = inspect.getsource(site_service) + inspect.getsource(sites_router)
+    for status in ("installing", "live", "failed", "removing", "remove_failed"):
+        assert f'status = "{status}"' in source or f'"{status}"' in source, status
 
 
 # ── The rule the whole phase rests on ────────────────────────────────────────
 
 class _PairDb:
-    """Returns (Site, PlaybookRun) pairs, as the reconcile query does.
+    """Returns the (Site, PlaybookRun, slug) rows the reconcile query does.
 
     It also answers ``.scalars()`` with nothing, because reconciling now settles uptime
     checks too and asks for rows a different way. A fake that models only the shape it was
@@ -215,7 +228,7 @@ async def test_a_successful_installer_does_NOT_make_a_site_live():
     Mutation testing found this unprotected: making success mark a site live broke nothing.
     """
     site = _row("new.example.com", status="installing")
-    db = _PairDb([(site, _Run("success"))])
+    db = _PairDb([(site, _Run("success"), "laravel-site")])
 
     changed = await ss.reconcile_installs(db, uuid.uuid4())
 
@@ -229,7 +242,7 @@ async def test_a_successful_installer_does_NOT_make_a_site_live():
 async def test_a_failed_installer_marks_the_site_failed_with_its_reason():
     """A failure has to land somewhere the customer will actually look."""
     site = _row("broken.example.com", status="installing")
-    db = _PairDb([(site, _Run("failed", "Could not reach the package server"))])
+    db = _PairDb([(site, _Run("failed", "Could not reach the package server"), "laravel-site")])
 
     changed = await ss.reconcile_installs(db, uuid.uuid4())
 
@@ -242,7 +255,7 @@ async def test_a_failed_installer_marks_the_site_failed_with_its_reason():
 @pytest.mark.asyncio
 async def test_a_still_running_installer_leaves_the_site_alone():
     site = _row("busy.example.com", status="installing")
-    db = _PairDb([(site, _Run("running"))])
+    db = _PairDb([(site, _Run("running"), "laravel-site")])
     assert await ss.reconcile_installs(db, uuid.uuid4()) == 0
     assert site.status == "installing"
 
@@ -251,7 +264,7 @@ async def test_a_still_running_installer_leaves_the_site_alone():
 async def test_a_failure_with_no_reason_still_says_something_useful():
     """"It failed" with a blank explanation is a dead end for the customer."""
     site = _row("quiet.example.com", status="installing")
-    db = _PairDb([(site, _Run("failed", None))])
+    db = _PairDb([(site, _Run("failed", None), "laravel-site")])
     await ss.reconcile_installs(db, uuid.uuid4())
     assert site.install_error and len(site.install_error) > 10
 

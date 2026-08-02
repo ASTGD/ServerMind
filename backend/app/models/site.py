@@ -37,7 +37,10 @@ APP_TYPES = ("wordpress", "laravel", "php", "static", "unknown")
 #: ``installing`` exists because until now a site could only be FOUND, never made. The row is
 #: written the moment the customer asks, so there is a record of what was requested, and a
 #: failure has somewhere to be explained instead of vanishing.
-STATUSES = ("installing", "live", "failed")
+#: ``removing`` and ``remove_failed`` are their own states rather than a reuse of the
+#: install pair. Reusing ``installing`` for a removal is what made a finished removal get
+#: judged by the original install's run — the site left the server and stayed on the screen.
+STATUSES = ("installing", "live", "failed", "removing", "remove_failed")
 
 
 class Site(Base):

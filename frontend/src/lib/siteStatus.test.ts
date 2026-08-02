@@ -185,3 +185,29 @@ describe("the status a list can show", () => {
       .toBe("no web server")
   })
 })
+
+describe("removing a site", () => {
+  it("says it is going, and does not paint it as a fault", () => {
+    const s = site({ status: "removing" })
+    expect(siteState(s)).toBe("removing")
+    expect(siteStatusLabel(s)).toBe("Removing")
+    expect(siteLooksBroken(s)).toBe(false)
+    expect(siteDetail(s)).toBeNull()
+  })
+
+  it("a removal that failed is a fault, and says why", () => {
+    // The site is still on the server. A row that quietly went back to looking ordinary
+    // would leave somebody believing it had gone.
+    const s = site({ status: "remove_failed",
+                     install_error: "the web server rejected its own configuration" })
+    expect(siteStatusLabel(s)).toBe("Removal failed")
+    expect(siteLooksBroken(s)).toBe(true)
+    expect(siteDetail(s)).toContain("web server rejected")
+  })
+
+  it("does not confuse a failed removal with a failed setup", () => {
+    expect(siteStatusLabel(site({ status: "remove_failed" }))).not.toBe("Setup failed")
+    expect(siteProblem(site({ status: "remove_failed" })))
+      .toBe("The removal did not finish.")
+  })
+})
