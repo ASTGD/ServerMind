@@ -1,10 +1,10 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useParams, Link, Outlet } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   AlertTriangle, KeyRound, Loader2, Monitor, Sparkles, Terminal as TerminalIcon,
 } from "lucide-react"
-import { getServer, trustKey } from "@/api/servers"
+import { getServer, getServerRole, trustKey } from "@/api/servers"
 import AssetSidebar from "@/components/server/AssetSidebar"
 import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
 import RdpDesktopModal from "@/components/server/RdpDesktopModal"
@@ -36,6 +36,21 @@ export default function ServerDetail() {
     queryFn: () => getServer(id!),
     enabled: !!id,
   })
+
+  // The Start-here look records a panel it finds on the machine (see the role endpoint).
+  // When it does, the server object in hand is a moment out of date — and it is the one
+  // the menu, the site form and the guards all read — so it is refetched rather than left
+  // disagreeing with the page beside it.
+  const { data: role } = useQuery({
+    queryKey: ["server-role", id],
+    queryFn: () => getServerRole(id!),
+    enabled: !!id && server?.connection_type === "ssh",
+  })
+  useEffect(() => {
+    if (role?.panel && server && !server.panel_type) {
+      qc.invalidateQueries({ queryKey: ["server", id] })
+    }
+  }, [role?.panel, server, id, qc])
 
   const trustMutation = useMutation({
     mutationFn: () => trustKey(id!),

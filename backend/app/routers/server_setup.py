@@ -96,7 +96,31 @@ async def role(server_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     # year, and telling them it is a clean machine — while it runs Docker, or nginx, or a
     # database — is the page being confidently wrong about the one thing it is for.
     if out["can_choose"]:
-        out.update(await _whats_on_it(server))
+        looked = await _whats_on_it(server)
+        out.update(looked)
+
+        # "What is on the machine beats what we believe about it" was already the rule, but
+        # it only ever read a stored column, which OS detection fills in when a server is
+        # added. That leaves one hole, and it is on the path this page created: somebody
+        # picks "Install a control panel", it installs, and nothing records it until they
+        # happen to press Detect system — so the app keeps offering the fork on a server
+        # that answered it.
+        #
+        # Recorded rather than merely returned, so there is ONE source of truth. Returning
+        # it alone would leave the menu and the site guards reading the empty column and
+        # the page reading the scan — two opinions about the same machine.
+        seen = (looked.get("found") or {}).get("panels") or []
+        if seen and not server.panel_type:
+            server.panel_type = seen[0].strip().lower()
+            server.category = "hosting"   # what OS detection does with the same finding
+            await db.commit()
+            await db.refresh(server)
+            out.update(server_role.decide(
+                connection_type=server.connection_type,
+                panel_type=server.panel_type,
+                setup_done=False, site_count=0,
+            ))
+            out["panels"] = []
     return out
 
 

@@ -142,3 +142,27 @@ def test_not_looking_is_not_the_same_as_finding_nothing():
     """"We could not check" and "there is nothing here" lead somewhere different, so the
     page must be able to tell them apart."""
     assert sr.is_fresh(None) is None
+
+
+def test_every_panel_the_scanner_can_find_has_a_name_we_can_show():
+    """The scan emits display names (``CyberPanel``) and ``servers.panel_type`` holds keys
+    (``cyberpanel``), so the role endpoint lowercases on the way in. If the two ever stop
+    lining up, a customer sees "A control panel manages this server" about a panel we can
+    name — which reads as us not knowing what is on their machine.
+    """
+    import re
+
+    from app.services import installed_service
+
+    line = next(l for l in installed_service._DETECT_SCRIPT.splitlines() if "panel=$n" in l)
+    emitted = re.findall(r":([A-Za-z]+) ", line)
+    assert emitted, "the detect script's panel list moved; this test is now blind"
+
+    for name in emitted:
+        key = name.lower()
+        # Webmin is deliberately unnamed — it is a system admin tool, not a hosting panel,
+        # and the generic label is the honest answer for it.
+        if key == "webmin":
+            continue
+        assert sr.panel_label(key) != "A control panel", (
+            f"the scanner can find {name} but we have no name for '{key}'")

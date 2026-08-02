@@ -2,8 +2,9 @@ import { useState } from "react"
 import { Link, useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  Globe, Loader2, RefreshCw, ShieldAlert, ShieldCheck,
+  Flag, Globe, Loader2, RefreshCw, Search, ShieldAlert, ShieldCheck,
 } from "lucide-react"
+import { getServerRole } from "@/api/servers"
 import { listServerSites, scanServerSites, APP_LABEL, type Site } from "@/api/sites"
 import { listRecipes } from "@/api/recipes"
 import RunRecipeModal from "@/components/recipes/RunRecipeModal"
@@ -55,6 +56,20 @@ export default function ServerSites() {
 
   // The two deterministic installers. Fetched by slug so the button knows whether the
   // installer exists on this deployment before offering it.
+
+  // The same question Start here asks, from the same cached query. A site created before
+  // it is answered either fails at the installer or answers it silently — see the two
+  // branches below.
+  const { data: role } = useQuery({
+    queryKey: ["server-role", server.id],
+    queryFn: () => getServerRole(server.id),
+    enabled: server.connection_type === "ssh",
+  })
+  const undecided = !!role?.applies && role.role === "undecided" && role.can_choose
+  // Not "undecided" — "cannot serve anything yet". A machine somebody put nginx on can
+  // host a site perfectly well, whether or not they have answered the bigger question.
+  const notReadyYet = undecided && role?.found != null
+    && (role.found.web_servers ?? []).length === 0
 
   const doors = installerOptionsFor(server)
   const sites = data?.sites ?? []
@@ -137,17 +152,78 @@ export default function ServerSites() {
         </p>
       )}
 
-      {showForm && (
-        <AddSiteForm
-          serverId={server.id}
-          // A panel owns its own sites, so nothing can be written behind its back.
-          panelOnly={!doors.direct}
-          onAsk={doors.ally && siteRecipe ? () => setCreating(true) : undefined}
-          // Only worth offering when there is nothing listed — that is the moment someone
-          // has connected a server whose sites we have not looked for yet.
-          showFind={sites.length === 0 && !scan.data}
-          onFind={() => scan.mutate()}
-        />
+      {/* A server that has not answered the Start-here question, and has no web server on
+          it, cannot host anything yet. Offering the domain form here invites somebody into
+          a dead end: they type a domain, press Create, wait, and the installer tells them
+          to go and set the server up. Say that first instead, and keep the one button that
+          IS useful — a server added with websites already on it needs finding, not setting
+          up, and that scan is what makes it answer the question by itself. */}
+      {showForm && notReadyYet && (
+        <section className="grid overflow-hidden rounded-xl border border-border bg-card sm:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
+          <div className="p-5 sm:pr-6">
+            <h3 className="text-sm font-medium text-foreground">New site</h3>
+            <p className="mt-1 text-caption text-muted-foreground">
+              Nothing can be hosted here yet.
+            </p>
+          </div>
+          <div className="p-5 sm:pl-0">
+            <div className="flex items-start gap-3 rounded-lg border border-border p-3">
+              <Flag size={15} className="mt-0.5 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">
+                  Choose how this server runs first
+                </p>
+                <p className="mt-0.5 text-small text-muted-foreground">
+                  This server has no web server on it, so a site created now would have
+                  nothing to serve it. Start here decides whether ServerAlly sets it up, or
+                  a control panel does.
+                </p>
+                <Link to={`/servers/${server.id}`} className="mt-2 inline-block">
+                  <Button size="sm"><Flag size={13} /> Start here</Button>
+                </Link>
+              </div>
+            </div>
+            {sites.length === 0 && !scan.data && (
+              <p className="mt-3 text-caption text-muted-foreground">
+                Already have websites on this server?{" "}
+                <button type="button" onClick={() => scan.mutate()}
+                  className="inline-flex items-center gap-1 font-medium text-foreground underline-offset-2 hover:underline">
+                  <Search size={11} /> Look for them
+                </button>{" "}
+                — ServerAlly reads the web server's own configuration and lists what is there.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {showForm && !notReadyYet && (
+        <>
+          {/* It CAN host — somebody installed a web server themselves. Creating a site is
+              allowed, and it is also the answer to the Start-here question, so it says so
+              rather than deciding quietly on the customer's behalf. */}
+          {undecided && (
+            <p className="rounded-lg border-l-2 border-primary bg-primary/5 px-3 py-2 text-small text-foreground">
+              Adding a site here makes <span className="font-medium">ServerAlly the control
+              panel</span> for this server. If you meant to install cPanel or CyberPanel on
+              it instead,{" "}
+              <Link to={`/servers/${server.id}`} className="font-medium underline underline-offset-2">
+                choose that first
+              </Link>{" "}
+              — afterwards it needs the server rebuilt.
+            </p>
+          )}
+          <AddSiteForm
+            serverId={server.id}
+            // A panel owns its own sites, so nothing can be written behind its back.
+            panelOnly={!doors.direct}
+            onAsk={doors.ally && siteRecipe ? () => setCreating(true) : undefined}
+            // Only worth offering when there is nothing listed — that is the moment someone
+            // has connected a server whose sites we have not looked for yet.
+            showFind={sites.length === 0 && !scan.data}
+            onFind={() => scan.mutate()}
+          />
+        </>
       )}
 
       {creating && siteRecipe && (
