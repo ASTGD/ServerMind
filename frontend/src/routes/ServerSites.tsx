@@ -267,15 +267,17 @@ function SiteRow({ site, serverId }: { site: Site; serverId: string }) {
 
       {/* Where it stands. Its own column, so a healthy row says "Up" rather than saying
           nothing — silence read equally as fine, never checked, and no idea. */}
-      <div className="hidden w-[200px] shrink-0 text-right sm:block">
+      <div className="hidden w-[260px] shrink-0 text-right sm:block">
         <p className={cn("text-small font-medium",
           tone === "bad" ? "text-red-600 dark:text-red-400"
             : tone === "good" ? "text-emerald-600 dark:text-emerald-400"
               : "text-muted-foreground")}>
           {siteStatusLabel(site)}
         </p>
+        {/* Wrapped rather than truncated: the reason a setup failed is the most useful
+            sentence on the row, and "no web server is running on this …" is not it. */}
         {detail && (
-          <p className="truncate text-caption text-muted-foreground" title={detail}>
+          <p className="line-clamp-2 text-caption text-muted-foreground" title={detail}>
             {detail}
           </p>
         )}

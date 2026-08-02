@@ -15,7 +15,7 @@ import { listServers } from "@/api/servers"
 import { checkMailNow, watchMail } from "@/api/mail"
 import { Button, EmptyState } from "@/components/ui"
 import { useAssistantStore } from "@/store/assistantStore"
-import { siteLooksBroken, siteProblem, siteState } from "@/lib/siteStatus"
+import { siteLooksBroken, siteProblem, siteState, siteTone } from "@/lib/siteStatus"
 import { cn } from "@/lib/utils"
 
 /** Up/down comes from the uptime monitor, which checks from outside — where a visitor is. */
@@ -217,8 +217,13 @@ function SiteRow({ site }: { site: Site }) {
                 {site.app_version ? ` ${site.app_version}` : ""}
               </span>
               {site.aliases.length > 0 && <span>also {site.aliases.slice(0, 2).join(", ")}</span>}
+              {/* Coloured by the same rule as the row, so a calm state stops being
+                  printed in the fault colour and reading as one. */}
               {problem && (
-                <span className="text-red-600 dark:text-red-400">{problem}</span>
+                <span className={siteTone(site) === "bad"
+                  ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}>
+                  {problem}
+                </span>
               )}
             </p>
           </div>
