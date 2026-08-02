@@ -39,6 +39,13 @@ deliberately-deferred residual — not a surprise gap.
 **Bug log:** `docs/ISSUES-FOUND.md` — **Open section is empty** (BUG-001 and BUG-002 both
 fixed 2026-07-15; both standing tasks closed).
 
+**Next build, approved and planned:** **staging sites** —
+[`docs/STAGING-SITES-PLAN.md`](STAGING-SITES-PLAN.md), written 2026-08-02 after reading
+Ploi's own staging feature live on the owner's trial account. Two features, built separately:
+*create a staging copy* (safe, and most of the value) and *copy staging over the live site*
+(the dangerous one, built last). Build order **P0 → P1 → P2 → P5 → P3 → P4**; start at P0
+(one migration, three columns on `sites`).
+
 ---
 
 ## 1. Blocked on the user (ordered by effort)
