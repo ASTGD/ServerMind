@@ -445,6 +445,67 @@ def clean_domain(value: str) -> str:
     return raw
 
 
+def monitor_host(url: str) -> str:
+    """The hostname a monitored URL points at, lowercased.
+
+    Matching a site to its monitor on hostname is what lets the page show up/down and
+    certificate expiry without storing either on the site row — one fact, one owner.
+    """
+    from urllib.parse import urlparse
+
+    try:
+        return (urlparse(url).hostname or "").lower()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def should_watch(status: str | None, is_present: bool) -> bool:
+    """Whether a site is real enough to check from outside.
+
+    Only a site that exists can be up or down. Checking one that is still being built, or
+    that failed to build, or that a scan can no longer find, produces a "down" that is
+    true, useless, and can never recover — and an alarm nobody can clear is how people
+    learn to ignore every alarm we send.
+    """
+    return status == "live" and bool(is_present)
+
+
+async def settle_uptime_checks(db, user_id) -> int:
+    """Keep each site's uptime check in step with whether the site is actually there.
+
+    Deliberately scoped: a check is only touched when its hostname matches one of THIS
+    user's own site rows. A domain somebody chose to watch by itself has no site row, so
+    it is never turned off by us — which is the same reason deleting a site leaves its
+    check alone.
+    """
+    from sqlalchemy import select
+
+    from app.models.site import Site
+    from app.models.uptime import UptimeMonitor
+
+    sites = {
+        row.domain.lower(): row for row in (await db.execute(
+            select(Site).where(Site.user_id == user_id))).scalars().all()
+    }
+    if not sites:
+        return 0
+
+    changed = 0
+    monitors = (await db.execute(
+        select(UptimeMonitor).where(UptimeMonitor.user_id == user_id))).scalars().all()
+    for monitor in monitors:
+        site = sites.get(monitor_host(monitor.url))
+        if site is None:
+            continue
+        wanted = should_watch(site.status, site.is_present)
+        if monitor.is_active != wanted:
+            monitor.is_active = wanted
+            changed += 1
+    if changed:
+        await db.commit()
+    return changed
+
+
 def monitor_defaults(domain: str, *, https: bool = True) -> dict:
     """How a newly watched site gets checked.
 
@@ -805,11 +866,16 @@ async def install(db, server, user, site, *, site_type: str, variables: dict | N
 
 
 async def reconcile_installs(db, user_id) -> int:
-    """Move sites out of ``installing`` once their run has actually finished.
+    """Move sites out of ``installing`` once their run has actually finished, and leave
+    each site's uptime check matching whether the site is really there.
 
     Only FAILURE is concluded here. A run that exited 0 does NOT make a site live — that
     happens when a scan sees it on the server, because an installer reporting success while
     the site does not serve is exactly the failure mode this product exists to catch.
+
+    The uptime step rides along rather than sitting in its own function called from three
+    places: the last two bugs in this area were both a correct routine that some call site
+    forgot to invoke.
     """
     from sqlalchemy import select
 
@@ -831,6 +897,7 @@ async def reconcile_installs(db, user_id) -> int:
             changed += 1
     if changed:
         await db.commit()
+    await settle_uptime_checks(db, user_id)
     return changed
 
 

@@ -167,7 +167,12 @@ def test_the_statuses_are_the_ones_the_code_actually_uses():
 # ── The rule the whole phase rests on ────────────────────────────────────────
 
 class _PairDb:
-    """Returns (Site, PlaybookRun) pairs, as the reconcile query does."""
+    """Returns (Site, PlaybookRun) pairs, as the reconcile query does.
+
+    It also answers ``.scalars()`` with nothing, because reconciling now settles uptime
+    checks too and asks for rows a different way. A fake that models only the shape it was
+    written for stops being a test of the caller and starts being a trap.
+    """
 
     def __init__(self, pairs):
         self._pairs = pairs
@@ -179,6 +184,12 @@ class _PairDb:
         class _R:
             def all(self_inner):
                 return pairs
+
+            def scalars(self_inner):
+                class _S:
+                    def all(self_deep):
+                        return []
+                return _S()
 
         return _R()
 

@@ -41,18 +41,9 @@ DBDep = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-def _monitor_key(url: str) -> str:
-    """The hostname a monitored URL points at, lowercased.
-
-    Matching a site to its monitor on hostname is what lets the page show up/down and
-    certificate expiry without storing either on the site row — one fact, one owner.
-    """
-    from urllib.parse import urlparse
-
-    try:
-        return (urlparse(url).hostname or "").lower()
-    except Exception:  # noqa: BLE001
-        return ""
+#: One matcher, so the page's lookup and the rule that pauses a check agree on what
+#: "this site's monitor" means.
+_monitor_key = site_service.monitor_host
 
 
 async def _uptime_by_host(db: AsyncSession, user_id) -> dict[str, dict]:
@@ -171,9 +162,14 @@ async def _mail_by_domain(db: AsyncSession, user_id) -> dict[str, dict]:
 
 async def _watch_new(db: AsyncSession, user, server) -> int:
     """Create uptime monitors for this server's sites that have none yet."""
-    sites = (await db.execute(
+    # Only a site that is actually there. This filtered on `is_present` alone, and a site
+    # whose install failed deliberately keeps that flag (it never arrived, so it cannot
+    # have vanished) — so we were creating an uptime check for a site that was never built,
+    # which then reported it down forever with no way to ever recover.
+    sites = [s for s in (await db.execute(
         select(Site).where(Site.server_id == server.id, Site.user_id == user.id,
                            Site.is_present.is_(True)))).scalars().all()
+        if site_service.should_watch(s.status, s.is_present)]
     known = {_monitor_key(m.url) for m in (await db.execute(
         select(UptimeMonitor).where(UptimeMonitor.user_id == user.id))).scalars().all()}
     made = 0

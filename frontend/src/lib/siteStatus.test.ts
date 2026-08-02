@@ -64,6 +64,12 @@ describe("siteProblem", () => {
     expect(siteProblem(site({ uptime: dnsDown }))).toBe(dnsDown.error)
   })
 
+  it("does not repeat a frozen reason for a site that is no longer there", () => {
+    // Its check is paused once we know it is gone, so the monitor's last words are stale
+    // and the "No longer found" chip already carries the news.
+    expect(siteProblem(site({ is_present: false, uptime: dnsDown }))).toBeNull()
+  })
+
   it("says nothing about a healthy site", () => {
     expect(siteProblem(site())).toBeNull()
     expect(siteProblem(site({ uptime: { ...dnsDown, status: "up", error: null } }))).toBeNull()

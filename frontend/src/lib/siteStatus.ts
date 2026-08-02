@@ -37,6 +37,9 @@ export function siteProblem(site: Site): string | null {
     return site.install_error || "The setup did not finish."
   }
   if (state === "installing") return null
+  // The chip already says we can no longer find it, and its check is paused once we know
+  // that — so the last thing the monitor said is frozen in time and only adds noise.
+  if (state === "absent") return null
   if (site.uptime?.status === "down" && site.uptime.error) return site.uptime.error
   return null
 }
