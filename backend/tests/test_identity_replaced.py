@@ -174,3 +174,31 @@ def test_no_caller_re_implements_the_rule():
         "the staleness rule belongs at the read, so every caller gets it")
     assert "_latest(server.id" not in src, (
         "_latest takes the server so it can see identity_changed_at")
+
+
+# ── "we set this up" is not the same as "we are its panel" ───────────────────
+
+def test_only_a_server_we_actually_set_up_says_so():
+    """Both of these answer role=serverally, and the difference decides whether the Sites
+    page tells the owner their server is ready.
+
+    A server we merely FOUND websites on was never set up by us — claiming it was would
+    announce a setup that never ran, on a machine somebody else built.
+    """
+    ours = role(setup_done=True)
+    found = role(site_count=3)
+    assert ours["role"] == found["role"] == "serverally"
+    assert ours["set_up_by_us"] is True
+    assert found["set_up_by_us"] is False
+
+
+def test_a_setup_from_the_previous_machine_does_not_claim_this_one_is_ready():
+    """The staleness rule reaches this too, or a rebuilt server greets its owner with a
+    'ready' banner for software the rebuild removed."""
+    stale = _stale(NOW - timedelta(days=2), NOW)
+    assert role(setup_done=not stale)["set_up_by_us"] is False
+
+
+@pytest.mark.parametrize("kind", ["winrm", "rdp"])
+def test_an_asset_we_never_set_up_never_claims_we_did(kind):
+    assert role(connection_type=kind)["set_up_by_us"] is False

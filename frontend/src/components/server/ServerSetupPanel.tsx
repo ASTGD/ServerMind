@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Link } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Check, CircleDashed, Loader2, TriangleAlert, Wand2, X, MinusCircle, Sparkles,
@@ -9,6 +10,7 @@ import {
 import type { Server } from "@/types"
 import { Button } from "@/components/ui"
 import { useAssistantStore } from "@/store/assistantStore"
+import { markSetupResultSeen } from "@/lib/setupSeen"
 import { cn } from "@/lib/utils"
 
 const detail = (e: unknown) =>
@@ -114,6 +116,17 @@ export default function ServerSetupPanel({ server }: { server: Server }) {
             <div className="h-full rounded-full bg-primary transition-all duration-500"
               style={{ width: `${run.progress.percent}%` }} />
           </div>
+        )}
+
+        {run.status === "done" && !busy && (
+          // The result needs a way OUT, or acknowledging it and going on are two separate
+          // things the customer has to work out. One button does both: it marks the news
+          // read and lands them where the next step actually happens.
+          <Link to={`/servers/${server.id}/sites`} onClick={() => markSetupResultSeen(run.id)}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2
+                       text-[13px] font-medium text-primary-foreground hover:opacity-90">
+            <Sparkles size={13} /> Add your first website
+          </Link>
         )}
 
         <ul className="mt-3 space-y-1.5">

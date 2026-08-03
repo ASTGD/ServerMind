@@ -2,6 +2,9 @@ import { Navigate, useOutletContext } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { Loader2 } from "lucide-react"
 import { getServerRole } from "@/api/servers"
+import { getSetupStatus } from "@/api/setup"
+import ServerSetupPanel from "@/components/server/ServerSetupPanel"
+import { shouldShowSetupResult } from "@/lib/setupSeen"
 import ServerRoleCard from "@/components/server/ServerRoleCard"
 import ServerOverview from "./ServerOverview"
 import type { Server } from "@/types"
@@ -33,6 +36,12 @@ export default function ServerHome() {
     queryFn: () => getServerRole(server.id),
     enabled: server.connection_type === "ssh",
   })
+  // Same key the setup panel uses, so this shares its cache rather than adding a request.
+  const { data: setup, isLoading: loadingSetup } = useQuery({
+    queryKey: ["server-setup", server.id],
+    queryFn: () => getSetupStatus(server.id),
+    enabled: server.connection_type === "ssh",
+  })
 
   // A panel owns this machine's websites, so the panel's own page is its home — checked
   // from the server itself rather than the role, both because it holds for a hosting
@@ -40,13 +49,18 @@ export default function ServerHome() {
   if (server.panel_type) return <Navigate to="hosting" replace />
   if (server.connection_type !== "ssh") return <ServerOverview />
 
-  if (isLoading) {
+  if (isLoading || loadingSetup) {
     return (
       <div className="flex items-center gap-2 py-16 text-muted-foreground">
         <Loader2 size={16} className="animate-spin" /> Loading…
       </div>
     )
   }
+
+  // A setup that just finished has not been SEEN yet. Handing straight over would end the
+  // run the customer watched by swapping it for an empty list — no result, no "done", and
+  // the question "did that work?" left for them to answer on their own.
+  if (shouldShowSetupResult(setup?.latest)) return <ServerSetupPanel server={server} />
 
   // Decided. This page steps aside and hands over to whichever door the answer opened —
   // a panel's own section is where ITS websites live, so sending a panel server to our

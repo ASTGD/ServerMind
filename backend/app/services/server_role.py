@@ -94,19 +94,19 @@ def decide(*, connection_type: str, panel_type: str | None, setup_done: bool,
     if connection_type != "ssh":
         # Windows, RDP and hosting connections do not host sites through us at all, so the
         # question does not arise. Saying "not applicable" is honest; picking one is not.
-        return {"applies": False, "role": None, "can_choose": False,
+        return {"applies": False, "set_up_by_us": False, "role": None, "can_choose": False,
                 "panel": None, "panel_label": None, "why": None}
 
     if panel_type:
         return {
-            "applies": True, "role": "panel", "can_choose": False,
+            "applies": True, "set_up_by_us": bool(setup_done), "role": "panel", "can_choose": False,
             "panel": panel_type, "panel_label": panel_label(panel_type),
             "why": f"{panel_label(panel_type)} is installed on this server.",
         }
 
     if setup_done:
         return {
-            "applies": True, "role": "serverally", "can_choose": False,
+            "applies": True, "set_up_by_us": bool(setup_done), "role": "serverally", "can_choose": False,
             "panel": None, "panel_label": None,
             "why": "This server was set up by ServerAlly, so a control panel would need it "
                    "rebuilt from scratch.",
@@ -114,7 +114,7 @@ def decide(*, connection_type: str, panel_type: str | None, setup_done: bool,
 
     if site_count > 0:
         return {
-            "applies": True, "role": "serverally", "can_choose": False,
+            "applies": True, "set_up_by_us": bool(setup_done), "role": "serverally", "can_choose": False,
             "panel": None, "panel_label": None,
             "why": "This server is already serving websites, so it is not a clean machine "
                    "for a control panel to install onto.",
@@ -125,12 +125,12 @@ def decide(*, connection_type: str, panel_type: str | None, setup_done: bool,
         # the choice is no longer open, and showing the two doors again would throw away
         # the customer's answer while the work they asked for is running.
         return {
-            "applies": True, "role": "undecided", "can_choose": False,
+            "applies": True, "set_up_by_us": bool(setup_done), "role": "undecided", "can_choose": False,
             "panel": None, "panel_label": None,
             "why": "A setup is running on this server.",
         }
 
     return {
-        "applies": True, "role": "undecided", "can_choose": True,
+        "applies": True, "set_up_by_us": bool(setup_done), "role": "undecided", "can_choose": True,
         "panel": None, "panel_label": None, "why": None,
     }

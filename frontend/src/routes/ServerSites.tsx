@@ -134,6 +134,28 @@ export default function ServerSites() {
         </div>
       </div>
 
+      {/* The moment the setup finishes, this page replaces the one the customer was
+          watching — so the run they just sat through ends by teleporting them to an empty
+          list with no result. The owner's own words on seeing it: "I'm really confused,
+          was the server installed?"
+
+          Stated here rather than as a one-time toast, because it stays true until there
+          IS a site: a server that is ready and hosting nothing is a real state, and the
+          answer to "what now" belongs on the screen that shows it. Deliberately says
+          nothing about WHICH software went on — the setup has four purposes and naming
+          PHP on a Docker server would be a confident lie. Installed knows; it is linked. */}
+      {sites.length === 0 && !isLoading && role?.set_up_by_us && (
+        <div className="rounded-lg border-l-2 border-emerald-500 bg-emerald-500/5 px-3 py-2.5
+                        text-small text-foreground">
+          <span className="font-medium">{server.name} is set up and ready.</span>{" "}
+          Nothing is hosted on it yet — give a domain below to put the first website on it.{" "}
+          <Link to={`/servers/${server.id}/installed`}
+                className="underline underline-offset-2 hover:text-primary">
+            See what was installed
+          </Link>.
+        </div>
+      )}
+
       {scan.data && (
         <p className="rounded-lg bg-muted/50 px-3 py-2 text-[12.5px] text-foreground">
           Found {scan.data.found} site{scan.data.found === 1 ? "" : "s"}

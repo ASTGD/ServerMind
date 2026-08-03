@@ -131,6 +131,11 @@ export interface ServerRole {
   applies: boolean
   role: "undecided" | "serverally" | "panel" | null
   can_choose: boolean
+  /** ServerAlly ran the setup on THIS machine — not merely "we are its panel", which is
+   *  also true of a server we simply found websites on. Explicit rather than read out of
+   *  `why`, because recognising a state by the sentence we happen to print for it stops
+   *  working the day that sentence is reworded. */
+  set_up_by_us: boolean
   panel: string | null
   panel_label: string | null
   why: string | null
