@@ -77,6 +77,35 @@ async def _latest(server, db: AsyncSession) -> ServerSetup | None:
     return row
 
 
+
+async def _own_server_addresses(server, current_user, db: AsyncSession) -> list[dict]:
+    """The customer's OTHER servers, as plain IPv4 addresses.
+
+    This is what a database server is opened to. Taken from their own account rather than
+    typed, because the addresses are already known and a typed one is a chance to open the
+    database to a stranger.
+
+    Only literal IPv4: a hostname in a firewall rule is resolved once, when the rule is
+    written, and then silently stops matching the day the address changes.
+    """
+    import re as _re
+
+    from app.models.server import Server as _Server
+
+    rows = (await db.execute(
+        select(_Server).where(_Server.user_id == current_user.id,
+                              _Server.id != server.id,
+                              _Server.connection_type == "ssh"))).scalars().all()
+    out, seen = [], set()
+    for row in rows:
+        host = (row.host or "").strip()
+        if not _re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", host) or host in seen:
+            continue
+        seen.add(host)
+        out.append({"name": row.name, "host": host})
+    return out
+
+
 @router.get("/role")
 async def role(server_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     """Is ServerAlly the control panel for this server, or is a real panel?
@@ -194,6 +223,9 @@ async def status(server_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     # The screen draws its dropdowns from these rather than from a copy of its own, so an
     # option can never be shown that `start` then refuses.
     return {"options": options, "blocked": blocked,
+            # Shown before the button is pressed, so "who will be able to reach this
+            # database" is answered while the customer can still change their mind.
+            "own_servers": await _own_server_addresses(server, current_user, db),
             "php_choices": [dict(c) for c in setup_service.PHP_CHOICES],
             "db_choices": [dict(c) for c in setup_service.DB_CHOICES],
             "os_type": (server.os_type or "").strip().lower(),
@@ -226,13 +258,19 @@ async def start(server_id: str, body: StartBody, request: Request,
         # had. Debian genuinely cannot install MySQL, and finding that out mid-install
         # costs a rebuilt server rather than a click.
         setup_service.check_choices(body.php_version, body.db_engine,
-                                    os_type=(server.os_type or ""))
+                                    os_type=(server.os_type or ""), purpose=body.purpose)
+        # Assembled here, never accepted from the browser: a client-supplied address is a
+        # request to open a database to whoever asked.
+        allow = ",".join(a["host"] for a in
+                         await _own_server_addresses(server, current_user, db)) \
+            if body.purpose == "database" else ""
         recipe = setup_service.build_recipe(
             body.purpose, ssh_port=server.port or 22,
             timezone=body.timezone, monitoring=body.monitoring,
             login_user=server.username or "root",
             auth_type=server.auth_type or "password",
-            php_version=body.php_version, db_engine=body.db_engine)
+            php_version=body.php_version, db_engine=body.db_engine,
+            allow_from=allow)
     except setup_service.SetupRefused as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

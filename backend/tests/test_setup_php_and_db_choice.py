@@ -9,6 +9,7 @@ backend then refuses. And the scripts are exercised rather than read: a `case` s
 contains every branch whether it is taken or not, so asserting that "postgresql" appears
 in the generated text proves nothing at all.
 """
+import re
 import subprocess
 
 import pytest
@@ -62,7 +63,10 @@ def test_every_offered_database_is_one_the_script_handles(choice):
     """A dropdown entry the installer rejects is worse than a missing one: the customer
     picks it, waits, and the step fails on something they were invited to do."""
     body = script("default", choice)
-    assert f"\n  {choice})" in body, f"the script has no branch for {choice}"
+    # Indentation-independent: the branches live in the shared engine layer now, and a
+    # test that breaks when code is merely re-indented is testing the wrong thing.
+    assert re.search(rf"^\s*{re.escape(choice)}\)", body, re.M), \
+        f"the script has no branch for {choice}"
 
 
 @pytest.mark.parametrize("choice", [c["value"] for c in s.PHP_CHOICES])

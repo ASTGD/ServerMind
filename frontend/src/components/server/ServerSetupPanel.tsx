@@ -43,15 +43,19 @@ function StepIcon({ state }: { state: SetupStep["state"] }) {
  * cannot honour on this operating system is disabled WITH ITS REASON rather than silently
  * missing, because "why is MySQL not in the list" is a support ticket.
  */
-function ChoiceField({ label, value, onChange, choices, osType }: {
+function ChoiceField({ label, value, onChange, choices, osType, exclude = [] }: {
   label: string
   value: string
   onChange: (v: string) => void
   choices: SetupChoice[]
   osType: string
+  /** Values this purpose cannot use — "no database" is fine for a web server and a
+   *  contradiction on a database server. */
+  exclude?: string[]
 }) {
+  const shown = choices.filter((c) => !exclude.includes(c.value))
   const blocked = (c: SetupChoice) => (c.not_on ?? []).includes(osType)
-  const picked = choices.find((c) => c.value === value)
+  const picked = shown.find((c) => c.value === value)
   return (
     <label className="block">
       <span className="text-[12px] font-medium text-foreground">{label}</span>
@@ -61,7 +65,7 @@ function ChoiceField({ label, value, onChange, choices, osType }: {
         className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2
                    text-[13px] text-foreground outline-none focus:border-primary"
       >
-        {choices.map((c) => (
+        {shown.map((c) => (
           <option key={c.value} value={c.value} disabled={blocked(c)}>
             {c.label}
             {blocked(c) ? ` — not available on ${osType}` : c.note ? ` — ${c.note}` : ""}
@@ -110,9 +114,11 @@ export default function ServerSetupPanel({ server }: { server: Server }) {
   const begin = useMutation({
     mutationFn: () => startSetup(server.id, {
       purpose, force,
-      // Only the web server has a PHP version or a database. Sending them for Docker
-      // would be describing a machine that has neither.
+      // Only these two have a database; only the web server has PHP. Sending either for
+      // Docker would be describing a machine that has neither.
       ...(purpose === "websites" ? { php_version: phpVersion, db_engine: dbEngine } : {}),
+      ...(purpose === "database"
+        ? { db_engine: dbEngine === "none" ? "mariadb" : dbEngine } : {}),
     }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["server-setup", server.id] }),
   })
@@ -286,6 +292,39 @@ export default function ServerSetupPanel({ server }: { server: Server }) {
           <ChoiceField
             label="Database" value={dbEngine} onChange={setDbEngine}
             choices={data.db_choices} osType={data.os_type} />
+        </div>
+      )}
+
+      {purpose === "database" && (
+        <div className="mt-3 space-y-3">
+          <ChoiceField
+            label="Database" value={dbEngine === "none" ? "mariadb" : dbEngine}
+            onChange={setDbEngine} choices={data.db_choices} osType={data.os_type}
+            exclude={["none"]} />
+          {/* Who will be able to reach it, said BEFORE the button is pressed. A database
+              reachable from the internet is the most attacked thing anyone runs, so the
+              answer to "who can connect" belongs on screen while it can still be
+              changed — not in the log afterwards. */}
+          <div className="rounded-lg border-l-2 border-amber-500 bg-amber-500/5 px-3 py-2.5
+                          text-[12.5px] text-foreground">
+            {data.own_servers.length === 0 ? (
+              <>
+                <span className="font-medium">Nothing will be able to reach it yet.</span>{" "}
+                You have no other server in ServerAlly, so the database port stays closed to
+                everyone. That is deliberate — add the other server, or open the port to its
+                address from Firewall &amp; keys.
+              </>
+            ) : (
+              <>
+                <span className="font-medium">
+                  Only {data.own_servers.length === 1 ? "this server" : "these servers"} will
+                  be able to reach it:
+                </span>{" "}
+                {data.own_servers.map((srv) => `${srv.name} (${srv.host})`).join(", ")}.
+                Everyone else is refused at the firewall.
+              </>
+            )}
+          </div>
         </div>
       )}
 

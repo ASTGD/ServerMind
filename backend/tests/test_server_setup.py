@@ -116,12 +116,12 @@ def test_a_website_server_gets_a_web_server_and_a_database():
 
 def test_just_secure_it_installs_no_web_server():
     """Someone who is not ready for a website should not be given one."""
-    slugs = [x.slug for x in s.build_recipe("basic").steps]
+    slugs = [x.slug for x in s.build_recipe("database").steps]
     assert "lemp-stack" not in slugs and "docker" not in slugs
 
 
 def test_monitoring_can_be_left_out():
-    assert "netdata" not in [x.slug for x in s.build_recipe("basic", monitoring=False).steps]
+    assert "netdata" not in [x.slug for x in s.build_recipe("database", monitoring=False).steps]
 
 
 def test_optional_steps_are_the_ones_a_server_works_without():

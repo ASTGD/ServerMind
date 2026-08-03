@@ -49,6 +49,9 @@ export interface SetupStatus {
   db_choices: SetupChoice[]
   /** The server's real OS, so a choice it cannot honour is greyed out before it is picked. */
   os_type: string
+  /** The customer's OTHER servers. A database server is opened to these and nobody else,
+   *  so they are shown before the button is pressed rather than after. */
+  own_servers: { name: string; host: string }[]
   already_set_up: boolean
   latest: Setup | null
 }

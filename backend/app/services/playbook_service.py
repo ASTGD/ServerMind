@@ -270,6 +270,72 @@ php_install_version() {
 """
 
 
+# How each database engine gets installed, written once. The stack installer and the
+# dedicated database server both use it, so "how do we install PostgreSQL" cannot end up
+# with two different answers - the same reason the PHP archive logic is shared.
+_DB_ENGINE = r"""# --- ServerAlly database engine layer ---
+db_port() {
+  case "$1" in postgres) echo 5432 ;; *) echo 3306 ;; esac
+}
+db_install() {
+  # $1 = engine. Sets DB_LABEL and DB_UNIT. Returns non-zero rather than exiting, so the
+  # caller decides whether a missing database is fatal.
+  case "$1" in
+    mariadb)
+      pkg_install mariadb-server || return 1
+      DB_UNIT=mariadb; DB_LABEL="MariaDB"
+      ;;
+    mysql)
+      # Debian genuinely has no mysql-server package, only MariaDB. Refuse and name the
+      # way out; substituting is the lie the setup screen carried for months.
+      if [ "$OS_ID" = debian ]; then
+        echo ">>> ERROR: Debian does not package MySQL, only MariaDB."
+        echo "    Choose MariaDB, or use Ubuntu if you need real MySQL. Nothing was changed."
+        return 1
+      fi
+      pkg_install mysql-server || return 1
+      if [ "$FAMILY" = debian ]; then DB_UNIT=mysql; else DB_UNIT=mysqld; fi
+      DB_LABEL="MySQL"
+      ;;
+    postgres)
+      if [ "$FAMILY" = debian ]; then
+        pkg_install postgresql postgresql-contrib || return 1
+      else
+        pkg_install postgresql-server postgresql-contrib || return 1
+        [ -d /var/lib/pgsql/data/base ] || postgresql-setup --initdb >/dev/null 2>&1 || true
+      fi
+      DB_UNIT=postgresql; DB_LABEL="PostgreSQL"
+      ;;
+    none)
+      DB_UNIT=""; DB_LABEL="none, by your choice"
+      return 0
+      ;;
+    *)
+      echo ">>> ERROR: \'$1\' is not a database we install. Nothing was changed."
+      return 1
+      ;;
+  esac
+  svc_enable "$DB_UNIT"
+  return 0
+}
+db_allow_from() {
+  # Open $1 to ONE address. Deliberately not `open_firewall`, which opens a port to the
+  # whole internet - correct for a website, catastrophic for a database. An exposed
+  # database is the single most reliably exploited thing you can run.
+  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qi active; then
+    ufw allow from "$2" to any port "$1" proto tcp >/dev/null 2>&1 || return 1
+  elif command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld 2>/dev/null; then
+    firewall-cmd --permanent --add-rich-rule="rule family=\"ipv4\" source address=\"$2\" port port=\"$1\" protocol=\"tcp\" accept" >/dev/null 2>&1 || return 1
+    firewall-cmd --reload >/dev/null 2>&1 || true
+  else
+    echo ">>> No firewall is running, so nothing was opened - and nothing is blocked either."
+    return 1
+  fi
+  return 0
+}
+"""
+
+
 def _with_prelude(script: str, prelude: str) -> str:
     """Insert a helper block directly after the shebang.
 
@@ -1155,6 +1221,22 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
     },
 
     {
+        'slug': 'database-server',
+        'title': 'Database server',
+        'description': 'Turns this machine into a database server for your OTHER servers: installs the engine you choose, makes it reachable over the network, and opens the port ONLY to servers in your account — never to the internet.',
+        'category': 'setup',
+        'os_family': 'linux',
+        'script_type': 'bash',
+        'est_runtime_sec': 120,
+        'tags': ['database', 'mysql', 'mariadb', 'postgresql', 'server'],
+        'supported_os': ['ubuntu', 'debian', 'almalinux', 'rocky', 'centos', 'rhel'],
+        'variables': [{'name': 'DB_ENGINE', 'label': 'Database', 'default': 'mariadb', 'required': True}, {'name': 'ALLOW_FROM', 'label': 'Servers allowed to connect (IP addresses)', 'default': '', 'required': False}],
+        "script_bash": ('#!/bin/bash\nset -euo pipefail\n'
+                        + _DISTRO
+                        + '# --- ServerAlly database engine layer ---\ndb_port() {\n  case "$1" in postgres) echo 5432 ;; *) echo 3306 ;; esac\n}\ndb_install() {\n  # $1 = engine. Sets DB_LABEL and DB_UNIT. Returns non-zero rather than exiting, so the\n  # caller decides whether a missing database is fatal.\n  case "$1" in\n    mariadb)\n      pkg_install mariadb-server || return 1\n      DB_UNIT=mariadb; DB_LABEL="MariaDB"\n      ;;\n    mysql)\n      # Debian genuinely has no mysql-server package, only MariaDB. Refuse and name the\n      # way out; substituting is the lie the setup screen carried for months.\n      if [ "$OS_ID" = debian ]; then\n        echo ">>> ERROR: Debian does not package MySQL, only MariaDB."\n        echo "    Choose MariaDB, or use Ubuntu if you need real MySQL. Nothing was changed."\n        return 1\n      fi\n      pkg_install mysql-server || return 1\n      if [ "$FAMILY" = debian ]; then DB_UNIT=mysql; else DB_UNIT=mysqld; fi\n      DB_LABEL="MySQL"\n      ;;\n    postgres)\n      if [ "$FAMILY" = debian ]; then\n        pkg_install postgresql postgresql-contrib || return 1\n      else\n        pkg_install postgresql-server postgresql-contrib || return 1\n        [ -d /var/lib/pgsql/data/base ] || postgresql-setup --initdb >/dev/null 2>&1 || true\n      fi\n      DB_UNIT=postgresql; DB_LABEL="PostgreSQL"\n      ;;\n    none)\n      DB_UNIT=""; DB_LABEL="none, by your choice"\n      return 0\n      ;;\n    *)\n      echo ">>> ERROR: \\\'$1\\\' is not a database we install. Nothing was changed."\n      return 1\n      ;;\n  esac\n  svc_enable "$DB_UNIT"\n  return 0\n}\ndb_allow_from() {\n  # Open $1 to ONE address. Deliberately not `open_firewall`, which opens a port to the\n  # whole internet - correct for a website, catastrophic for a database. An exposed\n  # database is the single most reliably exploited thing you can run.\n  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qi active; then\n    ufw allow from "$2" to any port "$1" proto tcp >/dev/null 2>&1 || return 1\n  elif command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld 2>/dev/null; then\n    firewall-cmd --permanent --add-rich-rule="rule family=\\"ipv4\\" source address=\\"$2\\" port port=\\"$1\\" protocol=\\"tcp\\" accept" >/dev/null 2>&1 || return 1\n    firewall-cmd --reload >/dev/null 2>&1 || true\n  else\n    echo ">>> No firewall is running, so nothing was opened - and nothing is blocked either."\n    return 1\n  fi\n  return 0\n}\nDB_ENGINE="{{DB_ENGINE}}"\nALLOW_FROM="{{ALLOW_FROM}}"\n[ -z "$DB_ENGINE" ] && DB_ENGINE=mariadb\n\necho "=== Setting up a database server ($DB_ENGINE) ==="\n\nif [ "$DB_ENGINE" = none ]; then\n  echo ">>> ERROR: a database server needs a database. Choose MariaDB, MySQL or PostgreSQL."\n  exit 1\nfi\n\npkg_refresh\ndb_install "$DB_ENGINE" || exit 1\nPORT="$(db_port "$DB_ENGINE")"\n\n# --- Listen on the network ---------------------------------------------------\n# A database that only listens to itself is not a database SERVER - the whole point of this\n# machine is that another server can reach it. It is also the single most dangerous thing\n# you can put on the internet, which is why the firewall below stays SHUT to everyone\n# except the addresses named, and why nothing here opens the port to the world.\nif [ "$DB_ENGINE" = postgres ]; then\n  PGCONF="$(find /etc/postgresql /var/lib/pgsql -name postgresql.conf 2>/dev/null | head -1)"\n  if [ -z "$PGCONF" ]; then\n    echo ">>> ERROR: PostgreSQL installed but its configuration file was not found."\n    exit 1\n  fi\n  PGDIR="$(dirname "$PGCONF")"\n  cp -n "$PGCONF" "${PGCONF}.serverally.bak" 2>/dev/null || true\n  if grep -qE "^[# ]*listen_addresses" "$PGCONF"; then\n    sed -i -E "s|^[# ]*listen_addresses.*|listen_addresses = \'*\'|" "$PGCONF"\n  else\n    printf "\\nlisten_addresses = \'*\'\\n" >> "$PGCONF"\n  fi\nelse\n  # A drop-in, not an edit: a package upgrade rewrites the main file and would silently\n  # revert a change made there, taking the database off the network weeks later.\n  WROTE=0\n  for d in /etc/mysql/mariadb.conf.d /etc/mysql/mysql.conf.d /etc/mysql/conf.d /etc/my.cnf.d; do\n    [ -d "$d" ] || continue\n    printf \'[mysqld]\\nbind-address = 0.0.0.0\\n\' > "$d/99-serverally.cnf"\n    WROTE=1\n    break\n  done\n  if [ "$WROTE" = 0 ]; then\n    echo ">>> ERROR: could not find a configuration directory to make the database"\n    echo "    reachable. Nothing else was changed."\n    exit 1\n  fi\nfi\n\n# --- Who may connect ---------------------------------------------------------\n# Closed by default. Every address here is one of the customer\'s OWN servers, taken from\n# their ServerAlly account - never a range, never the world.\nOPENED=0\nSKIPPED=""\nOLDIFS="$IFS"\nIFS=","\nfor RAW in $ALLOW_FROM; do\n  IFS="$OLDIFS"\n  IP="$(echo "$RAW" | tr -d " ")"\n  [ -z "$IP" ] && { IFS=","; continue; }\n  # A plain IPv4 address only. A hostname in a firewall rule is resolved once, when the\n  # rule is written, and then silently stops matching the day the address changes.\n  case "$IP" in\n    *[!0-9.]*) SKIPPED="$SKIPPED $IP"; IFS=","; continue ;;\n    # Refused by name. 0.0.0.0 means EVERYONE, and the one thing this script must never do\n    # is open a database to the internet - so it is rejected as an address rather than\n    # relying on nothing upstream ever producing it. Found by mutation testing: changing\n    # the empty-entry guard to `IP=0.0.0.0` opened the port to the world and every test\n    # still passed, because none of them fed a list with an empty element in it.\n    0.0.0.0|0.0.0.0/*) SKIPPED="$SKIPPED $IP"; IFS=","; continue ;;\n    [0-9]*.[0-9]*.[0-9]*.[0-9]*) ;;\n    *) SKIPPED="$SKIPPED $IP"; IFS=","; continue ;;\n  esac\n  if db_allow_from "$PORT" "$IP"; then\n    OPENED=$((OPENED + 1))\n    echo ">>> $IP may now reach the database on port $PORT"\n  fi\n  if [ "$DB_ENGINE" = postgres ]; then\n    HBA="$PGDIR/pg_hba.conf"\n    if [ -f "$HBA" ] && ! grep -q "serverally $IP" "$HBA"; then\n      printf "host all all %s/32 scram-sha-256 # serverally %s\\n" "$IP" "$IP" >> "$HBA"\n    fi\n  fi\n  IFS=","\ndone\nIFS="$OLDIFS"\n[ -n "$SKIPPED" ] && echo ">>> Skipped (not a plain IP address):$SKIPPED"\n\nsvc_restart "$DB_UNIT"\n\n# --- Prove it, rather than assume it -----------------------------------------\n# An installer exiting 0 is not evidence. Ask the database a question, and check it is\n# really listening where another machine could reach it.\nif [ "$DB_ENGINE" = postgres ]; then\n  su - postgres -c "psql -tAc \'SELECT 1\'" >/dev/null 2>&1 \\\n    || { echo ">>> ERROR: PostgreSQL is installed but did not answer."; exit 1; }\nelse\n  mysql -e "SELECT 1" >/dev/null 2>&1 \\\n    || { echo ">>> ERROR: $DB_LABEL is installed but did not answer."; exit 1; }\nfi\n\nLISTEN=""\ncommand -v ss >/dev/null 2>&1 && LISTEN="$(ss -ltn 2>/dev/null | grep ":$PORT " || true)"\nif [ -n "$LISTEN" ]; then\n  echo ">>> $DB_LABEL is answering and listening on port $PORT."\nelse\n  echo ">>> $DB_LABEL is answering. Could not confirm the listening port on this system."\nfi\n\necho ""\necho "=== $DB_LABEL is ready ==="\nif [ "$OPENED" = 0 ]; then\n  echo "Nothing may reach it from outside yet - the port is closed to everyone."\n  echo "That is deliberate: an open database is the most attacked thing on a server."\n  echo "Add another server to your account, or open port $PORT to its address from"\n  echo "Firewall & keys, and it will be reachable from there and nowhere else."\nelse\n  echo "$OPENED server(s) may reach it. Everyone else is refused at the firewall."\nfi\necho "Create databases and users for it from the Databases page."\n'),
+    },
+
+    {
         "slug": "lemp-stack",
         "title": "Web server (Nginx + PHP + a database)",
         "description": "Installs Nginx, PHP-FPM with the extensions a real site needs, and the database you choose. It said \u201cMySQL\u201d for months while installing MariaDB \u2014 now the engine is asked for, because the three are not interchangeable.",
@@ -1174,7 +1256,8 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "script_bash": ('#!/bin/bash\nset -euo pipefail\n'
                         + _DISTRO
                         + _PHP_ARCHIVE
-                        + 'MYSQL_ROOT_PASS="{{MYSQL_ROOT_PASS}}"\nPHP_VERSION="{{PHP_VERSION}}"\nDB_ENGINE="{{DB_ENGINE}}"\n[ -z "$DB_ENGINE" ] && DB_ENGINE=mariadb\n[ -z "$PHP_VERSION" ] && PHP_VERSION=default\n\necho "=== Installing the web server ==="\npkg_refresh\npkg_install nginx\nsvc_enable nginx\n\n# --- The database, as chosen -------------------------------------------------\n# MariaDB, MySQL and PostgreSQL are NOT interchangeable, which is why this is asked\n# rather than decided for the customer. Quietly installing one when they picked another\n# is the same lie this screen carried for months: it advertised MySQL and installed\n# MariaDB, and an agency whose client genuinely needed MySQL would only have found out\n# after the machine was built.\ncase "$DB_ENGINE" in\n  mariadb)\n    pkg_install mariadb-server\n    svc_enable mariadb\n    DB_LABEL="MariaDB"\n    ;;\n  mysql)\n    # Debian genuinely has no mysql-server package, only MariaDB. Refuse and name the way\n    # out, rather than substituting.\n    if [ "$OS_ID" = debian ]; then\n      echo ">>> ERROR: Debian does not package MySQL, only MariaDB."\n      echo "    Choose MariaDB, or use Ubuntu if you need real MySQL. Nothing was changed."\n      exit 1\n    fi\n    pkg_install mysql-server\n    if [ "$FAMILY" = debian ]; then svc_enable mysql; else svc_enable mysqld; fi\n    DB_LABEL="MySQL"\n    ;;\n  postgres)\n    if [ "$FAMILY" = debian ]; then\n      pkg_install postgresql postgresql-contrib\n    else\n      pkg_install postgresql-server postgresql-contrib\n      [ -d /var/lib/pgsql/data/base ] || postgresql-setup --initdb >/dev/null 2>&1 || true\n    fi\n    svc_enable postgresql\n    DB_LABEL="PostgreSQL"\n    ;;\n  none)\n    DB_LABEL="none, by your choice"\n    ;;\n  *)\n    echo ">>> ERROR: \\\'$DB_ENGINE\\\' is not a database we install. Nothing was changed."\n    exit 1\n    ;;\nesac\n\n# --- PHP, at the chosen version ----------------------------------------------\nif [ "$PHP_VERSION" = default ]; then\n  # Whatever this system ships. Unchanged for anyone who does not pick a version.\n  if [ "$FAMILY" = debian ]; then\n    pkg_install php-fpm php-mysql php-cli php-curl php-gd php-mbstring php-xml php-zip\n  else\n    pkg_install php-fpm php-mysqlnd php-cli php-curl php-gd php-mbstring php-xml\n  fi\nelse\n  php_version_valid "$PHP_VERSION" \\\n    || { echo ">>> ERROR: \\\'$PHP_VERSION\\\' is not a PHP version. Nothing was changed."; exit 1; }\n  php_archive_add "$PHP_VERSION" \\\n    || { echo ">>> ERROR: could not add the PHP archive. Nothing was changed."; exit 1; }\n  if ! php_install_version "$PHP_VERSION"; then\n    echo ">>> ERROR: PHP $PHP_VERSION could not be installed. It may not exist for this"\n    echo "    system yet. Nothing was changed."\n    exit 1\n  fi\nfi\n\n# PostgreSQL needs its own PHP driver. Without it an app cannot reach the database at all\n# and fails at the first query with a driver-not-found error - which reads to the customer\n# like a bug in their application, not a missing package.\nif [ "$DB_ENGINE" = postgres ]; then\n  if [ "$FAMILY" = debian ] && [ "$PHP_VERSION" != default ]; then\n    pkg_install "php${PHP_VERSION}-pgsql" || echo ">>> Note: the PHP PostgreSQL driver was not available."\n  else\n    pkg_install php-pgsql || echo ">>> Note: the PHP PostgreSQL driver was not available."\n  fi\nfi\n\nif [ "$FAMILY" = rhel ]; then\n  sed -i \\\'s/^user = .*/user = nginx/; s/^group = .*/group = nginx/\\\' /etc/php-fpm.d/www.conf 2>/dev/null || true\nfi\nsvc_enable "$(php_fpm_service)"\n\nif [ -n "$MYSQL_ROOT_PASS" ] && [ "$DB_ENGINE" != postgres ] && [ "$DB_ENGINE" != none ]; then\n  mysql -e "ALTER USER \\\'root\\\'@\\\'localhost\\\' IDENTIFIED BY \\\'${MYSQL_ROOT_PASS}\\\'; FLUSH PRIVILEGES;" 2>/dev/null \\\n    || echo ">>> Note: could not set the database root password (it may already be set)."\nfi\n\nopen_firewall 80; open_firewall 443\n\n# Read back off the machine, not from what we asked for. An installer exiting 0 is not\n# proof the thing is there.\necho "Nginx: $(nginx -v 2>&1)"\necho "Database: $DB_LABEL"\necho "PHP: $(php -v 2>/dev/null | head -1 || echo \\\'not installed\\\')"\necho ">>> The web server is installed."\n'),
+                        + _DB_ENGINE
+                        + '# --- ServerAlly PHP version layer ---\nphp_version_valid() {\n  # The version lands in package names, a service name and a socket path, so it is\n  # validated rather than escaped.\n  case "$1" in\n    [0-9].[0-9]|[0-9].[0-9][0-9]) return 0 ;;\n    *) return 1 ;;\n  esac\n}\nphp_archive_add() {\n  # A distro ships exactly ONE PHP version. Anything else comes from Ondrej Sury\'s archive\n  # on Debian/Ubuntu or Remi\'s on RHEL - the same sources every panel uses for this.\n  if [ "$FAMILY" = debian ]; then\n    grep -rq "ondrej" /etc/apt/sources.list.d/ 2>/dev/null && return 0\n    echo ">>> Adding the PHP archive"\n    pkg_install software-properties-common ca-certificates lsb-release apt-transport-https\n    LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1 || return 1\n    pkg_refresh\n  else\n    pkg_install "https://rpms.remirepo.net/enterprise/remi-release-$(rpm -E %rhel).rpm" >/dev/null 2>&1 || true\n    "$PM" -y module reset php >/dev/null 2>&1 || true\n    "$PM" -y module enable "php:remi-$1" >/dev/null 2>&1 || true\n  fi\n  return 0\n}\nphp_install_version() {\n  # The extension set a real site needs. Without these a framework boots to a blank page,\n  # which is a far worse failure than the install refusing outright.\n  _v="$1"\n  if [ "$FAMILY" = debian ]; then\n    pkg_install "php${_v}-fpm" "php${_v}-cli" "php${_v}-mysql" "php${_v}-mbstring" \\\n                "php${_v}-xml" "php${_v}-curl" "php${_v}-zip" "php${_v}-gd" \\\n                "php${_v}-bcmath" "php${_v}-intl"\n  else\n    pkg_install php-fpm php-cli php-mysqlnd php-mbstring php-xml php-gd php-intl\n  fi\n}\nMYSQL_ROOT_PASS="{{MYSQL_ROOT_PASS}}"\nPHP_VERSION="{{PHP_VERSION}}"\nDB_ENGINE="{{DB_ENGINE}}"\n[ -z "$DB_ENGINE" ] && DB_ENGINE=mariadb\n[ -z "$PHP_VERSION" ] && PHP_VERSION=default\n\necho "=== Installing the web server ==="\npkg_refresh\npkg_install nginx\nsvc_enable nginx\n\n# --- The database, as chosen -------------------------------------------------\n# Installed by the shared engine layer, the same one the dedicated database server uses.\ndb_install "$DB_ENGINE" || exit 1\n\n# --- PHP, at the chosen version ----------------------------------------------\nif [ "$PHP_VERSION" = default ]; then\n  # Whatever this system ships. Unchanged for anyone who does not pick a version.\n  if [ "$FAMILY" = debian ]; then\n    pkg_install php-fpm php-mysql php-cli php-curl php-gd php-mbstring php-xml php-zip\n  else\n    pkg_install php-fpm php-mysqlnd php-cli php-curl php-gd php-mbstring php-xml\n  fi\nelse\n  php_version_valid "$PHP_VERSION" \\\n    || { echo ">>> ERROR: \\\'$PHP_VERSION\\\' is not a PHP version. Nothing was changed."; exit 1; }\n  php_archive_add "$PHP_VERSION" \\\n    || { echo ">>> ERROR: could not add the PHP archive. Nothing was changed."; exit 1; }\n  if ! php_install_version "$PHP_VERSION"; then\n    echo ">>> ERROR: PHP $PHP_VERSION could not be installed. It may not exist for this"\n    echo "    system yet. Nothing was changed."\n    exit 1\n  fi\nfi\n\n# PostgreSQL needs its own PHP driver. Without it an app cannot reach the database at all\n# and fails at the first query with a driver-not-found error - which reads to the customer\n# like a bug in their application, not a missing package.\nif [ "$DB_ENGINE" = postgres ]; then\n  if [ "$FAMILY" = debian ] && [ "$PHP_VERSION" != default ]; then\n    pkg_install "php${PHP_VERSION}-pgsql" || echo ">>> Note: the PHP PostgreSQL driver was not available."\n  else\n    pkg_install php-pgsql || echo ">>> Note: the PHP PostgreSQL driver was not available."\n  fi\nfi\n\nif [ "$FAMILY" = rhel ]; then\n  sed -i \\\'s/^user = .*/user = nginx/; s/^group = .*/group = nginx/\\\' /etc/php-fpm.d/www.conf 2>/dev/null || true\nfi\nsvc_enable "$(php_fpm_service)"\n\nif [ -n "$MYSQL_ROOT_PASS" ] && [ "$DB_ENGINE" != postgres ] && [ "$DB_ENGINE" != none ]; then\n  mysql -e "ALTER USER \\\'root\\\'@\\\'localhost\\\' IDENTIFIED BY \\\'${MYSQL_ROOT_PASS}\\\'; FLUSH PRIVILEGES;" 2>/dev/null \\\n    || echo ">>> Note: could not set the database root password (it may already be set)."\nfi\n\nopen_firewall 80; open_firewall 443\n\n# Read back off the machine, not from what we asked for. An installer exiting 0 is not\n# proof the thing is there.\necho "Nginx: $(nginx -v 2>&1)"\necho "Database: $DB_LABEL"\necho "PHP: $(php -v 2>/dev/null | head -1 || echo \\\'not installed\\\')"\necho ">>> The web server is installed."\n'),
     },
 
     {

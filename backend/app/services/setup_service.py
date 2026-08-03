@@ -80,12 +80,10 @@ PURPOSES = {
                  "Node.js and PM2 to keep the app running."),
     "docker":   ("Docker Server",
                  "Docker and Docker Compose."),
-    # The escape hatch, and the one that has to be named carefully. As "Just secure it for
-    # now" it stood beside three answers to "what will this run" as though security were a
-    # fourth ANSWER — while every option hardens the machine identically (see `_base`), so
-    # the name quietly suggested the others might not. Named for what the customer means.
-    "basic":    ("Something else — I'll install it myself",
-                 "Updated, hardened and ready, with no application software on it."),
+    # For the customer whose application outgrew one machine: the database moves to its
+    # own server, and several web servers can share it.
+    "database": ("Database Server (MariaDB, MySQL, PostgreSQL)",
+                 "Just the database, reachable only from your own servers."),
 }
 
 
@@ -125,7 +123,8 @@ def db_values() -> set[str]:
     return {c["value"] for c in DB_CHOICES}
 
 
-def check_choices(php_version: str, db_engine: str, os_type: str = "") -> None:
+def check_choices(php_version: str, db_engine: str, os_type: str = "",
+                  purpose: str = "websites") -> None:
     """Refuse a combination the installer cannot honour, at the moment it is asked for.
 
     A refusal here costs the customer one click. The same refusal discovered halfway
@@ -135,6 +134,12 @@ def check_choices(php_version: str, db_engine: str, os_type: str = "") -> None:
         raise SetupRefused(f"“{php_version}” is not a PHP version we install.")
     if db_engine not in db_values():
         raise SetupRefused(f"“{db_engine}” is not a database we install.")
+    # "No database" is a sensible answer for a web server whose data lives elsewhere. On a
+    # DATABASE server it is a contradiction, and the machine would finish setup with
+    # nothing on it — so it is refused here rather than at the end of an install.
+    if purpose == "database" and db_engine == "none":
+        raise SetupRefused("A database server needs a database. Choose MariaDB, "
+                           "MySQL or PostgreSQL.")
     family = (os_type or "").strip().lower()
     for choice in DB_CHOICES:
         if choice["value"] == db_engine and family in choice["not_on"]:
@@ -175,12 +180,22 @@ def _base(ssh_port: int, timezone: str, login_user: str, auth_type: str) -> list
 def build_recipe(purpose: str, *, ssh_port: int = 22, timezone: str = "UTC",
                  monitoring: bool = True, login_user: str = "root",
                  auth_type: str = "password", php_version: str = "default",
-                 db_engine: str = "mariadb") -> Recipe:
+                 db_engine: str = "mariadb", allow_from: str = "") -> Recipe:
     """The ordered list of steps for what this server is for."""
     if purpose not in PURPOSES:
         raise SetupRefused(f"“{purpose}” is not something we know how to set up.")
     title, description = PURPOSES[purpose]
     steps = _base(ssh_port, timezone, login_user, auth_type)
+
+    if purpose == "database":
+        # Nothing else goes on it. A database server exists to do one job, and every extra
+        # package on it is another thing that can be attacked on a machine holding the
+        # customer's data.
+        steps += [
+            Step("database-server", "Installing the database",
+                 {"DB_ENGINE": db_engine, "ALLOW_FROM": allow_from}, seconds=120),
+        ]
+        return Recipe(purpose, title, description, steps)
 
     if purpose == "websites":
         # Order: the stack first, then everything that needs PHP to already exist.
