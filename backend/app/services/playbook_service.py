@@ -148,20 +148,37 @@ ssh_set() {
 ssh_backup() { cp -a /etc/ssh/sshd_config "/root/sshd_config.serverally-$(date +%s)" 2>/dev/null || true; }
 # Apply, but never leave the server without a working sshd.
 ssh_apply() {
+  # `sshd -t` needs the privilege separation directory to exist. On Ubuntu 24.04 sshd is
+  # SOCKET-ACTIVATED: /run/sshd is created for each connection and removed again, so the
+  # test fails with "Missing privilege separation directory" on a perfectly good config -
+  # intermittently, depending on whether a connection happens to be open at that instant.
+  # Creating it is exactly what sshd's own unit does (RuntimeDirectory=sshd). Found live:
+  # the step refused and told the owner their settings would not load, which was false.
+  mkdir -p /run/sshd 2>/dev/null || true
+  chmod 0755 /run/sshd 2>/dev/null || true
   if ! sshd -t 2>/tmp/sm_sshd.err; then
-    echo ">>> ERROR: those SSH settings would not load, so nothing was applied:"
-    sed 's/^/    /' /tmp/sm_sshd.err
+    # The reason goes ON this line. The runner keeps only the ">>> ERROR" line, so detail
+    # printed underneath never reached the customer - they got a sentence ending in a
+    # colon that told them nothing at all.
+    echo ">>> ERROR: those SSH settings would not load, so nothing was applied: $(tr '\n' ' ' < /tmp/sm_sshd.err | cut -c1-160)"
     rm -f /etc/ssh/sshd_config.d/00-serverally.conf
     return 1
   fi
   _u="$(ssh_unit)"
-  systemctl reload "$_u" 2>/dev/null || systemctl restart "$_u"
-  sleep 1
-  if [ "$(systemctl is-active "$_u")" != active ] && [ "$(systemctl is-active ssh.socket)" != active ]; then
-    echo ">>> ERROR: SSH did not come back up. Undoing the change."
-    rm -f /etc/ssh/sshd_config.d/00-serverally.conf
-    systemctl restart "$_u" || true
-    return 1
+  if [ "$(systemctl is-active ssh.socket 2>/dev/null)" = active ]; then
+    # Socket activation: every new connection starts its own sshd and reads the config
+    # fresh, so there is nothing to restart - and starting the service here would fight
+    # the socket for port 22. The config was already proven loadable by `sshd -t` above.
+    echo ">>> New connections will use these settings (sshd is socket-activated here)."
+  else
+    systemctl reload "$_u" 2>/dev/null || systemctl restart "$_u"
+    sleep 1
+    if [ "$(systemctl is-active "$_u")" != active ]; then
+      echo ">>> ERROR: SSH did not come back up. Undoing the change."
+      rm -f /etc/ssh/sshd_config.d/00-serverally.conf
+      systemctl restart "$_u" || true
+      return 1
+    fi
   fi
   return 0
 }
