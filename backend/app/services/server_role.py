@@ -41,6 +41,22 @@ PANEL_LABELS = {
 NOT_FRESH = ("web_servers", "databases", "containers", "panels")
 
 
+def setup_applies(finished_at, identity_changed_at) -> bool:
+    """Does a finished setup still describe the machine that is there now?
+
+    No when it finished before the customer told us this is different hardware — that setup
+    installed nginx, PHP and a database on a machine that no longer exists, and counting it
+    is what kept a rebuilt server claiming ServerAlly was its control panel, so the setup
+    choice never came back.
+
+    A setup with no finish time is still running; treating that as "before the rebuild"
+    would discard work happening right now.
+    """
+    if identity_changed_at is None or finished_at is None:
+        return True
+    return finished_at > identity_changed_at
+
+
 def is_fresh(found: dict | None) -> bool | None:
     """Is this machine empty enough that both paths are honest?
 

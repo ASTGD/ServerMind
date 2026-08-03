@@ -80,11 +80,17 @@ async def role(server_id: str, db: DBDep, current_user: CurrentUser) -> dict:
         .where(Site.server_id == server.id, Site.is_present == True)  # noqa: E712
     )).scalar() or 0
 
+    # A setup that finished BEFORE the machine was replaced described the previous one.
+    # Counting it is what kept a rebuilt server claiming ServerAlly was its control panel,
+    # so it never offered the choice again.
+    applies = server_role.setup_applies(
+        getattr(latest, "finished_at", None), getattr(server, "identity_changed_at", None))
+
     out = server_role.decide(
         connection_type=server.connection_type,
         panel_type=server.panel_type,
-        setup_done=bool(latest and latest.status == "done"),
-        setup_running=bool(latest and latest.status == "running"),
+        setup_done=bool(latest and latest.status == "done") and applies,
+        setup_running=bool(latest and latest.status == "running") and applies,
         site_count=int(site_count),
     )
     # What the customer would be choosing between, read from the playbooks this deployment

@@ -34,6 +34,9 @@ class Server(Base):
     cloud_instance_id: Mapped[str | None] = mapped_column(String(255))
     encrypted_cred: Mapped[str] = mapped_column(Text, nullable=False)
     fingerprint: Mapped[str | None] = mapped_column(Text)
+    #: When the customer last told us this is a different machine, by trusting a new host
+    #: key. Everything we recorded before it describes hardware that no longer exists.
+    identity_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     os_type: Mapped[str | None] = mapped_column(String(50))
     os_version: Mapped[str | None] = mapped_column(String(50))
     arch: Mapped[str | None] = mapped_column(String(20))

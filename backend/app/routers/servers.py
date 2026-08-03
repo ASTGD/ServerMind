@@ -271,6 +271,30 @@ async def test_server(
     }
 
 
+async def _forget_the_previous_machine(server, db: AsyncSession) -> None:
+    """Drop what we believed about a server whose identity has just been replaced.
+
+    Deliberately marks sites ABSENT rather than deleting them — the same rule the discovery
+    scan follows, so "when did this disappear?" stays answerable during an incident. The
+    timestamp is what lets a completed setup stop counting: it described the old machine.
+
+    The panel is cleared rather than kept because it decides the whole menu and the shell
+    guards; if the rebuilt machine really does run one, the Start-here look detects it again
+    and records it, so this is self-healing rather than lossy.
+    """
+    from sqlalchemy import update
+
+    from app.models.site import Site
+
+    server.identity_changed_at = datetime.now(timezone.utc)
+    server.panel_type = None
+    server.category = "vps"
+    await db.execute(
+        update(Site).where(Site.server_id == server.id, Site.is_present == True)  # noqa: E712
+        .values(is_present=False)
+    )
+
+
 @router.post("/{server_id}/trust-key")
 async def trust_server_key(
     server_id: uuid.UUID,
@@ -296,6 +320,12 @@ async def trust_server_key(
         server.status = "auth_failed"
     else:
         server.status = "offline"
+
+    # This is the customer telling us it is a DIFFERENT machine, so everything we recorded
+    # about the previous one stops applying. Without this a rebuilt server went on listing
+    # websites that no longer exist and went on claiming ServerAlly was its control panel,
+    # so it never offered the setup choice again.
+    await _forget_the_previous_machine(server, db)
     await db.commit()
     await audit_service.audit(
         db, current_user, "server.trust_key",
