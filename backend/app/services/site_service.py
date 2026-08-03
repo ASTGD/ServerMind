@@ -914,6 +914,52 @@ async def install(db, server, user, site, *, site_type: str, variables: dict | N
     return site, str(run.id), script
 
 
+async def _look_where_an_install_just_finished(db, user_id) -> int:
+    """Look at any server where an installer has finished but nothing has SEEN the site yet.
+
+    A site becomes live because a scan sees it on the server, never because the installer
+    exited 0 — that rule is the whole point, and it stays. What was missing is that nothing
+    ran the scan when an install ended, so three sites installed successfully and sat on
+    "Setting up" until somebody happened to press "Look for sites" five minutes later. The
+    work had finished; the screen simply never said so.
+
+    Costs nothing in the ordinary case: the query returns no rows unless an install has just
+    succeeded, which is a state that lasts seconds.
+
+    Best-effort by construction. A server we cannot reach leaves its site ``installing`` —
+    which is the honest answer, because we genuinely have not seen it — and never breaks the
+    page that was only asking for a list.
+    """
+    from sqlalchemy import select
+
+    from app.models.playbook import PlaybookRun
+    from app.models.server import Server
+    from app.models.site import Site
+
+    servers = (await db.execute(
+        select(Server).distinct()
+        .join(Site, Site.server_id == Server.id)
+        .join(PlaybookRun, Site.install_run_id == PlaybookRun.id)
+        .where(Site.user_id == user_id,
+               Site.status == "installing",
+               PlaybookRun.status == "success")
+    )).scalars().all()
+
+    looked = 0
+    for server in servers:
+        try:
+            found, _truncated, error = await discover(server)
+            if error:
+                logger.info("Could not look at %s after an install: %s", server.name, error)
+                continue
+            await sync(db, server, found)
+            looked += 1
+        except Exception:                                    # noqa: BLE001
+            logger.info("Look-after-install failed on %s", server.name, exc_info=True)
+    return looked
+
+
+
 async def reconcile_installs(db, user_id) -> int:
     """Conclude the runs that decide what a site currently is, and leave each site's uptime
     check matching whether the site is really there.
@@ -937,6 +983,12 @@ async def reconcile_installs(db, user_id) -> int:
 
     from app.models.playbook import Playbook, PlaybookRun
     from app.models.site import Site
+
+    # First: go and LOOK where an installer has just finished, so a site that really is
+    # there stops claiming to be building. This rides along here rather than sitting in the
+    # Celery task or in a fourth caller, for the reason stated below — the last three bugs
+    # in this area were each a correct routine that some call site forgot to invoke.
+    await _look_where_an_install_just_finished(db, user_id)
 
     rows = (await db.execute(
         select(Site, PlaybookRun, Playbook.slug)
