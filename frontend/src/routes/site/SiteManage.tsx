@@ -174,6 +174,10 @@ function DomainAliases({ site }: { site: SiteDetail }) {
     setError(null)
     setValue("")
     qc.invalidateQueries({ queryKey: ["site-aliases", site.id] })
+    // The editor below is showing the file we just changed. Left stale, it would display a
+    // configuration the server no longer has — and pressing Save on it would quietly undo
+    // the alias, with the screen having told the customer it was added.
+    qc.invalidateQueries({ queryKey: ["site-vhost", site.id] })
   }
   const failed = (e: unknown) => {
     setNote(null)
