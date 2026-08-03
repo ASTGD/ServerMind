@@ -1516,6 +1516,72 @@ async def remove_site_auth(site_id: str, name: str, db: DBDep,
 
 
 
+class SuspendIn(BaseModel):
+    suspended: bool
+    message: str = Field(default="", max_length=200)
+    reason: str = Field(default="", max_length=4000)
+    code: int = 503
+
+
+@router.get("/sites/{site_id}/suspend")
+async def get_site_suspend(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Whether this site is suspended, and with what."""
+    import base64 as _b
+    import json as _j
+
+    from app.services import connection_manager, suspend_service as sus
+
+    site, server = await _site_and_server(site_id, current_user, db)
+    out, _err, code = await connection_manager.execute(
+        server, sus.build_state_command(site.domain))
+    state = {}
+    if code == 0 and (out or "").strip():
+        try:
+            state = _j.loads(_b.b64decode(out.strip()).decode())
+        except Exception:  # noqa: BLE001
+            state = {}
+    return {
+        "suspended": bool(state),
+        "message": state.get("message", ""),
+        "reason": state.get("reason", ""),
+        "code": state.get("code", sus.DEFAULT_CODE),
+        "codes": [dict(c) for c in sus.CODES],
+    }
+
+
+@router.post("/sites/{site_id}/suspend")
+async def set_site_suspend(site_id: str, body: SuspendIn, db: DBDep,
+                           current_user: CurrentUser) -> dict:
+    """Take the site offline behind a notice, or put it back."""
+    from app.services import connection_manager, suspend_service as sus
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    try:
+        status = sus.check_code(body.code)
+    except sus.SuspendError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    cfg, apache, why = await _resolve_site_config(server, site)
+    if cfg is None:
+        raise HTTPException(status_code=422, detail=why or "Its configuration was not found.")
+
+    cmd = sus.build_apply_command(
+        cfg, site.domain, suspended=body.suspended, message=body.message,
+        reason=body.reason, code=status, apache=apache)
+    out, err, rc = await connection_manager.execute(server, cmd)
+    ok, message = sus.explain(rc, (out or "") + (err or ""),
+                              suspended=body.suspended, status=status)
+    if not ok:
+        raise HTTPException(status_code=422, detail=message)
+
+    await audit_service.audit(
+        db, current_user, "site.suspended" if body.suspended else "site.unsuspended",
+        target_type="server", target_id=str(server.id),
+        meta={"domain": site.domain, "code": status})
+    return {"suspended": body.suspended, "code": status, "message": message}
+
+
+
 class VhostIn(BaseModel):
     content: str
 

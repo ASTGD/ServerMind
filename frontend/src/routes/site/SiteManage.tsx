@@ -3,14 +3,16 @@ import { useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import Editor from "@monaco-editor/react"
 import {
-  AlertTriangle, FileCode2, Globe, Loader2, Lock, RotateCcw, X,
+  AlertTriangle, FileCode2, Globe, Loader2, Lock, PauseCircle, RotateCcw, X,
 } from "lucide-react"
 import {
   addSiteAlias, getSiteAliases, getSiteAuth, getSiteVhost, removeSiteAlias,
-  removeSiteAuth, saveSiteVhost, setSiteAuth, type SiteDetail,
+  getSiteSuspend, removeSiteAuth, saveSiteVhost, setSiteAuth, setSiteSuspend,
+  type SiteDetail,
 } from "@/api/sites"
 import { Button, EmptyState } from "@/components/ui"
 import { useThemeStore } from "@/store/themeStore"
+import { cn } from "@/lib/utils"
 
 /**
  * The tasks that do not belong to any one part of a site — Ploi's "Manage" screen.
@@ -30,6 +32,7 @@ export default function SiteManage() {
   return (
     <div className="space-y-4">
       <Authentication site={site} />
+      <SuspendSite site={site} />
       <DomainAliases site={site} />
       <VhostEditor site={site} />
     </div>
@@ -411,6 +414,148 @@ function Authentication({ site }: { site: SiteDetail }) {
           ))}
         </ul>
       )}
+    </div>
+  )
+}
+
+
+/**
+ * Take the site offline on purpose, behind a notice — Ploi's "Suspend site".
+ *
+ * The response code is not a detail. It is what search engines are told, and 200 means
+ * "this IS the page now" — a client's real pages get replaced in the index by a suspension
+ * notice, and that outlives the billing dispute by months. So 503 is the default and every
+ * option says what it costs.
+ */
+function SuspendSite({ site }: { site: SiteDetail }) {
+  const qc = useQueryClient()
+  const [message, setMessage] = useState("")
+  const [reason, setReason] = useState("")
+  const [code, setCode] = useState(503)
+  const [touched, setTouched] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+
+  const q = useQuery({
+    queryKey: ["site-suspend", site.id],
+    queryFn: () => getSiteSuspend(site.id),
+  })
+
+  // Fill the form from what the site is actually suspended WITH, so it is edited rather
+  // than retyped — but never overwrite something the customer is in the middle of typing.
+  if (q.data && !touched && (q.data.message !== message || q.data.reason !== reason)) {
+    if (q.data.suspended) { setMessage(q.data.message); setReason(q.data.reason); setCode(q.data.code) }
+    setTouched(true)
+  }
+
+  const after = (m: string) => {
+    setNote(m); setError(null)
+    qc.invalidateQueries({ queryKey: ["site-suspend", site.id] })
+    qc.invalidateQueries({ queryKey: ["site-vhost", site.id] })
+  }
+  const failed = (e: unknown) => {
+    setNote(null)
+    setError((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      ?? "That could not be changed.")
+  }
+
+  const go = useMutation({
+    mutationFn: (on: boolean) => setSiteSuspend(site.id, {
+      suspended: on, message, reason, code,
+    }),
+    onSuccess: (r) => after(r.message), onError: failed,
+  })
+
+  const on = q.data?.suspended ?? false
+  const codes = q.data?.codes ?? []
+  const chosen = codes.find((c) => c.value === code)
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center gap-2">
+        <PauseCircle size={15} className="text-muted-foreground" />
+        <h3 className="text-h3 text-foreground">Suspend site</h3>
+      </div>
+      <p className="mt-1 text-small text-muted-foreground">
+        Show a notice instead of the site — useful when a client has not paid. Nothing is
+        deleted, and putting it back is one click.
+      </p>
+
+      {on && (
+        <p className="mt-2 rounded-lg border-l-2 border-amber-500 bg-amber-500/5 px-3 py-2
+                      text-small text-foreground">
+          <span className="font-medium">This site is suspended.</span> Visitors see your
+          notice and the site answers with {q.data?.code}.
+        </p>
+      )}
+
+      <div className="mt-3 space-y-2">
+        <div>
+          <label className="text-caption text-muted-foreground">Headline</label>
+          <input value={message} onChange={(e) => { setMessage(e.target.value); setTouched(true) }}
+            placeholder="Website is suspended" disabled={go.isPending}
+            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-1.5
+            text-sm text-foreground" />
+        </div>
+        <div>
+          <label className="text-caption text-muted-foreground">
+            Message to visitors (optional)
+          </label>
+          <textarea value={reason} onChange={(e) => { setReason(e.target.value); setTouched(true) }}
+            rows={3} disabled={go.isPending}
+            placeholder="Please contact us to restore this website."
+            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-1.5
+            text-sm text-foreground" />
+          <p className="mt-1 text-caption text-muted-foreground">
+            **bold**, *italic*, - lists and links are understood. Anything else is shown as
+            written.
+          </p>
+        </div>
+        <div>
+          <label className="text-caption text-muted-foreground">What to answer with</label>
+          <select value={code} onChange={(e) => { setCode(Number(e.target.value)); setTouched(true) }}
+            disabled={go.isPending}
+            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-1.5
+            text-sm text-foreground">
+            {codes.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+          {chosen && (
+            <p className={cn("mt-1 text-caption",
+              chosen.value === 503 ? "text-muted-foreground"
+                : "text-amber-600 dark:text-amber-400")}>
+              {chosen.note}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {error && (
+        <p className="mt-2 rounded-lg border-l-2 border-destructive bg-destructive/5 px-3 py-2
+                      text-small text-destructive">{error}</p>
+      )}
+      {note && !error && (
+        <p className="mt-2 rounded-lg border-l-2 border-emerald-500 bg-emerald-500/5 px-3 py-2
+                      text-small text-foreground">{note}</p>
+      )}
+
+      <div className="mt-3 flex gap-2">
+        {on ? (
+          <Button onClick={() => go.mutate(false)} disabled={go.isPending}>
+            {go.isPending && <Loader2 size={14} className="animate-spin" />}
+            Put the site back
+          </Button>
+        ) : (
+          <Button variant="outline" onClick={() => go.mutate(true)} disabled={go.isPending}>
+            {go.isPending && <Loader2 size={14} className="animate-spin" />}
+            Suspend this site
+          </Button>
+        )}
+        {on && (
+          <Button variant="ghost" onClick={() => go.mutate(true)} disabled={go.isPending}>
+            Update the notice
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

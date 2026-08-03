@@ -656,3 +656,27 @@ export async function removeSiteAuth(
     `/api/sites/${siteId}/auth/${encodeURIComponent(name)}`)
   return data
 }
+
+
+export interface SuspendCode { value: number; label: string; note: string }
+
+export interface SiteSuspend {
+  suspended: boolean
+  message: string
+  reason: string
+  code: number
+  codes: SuspendCode[]
+}
+
+export async function getSiteSuspend(siteId: string): Promise<SiteSuspend> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/suspend`)
+  return data
+}
+
+export async function setSiteSuspend(
+  siteId: string,
+  body: { suspended: boolean; message?: string; reason?: string; code?: number },
+): Promise<{ suspended: boolean; code: number; message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/suspend`, body)
+  return data
+}
