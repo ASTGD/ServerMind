@@ -101,6 +101,7 @@ export default function ServerDatabases() {
         <AddDialog
           serverId={server.id}
           engine={adding}
+          ownServers={data?.own_servers ?? []}
           onClose={() => setAdding(null)}
           onDone={(name) => {
             setAdding(null)
@@ -214,21 +215,26 @@ function EngineCard({ engine, onAdd, onRemove }: {
   )
 }
 
-function AddDialog({ serverId, engine, onClose, onDone }: {
+function AddDialog({ serverId, engine, onClose, onDone, ownServers }: {
   serverId: string
   engine: string
   onClose: () => void
   onDone: (name: string) => void
+  ownServers: { name: string; host: string }[]
 }) {
   const [name, setName] = useState("")
   const [user, setUser] = useState("")
+  // This machine by default — what every database made before this existed used, and what
+  // a site on the same server needs.
+  const [host, setHost] = useState("localhost")
   // Generated up front so the common path is: type a name, press the button. A customer
   // asked to invent a database password picks a weak one.
   const [password, setPassword] = useState(strongPassword)
   const [error, setError] = useState<string | null>(null)
 
   const create = useMutation({
-    mutationFn: () => createDatabase(serverId, { engine, name, user: user || name, password }),
+    mutationFn: () => createDatabase(
+      serverId, { engine, name, user: user || name, password, host }),
     onSuccess: (r) => onDone(r.name),
     onError: (e: { response?: { data?: { detail?: string } } }) =>
       setError(e.response?.data?.detail ?? "The database could not be created."),
@@ -273,6 +279,39 @@ function AddDialog({ serverId, engine, onClose, onDone }: {
               Leave empty to use the same name as the database.
             </p>
           </div>
+
+          {/* Only offered when there is somewhere else to offer. PostgreSQL decides this
+              in pg_hba.conf rather than on the user, so saying otherwise would be a lie —
+              the note says which one applies. */}
+          {ownServers.length > 0 && (
+            <div>
+              <label className="text-caption text-muted-foreground">
+                Which server will connect
+              </label>
+              <select
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3
+                           py-1.5 text-sm text-foreground"
+              >
+                <option value="localhost">This server only</option>
+                {ownServers.map((srv) => (
+                  <option key={srv.host} value={srv.host}>
+                    {srv.name} ({srv.host})
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-caption text-muted-foreground">
+                {engine === "postgres"
+                  ? "PostgreSQL decides this in its access file, which the database-server "
+                    + "setup already wrote for your servers."
+                  : host === "localhost"
+                    ? "Choose another server only if the application runs on a different "
+                      + "machine from this database."
+                    : "The user will be able to sign in from that server and nowhere else."}
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="text-caption text-muted-foreground">Password</label>

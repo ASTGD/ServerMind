@@ -85,6 +85,43 @@ def validate_name(name: str, *, what: str = "name") -> str:
     return name
 
 
+LOCAL_ONLY = "localhost"
+
+
+def validate_host(host: str) -> str:
+    """Which machine a database user may sign in from.
+
+    The default is this machine only, which is what every database created before this
+    existed used, and what a site on the same server needs.
+
+    A dedicated database server is the other case: the application is on a different
+    machine, so the user has to be allowed from that machine's address — the firewall
+    lets the packet through, and then MySQL refuses it unless the user says so too.
+
+    **`%` — meaning "from anywhere" — is refused.** It is one character away from the
+    correct answer and it is how a database ends up open to the internet; a panel that
+    quietly uses it is trading the customer's safety for one less question. A hostname is
+    refused too: MySQL resolves it by reverse DNS at connection time, which is slow and
+    fails in ways nobody can debug from this screen.
+    """
+    host = (host or "").strip()
+    if not host or host == LOCAL_ONLY:
+        return LOCAL_ONLY
+    if host in ("%", "0.0.0.0") or "%" in host or "_" in host:
+        raise DatabaseError(
+            "A database user cannot be allowed from anywhere. Give the address of the "
+            "server that will connect, or leave it as this machine only.")
+    if not re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", host):
+        raise DatabaseError(
+            f"“{host}” is not an IP address. Give the address of the server that will "
+            f"connect to this database.")
+    for part in host.split("."):
+        if int(part) > 255:
+            raise DatabaseError(f"“{host}” is not a valid IP address.")
+    return host
+
+
+
 def check_not_system(name: str, engine: str) -> None:
     """A system database is never a valid target for creation or deletion."""
     system = _MYSQL_SYSTEM if engine == "mysql" else _POSTGRES_SYSTEM
@@ -289,7 +326,8 @@ def _quote_password(engine: str, password: str) -> str:
     return password.replace("'", "''")
 
 
-def build_create_sql(engine: str, db_name: str, user: str, password: str) -> str:
+def build_create_sql(engine: str, db_name: str, user: str, password: str,
+                     host: str = LOCAL_ONLY) -> str:
     """The statements that create one database and a user with rights to only that one.
 
     Every identifier here has already been through :func:`validate_name`, so it contains
@@ -303,10 +341,14 @@ def build_create_sql(engine: str, db_name: str, user: str, password: str) -> str
     if engine == "mysql":
         return "\n".join([
             f"CREATE DATABASE `{db_name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;",
-            f"CREATE USER '{user}'@'localhost' IDENTIFIED BY '{pw}';",
-            f"GRANT ALL PRIVILEGES ON `{db_name}`.* TO '{user}'@'localhost';",
+            f"CREATE USER '{user}'@'{host}' IDENTIFIED BY '{pw}';",
+            f"GRANT ALL PRIVILEGES ON `{db_name}`.* TO '{user}'@'{host}';",
             "FLUSH PRIVILEGES;",
         ])
+    # PostgreSQL has no host on the role itself — which machines may connect is decided
+    # entirely by pg_hba.conf, written by the database-server playbook for each address it
+    # was told to allow. So `host` genuinely changes nothing here, and pretending otherwise
+    # would be worse than saying so.
     return "\n".join([
         # Set rather than assumed: with this off, a backslash in the password would be
         # read as an escape and the stored password would not be the one that was typed.
@@ -372,12 +414,16 @@ async def _run_sql(server: Server, engine: str, sql: str) -> tuple[str, str, int
             pass
 
 
-def build_drop_sql(engine: str, db_name: str, drop_user: str | None) -> str:
+def build_drop_sql(engine: str, db_name: str, drop_user: str | None,
+                   host: str = LOCAL_ONLY) -> str:
     """Remove a database, and optionally the user that owned it."""
     if engine == "mysql":
         lines = [f"DROP DATABASE `{db_name}`;"]
         if drop_user:
-            lines.append(f"DROP USER '{drop_user}'@'localhost';")
+            # The host is part of the identity: a user created for another machine is a
+            # DIFFERENT account from the same name on localhost, and dropping the wrong
+            # one fails while looking like it worked.
+            lines.append(f"DROP USER '{drop_user}'@'{host}';")
         lines.append("FLUSH PRIVILEGES;")
         return "\n".join(lines)
     lines = [f'DROP DATABASE "{db_name}";']
@@ -406,7 +452,7 @@ def _friendly(engine: str, output: str) -> str:
 
 
 async def create_database(server: Server, *, engine: str, db_name: str,
-                          user: str, password: str) -> dict:
+                          user: str, password: str, host: str = LOCAL_ONLY) -> dict:
     """Create one database and a user with rights to it alone."""
     if engine not in ENGINES:
         raise DatabaseError("Choose MySQL/MariaDB or PostgreSQL.")
@@ -415,18 +461,20 @@ async def create_database(server: Server, *, engine: str, db_name: str,
     validate_password(password)
     check_not_system(db_name, engine)
     check_not_system(user, engine)
+    host = validate_host(host)
 
-    sql = build_create_sql(engine, db_name, user, password)
+    sql = build_create_sql(engine, db_name, user, password, host)
     stdout, stderr, code = await _run_sql(server, engine, sql)
     if code != 0:
         raise DatabaseError(_friendly(engine, stderr or stdout))
     # The password is deliberately not returned and not stored: the customer typed it,
     # and it is not this screen's job to keep a second copy of it anywhere.
-    return {"engine": engine, "name": db_name, "user": user}
+    return {"engine": engine, "name": db_name, "user": user, "host": host}
 
 
 async def drop_database(server: Server, *, engine: str, db_name: str,
-                        confirm_name: str, drop_user: str | None = None) -> dict:
+                        confirm_name: str, drop_user: str | None = None,
+                        host: str = LOCAL_ONLY) -> dict:
     """Delete a database. There is no undo anywhere in this system.
 
     The typed name has to match, because the loss here is rarely "I meant not to" — it is
@@ -447,7 +495,7 @@ async def drop_database(server: Server, *, engine: str, db_name: str,
         check_not_system(drop_user, engine)
         check_user_removable(drop_user)
 
-    sql = build_drop_sql(engine, db_name, drop_user)
+    sql = build_drop_sql(engine, db_name, drop_user, validate_host(host))
     stdout, stderr, code = await _run_sql(server, engine, sql)
     if code != 0:
         raise DatabaseError(_friendly(engine, stderr or stdout))
