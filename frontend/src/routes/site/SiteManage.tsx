@@ -3,9 +3,12 @@ import { useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import Editor from "@monaco-editor/react"
 import {
-  AlertTriangle, FileCode2, Loader2, RotateCcw,
+  AlertTriangle, FileCode2, Globe, Loader2, RotateCcw, X,
 } from "lucide-react"
-import { getSiteVhost, saveSiteVhost, type SiteDetail } from "@/api/sites"
+import {
+  addSiteAlias, getSiteAliases, getSiteVhost, removeSiteAlias, saveSiteVhost,
+  type SiteDetail,
+} from "@/api/sites"
 import { Button, EmptyState } from "@/components/ui"
 import { useThemeStore } from "@/store/themeStore"
 
@@ -26,6 +29,7 @@ export default function SiteManage() {
 
   return (
     <div className="space-y-4">
+      <DomainAliases site={site} />
       <VhostEditor site={site} />
     </div>
   )
@@ -143,5 +147,121 @@ function VhostEditor({ site }: { site: SiteDetail }) {
         }}
       />
     </section>
+  )
+}
+
+
+/**
+ * Extra domains that answer for the same site.
+ *
+ * Two things are said plainly on this card because a customer who is not told will report
+ * both as bugs: adding the domain here makes the SERVER answer for it, but it does not
+ * point that domain here, and it does not put it on the certificate.
+ */
+function DomainAliases({ site }: { site: SiteDetail }) {
+  const qc = useQueryClient()
+  const [value, setValue] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+
+  const q = useQuery({
+    queryKey: ["site-aliases", site.id],
+    queryFn: () => getSiteAliases(site.id),
+  })
+
+  const done = (message: string) => {
+    setNote(message)
+    setError(null)
+    setValue("")
+    qc.invalidateQueries({ queryKey: ["site-aliases", site.id] })
+  }
+  const failed = (e: unknown) => {
+    setNote(null)
+    setError((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      ?? "That domain could not be changed.")
+  }
+
+  const add = useMutation({
+    mutationFn: () => addSiteAlias(site.id, value),
+    onSuccess: (r) => done(r.message),
+    onError: failed,
+  })
+  const drop = useMutation({
+    mutationFn: (alias: string) => removeSiteAlias(site.id, alias),
+    onSuccess: () => done("Removed. The site no longer answers for that domain."),
+    onError: failed,
+  })
+
+  const aliases = q.data?.aliases ?? []
+  const busy = add.isPending || drop.isPending
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center gap-2">
+        <Globe size={15} className="text-muted-foreground" />
+        <h3 className="text-h3 text-foreground">Domain aliases</h3>
+      </div>
+      <p className="mt-1 text-small text-muted-foreground">
+        Extra domains that show this same site. Useful for <code>www.</code> and for a
+        second domain a client owns.
+      </p>
+
+      <form
+        className="mt-3 flex flex-wrap gap-2"
+        onSubmit={(e) => { e.preventDefault(); if (value.trim()) add.mutate() }}
+      >
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={`www.${site.domain}`}
+          disabled={busy}
+          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-1.5
+                     font-mono text-sm text-foreground"
+        />
+        <Button type="submit" disabled={busy || !value.trim()}>
+          {add.isPending && <Loader2 size={14} className="animate-spin" />}
+          Add
+        </Button>
+      </form>
+
+      {error && (
+        <p className="mt-2 rounded-lg border-l-2 border-destructive bg-destructive/5 px-3 py-2
+                      text-small text-destructive">
+          {error}
+        </p>
+      )}
+      {note && !error && (
+        <p className="mt-2 rounded-lg border-l-2 border-emerald-500 bg-emerald-500/5 px-3 py-2
+                      text-small text-foreground">
+          {note}
+        </p>
+      )}
+
+      {q.isLoading ? (
+        <div className="mt-3 h-8 animate-pulse rounded-lg bg-muted" />
+      ) : aliases.length === 0 ? (
+        <p className="mt-3 text-caption text-muted-foreground">
+          Only <span className="font-mono">{site.domain}</span> reaches this site.
+        </p>
+      ) : (
+        <ul className="mt-3 divide-y divide-border rounded-lg border border-border">
+          {aliases.map((alias) => (
+            <li key={alias} className="flex items-center justify-between gap-3 px-3 py-2">
+              <span className="truncate font-mono text-[13px] text-foreground">{alias}</span>
+              <button
+                type="button"
+                onClick={() => drop.mutate(alias)}
+                disabled={busy}
+                title={`Stop answering for ${alias}`}
+                className="shrink-0 rounded-md p-1 text-muted-foreground
+                           hover:bg-destructive/10 hover:text-destructive"
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }

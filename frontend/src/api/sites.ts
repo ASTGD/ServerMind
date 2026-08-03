@@ -602,3 +602,29 @@ export async function saveSiteVhost(
   const { data } = await apiClient.post(`/api/sites/${siteId}/vhost`, { content })
   return data
 }
+
+
+export interface SiteAliases {
+  domain: string
+  aliases: string[]
+}
+
+export async function getSiteAliases(siteId: string): Promise<SiteAliases> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/aliases`)
+  return data
+}
+
+export async function addSiteAlias(
+  siteId: string, alias: string,
+): Promise<{ aliases: string[]; message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/aliases`, { alias })
+  return data
+}
+
+export async function removeSiteAlias(
+  siteId: string, alias: string,
+): Promise<{ aliases: string[]; message: string }> {
+  const { data } = await apiClient.delete(
+    `/api/sites/${siteId}/aliases/${encodeURIComponent(alias)}`)
+  return data
+}

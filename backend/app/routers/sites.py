@@ -1317,6 +1317,92 @@ async def read_site_vhost(site_id: str, db: DBDep, current_user: CurrentUser) ->
     return {"ok": True, "path": path, "content": content}
 
 
+class AliasIn(BaseModel):
+    alias: str = Field(max_length=253)
+
+
+async def _alias_apply(server, site, aliases: list[str], db) -> dict:
+    """Write the list into the site's configuration, and record it only if that worked.
+
+    The order matters: the server is the truth. Saving our row first would leave the page
+    showing an alias the web server never accepted — which is the same "we said it worked"
+    failure the whole product exists to avoid.
+    """
+    from app.services import alias_service, connection_manager
+
+    path, apache, why = await _resolve_site_config(server, site)
+    if path is None:
+        raise HTTPException(status_code=422, detail=why or "Its configuration was not found.")
+
+    cmd = alias_service.build_apply_command(path, site.domain, aliases, apache=apache)
+    out, err, code = await connection_manager.execute(server, cmd)
+    ok, message = alias_service.explain(code, (out or "") + (err or ""))
+    if not ok:
+        raise HTTPException(status_code=422, detail=message)
+
+    site.aliases = aliases
+    await db.commit()
+    return {"aliases": aliases, "message": message}
+
+
+@router.get("/sites/{site_id}/aliases")
+async def list_site_aliases(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """The extra domains this site answers for."""
+    site, server = await _site_and_server(site_id, current_user, db)
+    return {"domain": site.domain, "aliases": list(site.aliases or [])}
+
+
+@router.post("/sites/{site_id}/aliases", status_code=201)
+async def add_site_alias(site_id: str, body: AliasIn, db: DBDep,
+                         current_user: CurrentUser) -> dict:
+    """Make this site answer for one more domain."""
+    from app.services import alias_service
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+
+    # Who else on THIS server already answers for that name. The web server hands a name to
+    # whichever block claims it, so without this a neighbour's visitors would quietly start
+    # arriving here and nothing on either screen would say why.
+    others = (await db.execute(
+        select(Site).where(Site.server_id == server.id, Site.id != site.id,
+                           Site.is_present.is_(True)))).scalars().all()
+    taken: dict[str, str] = {}
+    for row in others:
+        for name in [row.domain, *(row.aliases or [])]:
+            taken[(name or "").strip().lower()] = row.domain
+
+    try:
+        alias = alias_service.check_new(
+            body.alias, domain=site.domain, existing=list(site.aliases or []), taken=taken)
+    except alias_service.AliasError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    result = await _alias_apply(server, site, [*(site.aliases or []), alias], db)
+    await audit_service.audit(db, current_user, "site.alias_added",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "alias": alias})
+    return result
+
+
+@router.delete("/sites/{site_id}/aliases/{alias}")
+async def remove_site_alias(site_id: str, alias: str, db: DBDep,
+                            current_user: CurrentUser) -> dict:
+    """Stop answering for one of them. Runs the same command as adding, so there is no
+    separate removal path to get wrong."""
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    target = (alias or "").strip().lower()
+    remaining = [a for a in (site.aliases or []) if a.strip().lower() != target]
+    if len(remaining) == len(site.aliases or []):
+        raise HTTPException(status_code=404, detail="That is not an alias of this site.")
+
+    result = await _alias_apply(server, site, remaining, db)
+    await audit_service.audit(db, current_user, "site.alias_removed",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "alias": target})
+    return result
+
+
+
 class VhostIn(BaseModel):
     content: str
 
