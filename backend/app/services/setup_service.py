@@ -67,11 +67,18 @@ class Recipe:
 
 # What the server is FOR, in the customer's words — never "which stack".
 PURPOSES = {
-    "websites": ("Websites (WordPress, PHP)",
-                 "Nginx, PHP and MySQL — what most websites need."),
-    "nodejs":   ("A Node.js app",
+    # Named as SERVER ROLES rather than activities, because the buyer is an agency and
+    # "Docker Server" is the phrase they already use. The bracket is the "is this mine?"
+    # signal — somebody scanning for Laravel or Next.js should find it without reading on.
+    #
+    # It says MariaDB because that is what `lemp-stack` actually installs. It said MySQL
+    # for months; they are close cousins but not the same thing, and an agency whose
+    # client genuinely needs MySQL would only find out after the machine was built.
+    "websites": ("Web Server (HTML, PHP, WordPress, Laravel)",
+                 "Nginx, PHP and MariaDB — what most websites need."),
+    "nodejs":   ("Node.js Server (Express, Next.js, NestJS)",
                  "Node.js and PM2 to keep the app running."),
-    "docker":   ("Docker containers",
+    "docker":   ("Docker Server",
                  "Docker and Docker Compose."),
     # The escape hatch, and the one that has to be named carefully. As "Just secure it for
     # now" it stood beside three answers to "what will this run" as though security were a
