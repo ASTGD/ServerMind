@@ -227,6 +227,49 @@ apt() { apt_wait || return 1; command apt -o DPkg::Lock::Timeout=600 "$@"; }
 """
 
 
+# The PHP-version layer, shared by the stack installer and the add-a-version playbook.
+# Written once on purpose: the same rule living in two scripts is how `apt_wait` ended up
+# missing from half the steps that needed it.
+_PHP_ARCHIVE = r"""# --- ServerAlly PHP version layer ---
+php_version_valid() {
+  # The version lands in package names, a service name and a socket path, so it is
+  # validated rather than escaped.
+  case "$1" in
+    [0-9].[0-9]|[0-9].[0-9][0-9]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+php_archive_add() {
+  # A distro ships exactly ONE PHP version. Anything else comes from Ondrej Sury's archive
+  # on Debian/Ubuntu or Remi's on RHEL - the same sources every panel uses for this.
+  if [ "$FAMILY" = debian ]; then
+    grep -rq "ondrej" /etc/apt/sources.list.d/ 2>/dev/null && return 0
+    echo ">>> Adding the PHP archive"
+    pkg_install software-properties-common ca-certificates lsb-release apt-transport-https
+    LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1 || return 1
+    pkg_refresh
+  else
+    pkg_install "https://rpms.remirepo.net/enterprise/remi-release-$(rpm -E %rhel).rpm" >/dev/null 2>&1 || true
+    "$PM" -y module reset php >/dev/null 2>&1 || true
+    "$PM" -y module enable "php:remi-$1" >/dev/null 2>&1 || true
+  fi
+  return 0
+}
+php_install_version() {
+  # The extension set a real site needs. Without these a framework boots to a blank page,
+  # which is a far worse failure than the install refusing outright.
+  _v="$1"
+  if [ "$FAMILY" = debian ]; then
+    pkg_install "php${_v}-fpm" "php${_v}-cli" "php${_v}-mysql" "php${_v}-mbstring" \
+                "php${_v}-xml" "php${_v}-curl" "php${_v}-zip" "php${_v}-gd" \
+                "php${_v}-bcmath" "php${_v}-intl"
+  else
+    pkg_install php-fpm php-cli php-mysqlnd php-mbstring php-xml php-gd php-intl
+  fi
+}
+"""
+
+
 def _with_prelude(script: str, prelude: str) -> str:
     """Insert a helper block directly after the shebang.
 
@@ -259,7 +302,10 @@ def _with_apt_guard(script: str) -> str:
 # php-mysql/php-mysqlnd …) which resolve to each distro's default PHP — no PPA, no
 # pinned version. The DB is MariaDB (drop-in MySQL, present in every default repo).
 _DISTRO = r"""# --- ServerAlly multi-distro layer ---
-. /etc/os-release 2>/dev/null || true
+# Read with an `if`, not `. file || true`: `.` is a special builtin, so under `set -e` a
+# missing file kills the script THERE — silently, swallowing the honest "Unsupported OS"
+# message a few lines below that exists to explain exactly this case.
+if [ -r /etc/os-release ]; then . /etc/os-release; fi
 OS_ID="${ID:-}"; OS_LIKE="${ID_LIKE:-}"
 case " $OS_ID $OS_LIKE " in
   *ubuntu*|*debian*) FAMILY=debian; PM=apt ;;
@@ -782,7 +828,10 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "est_runtime_sec": 150,
         "tags": ['php', 'version', 'fpm'],
         "variables": [{'name': 'PHP_VERSION', 'label': 'Version to install (e.g. 8.3)', 'default': '8.3', 'required': True}],
-        "script_bash": ("#!/bin/bash\nset -euo pipefail\n" + _DISTRO + "# supported_os: ubuntu, debian, almalinux, rocky, centos\nPHP_VERSION=\"{{PHP_VERSION}}\"\n\necho \"=== Installing PHP $PHP_VERSION ===\"\n\n# The version lands in package names, a service name and a socket path, so it is validated\n# rather than escaped.\ncase \"$PHP_VERSION\" in\n  [0-9].[0-9]|[0-9].[0-9][0-9]) : ;;\n  *) echo \">>> ERROR: '$PHP_VERSION' is not a PHP version. Use something like 8.3.\"; exit 1 ;;\nesac\n\nif [ -d \"/etc/php/$PHP_VERSION/fpm\" ] || command -v \"php$PHP_VERSION\" >/dev/null 2>&1; then\n  echo \">>> PHP $PHP_VERSION is already installed on this server.\"\n  systemctl is-active --quiet \"php$PHP_VERSION-fpm\" 2>/dev/null \\\n    && echo \">>> Its FPM service is running.\" \\\n    || { svc_enable \"php$PHP_VERSION-fpm\" 2>/dev/null || true; \\\n         echo \">>> Started its FPM service.\"; }\n  exit 0\nfi\n\npkg_refresh\nif [ \"$FAMILY\" = debian ]; then\n  # The distro ships one PHP version; anything else comes from Ond\u0159ej Sur\u00fd's archive, which\n  # is the standard source every panel uses for this.\n  if ! grep -rq \"ondrej\" /etc/apt/sources.list.d/ 2>/dev/null; then\n    echo \">>> Adding the PHP archive\"\n    pkg_install software-properties-common ca-certificates lsb-release apt-transport-https\n    LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php >/dev/null 2>&1 \\\n      || { echo \">>> ERROR: could not add the PHP archive. Nothing was changed.\"; exit 1; }\n    pkg_refresh\n  fi\n  # The set a real site needs \u2014 without these a framework fails at boot with a blank page.\n  PKGS=\"php$PHP_VERSION-fpm php$PHP_VERSION-cli php$PHP_VERSION-mysql php$PHP_VERSION-mbstring\"\n  PKGS=\"$PKGS php$PHP_VERSION-xml php$PHP_VERSION-curl php$PHP_VERSION-zip php$PHP_VERSION-gd\"\n  PKGS=\"$PKGS php$PHP_VERSION-bcmath php$PHP_VERSION-intl\"\n  if ! pkg_install $PKGS; then\n    echo \">>> ERROR: PHP $PHP_VERSION could not be installed. It may not exist for this\"\n    echo \"    system yet. Nothing that was already working has changed.\"\n    exit 1\n  fi\n  SVC=\"php$PHP_VERSION-fpm\"\nelse\n  V_NODOT=\"$(echo \"$PHP_VERSION\" | tr -d '.')\"\n  pkg_install \"https://rpms.remirepo.net/enterprise/remi-release-$(rpm -E %rhel).rpm\" 2>/dev/null || true\n  \"$PM\" -y module reset php >/dev/null 2>&1 || true\n  \"$PM\" -y module enable \"php:remi-$PHP_VERSION\" >/dev/null 2>&1 || true\n  if ! pkg_install php-fpm php-cli php-mysqlnd php-mbstring php-xml php-gd php-intl; then\n    echo \">>> ERROR: PHP $PHP_VERSION could not be installed. Nothing was changed.\"\n    exit 1\n  fi\n  SVC=\"php-fpm\"\nfi\n\nsvc_enable \"$SVC\"\nif ! systemctl is-active --quiet \"$SVC\"; then\n  echo \">>> ERROR: PHP $PHP_VERSION installed but its service did not start:\"\n  journalctl -u \"$SVC\" --no-pager -n 10 2>/dev/null | tail -10 || true\n  exit 1\nfi\n\n# The socket is what a site's config will point at, so its existence is the real proof the\n# install is usable \u2014 not merely that the package installed.\nSOCK=\"/run/php/php$PHP_VERSION-fpm.sock\"\n[ \"$FAMILY\" = debian ] || SOCK=\"/run/php-fpm/www.sock\"\nfor i in 1 2 3 4 5; do [ -S \"$SOCK\" ] && break; sleep 1; done\nif [ -S \"$SOCK\" ]; then\n  echo \">>> PHP $PHP_VERSION is running and ready at $SOCK\"\nelse\n  echo \">>> Note: PHP $PHP_VERSION is running but its socket is not at the usual path.\"\n  echo \"    Sites can still be pointed at it, but check the FPM pool configuration.\"\nfi\n\necho \"\"\necho \"=== PHP $PHP_VERSION is installed ===\"\necho \"Installed versions now: $(ls -1 /etc/php 2>/dev/null | tr '\\n' ' ')\"\necho \"Nothing changed for your existing sites \u2014 they keep the version they had.\"\necho \"Next: choose which sites should use $PHP_VERSION on the PHP page.\"\n"),
+        "script_bash": ('#!/bin/bash\nset -euo pipefail\n'
+                        + _DISTRO
+                        + _PHP_ARCHIVE
+                        + '# supported_os: ubuntu, debian, almalinux, rocky, centos\nPHP_VERSION="{{PHP_VERSION}}"\n\necho "=== Installing PHP $PHP_VERSION ==="\n\nphp_version_valid "$PHP_VERSION" \\\n  || { echo ">>> ERROR: \'$PHP_VERSION\' is not a PHP version. Use something like 8.3."; exit 1; }\n\nif [ -d "/etc/php/$PHP_VERSION/fpm" ] || command -v "php$PHP_VERSION" >/dev/null 2>&1; then\n  echo ">>> PHP $PHP_VERSION is already installed on this server."\n  systemctl is-active --quiet "php$PHP_VERSION-fpm" 2>/dev/null \\\n    && echo ">>> Its FPM service is running." \\\n    || { svc_enable "php$PHP_VERSION-fpm" 2>/dev/null || true; \\\n         echo ">>> Started its FPM service."; }\n  exit 0\nfi\n\npkg_refresh\nphp_archive_add "$PHP_VERSION" \\\n  || { echo ">>> ERROR: could not add the PHP archive. Nothing was changed."; exit 1; }\nif ! php_install_version "$PHP_VERSION"; then\n  echo ">>> ERROR: PHP $PHP_VERSION could not be installed. It may not exist for this"\n  echo "    system yet. Nothing that was already working has changed."\n  exit 1\nfi\nif [ "$FAMILY" = debian ]; then SVC="php$PHP_VERSION-fpm"; else SVC="php-fpm"; fi\nsvc_enable "$SVC"\nif ! systemctl is-active --quiet "$SVC"; then\n  echo ">>> ERROR: PHP $PHP_VERSION installed but its service did not start:"\n  journalctl -u "$SVC" --no-pager -n 10 2>/dev/null | tail -10 || true\n  exit 1\nfi\n\n# The socket is what a site\'s config will point at, so its existence is the real proof the\n# install is usable — not merely that the package installed.\nSOCK="/run/php/php$PHP_VERSION-fpm.sock"\n[ "$FAMILY" = debian ] || SOCK="/run/php-fpm/www.sock"\nfor i in 1 2 3 4 5; do [ -S "$SOCK" ] && break; sleep 1; done\nif [ -S "$SOCK" ]; then\n  echo ">>> PHP $PHP_VERSION is running and ready at $SOCK"\nelse\n  echo ">>> Note: PHP $PHP_VERSION is running but its socket is not at the usual path."\n  echo "    Sites can still be pointed at it, but check the FPM pool configuration."\nfi\n\necho ""\necho "=== PHP $PHP_VERSION is installed ==="\necho "Installed versions now: $(ls -1 /etc/php 2>/dev/null | tr \'\\n\' \' \')"\necho "Nothing changed for your existing sites — they keep the version they had."\necho "Next: choose which sites should use $PHP_VERSION on the PHP page."\n'),
     },
 
     # Laravel is a website in shape but its document root is public/, not the
@@ -1107,8 +1156,8 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
 
     {
         "slug": "lemp-stack",
-        "title": "LEMP Stack (Nginx + MySQL + PHP)",
-        "description": "Installs Nginx, MySQL, PHP-FPM, and common PHP extensions.",
+        "title": "Web server (Nginx + PHP + a database)",
+        "description": "Installs Nginx, PHP-FPM with the extensions a real site needs, and the database you choose. It said \u201cMySQL\u201d for months while installing MariaDB \u2014 now the engine is asked for, because the three are not interchangeable.",
         "category": "setup",
         "os_family": "linux",
         "script_type": "bash",
@@ -1116,9 +1165,16 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "tags": ["nginx", "mysql", "php", "lemp", "web-server"],
         "supported_os": ["ubuntu", "debian", "almalinux", "rocky", "centos", "rhel", "fedora"],
         "variables": [
-            {"name": "MYSQL_ROOT_PASS", "label": "MySQL Root Password (optional)", "default": "", "required": False}
+            {"name": "MYSQL_ROOT_PASS", "label": "Database root password (optional)", "default": "", "required": False},
+            # Defaults reproduce exactly what this playbook did before the choice existed,
+            # so anyone running it straight from the library sees no change.
+            {"name": "PHP_VERSION", "label": "PHP version", "default": "default", "required": False},
+            {"name": "DB_ENGINE", "label": "Database", "default": "mariadb", "required": False},
         ],
-        "script_bash": _LEMP_BASH,
+        "script_bash": ('#!/bin/bash\nset -euo pipefail\n'
+                        + _DISTRO
+                        + _PHP_ARCHIVE
+                        + 'MYSQL_ROOT_PASS="{{MYSQL_ROOT_PASS}}"\nPHP_VERSION="{{PHP_VERSION}}"\nDB_ENGINE="{{DB_ENGINE}}"\n[ -z "$DB_ENGINE" ] && DB_ENGINE=mariadb\n[ -z "$PHP_VERSION" ] && PHP_VERSION=default\n\necho "=== Installing the web server ==="\npkg_refresh\npkg_install nginx\nsvc_enable nginx\n\n# --- The database, as chosen -------------------------------------------------\n# MariaDB, MySQL and PostgreSQL are NOT interchangeable, which is why this is asked\n# rather than decided for the customer. Quietly installing one when they picked another\n# is the same lie this screen carried for months: it advertised MySQL and installed\n# MariaDB, and an agency whose client genuinely needed MySQL would only have found out\n# after the machine was built.\ncase "$DB_ENGINE" in\n  mariadb)\n    pkg_install mariadb-server\n    svc_enable mariadb\n    DB_LABEL="MariaDB"\n    ;;\n  mysql)\n    # Debian genuinely has no mysql-server package, only MariaDB. Refuse and name the way\n    # out, rather than substituting.\n    if [ "$OS_ID" = debian ]; then\n      echo ">>> ERROR: Debian does not package MySQL, only MariaDB."\n      echo "    Choose MariaDB, or use Ubuntu if you need real MySQL. Nothing was changed."\n      exit 1\n    fi\n    pkg_install mysql-server\n    if [ "$FAMILY" = debian ]; then svc_enable mysql; else svc_enable mysqld; fi\n    DB_LABEL="MySQL"\n    ;;\n  postgres)\n    if [ "$FAMILY" = debian ]; then\n      pkg_install postgresql postgresql-contrib\n    else\n      pkg_install postgresql-server postgresql-contrib\n      [ -d /var/lib/pgsql/data/base ] || postgresql-setup --initdb >/dev/null 2>&1 || true\n    fi\n    svc_enable postgresql\n    DB_LABEL="PostgreSQL"\n    ;;\n  none)\n    DB_LABEL="none, by your choice"\n    ;;\n  *)\n    echo ">>> ERROR: \\\'$DB_ENGINE\\\' is not a database we install. Nothing was changed."\n    exit 1\n    ;;\nesac\n\n# --- PHP, at the chosen version ----------------------------------------------\nif [ "$PHP_VERSION" = default ]; then\n  # Whatever this system ships. Unchanged for anyone who does not pick a version.\n  if [ "$FAMILY" = debian ]; then\n    pkg_install php-fpm php-mysql php-cli php-curl php-gd php-mbstring php-xml php-zip\n  else\n    pkg_install php-fpm php-mysqlnd php-cli php-curl php-gd php-mbstring php-xml\n  fi\nelse\n  php_version_valid "$PHP_VERSION" \\\n    || { echo ">>> ERROR: \\\'$PHP_VERSION\\\' is not a PHP version. Nothing was changed."; exit 1; }\n  php_archive_add "$PHP_VERSION" \\\n    || { echo ">>> ERROR: could not add the PHP archive. Nothing was changed."; exit 1; }\n  if ! php_install_version "$PHP_VERSION"; then\n    echo ">>> ERROR: PHP $PHP_VERSION could not be installed. It may not exist for this"\n    echo "    system yet. Nothing was changed."\n    exit 1\n  fi\nfi\n\n# PostgreSQL needs its own PHP driver. Without it an app cannot reach the database at all\n# and fails at the first query with a driver-not-found error - which reads to the customer\n# like a bug in their application, not a missing package.\nif [ "$DB_ENGINE" = postgres ]; then\n  if [ "$FAMILY" = debian ] && [ "$PHP_VERSION" != default ]; then\n    pkg_install "php${PHP_VERSION}-pgsql" || echo ">>> Note: the PHP PostgreSQL driver was not available."\n  else\n    pkg_install php-pgsql || echo ">>> Note: the PHP PostgreSQL driver was not available."\n  fi\nfi\n\nif [ "$FAMILY" = rhel ]; then\n  sed -i \\\'s/^user = .*/user = nginx/; s/^group = .*/group = nginx/\\\' /etc/php-fpm.d/www.conf 2>/dev/null || true\nfi\nsvc_enable "$(php_fpm_service)"\n\nif [ -n "$MYSQL_ROOT_PASS" ] && [ "$DB_ENGINE" != postgres ] && [ "$DB_ENGINE" != none ]; then\n  mysql -e "ALTER USER \\\'root\\\'@\\\'localhost\\\' IDENTIFIED BY \\\'${MYSQL_ROOT_PASS}\\\'; FLUSH PRIVILEGES;" 2>/dev/null \\\n    || echo ">>> Note: could not set the database root password (it may already be set)."\nfi\n\nopen_firewall 80; open_firewall 443\n\n# Read back off the machine, not from what we asked for. An installer exiting 0 is not\n# proof the thing is there.\necho "Nginx: $(nginx -v 2>&1)"\necho "Database: $DB_LABEL"\necho "PHP: $(php -v 2>/dev/null | head -1 || echo \\\'not installed\\\')"\necho ">>> The web server is installed."\n'),
     },
 
     {

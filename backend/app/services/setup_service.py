@@ -89,6 +89,60 @@ PURPOSES = {
 }
 
 
+# What the customer may choose for a web server, and the ONE place that decides it. The
+# screen draws its dropdowns from here and the endpoint validates against here, so an
+# option can never be offered that the backend then refuses.
+#
+# `eol` is not decoration. An agency keeps a client on an old PHP for real reasons, so the
+# version is offered — but a version that stopped getting security fixes must SAY so at the
+# moment of choosing, which is the only moment anyone is thinking about it.
+PHP_CHOICES: tuple[dict, ...] = (
+    {"value": "default", "label": "Whatever this system ships", "note": "Safe choice", "eol": False},
+    {"value": "8.4", "label": "PHP 8.4", "note": "", "eol": False},
+    {"value": "8.3", "label": "PHP 8.3", "note": "", "eol": False},
+    {"value": "8.2", "label": "PHP 8.2", "note": "", "eol": False},
+    {"value": "8.1", "label": "PHP 8.1", "note": "No longer gets security fixes", "eol": True},
+    {"value": "8.0", "label": "PHP 8.0", "note": "No longer gets security fixes", "eol": True},
+    {"value": "7.4", "label": "PHP 7.4", "note": "No longer gets security fixes", "eol": True},
+)
+
+# MySQL is deliberately NOT offered on Debian: Debian packages MariaDB only, so the
+# installer would have to either fail or substitute — and substituting is what made the
+# old screen say MySQL for months while installing MariaDB.
+DB_CHOICES: tuple[dict, ...] = (
+    {"value": "mariadb", "label": "MariaDB", "note": "Works with WordPress and Laravel", "not_on": ()},
+    {"value": "mysql", "label": "MySQL", "note": "Not available on Debian", "not_on": ("debian",)},
+    {"value": "postgres", "label": "PostgreSQL", "note": "Common with Laravel and Django", "not_on": ()},
+    {"value": "none", "label": "No database", "note": "You have one on another server", "not_on": ()},
+)
+
+
+def php_values() -> set[str]:
+    return {c["value"] for c in PHP_CHOICES}
+
+
+def db_values() -> set[str]:
+    return {c["value"] for c in DB_CHOICES}
+
+
+def check_choices(php_version: str, db_engine: str, os_type: str = "") -> None:
+    """Refuse a combination the installer cannot honour, at the moment it is asked for.
+
+    A refusal here costs the customer one click. The same refusal discovered halfway
+    through an install costs them a rebuilt server.
+    """
+    if php_version not in php_values():
+        raise SetupRefused(f"“{php_version}” is not a PHP version we install.")
+    if db_engine not in db_values():
+        raise SetupRefused(f"“{db_engine}” is not a database we install.")
+    family = (os_type or "").strip().lower()
+    for choice in DB_CHOICES:
+        if choice["value"] == db_engine and family in choice["not_on"]:
+            raise SetupRefused(
+                f"{choice['label']} is not available on {family.title()} — it packages "
+                f"MariaDB only. Choose MariaDB, or use Ubuntu if you need real MySQL.")
+
+
 def _base(ssh_port: int, timezone: str, login_user: str, auth_type: str) -> list[Step]:
     """What every server gets, whatever it is for.
 
@@ -120,7 +174,8 @@ def _base(ssh_port: int, timezone: str, login_user: str, auth_type: str) -> list
 
 def build_recipe(purpose: str, *, ssh_port: int = 22, timezone: str = "UTC",
                  monitoring: bool = True, login_user: str = "root",
-                 auth_type: str = "password") -> Recipe:
+                 auth_type: str = "password", php_version: str = "default",
+                 db_engine: str = "mariadb") -> Recipe:
     """The ordered list of steps for what this server is for."""
     if purpose not in PURPOSES:
         raise SetupRefused(f"“{purpose}” is not something we know how to set up.")
@@ -134,7 +189,10 @@ def build_recipe(purpose: str, *, ssh_port: int = 22, timezone: str = "UTC",
         # build over a cache daemon would be the wrong trade. A skipped step still
         # shows in the checklist with its reason, so nothing goes missing quietly.
         steps += [
-            Step("lemp-stack", "Installing the web server, PHP and database", seconds=180),
+            # The two choices ride on this one step. Defaults reproduce exactly what the
+            # setup did before they existed, so an unchanged caller gets an unchanged build.
+            Step("lemp-stack", "Installing the web server, PHP and database",
+                 {"PHP_VERSION": php_version, "DB_ENGINE": db_engine}, seconds=180),
             # PHP ships allowing 2 MB uploads. That single default is why a brand-new
             # server cannot accept a photo or install a plugin.
             Step("php-limits", "Allowing larger uploads",

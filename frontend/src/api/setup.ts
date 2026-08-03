@@ -29,10 +29,26 @@ export interface Setup {
   finished_at: string | null
 }
 
+/** One entry in a setup dropdown. The screen never writes its own list — an option it
+ *  invented would be refused by the endpoint, which validates against the same source. */
+export interface SetupChoice {
+  value: string
+  label: string
+  note: string
+  /** PHP only: this version no longer receives security fixes. */
+  eol?: boolean
+  /** Database only: operating systems that cannot install it. */
+  not_on?: string[]
+}
+
 export interface SetupStatus {
   options: SetupOption[]
   /** Why this server cannot be set up — empty when it can. */
   blocked: string
+  php_choices: SetupChoice[]
+  db_choices: SetupChoice[]
+  /** The server's real OS, so a choice it cannot honour is greyed out before it is picked. */
+  os_type: string
   already_set_up: boolean
   latest: Setup | null
 }
@@ -44,7 +60,10 @@ export async function getSetupStatus(serverId: string): Promise<SetupStatus> {
 
 export async function startSetup(
   serverId: string,
-  body: { purpose: string; timezone?: string; monitoring?: boolean; force?: boolean },
+  body: {
+    purpose: string; timezone?: string; monitoring?: boolean; force?: boolean
+    php_version?: string; db_engine?: string
+  },
 ): Promise<Setup> {
   const { data } = await apiClient.post(`/api/servers/${serverId}/setup`, body)
   return data

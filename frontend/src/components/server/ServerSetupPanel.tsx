@@ -5,7 +5,7 @@ import {
   Check, CircleDashed, Loader2, TriangleAlert, Wand2, X, MinusCircle, Sparkles,
 } from "lucide-react"
 import {
-  getSetupStatus, startSetup, stopSetup, type SetupStep,
+  getSetupStatus, startSetup, stopSetup, type SetupChoice, type SetupStep,
 } from "@/api/setup"
 import type { Server } from "@/types"
 import { Button } from "@/components/ui"
@@ -34,6 +34,51 @@ function StepIcon({ state }: { state: SetupStep["state"] }) {
   return <CircleDashed size={14} className="shrink-0 text-muted-foreground/50" />
 }
 
+
+/**
+ * One dropdown, drawn from the server's own list of choices.
+ *
+ * The options are never written here. The endpoint validates against the same catalogue,
+ * so a choice this screen offers is a choice the setup will actually accept — and one it
+ * cannot honour on this operating system is disabled WITH ITS REASON rather than silently
+ * missing, because "why is MySQL not in the list" is a support ticket.
+ */
+function ChoiceField({ label, value, onChange, choices, osType }: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  choices: SetupChoice[]
+  osType: string
+}) {
+  const blocked = (c: SetupChoice) => (c.not_on ?? []).includes(osType)
+  const picked = choices.find((c) => c.value === value)
+  return (
+    <label className="block">
+      <span className="text-[12px] font-medium text-foreground">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2
+                   text-[13px] text-foreground outline-none focus:border-primary"
+      >
+        {choices.map((c) => (
+          <option key={c.value} value={c.value} disabled={blocked(c)}>
+            {c.label}
+            {blocked(c) ? ` — not available on ${osType}` : c.note ? ` — ${c.note}` : ""}
+          </option>
+        ))}
+      </select>
+      {/* Said again under the field, because a warning inside a closed dropdown is a
+          warning nobody reads. */}
+      {picked?.eol && (
+        <span className="mt-1 block text-[11.5px] text-amber-600 dark:text-amber-400">
+          {picked.label} no longer gets security fixes. Choose it only if a site needs it.
+        </span>
+      )}
+    </label>
+  )
+}
+
 /**
  * One button that turns a blank server into a working one.
  *
@@ -46,6 +91,10 @@ export default function ServerSetupPanel({ server }: { server: Server }) {
   const qc = useQueryClient()
   const openServer = useAssistantStore((s) => s.openServer)
   const [purpose, setPurpose] = useState("websites")
+  // Both start at what the setup did before these choices existed, so pressing the button
+  // without touching them builds exactly the server it always built.
+  const [phpVersion, setPhpVersion] = useState("default")
+  const [dbEngine, setDbEngine] = useState("mariadb")
   const [force, setForce] = useState(false)
 
   const q = useQuery({
@@ -59,7 +108,12 @@ export default function ServerSetupPanel({ server }: { server: Server }) {
   })
 
   const begin = useMutation({
-    mutationFn: () => startSetup(server.id, { purpose, force }),
+    mutationFn: () => startSetup(server.id, {
+      purpose, force,
+      // Only the web server has a PHP version or a database. Sending them for Docker
+      // would be describing a machine that has neither.
+      ...(purpose === "websites" ? { php_version: phpVersion, db_engine: dbEngine } : {}),
+    }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["server-setup", server.id] }),
   })
   const halt = useMutation({
@@ -219,6 +273,21 @@ export default function ServerSetupPanel({ server }: { server: Server }) {
           </button>
         ))}
       </div>
+
+      {/* The two things we used to decide silently. PHP 8.3 and MariaDB were chosen for
+          every customer without asking, and if that was wrong for a client's site they
+          found out afterwards — when the fix is rebuilding the machine, because a control
+          panel wants a clean one. Asking costs one glance; not asking costs a rebuild. */}
+      {purpose === "websites" && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <ChoiceField
+            label="PHP version" value={phpVersion} onChange={setPhpVersion}
+            choices={data.php_choices} osType={data.os_type} />
+          <ChoiceField
+            label="Database" value={dbEngine} onChange={setDbEngine}
+            choices={data.db_choices} osType={data.os_type} />
+        </div>
+      )}
 
       {chosen && (
         <details className="mt-3">

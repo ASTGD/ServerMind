@@ -34,6 +34,10 @@ class StartBody(BaseModel):
     purpose: str = Field(default="websites", max_length=30)
     timezone: str = Field(default="UTC", max_length=64)
     monitoring: bool = True
+    # Both default to what the setup did before the choice existed, so an older client
+    # that does not send them gets an identical build.
+    php_version: str = Field(default="default", max_length=10)
+    db_engine: str = Field(default="mariadb", max_length=20)
     # The deliberate override for "yes, I know it already has things on it".
     force: bool = False
 
@@ -187,7 +191,12 @@ async def status(server_id: str, db: DBDep, current_user: CurrentUser) -> dict:
         options.append(setup_service.summarise(setup_service.build_recipe(
             key, ssh_port=server.port or 22)))
 
+    # The screen draws its dropdowns from these rather than from a copy of its own, so an
+    # option can never be shown that `start` then refuses.
     return {"options": options, "blocked": blocked,
+            "php_choices": [dict(c) for c in setup_service.PHP_CHOICES],
+            "db_choices": [dict(c) for c in setup_service.DB_CHOICES],
+            "os_type": (server.os_type or "").strip().lower(),
             "already_set_up": bool(latest and latest.status == "done"),
             "latest": _public(latest) if latest else None}
 
@@ -213,11 +222,17 @@ async def start(server_id: str, body: StartBody, request: Request,
         facts = {}      # unreadable is not proof of anything; the panel_type check still runs
     try:
         setup_service.check_server(server, installed=facts, force=body.force)
+        # Checked against the REAL operating system, not the one the browser believed it
+        # had. Debian genuinely cannot install MySQL, and finding that out mid-install
+        # costs a rebuilt server rather than a click.
+        setup_service.check_choices(body.php_version, body.db_engine,
+                                    os_type=(server.os_type or ""))
         recipe = setup_service.build_recipe(
             body.purpose, ssh_port=server.port or 22,
             timezone=body.timezone, monitoring=body.monitoring,
             login_user=server.username or "root",
-            auth_type=server.auth_type or "password")
+            auth_type=server.auth_type or "password",
+            php_version=body.php_version, db_engine=body.db_engine)
     except setup_service.SetupRefused as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -233,7 +248,8 @@ async def start(server_id: str, body: StartBody, request: Request,
     await setup_runner.start(setup.id, recipe.steps, server)
     await audit_service.audit(db, current_user, "server.setup_started",
                               target_type="server", target_id=server_id,
-                              meta={"purpose": recipe.key, "forced": body.force},
+                              meta={"purpose": recipe.key, "forced": body.force,
+                                    "php": body.php_version, "db": body.db_engine},
                               request=request)
     logger.info("Server setup %s started on %s (%s)", setup.id, server.name, recipe.key)
     return _public(setup)
