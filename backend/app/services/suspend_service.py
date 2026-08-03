@@ -162,26 +162,31 @@ def build_apply_command(config_path: str, domain: str, *, suspended: bool,
         # redirect to it cannot come back round to the suspend rule and loop.
         block = (
             f"{BEGIN}\n"
-            # 200 is not an error, so nginx never fires `error_page` for it — `return 200`
-            # would hand the visitor an EMPTY page and no notice at all. Found by asking
-            # real nginx for each offered code rather than assuming they behave alike.
-            f"    location ~ ^/ {{\n"
-            f"        root {SUSPEND_DIR};\n"
-            f"        try_files /{domain}.html =503;\n"
-            f"        add_header Cache-Control \"no-store\" always;\n"
-            f"    }}\n"
-            f"{END}\n"
-        ) if code == 200 else (
+            # `error_page X = /page` (with the `=`) takes the status of the page it serves,
+            # which is how 200 is done — `return 200` would send an empty body and no
+            # notice, and `alias` is not allowed in a regex location at all.
+            f"    error_page 418 = /__serverally_suspended.html;\n"
+            if code == 200 else
             f"{BEGIN}\n"
             f"    error_page {code} /__serverally_suspended.html;\n"
+        ) + (
+            # An EXACT location, so `alias` is legal and so the internal redirect outranks
+            # the catch-all below and cannot loop back into it.
             f"    location = /__serverally_suspended.html {{\n"
             f"        internal;\n"
-            f"        root {SUSPEND_DIR};\n"
-            f"        try_files /{domain}.html =503;\n"
+            # `alias`, never `root`. A second `root` in this file makes it ambiguous which
+            # folder the config serves — and the resolver that finds a site's config reads
+            # exactly that. Adding one meant a suspended site could no longer be FOUND, so
+            # it could not be un-suspended: a one-way door on the one feature whose promise
+            # is that putting it back is one click. Found by pressing the button.
+            f"        alias {SUSPEND_DIR}/{domain}.html;\n"
+            f"        default_type text/html;\n"
             f"        add_header Cache-Control \"no-store\" always;\n"
             f"    }}\n"
+            # A regex matching everything, placed BEFORE the site's own regex locations —
+            # nginx tries them in order, so this wins for every request including .php.
             f"    location ~ ^/ {{\n"
-            f"        return {code};\n"
+            f"        return {418 if code == 200 else code};\n"
             f"    }}\n"
             f"{END}\n"
         )

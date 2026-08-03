@@ -8,6 +8,7 @@ the code is what search engines are told. 200 means "this IS the page now", so a
 real pages get replaced in the index by a suspension notice — damage that outlives the
 billing dispute by months. 503 means "come back later" and holds their rankings.
 """
+import re
 import shutil
 import subprocess
 
@@ -61,6 +62,7 @@ echo "BOLD=$(body / | grep -c '<strong>' || true)"
 echo "SCRIPT=$(body / | grep -c '<script>' || true)"
 echo "NOINDEX=$(body / | grep -c 'noindex' || true)"
 echo "LEFTOVERS=$(ls /etc/nginx/sites-available/ | grep -c serverally || true)"
+echo "ROOTS=$(grep -c "root " /etc/nginx/sites-available/shop.conf || true)"
 """
 
 
@@ -175,3 +177,36 @@ def test_the_success_message_warns_when_the_code_is_a_poor_one():
     assert ok and "503 is" in message
     ok, message = ss.explain(0, "", suspended=True, status=503)
     assert ok and "503 is" not in message
+
+
+# ── The one-way door, found by pressing the button ───────────────────────────
+
+def test_the_block_never_adds_a_second_root():
+    """Found live and it was serious. A `root` inside the suspend block gave the file TWO
+    root directives — and the resolver that finds a site's configuration reads exactly
+    that, so it started answering "/var/www/serverally-suspended", matched no site, and
+    reported that it could not work out which config serves this site.
+
+    The consequence is the bad part: a suspended site could no longer be FOUND, so it could
+    not be un-suspended. A one-way door, on the feature whose whole promise is "putting it
+    back is one click".
+    """
+    for code in (503, 200):
+        cmd = ss.build_apply_command("/etc/nginx/x.conf", "shop.example.com",
+                                     suspended=True, message="m", reason="", code=code,
+                                     apache=False)
+        import base64
+        blocks = re.findall(r"printf %s '?([A-Za-z0-9+/=]{40,})'?", cmd)
+        rendered = "".join(base64.b64decode(b).decode(errors="replace") for b in blocks)
+        assert "root " not in rendered, f"code {code} still claims a folder with `root`"
+        assert "alias " in rendered
+
+
+@docker
+def test_a_suspended_site_can_still_be_found_and_restored(tmp_path):
+    """The regression that matters, exercised rather than asserted: suspend, then confirm
+    the configuration still declares exactly one document root — which is what the resolver
+    needs in order to give the customer the button back."""
+    r = run(tmp_path, suspended=True, message="Away", reason="", code=503)
+    assert r["ROOT"] == "503"
+    assert r["ROOTS"] == "1", "the suspended config no longer names one document root"
