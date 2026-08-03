@@ -15,7 +15,7 @@ import { checkMailNow, watchMail } from "@/api/mail"
 import { Button, EmptyState } from "@/components/ui"
 import { useAssistantStore } from "@/store/assistantStore"
 import { CertPill, StatusPill, TypePill } from "@/components/sites/SitePills"
-import { siteLooksBroken, siteProblem, siteState, siteTone } from "@/lib/siteStatus"
+import { siteDetail, siteLooksBroken, siteState, siteTone } from "@/lib/siteStatus"
 import { cn } from "@/lib/utils"
 
 /** Up/down comes from the uptime monitor, which checks from outside — where a visitor is. */
@@ -134,7 +134,11 @@ function SiteRow({ site }: { site: Site }) {
   const askAlly = useAssistantStore((s) => s.askAlly)
   const down = site.uptime?.status === "down"
   const state = siteState(site)
-  const problem = siteProblem(site)
+  // `siteDetail`, not `siteProblem`: the pill now says "DNS not set", and printing "this
+  // domain is not pointed anywhere yet" beside it is the same fact twice — which is the
+  // duplication that made these rows tall in the first place. A real fault still shows its
+  // reason, because that sentence is the useful part of the row.
+  const problem = siteDetail(site)
   const [showMail, setShowMail] = useState(false)
 
   return (
