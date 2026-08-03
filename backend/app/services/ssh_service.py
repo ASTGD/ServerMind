@@ -21,7 +21,14 @@ logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="ssh")
 
 # In-memory SSH client pool: {server_id_str: paramiko.SSHClient}
-_pool: dict[str, paramiko.SSHClient] = {}
+#: server_id -> (client, the pin it was verified against when it was opened).
+#:
+#: The pin is stored WITH the connection because reusing a pooled client skips
+#: verification — that is the point of pooling — so a connection opened under one pin must
+#: never be handed to a caller expecting a different one. Without this, one caller that
+#: connected without a pin left an unverified connection in the pool and every later caller
+#: silently inherited it. That is exactly how a rebuilt server kept reporting "online".
+_pool: dict[str, tuple[paramiko.SSHClient, str | None]] = {}
 
 # Host-key fingerprint observed on the most recent connect per server, so a caller
 # with a DB session can persist it for trust-on-first-use (Risk 3).
@@ -191,7 +198,7 @@ def _make_client(host: str, port: int, username: str, auth_type: str, credential
 
 def _get_client(
     server_id: str, host: str, port: int, username: str, auth_type: str, credential: str,
-    expected_fingerprint: str | None = None,
+    *, expected_fingerprint: str | None,
 ) -> paramiko.SSHClient:
     """Return a pooled client, reconnecting if the transport is dead.
 
@@ -199,9 +206,19 @@ def _get_client(
     ``expected_fingerprint`` (the pinned one); a mismatch raises HostKeyMismatch and
     the connection is refused. The observed fingerprint is stashed for the caller to
     persist on first connect (trust-on-first-use) (Risk 3)."""
-    existing = _pool.get(server_id)
-    if existing and existing.get_transport() and existing.get_transport().is_active():
-        return existing
+    pooled = _pool.get(server_id)
+    if pooled:
+        existing, verified_against = pooled
+        transport = existing.get_transport()
+        if transport and transport.is_active() and verified_against == expected_fingerprint:
+            return existing
+        # Either it is dead, or it was verified against a different pin than the caller is
+        # asking for. Reusing it in the second case is how an unverified connection spreads.
+        _pool.pop(server_id, None)
+        try:
+            existing.close()
+        except Exception:  # noqa: BLE001 — closing a dead client is not a failure
+            pass
 
     want_type, want_fp = _split_pin(expected_fingerprint)
 
@@ -251,7 +268,7 @@ def _get_client(
 
     # Stored WITH its type so every later connection can ask for the same key.
     _fingerprints[server_id] = f"{keytype} {fingerprint}"
-    _pool[server_id] = client
+    _pool[server_id] = (client, expected_fingerprint)
     return client
 
 
@@ -271,7 +288,8 @@ async def test_connection(
     def _test() -> dict:
         t0 = time.monotonic()
         try:
-            client = _get_client(server_id, host, port, username, auth_type, credential, expected_fingerprint)
+            client = _get_client(server_id, host, port, username, auth_type, credential,
+                                expected_fingerprint=expected_fingerprint)
             _, stdout, _ = client.exec_command("echo ok", timeout=10)
             stdout.read()
             latency_ms = int((time.monotonic() - t0) * 1000)
@@ -299,7 +317,8 @@ async def execute(server_id: str, host: str, port: int, username: str, auth_type
     loop = asyncio.get_event_loop()
 
     def _run() -> tuple[str, str, int]:
-        client = _get_client(server_id, host, port, username, auth_type, credential, expected_fingerprint)
+        client = _get_client(server_id, host, port, username, auth_type, credential,
+                                expected_fingerprint=expected_fingerprint)
         _, stdout, stderr = client.exec_command(command, timeout=60)
         out = stdout.read().decode(errors="replace")
         err = stderr.read().decode(errors="replace")
@@ -327,7 +346,8 @@ async def execute_stream(server_id: str, host: str, port: int, username: str, au
     def _stream() -> None:
         tail = b""  # rolling tail of recent raw output, shown if the command stalls
         try:
-            client = _get_client(server_id, host, port, username, auth_type, credential, expected_fingerprint)
+            client = _get_client(server_id, host, port, username, auth_type, credential,
+                                expected_fingerprint=expected_fingerprint)
             transport = client.get_transport()
             channel = transport.open_session()
             # Merge stderr into the same stream. Installers (apt, pip, etc.) write
@@ -415,13 +435,20 @@ async def open_shell(
     encrypted_cred: str,
     cols: int = 80,
     rows: int = 24,
+    expected_fingerprint: str | None = None,
 ) -> paramiko.Channel:
-    """Open an interactive PTY shell channel for terminal use."""
+    """Open an interactive PTY shell channel for terminal use.
+
+    Takes the pin like every other entry point. A terminal is the LAST place to skip
+    identity verification — it is where somebody types a password into what they believe
+    is their own server.
+    """
     credential = decrypt(encrypted_cred)
     loop = asyncio.get_event_loop()
 
     def _open() -> paramiko.Channel:
-        client = _get_client(server_id, host, port, username, auth_type, credential)
+        client = _get_client(server_id, host, port, username, auth_type, credential,
+                             expected_fingerprint=expected_fingerprint)
         transport = client.get_transport()
         channel = transport.open_session()
         channel.get_pty(term="xterm-256color", width=cols, height=rows)

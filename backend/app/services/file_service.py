@@ -41,9 +41,13 @@ def _get_sftp(server: Server) -> paramiko.SFTPClient:
     from app.services.ssh_service import _get_client  # reuse existing SSH pool
 
     credential = decrypt(server.encrypted_cred)
+    # The pin, like every other caller. Omitting it skipped identity verification AND put
+    # the unverified connection in the shared pool, so every later operation inherited it —
+    # which is how a rebuilt server went on reporting "online" with no "trust the new key".
     ssh = _get_client(
         str(server.id), server.host, server.port,
         server.username, server.auth_type, credential,
+        expected_fingerprint=server.fingerprint,
     )
     return ssh.open_sftp()
 

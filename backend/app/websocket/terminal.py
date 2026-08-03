@@ -202,6 +202,7 @@ async def terminal_ws(
         return await ssh_service.open_shell(
             str(server.id), server.host, server.port,
             server.username, server.auth_type, server.encrypted_cred,
+            expected_fingerprint=server.fingerprint,
         )
 
     try:
