@@ -143,3 +143,55 @@ def test_a_rejected_configuration_says_the_other_sites_are_fine():
 def test_success_says_what_was_actually_proven():
     ok, message = vs.explain(0, "saved")
     assert ok and "accepted" in message and "still answers" in message
+
+
+# ── Blaming the right thing ──────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_a_server_we_cannot_connect_to_says_so_rather_than_blaming_the_site():
+    """Found live. TestServer's host key changed, ServerAlly correctly refused the
+    connection — and the Manage page reported "we could not work out which of this
+    server's configuration files serves this site", which sent me looking at nginx for a
+    problem that was on the connection. WHY it failed decides what the customer does next.
+    """
+    from app.services import php_service, ssh_service
+
+    class _Server:
+        id = "s"
+        connection_type = "ssh"
+
+    async def _boom(*_a, **_k):
+        raise ssh_service.HostKeyMismatch("SHA256:old", "SHA256:new")
+
+    original = php_service.connection_manager.execute
+    php_service.connection_manager.execute = _boom
+    try:
+        state = await php_service.read(_Server())
+    finally:
+        php_service.connection_manager.execute = original
+
+    assert state["unreachable"] is True
+    assert "identity" in state["error"], state["error"]
+    assert "PHP" not in state["error"], "a key mismatch is not a PHP problem"
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_probe_failure_still_reads_as_one():
+    from app.services import php_service
+
+    class _Server:
+        id = "s"
+        connection_type = "ssh"
+
+    async def _boom(*_a, **_k):
+        raise TimeoutError("no route")
+
+    original = php_service.connection_manager.execute
+    php_service.connection_manager.execute = _boom
+    try:
+        state = await php_service.read(_Server())
+    finally:
+        php_service.connection_manager.execute = original
+
+    assert state["unreachable"] is True
+    assert "identity" not in state["error"]

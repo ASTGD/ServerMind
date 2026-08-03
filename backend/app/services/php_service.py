@@ -137,10 +137,22 @@ async def read(server: Server) -> dict:
     """What PHP this server has. Read-only; best-effort so a probe failure is not fatal."""
     try:
         out, _err, _code = await connection_manager.execute(server, build_probe())
-    except Exception:  # noqa: BLE001 — a read must never take the page down
+    except Exception as exc:  # noqa: BLE001 — a read must never take the page down
+        from app.services import ssh_service
+
         logger.warning("PHP probe failed for server %s", server.id, exc_info=True)
+        # WHY it failed decides what the customer should do, and the two are nothing
+        # alike: a changed host key is a decision only they can make, while "we could
+        # not read it" is a retry. Reporting the second for the first sends somebody
+        # looking at their site's layout for a problem that is not there.
+        reason = (
+            "This server's identity has changed since ServerAlly first connected, so "
+            "the connection was refused. Check whether it was rebuilt, then trust the "
+            "new key from the server's Settings."
+            if ssh_service.is_host_key_mismatch(exc)
+            else "Could not read PHP information from this server.")
         return {"versions": [], "running": [], "cli_default": None, "sites": [],
-                "error": "Could not read PHP information from this server."}
+                "unreachable": True, "error": reason}
     return parse_probe(out)
 
 

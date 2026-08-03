@@ -1397,6 +1397,10 @@ async def _resolve_site_config(server, site) -> tuple[str | None, bool, str | No
     from app.services import php_service
 
     state = await php_service.read(server)
+    # The server could not be read at all. Saying "we could not match a config" here sends
+    # somebody looking at their site for a problem that is on the connection.
+    if state.get("unreachable"):
+        return None, False, state.get("error") or "This server could not be reached."
     config = php_service.config_for_site(state.get("sites", []), site.doc_root, site.domain)
     if config is None:
         return None, False, (
