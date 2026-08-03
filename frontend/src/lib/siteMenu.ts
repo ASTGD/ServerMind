@@ -1,6 +1,6 @@
 import {
   Activity, Boxes, Clock, Code2, Cog, CornerUpRight, Database, FileText, GitBranch,
-  LayoutDashboard, Layers, Lock, Repeat,
+  LayoutDashboard, Layers, Lock, Repeat, SlidersHorizontal,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type { SiteDetail } from "@/api/sites"
@@ -66,6 +66,10 @@ export const SITE_MENU: SiteMenuItem[] = [
   { path: "redirects", label: "Redirects", icon: CornerUpRight, needs: "shell",
     excludes: "panel" },
   { path: "logs", label: "Logs", icon: FileText, needs: "shell" },
+  // The tasks that belong to the whole site rather than any one part of it. A panel writes
+  // its own vhost on its own schedule, so an edit made behind its back is reverted later.
+  { path: "manage", label: "Manage", icon: SlidersHorizontal, needs: "shell",
+    excludes: "panel" },
   { path: "cron", label: "Scheduled jobs", icon: Clock, needs: "shell" },
   // Named for the guarantee rather than for systemd. "Scheduled jobs" run at times; these
   // run continuously, and "Background jobs" beside it would not tell anyone which is which.

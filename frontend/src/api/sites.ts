@@ -587,3 +587,18 @@ export async function removeSiteRedirect(
   const { data } = await apiClient.delete(`/api/sites/${siteId}/redirects/${redirectId}`)
   return data
 }
+
+/** This site's own web-server configuration file, as it is on the machine. */
+export async function getSiteVhost(siteId: string): Promise<{
+  ok: boolean; reason?: string; path?: string; content?: string
+}> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/vhost`)
+  return data
+}
+
+export async function saveSiteVhost(
+  siteId: string, content: string,
+): Promise<{ ok: boolean; message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/vhost`, { content })
+  return data
+}

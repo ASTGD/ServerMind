@@ -1284,6 +1284,82 @@ async def switch_site_php(site_id: str, body: SitePhpIn, db: DBDep,
     return {"ok": True, "message": message}
 
 
+# ── The web-server configuration, edited by hand ─────────────────────────────
+
+@router.get("/sites/{site_id}/vhost")
+async def read_site_vhost(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """This site's own web-server configuration file, as it is on the machine."""
+    import base64 as _b64
+
+    from app.services import connection_manager, vhost_service
+
+    site, server = await _site_and_server(site_id, current_user, db)
+    if server.connection_type != "ssh" or server.panel_type:
+        return {"ok": False, "reason": (
+            f"This site is managed by {server.panel_type}, which writes its own "
+            f"configuration — anything changed here would be overwritten by it."
+            if server.panel_type else
+            "Editing the configuration needs a Linux server we reach over SSH.")}
+
+    path, _apache, why = await _resolve_site_config(server, site)
+    if path is None:
+        return {"ok": False, "reason": why}
+
+    out, err, code = await connection_manager.execute(
+        server, vhost_service.build_read_command(path))
+    if code != 0:
+        return {"ok": False, "reason": "That file could not be read on the server.",
+                "path": path}
+    try:
+        content = _b64.b64decode((out or "").strip()).decode(errors="replace")
+    except Exception:  # noqa: BLE001 — a file we cannot decode is one we must not offer
+        return {"ok": False, "reason": "That file is not readable as text.", "path": path}
+    return {"ok": True, "path": path, "content": content}
+
+
+class VhostIn(BaseModel):
+    content: str
+
+
+@router.post("/sites/{site_id}/vhost")
+async def save_site_vhost(site_id: str, body: VhostIn, db: DBDep,
+                          current_user: CurrentUser) -> dict:
+    """Replace it, and put the old one back if the server or the site disagrees.
+
+    The path is resolved HERE from the site and never accepted from the caller — otherwise
+    this endpoint could rewrite any file on the machine, and one site's page could take
+    down a neighbour.
+    """
+    from app.services import connection_manager, vhost_service
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    if server.connection_type != "ssh" or server.panel_type:
+        raise HTTPException(
+            status_code=400,
+            detail="The configuration can only be edited on a Linux server we reach over "
+                   "SSH, and not on one a control panel manages.")
+
+    path, _apache, why = await _resolve_site_config(server, site)
+    if path is None:
+        raise HTTPException(status_code=422, detail=why or "Its configuration was not found.")
+
+    try:
+        cmd = vhost_service.build_save_command(path, site.domain, body.content)
+    except vhost_service.VhostError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    out, err, code = await connection_manager.execute(server, cmd)
+    ok, message = vhost_service.explain(code, (out or "") + (err or ""))
+    await audit_service.audit(db, current_user,
+                              "site.vhost_saved" if ok else "site.vhost_rejected",
+                              target_type="server", target_id=str(server.id),
+                              meta={"site": site.domain, "path": path, "ok": ok})
+    if not ok:
+        # 409, not 500: nothing is broken — the change was refused, or made and undone.
+        raise HTTPException(status_code=409, detail=message)
+    return {"ok": True, "message": message}
+
+
 # ── Redirects ────────────────────────────────────────────────────────────────
 
 async def _redirect_rules(db, site_id) -> list[dict]:
