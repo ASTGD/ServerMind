@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-  actionsFor, capabilitiesOf, installerOptionsFor, menuFor, MENU,
-  type ServerRoleName,
-} from "./assetMenu"
+import { actionsFor, capabilitiesOf, installerOptionsFor, menuFor, MENU, type ServerRoleName, redirectForMissingSection } from "./assetMenu"
 import type { Server } from "@/types"
 
 /**
@@ -335,5 +332,55 @@ describe("the panel section is named after the panel", () => {
     const l = labels(asset({ panel_type: null }))
     expect(l).not.toContain("Control panel")
     expect(l).not.toContain("CyberPanel")
+  })
+})
+
+describe("a URL for a section this asset does not have", () => {
+  // The menu already decided what exists here. Until now only the menu did — the router
+  // still served every section by URL. The owner rebuilt a server, trusted the new key,
+  // and reloaded a tab still sitting on Sites: the menu had gone back to "Start here"
+  // while the page still said Sites, which reads as the app being wrong about the server.
+  const undecided = () => menuFor(asset(), { role: "undecided" })
+  const ours = () => menuFor(asset(), { role: "serverally" })
+
+  it("sends a rebuilt server's stale Sites tab back to the question", () => {
+    // The exact report. Sites cannot exist yet — nothing is installed to serve it.
+    expect(undecided().some((i) => i.path === "sites")).toBe(false)
+    expect(redirectForMissingSection(undecided(), "sites")).toBe("")
+  })
+
+  it("leaves a section that really is there alone", () => {
+    // Far more important than the redirect: a guard that fires on a valid page would
+    // make whole sections unreachable.
+    for (const item of ours()) {
+      expect(redirectForMissingSection(ours(), item.path)).toBeNull()
+    }
+  })
+
+  it("sends a decided server's stale Start-here tab to its real home", () => {
+    // The other direction: Start here is one-time, so once answered its URL has to move on.
+    expect(redirectForMissingSection(ours(), "")).toBe("sites")
+  })
+
+  it("does not strand an asset on a section it can never have", () => {
+    // A Remote Desktop box has no shell, so PHP is not a page it can show.
+    const rdp = menuFor(asset({ connection_type: "rdp" }))
+    expect(redirectForMissingSection(rdp, "php")).toBe("")
+    expect(redirectForMissingSection(rdp, "")).toBeNull()
+  })
+
+  it("sends a panel server's Sites URL to the panel's own page", () => {
+    // A panel owns its websites; our Sites list is not the one it keeps.
+    const panel = menuFor(
+      asset({ panel_type: "cyberpanel" }), { role: "panel" })
+    expect(redirectForMissingSection(panel, "sites")).toBe("hosting")
+  })
+
+  it("never proposes a section the menu does not contain", () => {
+    // The whole point: the destination comes from the same list, so the two cannot drift.
+    for (const items of [undecided(), ours()]) {
+      const to = redirectForMissingSection(items, "no-such-section")
+      expect(items.some((i) => i.path === to)).toBe(true)
+    }
   })
 })

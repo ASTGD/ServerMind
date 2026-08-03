@@ -240,3 +240,27 @@ export function installerOptionsFor(server: Server): InstallerOptions {
     ally: caps.has("shell"),
   }
 }
+
+/**
+ * Where to send someone standing on a section this asset does not have.
+ *
+ * The menu already decides what exists here — but only the menu did. The router still
+ * served every section by URL, so a tab left open on Sites, a bookmark, or the back button
+ * landed on a page the menu had removed. The owner rebuilt a server, trusted the new key,
+ * and reloaded a tab that was still on Sites: the menu correctly offered only "Start here"
+ * while the page still said Sites, which reads as the app being wrong about the server.
+ *
+ * Derived from the same `menuFor` the sidebar draws from, so a section can never exist in
+ * one and not the other; the alternative is a second list of rules that drifts.
+ *
+ * Returns null when the section is fine — the caller should only navigate on a string,
+ * including the empty one, which is the asset's home.
+ */
+export function redirectForMissingSection(
+  items: MenuItem[], section: string,
+): string | null {
+  if (items.some((item) => item.path === section)) return null
+  // The first item is the home this asset actually has: "Start here" on an undecided
+  // server, Sites once it is ours, the panel's own page when a panel runs it.
+  return items[0]?.path ?? ""
+}

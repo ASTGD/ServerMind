@@ -626,3 +626,33 @@ def test_the_php_socket_prefers_the_running_fpm():
     assert "--state=running" in _DISTRO, "must prefer the FPM that is actually running"
     assert "sort -V | tail -1" in _DISTRO, "then the newest installed, not the oldest"
     assert '[ -S "$c" ]' in _DISTRO, "and only ever a real socket"
+
+
+# ── Security is what all four do, not one of the four answers ────────────────
+
+def test_every_purpose_hardens_the_machine():
+    """The fact that made "Just secure it for now" the wrong name.
+
+    Each option answers "what will this server run"; hardening is not one of the answers,
+    it is what happens whichever answer you give. If a purpose is ever added that skips it,
+    the consequence is not a naming quibble — a customer would get a public server without
+    a firewall or a locked-down login, and nothing on screen would say so.
+    """
+    baseline = {"full-update", "initial-hardening", "ufw-setup", "fail2ban"}
+    for key in s.PURPOSES:
+        slugs = {s.slug for s in s.build_recipe(key, ssh_port=22).steps}
+        missing = baseline - slugs
+        assert not missing, f"the '{key}' setup would leave a server exposed: {missing}"
+
+
+def test_no_option_is_named_after_the_thing_they_all_do():
+    """Naming one of four options "secure" tells a customer the other three might not be.
+
+    The owner spotted it immediately: "'Just Secure' option here is confusing." It reads as
+    a fourth kind of server when it is really the answer "something else" — and it makes
+    the product's own baseline look like a feature you can decline.
+    """
+    for key, (title, _description) in s.PURPOSES.items():
+        assert "secur" not in title.lower(), (
+            f"'{key}' is titled {title!r} — every option secures the server, so naming one "
+            f"for it implies the others do not. Name it for what the customer wants to RUN")

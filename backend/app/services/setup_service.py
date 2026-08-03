@@ -73,8 +73,12 @@ PURPOSES = {
                  "Node.js and PM2 to keep the app running."),
     "docker":   ("Docker containers",
                  "Docker and Docker Compose."),
-    "basic":    ("Just secure it for now",
-                 "Updates, firewall and protection — no web server yet."),
+    # The escape hatch, and the one that has to be named carefully. As "Just secure it for
+    # now" it stood beside three answers to "what will this run" as though security were a
+    # fourth ANSWER — while every option hardens the machine identically (see `_base`), so
+    # the name quietly suggested the others might not. Named for what the customer means.
+    "basic":    ("Something else — I'll install it myself",
+                 "Updated, hardened and ready, with no application software on it."),
 }
 
 

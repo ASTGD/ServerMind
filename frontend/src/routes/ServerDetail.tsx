@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useParams, Link, Outlet } from "react-router-dom"
+import { useParams, Link, Navigate, Outlet, useLocation } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   AlertTriangle, KeyRound, Loader2, Monitor, Sparkles, Terminal as TerminalIcon,
@@ -8,7 +8,7 @@ import { getServer, getServerRole, trustKey } from "@/api/servers"
 import AssetSidebar from "@/components/server/AssetSidebar"
 import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
 import RdpDesktopModal from "@/components/server/RdpDesktopModal"
-import { actionsFor } from "@/lib/assetMenu"
+import { actionsFor, menuFor, redirectForMissingSection } from "@/lib/assetMenu"
 import { useAssistantStore } from "@/store/assistantStore"
 import { useTerminalStore } from "@/store/terminalStore"
 import type { Server } from "@/types"
@@ -25,6 +25,7 @@ import type { Server } from "@/types"
  */
 export default function ServerDetail() {
   const { id } = useParams<{ id: string }>()
+  const { pathname } = useLocation()
   const qc = useQueryClient()
   const [showCreds, setShowCreds] = useState(false)
   const [showDesktop, setShowDesktop] = useState(false)
@@ -41,7 +42,7 @@ export default function ServerDetail() {
   // When it does, the server object in hand is a moment out of date — and it is the one
   // the menu, the site form and the guards all read — so it is refetched rather than left
   // disagreeing with the page beside it.
-  const { data: role } = useQuery({
+  const { data: role, isLoading: loadingRole } = useQuery({
     queryKey: ["server-role", id],
     queryFn: () => getServerRole(id!),
     enabled: !!id && server?.connection_type === "ssh",
@@ -83,6 +84,18 @@ export default function ServerDetail() {
   }
 
   const actions = actionsFor(server)
+
+  // The menu decides what this asset has; until now only the menu did, so a URL still
+  // reached a section the menu had removed — a tab left open on Sites through a server
+  // rebuild kept showing Sites while the menu had gone back to "Start here". Waiting for
+  // the role first, because redirecting on a half-known answer would bounce a customer off
+  // a page that is theirs.
+  const section = pathname.split(`/servers/${server.id}/`)[1]?.split("/")[0] ?? ""
+  const misplaced = loadingRole ? null : redirectForMissingSection(
+    menuFor(server, { role: role?.applies ? role.role : undefined }), section)
+  if (misplaced !== null) {
+    return <Navigate to={`/servers/${server.id}/${misplaced}`.replace(/\/$/, "")} replace />
+  }
 
   return (
     <div className="space-y-4">
