@@ -58,13 +58,18 @@ async def test_connection(server: Server) -> ConnectionResult:
     raise NotImplementedError(f"connection_type '{server.connection_type}' not yet supported")
 
 
-async def execute(server: Server, command: str) -> tuple[str, str, int]:
-    """Execute command, return (stdout, stderr, exit_code)."""
+async def execute(server: Server, command: str,
+                  read_timeout: int = 60) -> tuple[str, str, int]:
+    """Execute command, return (stdout, stderr, exit_code).
+
+    read_timeout is how long the command may produce NO output before the connection is
+    treated as dead. SSH only — WinRM has no equivalent knob.
+    """
     if server.connection_type == "ssh":
         return await ssh_service.execute(
             str(server.id), server.host, server.port,
             server.username, server.auth_type, server.encrypted_cred,
-            command, expected_fingerprint=server.fingerprint,
+            command, expected_fingerprint=server.fingerprint, read_timeout=read_timeout,
         )
     if server.connection_type == "winrm":
         return await winrm_service.execute(

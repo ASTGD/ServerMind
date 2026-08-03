@@ -311,15 +311,21 @@ async def test_connection(
     return await loop.run_in_executor(_executor, _test)
 
 
-async def execute(server_id: str, host: str, port: int, username: str, auth_type: str, encrypted_cred: str, command: str, expected_fingerprint: str | None = None) -> tuple[str, str, int]:
-    """Execute a command and return (stdout, stderr, exit_code)."""
+async def execute(server_id: str, host: str, port: int, username: str, auth_type: str, encrypted_cred: str, command: str, expected_fingerprint: str | None = None,
+                  read_timeout: int = 60) -> tuple[str, str, int]:
+    """Execute a command and return (stdout, stderr, exit_code).
+
+    read_timeout is a SILENCE limit, not a total runtime one: paramiko restarts it on
+    every chunk that arrives. The 60-second default suits the short probes most callers
+    run; a long installer passes its own, because being quiet is not being stuck.
+    """
     credential = decrypt(encrypted_cred)
     loop = asyncio.get_event_loop()
 
     def _run() -> tuple[str, str, int]:
         client = _get_client(server_id, host, port, username, auth_type, credential,
                                 expected_fingerprint=expected_fingerprint)
-        _, stdout, stderr = client.exec_command(command, timeout=60)
+        _, stdout, stderr = client.exec_command(command, timeout=read_timeout)
         out = stdout.read().decode(errors="replace")
         err = stderr.read().decode(errors="replace")
         code = stdout.channel.recv_exit_status()

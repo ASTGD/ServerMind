@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -30,6 +31,13 @@ logger = logging.getLogger(__name__)
 # playbook_service). This has to comfortably exceed that wait, or the customer gets a
 # bare "took too long" in place of a message that says what is actually holding things up.
 _STEP_TIMEOUT = 1800
+# How long a step may say NOTHING before we treat the connection as dead. Separate from the
+# watchdog above and previously nobody's decision: it was paramiko's hardcoded 60 seconds,
+# a full order of magnitude tighter than the 30-minute step budget, so a step that was
+# merely quiet — waiting behind the server's own updater, unpacking a large package — was
+# cut off while the message blamed a watchdog that had not fired. Still bounded: an
+# installer silent for five minutes is stuck, not busy.
+_QUIET_LIMIT = 300
 _MAX_OUTPUT = 4000           # per step; the log is for diagnosis, not archaeology
 
 
@@ -51,6 +59,18 @@ async def _script_for(db, step: setup_service.Step, server: Server) -> str | Non
     # goes through these defaults; this was the one that did not.
     variables = {**playbook_service.declared_defaults(pb), **(step.variables or {})}
     return playbook_service.substitute_variables(raw, variables)
+
+
+def _timeout_note(elapsed: float) -> str:
+    """Which timeout actually fired — ours, or the connection's.
+
+    They arrive as the same exception, so only the clock tells them apart, and the two mean
+    opposite things to whoever reads it: one is a step that really is grinding away, the
+    other is a step that said nothing for long enough that we stopped listening.
+    """
+    if elapsed >= _STEP_TIMEOUT - 5:
+        return f"took longer than {_STEP_TIMEOUT // 60} minutes"
+    return "the server went quiet and the connection timed out"
 
 
 async def _run_steps(setup_id, steps: list[setup_service.Step], server: Server) -> None:
@@ -80,9 +100,11 @@ async def _run_steps(setup_id, steps: list[setup_service.Step], server: Server) 
         elif script is None:
             state, note = ("skipped" if step.optional else "failed"), "installer not found"
         else:
+            started = time.monotonic()
             try:
                 out, err, code = await asyncio.wait_for(
-                    connection_manager.execute(server, script), timeout=_STEP_TIMEOUT)
+                    connection_manager.execute(server, script, read_timeout=_QUIET_LIMIT),
+                    timeout=_STEP_TIMEOUT)
                 text = ((out or "") + ("\n" + err if err else ""))[-_MAX_OUTPUT:]
                 if code == 0:
                     state, note = "done", ""
@@ -90,9 +112,14 @@ async def _run_steps(setup_id, steps: list[setup_service.Step], server: Server) 
                     state = "skipped" if step.optional else "failed"
                     note = playbook_service.extract_failure_reason(text) or \
                         f"exit code {code}"
-            except asyncio.TimeoutError:
+            except TimeoutError:
+                # asyncio.TimeoutError, socket.timeout and TimeoutError are the SAME class
+                # on Python 3.11+, so paramiko giving up on a quiet channel arrived here
+                # and was reported as our watchdog. It told the owner a step "took longer
+                # than 30 minutes" about a step that had been running for 79 seconds, which
+                # sends them looking for a slow install instead of a silent one.
                 state = "skipped" if step.optional else "failed"
-                note = f"took longer than {_STEP_TIMEOUT // 60} minutes"
+                note = _timeout_note(time.monotonic() - started)
             except Exception as exc:                     # noqa: BLE001
                 state = "skipped" if step.optional else "failed"
                 note = str(exc)[:200]

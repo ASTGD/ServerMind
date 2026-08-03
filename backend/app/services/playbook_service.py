@@ -199,6 +199,13 @@ apt_wait() {
       echo ">>> Waiting for the server's own updater to finish (normal on a new server)"
     fi
     _w=$((_w + 5))
+    # A heartbeat, not chatter. paramiko gives up on a channel that has said nothing for
+    # 60 seconds, so a wait that stays quiet is killed by the CONNECTION long before its
+    # own bound below - and reported as a step that took too long, which is not what
+    # happened. Thirty seconds sits well inside that limit and shows it is still moving.
+    if [ $((_w % 30)) = 0 ]; then
+      echo ">>> still waiting for the updater (${_w}s)"
+    fi
     # Bounded, and deliberately shorter than setup_runner's per-step watchdog: a wait that
     # can outlive its own watchdog hands the customer a generic "took too long" instead of
     # the sentence below, which actually says what to look at. A lock still held after ten
