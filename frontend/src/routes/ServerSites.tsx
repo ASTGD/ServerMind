@@ -2,15 +2,16 @@ import { useState } from "react"
 import { Link, useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  Flag, Globe, Loader2, RefreshCw, Search, ShieldAlert, ShieldCheck,
+  Flag, Globe, Loader2, RefreshCw, Search,
 } from "lucide-react"
 import { getServerRole } from "@/api/servers"
-import { listServerSites, scanServerSites, APP_LABEL, type Site } from "@/api/sites"
+import { listServerSites, scanServerSites, type Site } from "@/api/sites"
 import { listRecipes } from "@/api/recipes"
 import RunRecipeModal from "@/components/recipes/RunRecipeModal"
 import AddSiteForm from "@/components/sites/AddSiteForm"
 import { Button } from "@/components/ui"
 import { installerOptionsFor } from "@/lib/assetMenu"
+import { CertPill, InfoText, StatusPill, TypePill } from "@/components/sites/SitePills"
 import { siteDetail, siteState, siteStatusLabel, siteTone } from "@/lib/siteStatus"
 import { cn } from "@/lib/utils"
 import type { Server } from "@/types"
@@ -280,55 +281,6 @@ export default function ServerSites() {
   )
 }
 
-/** Up/down comes from the uptime monitor, which checks from outside — where a visitor is. */
-function ToneDot({ site }: { site: Site }) {
-  const tone = siteTone(site)
-  return (
-    <span title={siteStatusLabel(site)} className={cn(
-      "size-2 shrink-0 rounded-full",
-      tone === "bad" ? "bg-red-500"
-        : tone === "good" ? "bg-emerald-500"
-          : "bg-muted-foreground/40",
-    )} />
-  )
-}
-
-/** The certificate a visitor actually receives, not the one named in the config. */
-function CertChip({ site }: { site: Site }) {
-  const days = site.uptime?.cert_days_left
-  const state = site.uptime?.cert_state
-  if (state === "expired") {
-    return (
-      <span className="flex items-center gap-1 rounded-full bg-red-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:text-red-300">
-        <ShieldAlert size={9} /> Certificate expired
-      </span>
-    )
-  }
-  if (typeof days === "number" && days <= 14) {
-    return (
-      <span className="flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-        <ShieldAlert size={9} /> HTTPS expires in {days}d
-      </span>
-    )
-  }
-  if (typeof days === "number") {
-    return (
-      <span className="flex items-center gap-1 text-[10.5px] text-muted-foreground">
-        <ShieldCheck size={9} /> {days}d
-      </span>
-    )
-  }
-  if (site.has_ssl) {
-    return (
-      <span className="flex items-center gap-1 text-[10.5px] text-muted-foreground"
-        title="The server is configured for HTTPS. Add an uptime monitor to track expiry.">
-        <ShieldCheck size={9} /> HTTPS set up
-      </span>
-    )
-  }
-  return null
-}
-
 function SiteRow({ site, serverId }: { site: Site; serverId: string }) {
   const state = siteState(site)
   const detail = siteDetail(site)
@@ -337,44 +289,45 @@ function SiteRow({ site, serverId }: { site: Site; serverId: string }) {
 
   return (
     <div className={cn(
-      "group flex items-center gap-4 border-t border-border px-4 py-3 first:border-t-0",
+      "group flex items-center gap-4 border-t border-border px-4 py-2.5 first:border-t-0",
       "transition-colors hover:bg-accent/50",
       state === "absent" && "opacity-60",
     )}>
-      <ToneDot site={site} />
+      {/* Up/down comes from the uptime monitor, which checks from OUTSIDE — where a
+          visitor is. Only a real fault is allowed to be red. */}
+      <span title={siteStatusLabel(site)} className={cn(
+        "size-2 shrink-0 rounded-full",
+        tone === "bad" ? "bg-red-500"
+          : tone === "good" ? "bg-emerald-500"
+            : "bg-muted-foreground/40",
+      )} />
 
-      {/* What it is. The domain leads, because that is what somebody is looking for. */}
+      {/* What it is. The domain leads, because that is what somebody is looking for; the
+          rest is small, quiet supporting detail on one line under it. */}
       <div className="min-w-0 flex-1">
-        <p className="flex flex-wrap items-center gap-2">
-          <Link to={to}
-            className="truncate text-[14px] font-medium text-foreground hover:underline">
-            {site.domain}
-          </Link>
-          <CertChip site={site} />
-        </p>
-        <p className="truncate text-caption text-muted-foreground">
-          {APP_LABEL[site.app_type] ?? site.app_type}
-          {site.app_version ? ` ${site.app_version}` : ""}
-          {site.doc_root ? ` · ${site.doc_root}` : ""}
-        </p>
+        <Link to={to}
+          className="block truncate text-[14px] font-medium text-foreground hover:underline">
+          {site.domain}
+        </Link>
+        <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <TypePill site={site} />
+          <CertPill site={site} />
+          {site.doc_root && <InfoText mono title={site.doc_root}>{site.doc_root}</InfoText>}
+        </div>
       </div>
 
       {/* Where it stands. Its own column, so a healthy row says "Up" rather than saying
           nothing — silence read equally as fine, never checked, and no idea. */}
-      <div className="hidden w-[260px] shrink-0 text-right sm:block">
-        <p className={cn("text-small font-medium",
-          tone === "bad" ? "text-red-600 dark:text-red-400"
-            : tone === "good" ? "text-emerald-600 dark:text-emerald-400"
-              : "text-muted-foreground")}>
-          {siteStatusLabel(site)}
-        </p>
+      <div className="hidden w-[240px] shrink-0 items-center justify-end gap-2 sm:flex">
         {/* Wrapped rather than truncated: the reason a setup failed is the most useful
             sentence on the row, and "no web server is running on this …" is not it. */}
         {detail && (
-          <p className="line-clamp-2 text-caption text-muted-foreground" title={detail}>
+          <span className="line-clamp-2 text-right text-caption text-muted-foreground"
+            title={detail}>
             {detail}
-          </p>
+          </span>
         )}
+        <StatusPill site={site} />
       </div>
 
       {/* Somewhere to go. The whole row used to be a link with nothing saying so. */}

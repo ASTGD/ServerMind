@@ -152,7 +152,7 @@ describe("the status a list can show", () => {
   it("says something exact for every state", () => {
     expect(siteStatusLabel(site({ uptime: { ...dnsDown, status: "up", error: null } }))).toBe("Up")
     expect(siteStatusLabel(site({ uptime: dnsDown }))).toBe("Down")
-    expect(siteStatusLabel(site({ uptime: neverPointed }))).toBe("Not pointed here yet")
+    expect(siteStatusLabel(site({ uptime: neverPointed }))).toBe("DNS not set")
     expect(siteStatusLabel(site({ status: "failed" }))).toBe("Setup failed")
     expect(siteStatusLabel(site({ status: "installing" }))).toBe("Setting up")
     expect(siteStatusLabel(site({ is_present: false }))).toBe("No longer found")
@@ -173,7 +173,7 @@ describe("the status a list can show", () => {
   })
 
   it("does not repeat the status as a sentence underneath it", () => {
-    // "Not pointed here yet" over "this domain is not pointed anywhere yet" is the same
+    // "DNS not set" over "this domain is not pointed anywhere yet" is the same
     // fact twice, and that is what makes a list tall and hard to scan.
     expect(siteDetail(site({ uptime: neverPointed }))).toBeNull()
     expect(siteDetail(site({ is_present: false }))).toBeNull()

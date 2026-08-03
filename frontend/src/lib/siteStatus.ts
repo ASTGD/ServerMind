@@ -87,7 +87,9 @@ export function siteStatusLabel(site: Site): string {
     case "failed": return "Setup failed"
     case "remove_failed": return "Removal failed"
     case "absent": return "No longer found"
-    case "unpointed": return "Not pointed here yet"
+    // Short enough to be a status rather than a sentence, and it names WHERE the fix is:
+    // the registrar, not the server. The full explanation rides on the pill's tooltip.
+    case "unpointed": return "DNS not set"
     default: break
   }
   if (!site.uptime) return "Not checked"
@@ -107,8 +109,8 @@ export function siteTone(site: Site): SiteTone {
 /**
  * The extra sentence, or nothing when the status already says it.
  *
- * "Not pointed here yet" followed by "this domain is not pointed anywhere yet" is the same
- * fact twice, and in a list that is what makes rows tall and hard to scan.
+ * "DNS not set" followed by "this domain is not pointed anywhere yet" is the same fact
+ * twice, and in a list that is what makes rows tall and hard to scan.
  */
 export function siteDetail(site: Site): string | null {
   const state = siteState(site)

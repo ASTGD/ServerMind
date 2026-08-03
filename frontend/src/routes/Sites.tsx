@@ -3,11 +3,10 @@ import { Link } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Globe, Search, Loader2, RefreshCw, CircleCheck, CircleAlert, CircleDashed,
-  ShieldCheck, ShieldAlert, Server as ServerIcon, Sparkles, EyeOff, Plus,
-  Mail, MailWarning,
+  Server as ServerIcon, Sparkles, Plus, Mail, MailWarning,
 } from "lucide-react"
 import {
-  listSites, scanServerSites, addSite, watchSites, APP_LABEL, type Site,
+  listSites, scanServerSites, addSite, watchSites, type Site,
 } from "@/api/sites"
 import RunRecipeModal from "@/components/recipes/RunRecipeModal"
 import { listRecipes } from "@/api/recipes"
@@ -15,6 +14,7 @@ import { listServers } from "@/api/servers"
 import { checkMailNow, watchMail } from "@/api/mail"
 import { Button, EmptyState } from "@/components/ui"
 import { useAssistantStore } from "@/store/assistantStore"
+import { CertPill, StatusPill, TypePill } from "@/components/sites/SitePills"
 import { siteLooksBroken, siteProblem, siteState, siteTone } from "@/lib/siteStatus"
 import { cn } from "@/lib/utils"
 
@@ -43,37 +43,6 @@ function StatusDot({ site }: { site: Site }) {
 }
 
 /** The certificate a visitor actually receives, not the one named in the config. */
-function CertChip({ site }: { site: Site }) {
-  const days = site.uptime?.cert_days_left
-  const state = site.uptime?.cert_state
-  if (state === "expired")
-    return (
-      <span className="flex items-center gap-1 rounded-full bg-red-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:text-red-300">
-        <ShieldAlert size={9} /> Certificate expired
-      </span>
-    )
-  if (typeof days === "number" && days <= 14)
-    return (
-      <span className="flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-        <ShieldAlert size={9} /> HTTPS expires in {days}d
-      </span>
-    )
-  if (typeof days === "number")
-    return (
-      <span className="flex items-center gap-1 text-[10.5px] text-muted-foreground">
-        <ShieldCheck size={9} /> {days}d
-      </span>
-    )
-  if (site.has_ssl)
-    return (
-      <span className="flex items-center gap-1 text-[10.5px] text-muted-foreground"
-        title="The server is configured for HTTPS. Add an uptime monitor to track expiry.">
-        <ShieldCheck size={9} /> HTTPS set up
-      </span>
-    )
-  return null
-}
-
 /**
  * Whether this domain's email will actually arrive.
  *
@@ -185,37 +154,15 @@ function SiteRow({ site }: { site: Site }) {
               >
                 {site.domain}
               </Link>
-              <CertChip site={site} />
+              <CertPill site={site} />
               <MailChip site={site} onClick={() => setShowMail((v) => !v)} />
-              {state === "installing" && (
-                <span className="flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                  <Loader2 size={9} className="animate-spin" /> Setting up…
-                </span>
-              )}
-              {state === "failed" && (
-                <span className="flex items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-                  <CircleAlert size={9} /> Setup failed
-                </span>
-              )}
-              {state === "unpointed" && (
-                <span className="flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <Globe size={9} /> Not pointed here yet
-                </span>
-              )}
-              {state === "absent" && (
-                <span className="flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  <EyeOff size={9} /> No longer found
-                </span>
-              )}
+              <StatusPill site={site} />
             </p>
             <p className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11.5px] text-muted-foreground">
               <span className="flex items-center gap-1">
                 <ServerIcon size={10} /> {site.server_name ?? "—"}
               </span>
-              <span>
-                {APP_LABEL[site.app_type] ?? site.app_type}
-                {site.app_version ? ` ${site.app_version}` : ""}
-              </span>
+              <TypePill site={site} />
               {site.aliases.length > 0 && <span>also {site.aliases.slice(0, 2).join(", ")}</span>}
               {/* Coloured by the same rule as the row, so a calm state stops being
                   printed in the fault colour and reading as one. */}
