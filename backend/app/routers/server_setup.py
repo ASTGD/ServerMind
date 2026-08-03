@@ -51,10 +51,26 @@ def _public(s: ServerSetup) -> dict:
     }
 
 
-async def _latest(server_id, db: AsyncSession) -> ServerSetup | None:
-    return (await db.execute(
-        select(ServerSetup).where(ServerSetup.server_id == server_id)
+async def _latest(server, db: AsyncSession) -> ServerSetup | None:
+    """The most recent setup — but only if it describes THIS machine.
+
+    A setup that finished before the host key was replaced ran on hardware that is gone,
+    so reading it as the current state tells a customer their rebuilt server is already
+    set up and offers them nothing to do about it.
+
+    The rule lives HERE, at the read, rather than at each caller. It was written at one
+    call site first and the setup panel simply never got it — a guard that has to be
+    remembered is a guard that gets missed, which is the same fault one level down.
+    """
+    from app.services import server_role
+
+    row = (await db.execute(
+        select(ServerSetup).where(ServerSetup.server_id == server.id)
         .order_by(ServerSetup.started_at.desc()).limit(1))).scalar_one_or_none()
+    if row and not server_role.setup_applies(
+            row.finished_at, getattr(server, "identity_changed_at", None)):
+        return None
+    return row
 
 
 @router.get("/role")
@@ -74,23 +90,17 @@ async def role(server_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     from app.services import server_role
 
     server = await resolve_server(server_id, current_user, db)
-    latest = await _latest(server.id, db)
+    latest = await _latest(server, db)
     site_count = (await db.execute(
         select(func.count()).select_from(Site)
         .where(Site.server_id == server.id, Site.is_present == True)  # noqa: E712
     )).scalar() or 0
 
-    # A setup that finished BEFORE the machine was replaced described the previous one.
-    # Counting it is what kept a rebuilt server claiming ServerAlly was its control panel,
-    # so it never offered the choice again.
-    applies = server_role.setup_applies(
-        getattr(latest, "finished_at", None), getattr(server, "identity_changed_at", None))
-
     out = server_role.decide(
         connection_type=server.connection_type,
         panel_type=server.panel_type,
-        setup_done=bool(latest and latest.status == "done") and applies,
-        setup_running=bool(latest and latest.status == "running") and applies,
+        setup_done=bool(latest and latest.status == "done"),
+        setup_running=bool(latest and latest.status == "running"),
         site_count=int(site_count),
     )
     # What the customer would be choosing between, read from the playbooks this deployment
@@ -166,7 +176,7 @@ async def _panel_installers(db: AsyncSession) -> list[dict]:
 async def status(server_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     """What can be set up here, and how the last attempt went."""
     server = await resolve_server(server_id, current_user, db)
-    latest = await _latest(server.id, db)
+    latest = await _latest(server, db)
 
     options, blocked = [], ""
     try:
@@ -187,7 +197,7 @@ async def start(server_id: str, body: StartBody, request: Request,
                 db: DBDep, current_user: CurrentUser) -> dict:
     server = await resolve_server(server_id, current_user, db, need_execute=True)
 
-    running = await _latest(server.id, db)
+    running = await _latest(server, db)
     if running and running.status == "running":
         raise HTTPException(
             status_code=409,
@@ -237,7 +247,7 @@ async def stop(server_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     package that is harder to recover from than one extra completed step.
     """
     server = await resolve_server(server_id, current_user, db, need_execute=True)
-    latest = await _latest(server.id, db)
+    latest = await _latest(server, db)
     if not latest or latest.status != "running":
         raise HTTPException(status_code=409, detail="Nothing is running on this server.")
     latest.status = "stopped"

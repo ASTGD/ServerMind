@@ -95,3 +95,82 @@ def test_the_trust_endpoint_actually_calls_it():
 @pytest.mark.parametrize("kind", ["winrm", "rdp"])
 def test_an_asset_that_never_answers_the_question_is_untouched(kind):
     assert role(connection_type=kind)["applies"] is False
+
+
+# ── The rule has to live at the READ, not at one caller ──────────────────────
+
+class _FakeResult:
+    def __init__(self, row):
+        self._row = row
+
+    def scalar_one_or_none(self):
+        return self._row
+
+
+class _FakeDb:
+    def __init__(self, row):
+        self._row = row
+
+    async def execute(self, _stmt):
+        return _FakeResult(self._row)
+
+
+class _Setup:
+    def __init__(self, finished_at, status="done"):
+        self.finished_at, self.status = finished_at, status
+
+
+class _Server:
+    id = "s"
+
+    def __init__(self, changed_at):
+        self.identity_changed_at = changed_at
+
+
+@pytest.mark.asyncio
+async def test_a_setup_from_the_previous_machine_is_not_returned_at_all():
+    """The second half of the same bug, found by the owner pressing the button.
+
+    The Start-here page correctly offered the choice, they picked ServerAlly — and the
+    setup screen said "This server is set up", listing fourteen steps that ran on hardware
+    that no longer exists, with nothing to press. Stuck.
+
+    Fixed at the read rather than at the caller: the first version of this rule lived at
+    one call site, and the setup panel simply never got it.
+    """
+    from app.routers import server_setup
+
+    row = _Setup(finished_at=NOW - timedelta(days=2))
+    assert await server_setup._latest(_Server(NOW), _FakeDb(row)) is None
+
+
+@pytest.mark.asyncio
+async def test_a_setup_that_ran_on_this_machine_is_returned():
+    from app.routers import server_setup
+
+    row = _Setup(finished_at=NOW)
+    assert await server_setup._latest(_Server(NOW - timedelta(days=2)), _FakeDb(row)) is row
+
+
+@pytest.mark.asyncio
+async def test_a_setup_running_right_now_is_never_discarded():
+    """It has no finish time. Treating that as "before the rebuild" would hide a setup
+    that is happening while the customer watches it."""
+    from app.routers import server_setup
+
+    row = _Setup(finished_at=None, status="running")
+    assert await server_setup._latest(_Server(NOW), _FakeDb(row)) is row
+
+
+def test_no_caller_re_implements_the_rule():
+    """What actually went wrong: the rule was applied at one of four call sites. If it
+    reappears beside a caller, that caller is the only one protected again."""
+    import inspect
+
+    from app.routers import server_setup
+
+    src = inspect.getsource(server_setup)
+    assert src.count("setup_applies") == 1, (
+        "the staleness rule belongs at the read, so every caller gets it")
+    assert "_latest(server.id" not in src, (
+        "_latest takes the server so it can see identity_changed_at")
