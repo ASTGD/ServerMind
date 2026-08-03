@@ -306,7 +306,7 @@ export default function Sites() {
           )}
           {unpointed > 0 && (
             <span className="ml-1 font-medium text-foreground">
-              {unpointed} {unpointed === 1 ? "domain is" : "domains are"} not pointed here yet.
+              {unpointed} {unpointed === 1 ? "domain needs" : "domains need"} DNS pointing here.
             </span>
           )}
           {badMail > 0 && (

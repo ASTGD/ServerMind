@@ -120,7 +120,7 @@ export default function ServerSites() {
               </span>
             )}
             {unpointed > 0 && !stale && (
-              <span className="ml-1">· {unpointed} not pointed here yet</span>
+              <span className="ml-1">· {unpointed} need DNS</span>
             )}
           </p>
         </div>
