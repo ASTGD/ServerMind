@@ -628,3 +628,31 @@ export async function removeSiteAlias(
     `/api/sites/${siteId}/aliases/${encodeURIComponent(alias)}`)
   return data
 }
+
+
+export interface SiteAuth {
+  users: string[]
+  enabled: boolean
+  /** Empty means the whole site is behind the password. */
+  path: string
+}
+
+export async function getSiteAuth(siteId: string): Promise<SiteAuth> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/auth`)
+  return data
+}
+
+export async function setSiteAuth(
+  siteId: string, body: { name: string; password: string; path?: string },
+): Promise<SiteAuth & { message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/auth`, body)
+  return data
+}
+
+export async function removeSiteAuth(
+  siteId: string, name: string,
+): Promise<SiteAuth & { message: string }> {
+  const { data } = await apiClient.delete(
+    `/api/sites/${siteId}/auth/${encodeURIComponent(name)}`)
+  return data
+}

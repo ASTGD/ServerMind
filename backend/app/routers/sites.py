@@ -1403,6 +1403,119 @@ async def remove_site_alias(site_id: str, alias: str, db: DBDep,
 
 
 
+class AuthIn(BaseModel):
+    name: str = Field(max_length=32)
+    # Never echoed back and never stored. It is hashed before it leaves this process.
+    password: str = Field(max_length=200)
+    path: str = Field(default="", max_length=200)
+
+
+async def _auth_read(server, site) -> tuple[list[str], str]:
+    """The usernames guarding this site, from the server's own password file."""
+    import base64 as _b
+
+    from app.services import connection_manager, site_auth_service as sa
+
+    out, _err, code = await connection_manager.execute(
+        server, sa.build_read_command(site.domain))
+    if code != 0 or not (out or "").strip():
+        return [], ""
+    try:
+        content = _b.b64decode(out.strip()).decode(errors="replace")
+    except Exception:  # noqa: BLE001
+        return [], ""
+    return sa.parse_users(content), content
+
+
+async def _auth_apply(server, site, lines: list[str], path: str) -> dict:
+    from app.services import connection_manager, site_auth_service as sa
+
+    cfg, apache, why = await _resolve_site_config(server, site)
+    if cfg is None:
+        raise HTTPException(status_code=422, detail=why or "Its configuration was not found.")
+    cmd = sa.build_apply_command(cfg, site.domain, lines, path, apache=apache)
+    out, err, code = await connection_manager.execute(server, cmd)
+    ok, message = sa.explain(code, (out or "") + (err or ""), users=len(lines), path=path)
+    if not ok:
+        raise HTTPException(status_code=422, detail=message)
+    users, _ = await _auth_read(server, site)
+    return {"users": users, "path": path, "enabled": bool(users), "message": message}
+
+
+@router.get("/sites/{site_id}/auth")
+async def get_site_auth(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Who has to sign in before this site is shown."""
+    from app.services import site_auth_service as sa
+
+    site, server = await _site_and_server(site_id, current_user, db)
+    users, _ = await _auth_read(server, site)
+    # The path is read off the configuration rather than remembered, so the screen agrees
+    # with the server even if somebody edited the file by hand.
+    path = ""
+    cfg, _apache, _why = await _resolve_site_config(server, site)
+    if cfg:
+        from app.services import connection_manager, vhost_service
+        import base64 as _b
+        out, _e, code = await connection_manager.execute(
+            server, vhost_service.build_read_command(cfg))
+        if code == 0:
+            try:
+                text = _b.b64decode((out or "").strip()).decode(errors="replace")
+                import re as _re
+                m = _re.search(r"location \^~ (\S+)/ \{", text)
+                if m and sa.BEGIN in text:
+                    path = m.group(1)
+            except Exception:  # noqa: BLE001
+                path = ""
+    return {"users": users, "enabled": bool(users), "path": path}
+
+
+@router.post("/sites/{site_id}/auth", status_code=201)
+async def set_site_auth(site_id: str, body: AuthIn, db: DBDep,
+                        current_user: CurrentUser) -> dict:
+    """Add a person who may sign in, or change their password."""
+    from app.services import site_auth_service as sa
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    try:
+        name = sa.clean_name(body.name)
+        path = sa.clean_path(body.path)
+        line = sa.htpasswd_line(name, body.password)
+    except sa.AuthError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    _users, content = await _auth_read(server, site)
+    lines = sa.replace_user(content, name, line)
+    result = await _auth_apply(server, site, lines, path)
+    # The username is recorded; the password deliberately is not, so reading the audit trail
+    # can never hand somebody a live login.
+    await audit_service.audit(db, current_user, "site.auth_set",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "user": name, "path": path})
+    return result
+
+
+@router.delete("/sites/{site_id}/auth/{name}")
+async def remove_site_auth(site_id: str, name: str, db: DBDep,
+                           current_user: CurrentUser) -> dict:
+    """Take one person's access away. Removing the last one opens the site again."""
+    from app.services import site_auth_service as sa
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    users, content = await _auth_read(server, site)
+    if name not in users:
+        raise HTTPException(status_code=404, detail="No such user on this site.")
+
+    current = await get_site_auth(site_id, db, current_user)
+    lines = sa.replace_user(content, name, None)
+    result = await _auth_apply(server, site, lines, current["path"] if lines else "")
+    await audit_service.audit(db, current_user, "site.auth_removed",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "user": name})
+    return result
+
+
+
 class VhostIn(BaseModel):
     content: str
 

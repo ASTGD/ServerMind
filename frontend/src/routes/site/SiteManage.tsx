@@ -3,11 +3,11 @@ import { useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import Editor from "@monaco-editor/react"
 import {
-  AlertTriangle, FileCode2, Globe, Loader2, RotateCcw, X,
+  AlertTriangle, FileCode2, Globe, Loader2, Lock, RotateCcw, X,
 } from "lucide-react"
 import {
-  addSiteAlias, getSiteAliases, getSiteVhost, removeSiteAlias, saveSiteVhost,
-  type SiteDetail,
+  addSiteAlias, getSiteAliases, getSiteAuth, getSiteVhost, removeSiteAlias,
+  removeSiteAuth, saveSiteVhost, setSiteAuth, type SiteDetail,
 } from "@/api/sites"
 import { Button, EmptyState } from "@/components/ui"
 import { useThemeStore } from "@/store/themeStore"
@@ -29,6 +29,7 @@ export default function SiteManage() {
 
   return (
     <div className="space-y-4">
+      <Authentication site={site} />
       <DomainAliases site={site} />
       <VhostEditor site={site} />
     </div>
@@ -260,6 +261,150 @@ function DomainAliases({ site }: { site: SiteDetail }) {
                 className="shrink-0 rounded-md p-1 text-muted-foreground
                            hover:bg-destructive/10 hover:text-destructive"
               >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+
+/** A password that is only as good as its own strength — generated, not invented. */
+function strongSecret(): string {
+  const abc = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+  return Array.from(crypto.getRandomValues(new Uint32Array(16)))
+    .map((n) => abc[n % abc.length]).join("")
+}
+
+/**
+ * A username and password in front of the site — Ploi's "Authentication".
+ *
+ * The password is shown once because it has to be given to somebody, and it is never
+ * stored: it is hashed on our side and only the hash reaches the server.
+ */
+function Authentication({ site }: { site: SiteDetail }) {
+  const qc = useQueryClient()
+  const [name, setName] = useState("")
+  const [password, setPassword] = useState(strongSecret)
+  const [path, setPath] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+
+  const q = useQuery({ queryKey: ["site-auth", site.id], queryFn: () => getSiteAuth(site.id) })
+
+  const after = (message: string) => {
+    setNote(message); setError(null); setName(""); setPassword(strongSecret())
+    qc.invalidateQueries({ queryKey: ["site-auth", site.id] })
+    // The editor below shows the file this just changed.
+    qc.invalidateQueries({ queryKey: ["site-vhost", site.id] })
+  }
+  const failed = (e: unknown) => {
+    setNote(null)
+    setError((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      ?? "That could not be saved.")
+  }
+
+  const save = useMutation({
+    mutationFn: () => setSiteAuth(site.id, { name, password, path }),
+    onSuccess: (r) => after(r.message), onError: failed,
+  })
+  const drop = useMutation({
+    mutationFn: (who: string) => removeSiteAuth(site.id, who),
+    onSuccess: (r) => after(r.message), onError: failed,
+  })
+
+  const users = q.data?.users ?? []
+  const busy = save.isPending || drop.isPending
+  const livePath = q.data?.path ?? ""
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center gap-2">
+        <Lock size={15} className="text-muted-foreground" />
+        <h3 className="text-h3 text-foreground">Authentication</h3>
+      </div>
+      <p className="mt-1 text-small text-muted-foreground">
+        Ask for a username and password before the site is shown. Useful while a site is
+        being built, or to keep an admin page to yourself.
+      </p>
+
+      {users.length > 0 && (
+        <p className="mt-2 rounded-lg border-l-2 border-amber-500 bg-amber-500/5 px-3 py-2
+                      text-small text-foreground">
+          {livePath
+            ? <>A password is required for <span className="font-mono">{livePath}/</span> and
+              everything under it.</>
+            : <>A password is required for the whole site — including anyone you send it to.</>}
+        </p>
+      )}
+
+      <form
+        className="mt-3 grid gap-2 sm:grid-cols-2"
+        onSubmit={(e) => { e.preventDefault(); if (name.trim()) save.mutate() }}
+      >
+        <div>
+          <label className="text-caption text-muted-foreground">Username</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} disabled={busy}
+            placeholder="client" className="mt-1 w-full rounded-lg border border-border
+            bg-background px-3 py-1.5 font-mono text-sm text-foreground" />
+        </div>
+        <div>
+          <label className="text-caption text-muted-foreground">Password</label>
+          <div className="mt-1 flex gap-2">
+            <input value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy}
+              className="w-full rounded-lg border border-border bg-background px-3 py-1.5
+              font-mono text-sm text-foreground" />
+            <Button type="button" variant="outline" size="sm"
+              onClick={() => setPassword(strongSecret())}>New</Button>
+          </div>
+        </div>
+        <div className="sm:col-span-2">
+          <label className="text-caption text-muted-foreground">
+            Only this path (optional)
+          </label>
+          <input value={path} onChange={(e) => setPath(e.target.value)} disabled={busy}
+            placeholder="/wp-admin — leave empty for the whole site"
+            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-1.5
+            font-mono text-sm text-foreground" />
+        </div>
+        <div className="sm:col-span-2 flex items-center gap-3">
+          <Button type="submit" disabled={busy || !name.trim()}>
+            {save.isPending && <Loader2 size={14} className="animate-spin" />}
+            Save
+          </Button>
+          <span className="text-caption text-amber-600 dark:text-amber-400">
+            Copy the password now — it is hashed on the server and cannot be shown again.
+          </span>
+        </div>
+      </form>
+
+      {error && (
+        <p className="mt-2 rounded-lg border-l-2 border-destructive bg-destructive/5 px-3 py-2
+                      text-small text-destructive">{error}</p>
+      )}
+      {note && !error && (
+        <p className="mt-2 rounded-lg border-l-2 border-emerald-500 bg-emerald-500/5 px-3 py-2
+                      text-small text-foreground">{note}</p>
+      )}
+
+      {q.isLoading ? (
+        <div className="mt-3 h-8 animate-pulse rounded-lg bg-muted" />
+      ) : users.length === 0 ? (
+        <p className="mt-3 text-caption text-muted-foreground">
+          Anyone can reach this site.
+        </p>
+      ) : (
+        <ul className="mt-3 divide-y divide-border rounded-lg border border-border">
+          {users.map((who) => (
+            <li key={who} className="flex items-center justify-between gap-3 px-3 py-2">
+              <span className="truncate font-mono text-[13px] text-foreground">{who}</span>
+              <button type="button" onClick={() => drop.mutate(who)} disabled={busy}
+                title={`Remove ${who}`}
+                className="shrink-0 rounded-md p-1 text-muted-foreground
+                           hover:bg-destructive/10 hover:text-destructive">
                 <X size={14} />
               </button>
             </li>
