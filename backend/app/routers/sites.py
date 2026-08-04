@@ -1582,6 +1582,33 @@ async def set_site_suspend(site_id: str, body: SuspendIn, db: DBDep,
 
 
 
+@router.post("/sites/{site_id}/reset-permissions")
+async def reset_site_permissions(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Put this site's file ownership and permissions back to a known-good state.
+
+    The folder is taken from the SITE, never from the caller: this ends in `chown -R`, and
+    a path from a browser would be a request to hand the web server somebody else's files.
+    """
+    from app.services import connection_manager, permissions_service as perms
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    try:
+        cmd = perms.build_command(site.doc_root)
+    except perms.PermissionsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    out, err, code = await connection_manager.execute(server, cmd)
+    ok, message = perms.explain(code, (out or "") + (err or ""))
+    if not ok:
+        raise HTTPException(status_code=422, detail=message)
+
+    await audit_service.audit(db, current_user, "site.permissions_reset",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "folder": site.doc_root})
+    return {"message": message}
+
+
+
 class VhostIn(BaseModel):
     content: str
 

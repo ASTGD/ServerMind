@@ -680,3 +680,9 @@ export async function setSiteSuspend(
   const { data } = await apiClient.post(`/api/sites/${siteId}/suspend`, body)
   return data
 }
+
+
+export async function resetSitePermissions(siteId: string): Promise<{ message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/reset-permissions`)
+  return data
+}

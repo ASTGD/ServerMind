@@ -1,14 +1,15 @@
 import { useState } from "react"
-import { useOutletContext } from "react-router-dom"
+import { Link, useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import Editor from "@monaco-editor/react"
 import {
-  AlertTriangle, FileCode2, Globe, Loader2, Lock, PauseCircle, RotateCcw, X,
+  AlertTriangle, Archive, FileCode2, Globe, Loader2, Lock, PauseCircle,
+  RotateCcw, ShieldCheck, X,
 } from "lucide-react"
 import {
   addSiteAlias, getSiteAliases, getSiteAuth, getSiteVhost, removeSiteAlias,
   getSiteSuspend, removeSiteAuth, saveSiteVhost, setSiteAuth, setSiteSuspend,
-  type SiteDetail,
+  resetSitePermissions, type SiteDetail,
 } from "@/api/sites"
 import { Button, EmptyState } from "@/components/ui"
 import { useThemeStore } from "@/store/themeStore"
@@ -33,6 +34,8 @@ export default function SiteManage() {
     <div className="space-y-4">
       <Authentication site={site} />
       <SuspendSite site={site} />
+      <FileBackups site={site} />
+      <ResetPermissions site={site} />
       <DomainAliases site={site} />
       <VhostEditor site={site} />
     </div>
@@ -556,6 +559,112 @@ function SuspendSite({ site }: { site: SiteDetail }) {
           </Button>
         )}
       </div>
+    </div>
+  )
+}
+
+
+/**
+ * Where a site's file backups actually live — Ploi's "File Backups".
+ *
+ * Theirs is not a form: it jumps to their central backup area filtered to the site. Ours
+ * does the same, because backups genuinely belong to the server — one schedule, one
+ * destination, one retention rule — and a second per-site copy of that would be a second
+ * place for it to be wrong.
+ */
+function FileBackups({ site }: { site: SiteDetail }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center gap-2">
+        <Archive size={15} className="text-muted-foreground" />
+        <h3 className="text-h3 text-foreground">File backups</h3>
+      </div>
+      <p className="mt-1 text-small text-muted-foreground">
+        Backups are set up per server, so one schedule and one destination cover every site
+        on it. This site's files live in{" "}
+        <span className="font-mono text-[12px] text-foreground">
+          {site.doc_root || "an unknown folder"}
+        </span>.
+      </p>
+      <div className="mt-3">
+        <Link to={`/servers/${site.server_id}/backups`}>
+          <Button variant="outline" size="sm">Open backups for this server</Button>
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Put file ownership back — Ploi's "Reset permissions".
+ *
+ * It says the same three things Ploi's dialog says, because they are all true: it
+ * overwrites anything customised, it takes effect at once, and there is no undo. The
+ * confirmation is a second click rather than a typed name — this repairs a site, it does
+ * not delete one.
+ */
+function ResetPermissions({ site }: { site: SiteDetail }) {
+  const [asking, setAsking] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+
+  const run = useMutation({
+    mutationFn: () => resetSitePermissions(site.id),
+    onSuccess: (r) => { setNote(r.message); setError(null); setAsking(false) },
+    onError: (e: { response?: { data?: { detail?: string } } }) => {
+      setNote(null); setAsking(false)
+      setError(e.response?.data?.detail ?? "The permissions could not be reset.")
+    },
+  })
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center gap-2">
+        <ShieldCheck size={15} className="text-muted-foreground" />
+        <h3 className="text-h3 text-foreground">Reset permissions</h3>
+      </div>
+      <p className="mt-1 text-small text-muted-foreground">
+        Give every file in this site back to the web server, and put folders and files back
+        to their normal permissions. Fixes a site that has stopped being able to write —
+        uploads failing, a cache it cannot clear, an update that will not apply.
+      </p>
+
+      {asking ? (
+        <div className="mt-3 rounded-lg border-l-2 border-amber-500 bg-amber-500/5 px-3 py-2.5">
+          <p className="text-small font-medium text-foreground">Before you do this</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-caption text-muted-foreground">
+            <li>Any permissions you set on purpose will be overwritten.</li>
+            <li>It takes effect immediately, on the live site.</li>
+            <li>There is no undo — nothing records what the permissions were before.</li>
+          </ul>
+          <p className="mt-2 text-caption text-muted-foreground">
+            Only <span className="font-mono">{site.doc_root}</span> is touched. Nothing
+            above it, and no other site.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <Button size="sm" onClick={() => run.mutate()} disabled={run.isPending}>
+              {run.isPending && <Loader2 size={14} className="animate-spin" />}
+              Yes, reset them
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setAsking(false)}>Cancel</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3">
+          <Button variant="outline" size="sm" onClick={() => { setAsking(true); setNote(null) }}>
+            Reset permissions
+          </Button>
+        </div>
+      )}
+
+      {error && (
+        <p className="mt-2 rounded-lg border-l-2 border-destructive bg-destructive/5 px-3 py-2
+                      text-small text-destructive">{error}</p>
+      )}
+      {note && !error && (
+        <p className="mt-2 rounded-lg border-l-2 border-emerald-500 bg-emerald-500/5 px-3 py-2
+                      text-small text-foreground">{note}</p>
+      )}
     </div>
   )
 }
