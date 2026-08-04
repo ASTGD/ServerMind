@@ -11,6 +11,7 @@ deliberately no create, no delete and no edit: making a site is a control panel'
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 import uuid
@@ -1607,6 +1608,113 @@ async def reset_site_permissions(site_id: str, db: DBDep, current_user: CurrentU
                               meta={"domain": site.domain, "folder": site.doc_root})
     return {"message": message}
 
+
+
+class CloneIn(BaseModel):
+    domain: str
+    server_id: str
+
+
+@router.get("/sites/{site_id}/clone")
+async def site_clone_options(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Where this site can be copied to, and what a copy leaves behind.
+
+    The server list is filtered to the ones a clone can actually land on — Linux over SSH,
+    no control panel — rather than showing every server and refusing later. A destination
+    that cannot work is not offered.
+    """
+    from app.services import clone_service as clone, team_service
+
+    site, server = await _site_and_server(site_id, current_user, db)
+    servers = [
+        {"id": str(s.id), "name": s.name, "host": s.host,
+         "same": str(s.id) == str(server.id)}
+        for s in await team_service.accessible_servers(db, current_user)
+        if s.connection_type == "ssh" and not s.panel_type
+    ]
+    return {
+        "domain": site.domain,
+        "server_id": str(server.id),
+        "servers": servers,
+        # Both wordings, because which one applies depends on the server the customer picks
+        # and that choice is made in the browser. Null for a site with no database to share.
+        "database_note": {
+            "same": clone.database_warning(site.app_type, same_server=True),
+            "other": clone.database_warning(site.app_type, same_server=False),
+        },
+    }
+
+
+@router.post("/sites/{site_id}/clone", status_code=201)
+async def clone_site(site_id: str, body: CloneIn, db: DBDep,
+                     current_user: CurrentUser) -> dict:
+    """Copy this site's files to a new domain, here or on another server.
+
+    Everything that can be refused is refused BEFORE a byte moves: the destination, the
+    domain, the size, and whether the destination has room. A clone that fails halfway is
+    a half-built site somebody has to clean up; a clone that fills a disk stops every other
+    site on that machine.
+
+    The new site is created through the ordinary install path, so it appears immediately as
+    *Setting up* and follows exactly the same rules as any other new site — including that
+    it only becomes live when a scan actually SEES it on the server.
+    """
+    from app.services import clone_service as clone, connection_manager
+    from app.workers import clone_runner
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    dest = await resolve_server(body.server_id, current_user, db, need_execute=True)
+
+    try:
+        domain = clone.check_request(site, server, dest, body.domain)
+    except clone.CloneError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    same_server = str(dest.id) == str(server.id)
+
+    # 1 ─ look at what is actually there. This decides whether the copy needs PHP, which is
+    #     not a nicety: a PHP site served without a PHP handler publishes wp-config.php.
+    out, err, code = await connection_manager.execute(
+        server, clone.build_survey_command(site.doc_root or ""))
+    try:
+        survey = clone.parse_survey((out or "") + (err or ""), code)
+        clone.check_transfer_size(survey.bytes, same_server=same_server)
+    except clone.CloneError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # 2 ─ has the destination got room? Asked about the folder sites live in on THAT server.
+    out, err, code = await connection_manager.execute(
+        dest, clone.build_fit_command("/var/www"))
+    try:
+        clone.check_fit(survey.bytes, clone.parse_free((out or "") + (err or "")))
+    except clone.CloneError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # 3 ─ create the new site. Its own guards refuse a domain already configured there, and
+    #     `create` refuses one we already track — so a clone can never land on a live site.
+    try:
+        new_site, run_id, script = await site_service.create(
+            db, dest, current_user, domain=domain, site_type=clone.site_type_for(survey))
+    except (site_service.SiteError, playbook_service.UnresolvedVariables) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    asyncio.create_task(clone_runner.run_clone(
+        run_id=uuid.UUID(run_id), script=script,
+        source_server_id=server.id, source_site_id=site.id,
+        dest_server_id=dest.id, new_site_id=new_site.id,
+        survey=survey, same_server=same_server))
+
+    await audit_service.audit(db, current_user, "site.cloned",
+                              target_type="server", target_id=str(dest.id),
+                              meta={"from": site.domain, "to": domain,
+                                    "server": dest.name, "bytes": survey.bytes})
+    return {
+        **site_service.serialize(new_site, server_name=dest.name),
+        "run_id": run_id,
+        "size": clone.human(survey.bytes),
+        "files": survey.files,
+        "database_note": clone.database_warning(site.app_type, same_server=same_server),
+    }
 
 
 class CacheIn(BaseModel):

@@ -1,16 +1,17 @@
-import { useState } from "react"
-import { Link, useOutletContext } from "react-router-dom"
+import { useEffect, useState } from "react"
+import { Link, useNavigate, useOutletContext } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import Editor from "@monaco-editor/react"
 import {
-  AlertTriangle, Archive, FileCode2, Globe, Loader2, Lock, PauseCircle,
+  AlertTriangle, Archive, Copy, FileCode2, Globe, Loader2, Lock, PauseCircle,
   RotateCcw, ShieldCheck, X, Zap,
 } from "lucide-react"
 import {
-  addSiteAlias, getSiteAliases, getSiteAuth, getSiteVhost, removeSiteAlias,
+  addSiteAlias, cloneSite, getSiteAliases, getSiteAuth, getSiteCloneOptions,
+  getSiteVhost, removeSiteAlias,
   getSiteSuspend, removeSiteAuth, saveSiteVhost, setSiteAuth, setSiteSuspend,
   getSiteCache, purgeSiteCache, resetSitePermissions, setSiteCache,
-  type SiteDetail,
+  type CloneStarted, type SiteDetail,
 } from "@/api/sites"
 import { Button, EmptyState } from "@/components/ui"
 import { useThemeStore } from "@/store/themeStore"
@@ -39,7 +40,154 @@ export default function SiteManage() {
       <FileBackups site={site} />
       <ResetPermissions site={site} />
       <DomainAliases site={site} />
+      <CloneSite site={site} />
       <VhostEditor site={site} />
+    </div>
+  )
+}
+
+/**
+ * Copy this site to a new domain — Ploi's "Clone site".
+ *
+ * The list of what is and is not copied is shown BEFORE the button, not after, because the
+ * omissions are the whole story: the database is not copied, and the copied files still
+ * name the original one. On a same-server clone those credentials still work, so what looks
+ * like a staging copy writes to the live site. That sentence changes colour and wording the
+ * moment the destination is picked, since it is only a warning when it is true.
+ */
+function CloneSite({ site }: { site: SiteDetail }) {
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  const [domain, setDomain] = useState("")
+  const [serverId, setServerId] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [started, setStarted] = useState<CloneStarted | null>(null)
+
+  const options = useQuery({
+    queryKey: ["site-clone", site.id],
+    queryFn: () => getSiteCloneOptions(site.id),
+    enabled: open,
+  })
+
+  // Prefilled with this site's own domain, as Ploi does — the common case is moving a site
+  // to another server, where the domain stays the same.
+  useEffect(() => {
+    if (!options.data) return
+    setDomain((d) => d || options.data.domain)
+    setServerId((s) => s || options.data.server_id)
+  }, [options.data])
+
+  const sameServer = serverId === options.data?.server_id
+  const warning = sameServer
+    ? options.data?.database_note.same
+    : options.data?.database_note.other
+
+  const run = useMutation({
+    mutationFn: () => cloneSite(site.id, domain.trim(), serverId),
+    onSuccess: (r) => { setStarted(r); setError(null) },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      setError(e.response?.data?.detail ?? "The copy could not be started."),
+  })
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center gap-2">
+        <Copy size={15} className="text-muted-foreground" />
+        <h3 className="text-h3 text-foreground">Clone site</h3>
+      </div>
+      <p className="mt-1 text-small text-muted-foreground">
+        Copy this site's files to a new address — on this server or another one. Useful for
+        a staging copy, or for moving a site to a bigger machine.
+      </p>
+
+      {started ? (
+        <div className="mt-3 rounded-lg border-l-2 border-emerald-500 bg-emerald-500/5 px-3 py-2.5">
+          <p className="text-small text-foreground">
+            Copying <span className="font-medium">{started.size}</span>
+            {started.files > 0 && <> across {started.files.toLocaleString()} files</> } to{" "}
+            <span className="font-mono">{started.domain}</span>. It carries on in the
+            background — the new site shows as <em>Setting up</em> until it is done.
+          </p>
+          {started.database_note && (
+            <p className="mt-2 text-caption text-amber-700 dark:text-amber-400">
+              {started.database_note}
+            </p>
+          )}
+          <div className="mt-3 flex gap-2">
+            <Button size="sm" variant="outline"
+                    onClick={() => navigate(`/sites/${started.id}`)}>
+              Open the copy
+            </Button>
+            <Button size="sm" variant="ghost"
+                    onClick={() => { setStarted(null); setOpen(false) }}>Done</Button>
+          </div>
+        </div>
+      ) : !open ? (
+        <div className="mt-3">
+          <Button variant="outline" size="sm" onClick={() => setOpen(true)}>Clone site</Button>
+        </div>
+      ) : (
+        <div className="mt-3 space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-caption text-muted-foreground">Domain for the copy</span>
+              <input
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+                placeholder="staging.example.com"
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2
+                           text-small text-foreground"
+              />
+            </label>
+            <label className="block">
+              <span className="text-caption text-muted-foreground">Copy it to</span>
+              <select
+                value={serverId}
+                onChange={(e) => setServerId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2
+                           text-small text-foreground"
+              >
+                {(options.data?.servers ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}{s.same ? " (this server)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+            <p className="text-caption font-medium text-foreground">What comes across</p>
+            <p className="mt-0.5 text-caption text-muted-foreground">
+              Every file in this site, and the repository it deploys from if it has one —
+              with push-to-deploy left off, so the copy does not start deploying on its own.
+            </p>
+            <p className="mt-2 text-caption font-medium text-foreground">What does not</p>
+            <p className="mt-0.5 text-caption text-muted-foreground">
+              Hand-edited web-server settings, the HTTPS certificate, and the database.
+            </p>
+          </div>
+
+          {warning && (
+            <p className="rounded-lg border-l-2 border-amber-500 bg-amber-500/5 px-3 py-2
+                          text-small text-foreground">{warning}</p>
+          )}
+
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => run.mutate()}
+                    disabled={run.isPending || !domain.trim() || !serverId}>
+              {run.isPending && <Loader2 size={14} className="animate-spin" />}
+              Start copying
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <p className="mt-2 rounded-lg border-l-2 border-destructive bg-destructive/5 px-3 py-2
+                      text-small text-destructive">{error}</p>
+      )}
     </div>
   )
 }

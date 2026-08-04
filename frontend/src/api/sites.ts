@@ -710,3 +710,35 @@ export async function purgeSiteCache(siteId: string): Promise<{ message: string 
   const { data } = await apiClient.post(`/api/sites/${siteId}/cache/purge`)
   return data
 }
+
+
+/** Where this site can be copied to, and what a copy leaves behind. */
+export interface CloneOptions {
+  domain: string
+  server_id: string
+  servers: { id: string; name: string; host: string; same: boolean }[]
+  /** Both wordings — which applies depends on the server picked, which only the form knows. */
+  database_note: { same: string | null; other: string | null }
+}
+
+export interface CloneStarted {
+  id: string
+  domain: string
+  run_id: string
+  size: string
+  files: number
+  database_note: string | null
+}
+
+export async function getSiteCloneOptions(siteId: string): Promise<CloneOptions> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/clone`)
+  return data
+}
+
+export async function cloneSite(
+  siteId: string, domain: string, serverId: string,
+): Promise<CloneStarted> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/clone`,
+                                        { domain, server_id: serverId })
+  return data
+}
