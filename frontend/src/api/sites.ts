@@ -686,3 +686,27 @@ export async function resetSitePermissions(siteId: string): Promise<{ message: s
   const { data } = await apiClient.post(`/api/sites/${siteId}/reset-permissions`)
   return data
 }
+
+
+export interface SiteCache {
+  enabled: boolean
+  supported: boolean
+  reason: string
+}
+
+export async function getSiteCache(siteId: string): Promise<SiteCache> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/cache`)
+  return data
+}
+
+export async function setSiteCache(
+  siteId: string, enabled: boolean,
+): Promise<{ enabled: boolean; message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/cache`, { enabled })
+  return data
+}
+
+export async function purgeSiteCache(siteId: string): Promise<{ message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/cache/purge`)
+  return data
+}

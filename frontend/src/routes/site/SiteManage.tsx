@@ -4,12 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import Editor from "@monaco-editor/react"
 import {
   AlertTriangle, Archive, FileCode2, Globe, Loader2, Lock, PauseCircle,
-  RotateCcw, ShieldCheck, X,
+  RotateCcw, ShieldCheck, X, Zap,
 } from "lucide-react"
 import {
   addSiteAlias, getSiteAliases, getSiteAuth, getSiteVhost, removeSiteAlias,
   getSiteSuspend, removeSiteAuth, saveSiteVhost, setSiteAuth, setSiteSuspend,
-  resetSitePermissions, type SiteDetail,
+  getSiteCache, purgeSiteCache, resetSitePermissions, setSiteCache,
+  type SiteDetail,
 } from "@/api/sites"
 import { Button, EmptyState } from "@/components/ui"
 import { useThemeStore } from "@/store/themeStore"
@@ -34,6 +35,7 @@ export default function SiteManage() {
     <div className="space-y-4">
       <Authentication site={site} />
       <SuspendSite site={site} />
+      <PageCache site={site} />
       <FileBackups site={site} />
       <ResetPermissions site={site} />
       <DomainAliases site={site} />
@@ -655,6 +657,105 @@ function ResetPermissions({ site }: { site: SiteDetail }) {
             Reset permissions
           </Button>
         </div>
+      )}
+
+      {error && (
+        <p className="mt-2 rounded-lg border-l-2 border-destructive bg-destructive/5 px-3 py-2
+                      text-small text-destructive">{error}</p>
+      )}
+      {note && !error && (
+        <p className="mt-2 rounded-lg border-l-2 border-emerald-500 bg-emerald-500/5 px-3 py-2
+                      text-small text-foreground">{note}</p>
+      )}
+    </div>
+  )
+}
+
+
+/**
+ * Cache PHP pages in nginx — Ploi's "FastCGI Cache".
+ *
+ * Ploi's own warning is the honest one and it is repeated here: the failure mode is "my
+ * edit is not showing". So the off switch and the clear button are both one click and both
+ * always visible — a cache you cannot clear is a site you cannot edit.
+ */
+function PageCache({ site }: { site: SiteDetail }) {
+  const qc = useQueryClient()
+  const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+
+  const q = useQuery({ queryKey: ["site-cache", site.id], queryFn: () => getSiteCache(site.id) })
+
+  const after = (m: string) => {
+    setNote(m); setError(null)
+    qc.invalidateQueries({ queryKey: ["site-cache", site.id] })
+    qc.invalidateQueries({ queryKey: ["site-vhost", site.id] })
+  }
+  const failed = (e: unknown) => {
+    setNote(null)
+    setError((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      ?? "That could not be changed.")
+  }
+
+  const toggle = useMutation({
+    mutationFn: (on: boolean) => setSiteCache(site.id, on),
+    onSuccess: (r) => after(r.message), onError: failed,
+  })
+  const purge = useMutation({
+    mutationFn: () => purgeSiteCache(site.id),
+    onSuccess: (r) => after(r.message), onError: failed,
+  })
+
+  const on = q.data?.enabled ?? false
+  const supported = q.data?.supported ?? false
+  const busy = toggle.isPending || purge.isPending
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center gap-2">
+        <Zap size={15} className="text-muted-foreground" />
+        <h3 className="text-h3 text-foreground">Page cache</h3>
+      </div>
+      <p className="mt-1 text-small text-muted-foreground">
+        Store finished pages so repeat visitors skip PHP entirely. Logged-in visitors, form
+        posts, admin pages and shopping baskets are never cached — only pages that look the
+        same to everyone.
+      </p>
+
+      {!supported ? (
+        <p className="mt-3 text-caption text-muted-foreground">
+          {q.data?.reason || "Not available for this site."}
+        </p>
+      ) : (
+        <>
+          {on && (
+            <p className="mt-2 rounded-lg border-l-2 border-amber-500 bg-amber-500/5 px-3 py-2
+                          text-small text-foreground">
+              <span className="font-medium">Caching is on.</span> If you change the site and
+              the change does not appear, clear the cache — that is almost always why.
+            </p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {on ? (
+              <Button variant="outline" size="sm" onClick={() => toggle.mutate(false)}
+                disabled={busy}>
+                {toggle.isPending && <Loader2 size={14} className="animate-spin" />}
+                Turn caching off
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => toggle.mutate(true)} disabled={busy}>
+                {toggle.isPending && <Loader2 size={14} className="animate-spin" />}
+                Turn caching on
+              </Button>
+            )}
+            {on && (
+              <Button variant="ghost" size="sm" onClick={() => purge.mutate()} disabled={busy}>
+                {purge.isPending && <Loader2 size={14} className="animate-spin" />}
+                Clear the cache
+              </Button>
+            )}
+          </div>
+        </>
       )}
 
       {error && (

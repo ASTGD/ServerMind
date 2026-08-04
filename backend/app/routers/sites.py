@@ -1609,6 +1609,77 @@ async def reset_site_permissions(site_id: str, db: DBDep, current_user: CurrentU
 
 
 
+class CacheIn(BaseModel):
+    enabled: bool
+
+
+@router.get("/sites/{site_id}/cache")
+async def get_site_cache(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Whether page caching is on for this site."""
+    import base64 as _b
+
+    from app.services import connection_manager, fastcgi_cache_service as fc, vhost_service
+
+    site, server = await _site_and_server(site_id, current_user, db)
+    cfg, apache, _why = await _resolve_site_config(server, site)
+    if cfg is None:
+        return {"enabled": False, "supported": False,
+                "reason": "We could not find this site's configuration."}
+    if apache:
+        return {"enabled": False, "supported": False,
+                "reason": "Page caching here is an nginx feature, and this site is on Apache."}
+    out, _e, code = await connection_manager.execute(
+        server, vhost_service.build_read_command(cfg))
+    text = ""
+    if code == 0:
+        try:
+            text = _b.b64decode((out or "").strip()).decode(errors="replace")
+        except Exception:  # noqa: BLE001
+            text = ""
+    return {"enabled": fc.BEGIN in text, "supported": "fastcgi_pass" in text,
+            "reason": "" if "fastcgi_pass" in text else "This site does not run PHP."}
+
+
+@router.post("/sites/{site_id}/cache")
+async def set_site_cache(site_id: str, body: CacheIn, db: DBDep,
+                         current_user: CurrentUser) -> dict:
+    """Turn page caching on or off."""
+    from app.services import connection_manager, fastcgi_cache_service as fc
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    cfg, apache, why = await _resolve_site_config(server, site)
+    if cfg is None:
+        raise HTTPException(status_code=422, detail=why or "Its configuration was not found.")
+    try:
+        cmd = fc.build_apply_command(cfg, site.domain, enabled=body.enabled, apache=apache)
+    except fc.CacheError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    out, err, code = await connection_manager.execute(server, cmd)
+    ok, message = fc.explain(code, (out or "") + (err or ""), enabled=body.enabled)
+    if not ok:
+        raise HTTPException(status_code=422, detail=message)
+    await audit_service.audit(db, current_user, "site.cache_set",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "enabled": body.enabled})
+    return {"enabled": body.enabled, "message": message}
+
+
+@router.post("/sites/{site_id}/cache/purge")
+async def purge_site_cache(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Throw the stored pages away — the escape hatch for "my edit is not showing"."""
+    from app.services import connection_manager, fastcgi_cache_service as fc
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    out, err, code = await connection_manager.execute(
+        server, fc.build_purge_command(site.domain))
+    ok, message = fc.explain_purge(code, (out or "") + (err or ""))
+    if not ok:
+        raise HTTPException(status_code=422, detail=message)
+    return {"message": message}
+
+
+
 class VhostIn(BaseModel):
     content: str
 
