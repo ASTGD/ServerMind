@@ -71,7 +71,7 @@ Explanation + a single **Enable** button. Their own warning, worth keeping:
 it. Enable/disable must be reversible in one click, because the failure mode is "my change
 does not show up" and that is maddening without an off switch.
 
-## 6. Clone site — a full page, not a modal
+## 6. Clone site — a full page, not a modal — **THE ONE REMAINING ITEM**
 
 Fields: **Domain** (prefilled with the current one, editable), **Select server to clone to**,
 **Start cloning process**. Runs in the background with a notification at the end.
