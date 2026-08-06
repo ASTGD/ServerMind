@@ -13,6 +13,7 @@ import {
   getSiteCache, purgeSiteCache, resetSitePermissions, setSiteCache,
   type CloneStarted, type SiteDetail,
 } from "@/api/sites"
+import BlockRobots from "@/components/sites/BlockRobots"
 import { Button, EmptyState } from "@/components/ui"
 import { useThemeStore } from "@/store/themeStore"
 import { cn } from "@/lib/utils"
@@ -35,6 +36,7 @@ export default function SiteManage() {
   return (
     <div className="space-y-4">
       <Authentication site={site} />
+      <BlockRobots siteId={site.id} />
       <SuspendSite site={site} />
       <PageCache site={site} />
       <FileBackups site={site} />

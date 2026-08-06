@@ -858,3 +858,18 @@ export async function addQueueWorkers(
   const { data } = await apiClient.post(`/api/sites/${siteId}/queue`, body)
   return data
 }
+
+
+export interface RobotsState { ok: boolean; reason?: string; blocked?: boolean; header?: string }
+
+export async function getRobots(siteId: string): Promise<RobotsState> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/robots`)
+  return data
+}
+
+export async function setRobots(
+  siteId: string, block: boolean,
+): Promise<{ message: string; blocked: boolean }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/robots`, { block })
+  return data
+}

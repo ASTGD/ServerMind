@@ -1063,6 +1063,52 @@ async def site_database(site_id: str, db: DBDep, current_user: CurrentUser) -> d
     return result
 
 
+class RobotsIn(BaseModel):
+    block: bool
+
+
+@router.get("/sites/{site_id}/robots")
+async def read_robots(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Whether search engines are being asked to stay away from this site."""
+    from app.services import connection_manager, robots_service as rb
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    cfg, _apache, why = await _resolve_site_config(server, site)
+    if cfg is None:
+        return {"ok": False, "reason": why or "This site's configuration was not found."}
+
+    # Read from a real request, not from the file. What a crawler sees is the only thing
+    # that decides whether the site is indexed.
+    out, _e, _c = await connection_manager.execute(
+        server,
+        f'curl -sI --max-time 6 -H "Host: {shlex.quote(site.domain)[1:-1]}" '
+        f'http://127.0.0.1/ 2>/dev/null | grep -i "^x-robots-tag:" | head -1')
+    return {"ok": True, "blocked": "noindex" in (out or "").lower(),
+            "header": (out or "").strip()}
+
+
+@router.post("/sites/{site_id}/robots")
+async def set_robots(site_id: str, body: RobotsIn, db: DBDep,
+                     current_user: CurrentUser) -> dict:
+    """Ask search engines not to index this site — or allow them again."""
+    from app.services import connection_manager, robots_service as rb
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    cfg, apache, why = await _resolve_site_config(server, site)
+    if cfg is None:
+        raise HTTPException(422, why or "This site's configuration could not be found.")
+
+    out, err, code = await connection_manager.execute(
+        server, rb.build_command(cfg, site.domain, block=body.block, apache=apache))
+    ok, message = rb.explain(code, (out or "") + (err or ""), block=body.block)
+    if not ok:
+        raise HTTPException(422, message)
+    await audit_service.audit(db, current_user, "site.robots",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "blocked": body.block})
+    return {"message": message, "blocked": body.block}
+
+
 class QueueWorkerIn(BaseModel):
     connection: str
     queue: str = "default"
