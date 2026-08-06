@@ -89,6 +89,7 @@ export default function SiteDeploy() {
       <ConnectForm
         siteId={site.id}
         suggested={data?.suggested}
+        panel={site.server.panel_type}
         onDone={() => { setNote({ ok: true, text: "Repository connected." }); refresh() }}
       />
     )
@@ -203,9 +204,10 @@ export default function SiteDeploy() {
   )
 }
 
-function ConnectForm({ siteId, suggested, onDone }: {
+function ConnectForm({ siteId, suggested, panel, onDone }: {
   siteId: string
   suggested?: { path: string; web_dir: string }
+  panel?: string | null
   onDone: () => void
 }) {
   const [repo, setRepo] = useState("")
@@ -227,6 +229,16 @@ function ConnectForm({ siteId, suggested, onDone }: {
         Connect a Git repository. Each deploy builds in its own folder and only goes live
         when it has finished, so a broken build never reaches visitors.
       </p>
+      {panel && (
+        <p className="mt-2 rounded-lg border-l-2 border-primary bg-primary/5 px-3 py-2
+                      text-caption text-muted-foreground">
+          <span className="font-medium text-foreground">This server runs {panel}.</span>{" "}
+          Its settings are left alone — we never edit the panel&rsquo;s configuration,
+          because it rewrites that file on its own schedule and would undo us. Going live
+          instead points the folder {panel} already serves at your deployed code. Your
+          current files are moved aside, never deleted.
+        </p>
+      )}
 
       <div className="mt-4 space-y-3">
         <div>

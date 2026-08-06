@@ -857,7 +857,10 @@ async def site_deploy(site_id: str, db: DBDep, current_user: CurrentUser) -> dic
     if target is None:
         # What the form should suggest, worked out from the site rather than typed again.
         try:
-            root = deploy_service.deploy_root_for(site.doc_root or "")
+            # A panel server keeps releases BESIDE the folder it serves, because that
+            # folder is about to become a symlink to them.
+            root = (deploy_service.panel_deploy_root(site.domain) if server.panel_type
+                    else deploy_service.deploy_root_for(site.doc_root or ""))
         except deploy_service.InvalidDeploy:
             root = ""
         return {
@@ -868,7 +871,9 @@ async def site_deploy(site_id: str, db: DBDep, current_user: CurrentUser) -> dic
                 # not. The site's own type is the best guess available.
                 "web_dir": "public" if site.app_type in ("laravel",) else "",
             },
-            "can_deploy": server.connection_type == "ssh" and not server.panel_type,
+            "can_deploy": server.connection_type == "ssh" and (
+                not server.panel_type
+                or deploy_service.supports_panel_deploy(server.panel_type)),
         }
 
     return {
@@ -900,13 +905,13 @@ async def connect_site_deploy(site_id: str, body: SiteDeployIn, db: DBDep,
     site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
     if server.connection_type != "ssh":
         raise HTTPException(400, "Deploying code needs a Linux server we reach over SSH.")
-    if server.panel_type:
-        # The panel owns this vhost and rewrites it on its own schedule; a document root we
-        # changed behind its back would be silently reverted, and the site would go down at
-        # a moment nobody could connect to anything we did.
+    if server.panel_type and not deploy_service.supports_panel_deploy(server.panel_type):
+        # Refused by NAME rather than guessed at. Going live here means replacing the
+        # panel's document root with a symlink, and a panel whose layout we do not know is
+        # a panel whose customer website we would be replacing.
         raise HTTPException(
-            400, f"This site is managed by {server.panel_type}, which owns its web-server "
-                 f"settings. Deploy through the panel instead.")
+            400, f"Deploying is not supported on {server.panel_type} yet — we only know "
+                 f"where CyberPanel keeps a site's files. Deploy through the panel instead.")
 
     existing = (await db.execute(
         select(DeployTarget).where(DeployTarget.site_id == site.id)
@@ -915,7 +920,11 @@ async def connect_site_deploy(site_id: str, body: SiteDeployIn, db: DBDep,
         raise HTTPException(409, "This site already has a repository connected.")
 
     try:
-        path = deploy_service.deploy_root_for(site.doc_root or "")
+        # On a panel the vhost is never touched: releases live beside the served folder and
+        # that folder becomes a symlink to the current one, so the panel's own default
+        # document root is already right and a panel reset has nothing to revert.
+        path = (deploy_service.panel_deploy_root(site.domain) if server.panel_type
+                else deploy_service.deploy_root_for(site.doc_root or ""))
         target = DeployTarget(
             user_id=current_user.id, server_id=server.id, site_id=site.id,
             name=site.domain,
@@ -965,20 +974,46 @@ async def serve_site_from_deploy(site_id: str, db: DBDep,
     if target is None:
         raise HTTPException(404, "This site has no repository connected.")
 
-    facts = await site_service.probe_details(server, site)
-    config_path = facts.get("config_path")
-    if not config_path:
-        raise HTTPException(
-            422, "We could not find this site's web-server configuration, so nothing was "
-                 "changed.")
+    if server.panel_type:
+        # The panel's vhost is never touched. Its OWN document root becomes a symlink to
+        # the current release, so the panel's default value is already correct and a panel
+        # reset writes the same string that is there — nothing to revert. It also means a
+        # reset can never expose the application's `.env`, because the app root is not the
+        # served folder any more.
+        if not deploy_service.supports_panel_deploy(server.panel_type):
+            raise HTTPException(
+                400, f"Deploying is not supported on {server.panel_type} yet.")
+        # The deploy folder has to be the one we chose for this site. A target whose path
+        # was edited elsewhere would otherwise decide which folder gets replaced by a
+        # symlink, and that folder is somebody's website.
+        expected = deploy_service.panel_deploy_root(site.domain)
+        if target.path != expected:
+            raise HTTPException(
+                422, f"This site's deploy folder is {target.path}, but on a panel server "
+                     f"it has to be {expected}. Reconnect the repository to fix it.")
+        command = deploy_service.build_panel_link_command(
+            deploy_service.panel_link_path(site.domain), target.path,
+            target.web_dir, site.domain)
+        stdout, stderr, code = await connection_manager.execute(server, command)
+        out = (stdout or "") + (stderr or "")
+        if code != 0:
+            raise HTTPException(422, deploy_service.explain_panel_link(code, out))
+        message = [deploy_service.explain_panel_link(0, out)]
+    else:
+        facts = await site_service.probe_details(server, site)
+        config_path = facts.get("config_path")
+        if not config_path:
+            raise HTTPException(
+                422, "We could not find this site's web-server configuration, so nothing "
+                     "was changed.")
 
-    command = deploy_service.build_point_command(
-        config_path, site.domain, target.path, target.web_dir)
-    stdout, stderr, code = await connection_manager.execute(server, command)
-    message = (stdout or stderr or "").strip().splitlines()[-1:] or [""]
+        command = deploy_service.build_point_command(
+            config_path, site.domain, target.path, target.web_dir)
+        stdout, stderr, code = await connection_manager.execute(server, command)
+        message = (stdout or stderr or "").strip().splitlines()[-1:] or [""]
 
-    if code != 0:
-        raise HTTPException(422, deploy_service.POINT_OUTCOMES.get(code, message[0]))
+        if code != 0:
+            raise HTTPException(422, deploy_service.POINT_OUTCOMES.get(code, message[0]))
 
     target.serving = True
     await db.commit()

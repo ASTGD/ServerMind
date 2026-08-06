@@ -462,3 +462,153 @@ POINT_OUTCOMES: dict[int, str] = {
         "The web directory is most likely wrong — a Laravel or Symfony app is usually "
         "served from 'public'."),
 }
+
+
+# ── Deploying on a control-panel server ──────────────────────────────────────
+#
+# The ordinary deploy goes live by rewriting the site's document root. On a panel server
+# that is exactly the wrong move: the panel OWNS the vhost and rewrites it on its own
+# schedule — change a PHP version in the panel, re-issue a certificate, let it run
+# maintenance, and our edit is silently reverted. The site then goes down at a moment
+# nobody can connect to anything we did. That is why this was refused outright.
+#
+# The way round it is to leave the vhost completely alone and make the panel's OWN
+# document root a symlink to the deployed code. The panel's default value is then already
+# correct: a reset writes the same string that is already there, and there is nothing to
+# revert. It also closes a security hole that the alternative opens — with the app root
+# NOT being the served folder, a panel reset can never make `.env` downloadable.
+#
+# Proven by hand on a real CyberPanel server before being built.
+
+#: Panels whose document-root convention we actually know. A panel that is not in here is
+#: refused BY NAME rather than guessed at: getting this path wrong means replacing the
+#: wrong folder with a symlink, which is somebody's website.
+PANEL_DEPLOYABLE = frozenset({"cyberpanel"})
+
+#: Where releases go on a panel server. Deliberately a SIBLING of the served folder — the
+#: served folder is about to become a symlink, so anything kept inside it would be inside
+#: its own target.
+PANEL_DEPLOY_DIR = "deploy"
+
+_PANEL_DOMAIN = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$")
+
+
+def supports_panel_deploy(panel_type: str | None) -> bool:
+    """Can this panel's sites be deployed to at all?"""
+    return (panel_type or "").lower() in PANEL_DEPLOYABLE
+
+
+def _panel_home(domain: str) -> str:
+    """The account folder CyberPanel makes for a site, named after the domain.
+
+    The domain reaches a filesystem path here, so it is VALIDATED rather than escaped —
+    the same rule the site guards follow. A path built from an unchecked domain is a path
+    that can point anywhere.
+    """
+    d = (domain or "").strip().lower().rstrip(".")
+    if not _PANEL_DOMAIN.match(d) or ".." in d or len(d) > 200:
+        raise InvalidDeploy(f"'{domain}' is not a domain we can build a path from.")
+    return f"/home/{d}"
+
+
+def panel_link_path(domain: str) -> str:
+    """The folder the panel serves — the one that becomes the symlink."""
+    return f"{_panel_home(domain)}/public_html"
+
+
+def panel_deploy_root(domain: str) -> str:
+    """Where this site's releases live: beside the served folder, never inside it."""
+    return f"{_panel_home(domain)}/{PANEL_DEPLOY_DIR}"
+
+
+def build_panel_link_command(link: str, root: str, web_dir: str | None,
+                             domain: str) -> str:
+    """Make the panel's own document root a symlink to the current release.
+
+    Three things make this safe to run against a live site:
+
+    * **the customer's existing files are never deleted.** If the served folder is a real
+      directory with anything in it, it is MOVED aside with a timestamp and the move is
+      reported. A deploy that eats the site it was pointed at is not recoverable from a
+      log message;
+    * **the site has to still answer with real content afterwards**, not merely a status
+      code — a web server that will not follow symlinks answers 403, and a wrong
+      ``web_dir`` answers a blank page. Either one puts everything back;
+    * **the switch itself is a rename.** `ln -sfn` over an existing link unlinks and
+      recreates, so a request arriving in that gap sees nothing at all; building the link
+      aside and `mv -T`ing it over cannot be observed half-done.
+    """
+    # Both paths are computed by the caller from the DOMAIN (`panel_link_path` /
+    # `panel_deploy_root`) and validated again here. Passing the link in rather than
+    # deriving it keeps the one decision that matters — WHICH folder gets replaced — in a
+    # single place a test can point at a scratch tree instead of somebody's `/home`.
+    link = valid_path(link)
+    target = served_path(valid_path(root), web_dir)
+    q = shlex.quote
+    L, T, D = q(link), q(target), q(domain)
+    return (
+        f'set -e; LINK={L}; TGT={T}; DOM={D}; '
+        # Nothing finished yet. The site keeps serving whatever it serves today, which is
+        # why a first deploy can fail as many times as it needs to.
+        f'[ -d "$TGT" ] || {{ echo "There is no finished deploy to point at yet."; exit 3; }}; '
+        f'MOVED=""; OWNER=""; '
+        f'if [ -L "$LINK" ]; then '
+        f'  OWNER="$(stat -c %U:%G "$LINK" 2>/dev/null || true)"; '
+        f'elif [ -d "$LINK" ]; then '
+        # Read the owner off the folder we are replacing rather than assuming: a panel
+        # gives every site its own user, and a symlink owned by root under suexec is a 403.
+        f'  OWNER="$(stat -c %U:%G "$LINK" 2>/dev/null || true)"; '
+        f'  if [ -n "$(ls -A "$LINK" 2>/dev/null)" ]; then '
+        f'    MOVED="$LINK.serverally-$(date +%s)"; mv "$LINK" "$MOVED"; '
+        f'  else rmdir "$LINK"; fi; '
+        f'elif [ -e "$LINK" ]; then '
+        f'  echo "The served path is a file, not a folder. Nothing was changed."; exit 4; '
+        f'fi; '
+        # A rename, so there is no instant where the document root does not resolve.
+        f'ln -sfn "$TGT" "$LINK.tmp"; mv -Tf "$LINK.tmp" "$LINK"; '
+        f'[ -n "$OWNER" ] && chown -h "$OWNER" "$LINK" 2>/dev/null || true; '
+        f'systemctl reload lsws 2>/dev/null || /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 '
+        f'  || systemctl reload nginx 2>/dev/null || true; '
+        # Content, not just a status code. A 403 here is the signature of a web server that
+        # will not follow symlinks, and a blank 200 is the signature of a wrong web_dir —
+        # both look fine to a status check and are complete failures to a visitor.
+        f'OK=no; B=/tmp/.sa_panel_link.$$; '
+        f'for i in 1 2 3 4 5 6; do '
+        f'  C="$(curl -s -o "$B" -w "%{{http_code}}" --max-time 6 -H "Host: $DOM" '
+        f'      http://127.0.0.1/ 2>/dev/null || echo 000)"; '
+        f'  case "$C" in '
+        f'    3*) OK=yes; break ;; '
+        f'    2*) [ -s "$B" ] && {{ OK=yes; break; }} ;; '
+        f'  esac; sleep 2; done; rm -f "$B"; '
+        f'if [ "$OK" != yes ]; then '
+        f'  rm -f "$LINK"; '
+        f'  [ -n "$MOVED" ] && mv "$MOVED" "$LINK" || true; '
+        f'  systemctl reload lsws 2>/dev/null || /usr/local/lsws/bin/lswsctrl restart >/dev/null 2>&1 || true; '
+        f'  echo "The site did not serve real content from the deployed code."; exit 5; fi; '
+        f'if [ -n "$MOVED" ]; then echo "moved=$MOVED"; fi; '
+        f'echo "linked"'
+    )
+
+
+PANEL_LINK_OUTCOMES: dict[int, str] = {
+    3: ("Nothing has been deployed yet, so there is nothing to point the site at. Deploy "
+        "once first — the site keeps serving its current files until then."),
+    4: ("The panel's document root is a file rather than a folder, so nothing was changed."),
+    5: ("The site did not serve real content from the deployed code, so it was put back "
+        "exactly as it was. The web directory is the usual cause — a Laravel or Symfony "
+        "app is served from 'public'."),
+}
+
+
+def explain_panel_link(code: int, output: str) -> str:
+    if code != 0:
+        return PANEL_LINK_OUTCOMES.get(
+            code, ((output or "").strip().splitlines() or ["That could not be done."])[-1])
+    moved = ""
+    for line in (output or "").splitlines():
+        if line.startswith("moved="):
+            moved = line[6:].strip()
+    if moved:
+        return (f"The site now serves the deployed code. Its previous files were not "
+                f"deleted — they were moved to {moved}.")
+    return "The site now serves the deployed code."
