@@ -742,3 +742,32 @@ export async function cloneSite(
                                         { domain, server_id: serverId })
   return data
 }
+
+
+/** A Laravel site's `.env` — every credential the application owns. */
+export interface SiteEnv {
+  path: string
+  content: string
+  settings: { key: string; value: string; secret: boolean; critical: boolean }[]
+  exists: boolean
+  owner: string
+  mode: string
+  bytes: number
+  config_cached: boolean
+  web_readable: boolean
+  web_status: string
+  /** Present only when the file is downloadable from the internet. Show it first. */
+  warning: string | null
+}
+
+export async function getSiteEnv(siteId: string): Promise<SiteEnv> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/env`)
+  return data
+}
+
+export async function saveSiteEnv(
+  siteId: string, content: string,
+): Promise<{ message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/env`, { content })
+  return data
+}

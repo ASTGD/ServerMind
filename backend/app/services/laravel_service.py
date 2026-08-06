@@ -45,7 +45,22 @@ def _prelude(doc_root: str) -> str:
 # Absolute, because the command may run through sudo, which replaces PATH with its own
 # secure_path — looking php up as ourselves and running it as somebody else is how a check
 # passes and the command after it fails.
-PHP_BIN=$(command -v php 2>/dev/null || true)
+# The default `php` is often NOT the one this site runs under. On a real CyberPanel box
+# /usr/bin/php is 8.3 while the site runs 8.4, and Composer's platform check then aborts
+# EVERY artisan command with a fatal error — found the hard way on a live server. So the
+# candidates are tried newest-first and each is asked the only question that decides it:
+# can it actually boot this application? `artisan --version` runs the autoloader and the
+# platform check, so a PHP that answers it is a PHP that can run the commands below.
+PHP_BIN=""
+for _c in $(ls -d /usr/local/lsws/lsphp*/bin/php /usr/bin/php8* /usr/bin/php 2>/dev/null \
+            | sort -rV); do
+  [ -x "$_c" ] || continue
+  if [ -f "$APP_PATH/artisan" ] \
+     && $RUNAS "$_c" "$APP_PATH/artisan" --version >/dev/null 2>&1; then
+    PHP_BIN="$_c"; break
+  fi
+  [ -z "$PHP_BIN" ] && PHP_BIN="$_c"   # a fallback, so the error below stays accurate
+done
 if [ -z "$PHP_BIN" ]; then echo "{_S}|error|nophp"; exit 0; fi
 # Composer's autoloader is what artisan boots from. Without it every command below dies with
 # a PHP fatal, which the redirects turn into silence — and silence renders as a healthy app
@@ -59,6 +74,9 @@ def build_probe_command(doc_root: str) -> str:
     """One read-only round trip. Nothing here writes, and a test asserts it."""
     return _prelude(doc_root) + f"""
 echo "{_S}|php|$($PHP_BIN -r 'echo PHP_VERSION;' 2>/dev/null)"
+# The BINARY, not just its version. Anything that later runs artisan for this site has to
+# use the same one — the default `php` may be too old to boot the app at all.
+echo "{_S}|phpbin|$PHP_BIN"
 echo "{_S}|version|$(_t {_T} $ART --version 2>/dev/null | head -1)"
 
 # `about` answers from the BOOTED application, which is the only authority once the config
@@ -234,6 +252,7 @@ def parse_probe(stdout: str) -> dict:
         "path": fields.get("path", ""),
         "runs_as": fields.get("owner", ""),
         "php_version": about.get("php_version") or fields.get("php", ""),
+        "php_bin": fields.get("phpbin", ""),
         # "Laravel Framework 11.9.2" — the number is what anyone actually wants.
         "version": (about.get("laravel_version")
                     or (version_line.split()[-1] if version_line else "")),

@@ -1055,6 +1055,124 @@ async def site_database(site_id: str, db: DBDep, current_user: CurrentUser) -> d
     return result
 
 
+class EnvIn(BaseModel):
+    content: str
+
+
+async def _env_context(site_id: str, db, current_user, *, need_execute: bool):
+    """The site, its server, and where its application actually lives.
+
+    The app root comes from the Laravel probe, which finds it by locating `artisan` — never
+    from the caller and never guessed from the document root, because this path decides
+    which file gets rewritten.
+    """
+    from app.services import laravel_service
+
+    site, server = await _site_and_server(site_id, current_user, db,
+                                          need_execute=need_execute)
+    if server.connection_type != "ssh":
+        raise HTTPException(400, "Settings can only be edited on a Linux server over SSH.")
+    if (site.app_type or "") != "laravel":
+        raise HTTPException(
+            400, "This is the settings file of a Laravel application, and this site does "
+                 "not run one.")
+    app = await laravel_service.read(server, site.doc_root or "")
+    if not app.get("ok") or not app.get("path"):
+        raise HTTPException(422, app.get("reason") or "We could not read this application.")
+    return site, server, app
+
+
+@router.get("/sites/{site_id}/env")
+async def read_site_env(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """This application's settings file.
+
+    Fetched over SFTP rather than through a shell command: every value in it is a
+    credential, and a command's arguments are visible in `ps` and are kept in the stored
+    output of the run.
+    """
+    from app.services import connection_manager, env_service, file_service
+
+    site, server, app = await _env_context(site_id, db, current_user, need_execute=True)
+    try:
+        path = env_service.env_path(app["path"])
+    except env_service.EnvError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    out, err, _code = await connection_manager.execute(
+        server, env_service.build_facts_command(app["path"], site.domain))
+    facts = env_service.parse_facts((out or "") + (err or ""))
+
+    content = ""
+    if facts["exists"]:
+        try:
+            content = (await file_service.download_file(server, path)).decode(
+                "utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001 — a read failure is an outcome, not a crash
+            raise HTTPException(422, f"That file could not be read: {exc}") from exc
+
+    await audit_service.audit(db, current_user, "site.env.read",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain})
+    return {
+        "path": path,
+        "content": content,
+        # A scannable view for a reader who is not editing. `secret` is a display hint from
+        # the KEY, so a screen can hide a value without ever having to decide what a
+        # password looks like.
+        "settings": env_service.summarise(content),
+        **facts,
+        "warning": env_service.exposure_warning(facts),
+        "php_bin": app.get("php_bin", ""),
+    }
+
+
+@router.post("/sites/{site_id}/env")
+async def save_site_env(site_id: str, body: EnvIn, db: DBDep,
+                        current_user: CurrentUser) -> dict:
+    """Save the settings, and put the old ones back if the site stops working.
+
+    Nothing about the content reaches a command line. It is uploaded over SFTP to a
+    temporary name beside the real file, and the shell only performs the backup, the
+    ownership, the atomic rename, the cache rebuild and the check that the site still
+    serves — none of which carry a value.
+    """
+    from app.services import connection_manager, env_service, file_service
+
+    site, server, app = await _env_context(site_id, db, current_user, need_execute=True)
+    try:
+        data = env_service.check_content(body.content)
+        root = app["path"].rstrip("/")
+        tmp = f"{root}/{env_service.TMP_NAME}"
+    except env_service.EnvError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    try:
+        await file_service.upload_file(server, tmp, data)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(422, f"Those settings could not be sent: {exc}") from exc
+
+    out, err, code = await connection_manager.execute(
+        server,
+        env_service.build_apply_command(
+            root, site.domain,
+            php_bin=app.get("php_bin", ""),
+            # Rebuilt only when it was already in use. Building one on a site that does not
+            # cache would change how it behaves, which is not what "save" means.
+            rebuild_cache=bool(app.get("cache_config"))))
+    ok, message = env_service.explain(code, (out or "") + (err or ""))
+    if not ok:
+        # Never leave our half-written copy behind — it sits next to the real file and
+        # holds the same credentials.
+        await connection_manager.execute(server, env_service.build_discard_command(root))
+        raise HTTPException(422, message)
+
+    # Deliberately records THAT the file changed and nothing about what is in it.
+    await audit_service.audit(db, current_user, "site.env.saved",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "bytes": len(data)})
+    return {"message": message}
+
+
 @router.get("/sites/{site_id}/cron")
 async def site_cron(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     """The scheduled jobs that belong to this site.
