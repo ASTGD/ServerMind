@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+import shlex
 import uuid
 from typing import Annotated
 
@@ -1060,6 +1061,113 @@ async def site_database(site_id: str, db: DBDep, current_user: CurrentUser) -> d
     if match:
         result = {**result, "named_after_site": match}
     return result
+
+
+class WpDebugIn(BaseModel):
+    enable: bool
+
+
+class WpXmlrpcIn(BaseModel):
+    block: bool
+
+
+async def _wp_context(site_id: str, db, current_user, *, need_execute: bool):
+    site, server = await _site_and_server(site_id, current_user, db,
+                                          need_execute=need_execute)
+    if server.connection_type != "ssh":
+        raise HTTPException(400, "These settings need a Linux server we reach over SSH.")
+    if (site.app_type or "") != "wordpress":
+        raise HTTPException(400, "This site does not run WordPress.")
+    return site, server
+
+
+@router.get("/sites/{site_id}/wp-security")
+async def read_wp_security(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """The two WordPress security switches, and whether either is currently unsafe."""
+    import base64 as _b
+
+    from app.services import connection_manager, wp_security_service as wps
+
+    site, server = await _wp_context(site_id, db, current_user, need_execute=True)
+    out, err, _code = await connection_manager.execute(
+        server, wps.build_state_command(site.doc_root or ""))
+
+    # The XML-RPC block lives in the web-server config, so it is read from there rather
+    # than from anything we remember having done.
+    block = ""
+    cfg, _apache, _why = await _resolve_site_config(server, site)
+    if cfg:
+        got, _e, code = await connection_manager.execute(
+            server, f"base64 < {shlex.quote(cfg)}")
+        if code == 0:
+            try:
+                block = _b.b64decode(got or "").decode("utf-8", errors="replace")
+            except Exception:  # noqa: BLE001
+                block = ""
+
+    state = wps.parse_state((out or "") + (err or ""), config_block=block)
+    state["xmlrpc_breaks"] = list(wps.XMLRPC_BREAKS)
+    # Where the log WOULD go, so the screen can say it before anything is switched — and
+    # can say plainly when there is nowhere safe.
+    try:
+        state["log_path"] = wps.log_path_for(state.get("path") or site.doc_root or "")
+        state["can_debug"] = True
+        state["cannot_debug_reason"] = None
+    except wps.WpSecurityError as exc:
+        state["log_path"] = ""
+        state["can_debug"] = False
+        state["cannot_debug_reason"] = str(exc)
+    return state
+
+
+@router.post("/sites/{site_id}/wp-security/debug")
+async def set_wp_debug(site_id: str, body: WpDebugIn, db: DBDep,
+                       current_user: CurrentUser) -> dict:
+    """Turn debug logging on or off.
+
+    Three constants move together on the way on. The one that stops PHP errors being
+    printed into the page for visitors is not optional and is not a separate switch.
+    """
+    from app.services import connection_manager, laravel_service  # noqa: F401
+    from app.services import wp_security_service as wps
+
+    site, server = await _wp_context(site_id, db, current_user, need_execute=True)
+    root = site.doc_root or ""
+    try:
+        command = wps.build_debug_command(root, root, enable=body.enable)
+    except wps.WpSecurityError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    out, err, _code = await connection_manager.execute(server, command)
+    ok, message = wps.explain_debug((out or "") + (err or ""), enable=body.enable)
+    if not ok:
+        raise HTTPException(422, message)
+    await audit_service.audit(db, current_user, "site.wp.debug",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "enabled": body.enable})
+    return {"message": message}
+
+
+@router.post("/sites/{site_id}/wp-security/xmlrpc")
+async def set_wp_xmlrpc(site_id: str, body: WpXmlrpcIn, db: DBDep,
+                        current_user: CurrentUser) -> dict:
+    """Block or unblock xmlrpc.php at the web server, before WordPress starts."""
+    from app.services import connection_manager, wp_security_service as wps
+
+    site, server = await _wp_context(site_id, db, current_user, need_execute=True)
+    cfg, apache, why = await _resolve_site_config(server, site)
+    if cfg is None:
+        raise HTTPException(422, why or "This site's configuration could not be found.")
+
+    out, err, code = await connection_manager.execute(
+        server, wps.build_xmlrpc_command(cfg, site.domain, block=body.block, apache=apache))
+    ok, message = wps.explain_xmlrpc(code, (out or "") + (err or ""), block=body.block)
+    if not ok:
+        raise HTTPException(422, message)
+    await audit_service.audit(db, current_user, "site.wp.xmlrpc",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "blocked": body.block})
+    return {"message": message}
 
 
 class EnvIn(BaseModel):

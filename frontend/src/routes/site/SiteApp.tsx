@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui"
 import WordPressPanel from "@/components/sites/WordPressPanel"
 import AppPanel from "@/components/sites/AppPanel"
 import EnvEditor from "@/components/sites/EnvEditor"
+import WpSecurity from "@/components/sites/WpSecurity"
 import LaravelPanel from "@/components/sites/LaravelPanel"
 import PhpPanel from "@/components/sites/PhpPanel"
 
@@ -87,7 +88,12 @@ export default function SiteAppPage() {
   const act = (action: string, target?: string) => run.mutate({ action, target })
 
   if (data.app === "wordpress") {
-    return <WordPressPanel data={data} domain={site.domain} onAct={act} busy={busy} note={note} />
+    return (
+      <div className="space-y-4">
+        <WordPressPanel data={data} domain={site.domain} onAct={act} busy={busy} note={note} />
+        <WpSecurity siteId={site.id} />
+      </div>
+    )
   }
   if (data.app === "laravel") {
     return (

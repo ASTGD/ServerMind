@@ -793,3 +793,41 @@ export async function saveSiteEnv(
   const { data } = await apiClient.post(`/api/sites/${siteId}/env`, { content })
   return data
 }
+
+
+/** The two WordPress security switches. */
+export interface WpSecurity {
+  ok: boolean
+  reason?: string
+  path?: string
+  debug?: boolean
+  debug_log?: string
+  /** Debug is on and errors are being printed into the page for visitors. */
+  leaking_errors?: boolean
+  log_in_web_root?: boolean
+  xmlrpc_blocked?: boolean
+  xmlrpc_breaks?: string[]
+  log_path?: string
+  can_debug?: boolean
+  /** Why there is nowhere safe to keep the log — shown instead of the switch. */
+  cannot_debug_reason?: string | null
+}
+
+export async function getWpSecurity(siteId: string): Promise<WpSecurity> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/wp-security`)
+  return data
+}
+
+export async function setWpDebug(
+  siteId: string, enable: boolean,
+): Promise<{ message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/wp-security/debug`, { enable })
+  return data
+}
+
+export async function setWpXmlrpc(
+  siteId: string, block: boolean,
+): Promise<{ message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/wp-security/xmlrpc`, { block })
+  return data
+}
