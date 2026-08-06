@@ -5,6 +5,7 @@ import { AlertTriangle, Loader2 } from "lucide-react"
 import { getSiteApp, runSiteAppAction, type SiteDetail } from "@/api/sites"
 import { EmptyState } from "@/components/ui"
 import WordPressPanel from "@/components/sites/WordPressPanel"
+import AppPanel from "@/components/sites/AppPanel"
 import EnvEditor from "@/components/sites/EnvEditor"
 import LaravelPanel from "@/components/sites/LaravelPanel"
 import PhpPanel from "@/components/sites/PhpPanel"
@@ -93,6 +94,21 @@ export default function SiteAppPage() {
       <div className="space-y-4">
         <LaravelPanel data={data} onAct={act} busy={busy} />
         <EnvEditor siteId={site.id} />
+        {note && (
+          <p className={`rounded-lg border-l-2 px-3 py-2 text-small ${
+            note.ok
+              ? "border-emerald-500 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
+              : "border-destructive bg-destructive/5 text-destructive"}`}>
+            {note.text}
+          </p>
+        )}
+      </div>
+    )
+  }
+  if (data.app === "app") {
+    return (
+      <div className="space-y-4">
+        <AppPanel data={data} onAct={act} busy={busy} />
         {note && (
           <p className={`rounded-lg border-l-2 px-3 py-2 text-small ${
             note.ok

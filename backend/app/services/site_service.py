@@ -565,7 +565,11 @@ SITE_TYPES: dict[str, dict] = {
         "popular": True, "group": "applications", "playbook": "create-app", "label": "Web application",
         "blurb": "Node, Next.js, Python or Go — we point the domain at your program "
                  "and keep it alive across crashes and reboots.",
-        "app_type": "unknown", "extra": {"TAKEOVER": "no"},
+        # NOT "unknown". This was the whole reason a Web application had no screen: the
+        # registry deliberately shows nothing for a type it cannot identify, so recording
+        # the one type we know for certain — because we just installed it — as "unknown"
+        # hid the section from every site that had one.
+        "app_type": "app", "extra": {"TAKEOVER": "no"},
     },
 
     # ── Ready-made apps ─────────────────────────────────────────────────────

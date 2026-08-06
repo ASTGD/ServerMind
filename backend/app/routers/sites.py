@@ -774,7 +774,7 @@ async def site_app(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     the feature exists and is merely switched off.
     """
     from app.services import (app_registry, laravel_service, php_site_service,
-                              wordpress_service)
+                              webapp_service, wordpress_service)
 
     site, server = await _site_and_server(site_id, current_user, db)
     spec = app_registry.app_for(site.app_type)
@@ -792,6 +792,10 @@ async def site_app(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
         data = await laravel_service.read(server, root)
     elif spec.id == "php":
         data = await php_site_service.read(server, root, site.domain)
+    elif spec.id == "app":
+        # Keyed off the DOMAIN, not the folder: the program is a systemd unit named after
+        # the site, and it may run from anywhere.
+        data = await webapp_service.read(server, site.domain)
     else:
         data = {"ok": False, "reason": f"{spec.label} has no screen yet."}
     return {"app": spec.id, "label": spec.label, **data}
@@ -801,7 +805,8 @@ async def site_app(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
 async def site_app_action(site_id: str, body: AppActionIn, db: DBDep,
                           current_user: CurrentUser) -> dict:
     """Run one named action on this site's application. Needs execute permission (Rule 7)."""
-    from app.services import app_registry, laravel_service, wordpress_service
+    from app.services import (app_registry, laravel_service, webapp_service,
+                              wordpress_service)
 
     site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
     spec = app_registry.app_for(site.app_type)
@@ -814,6 +819,8 @@ async def site_app_action(site_id: str, body: AppActionIn, db: DBDep,
             result = await wordpress_service.act(server, root, body.action, body.target)
         elif spec.id == "laravel":
             result = await laravel_service.act(server, root, body.action)
+        elif spec.id == "app":
+            result = await webapp_service.act(server, site.domain, body.action)
         else:
             # PHP is read-only by design: a pool limit is shared by every site using it, so
             # changing one belongs to the server's PHP screen, not to one site's page.

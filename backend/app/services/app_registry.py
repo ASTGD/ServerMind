@@ -44,6 +44,11 @@ APPS: dict[str, AppSpec] = {
     # "why does it say memory exhausted", and they are per-POOL — so the server's PHP page,
     # which reports the server default, cannot answer them for this site.
     "php": AppSpec(id="php", label="PHP", requires="php"),
+    # Node, Next.js, Python, Go — whatever our Web-application installer was pointed at. It
+    # is runtime-agnostic by design (a systemd unit and a reverse proxy), so the section is
+    # named for what it IS rather than for one language, and the probe names the runtime it
+    # actually finds. Ploi calls theirs "NodeJS" and cannot show the other three.
+    "app": AppSpec(id="app", label="Application", requires="systemd"),
 }
 
 

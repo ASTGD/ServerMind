@@ -373,7 +373,29 @@ export interface PhpState {
   extensions?: string[]
 }
 
-export interface SiteApp extends LaravelState, PhpState {
+/** The long-running program behind a domain — Node, Next.js, Python, Go. */
+export interface WebAppState {
+  runtime?: string
+  command?: string
+  user?: string
+  directory?: string
+  active?: boolean
+  state?: string
+  enabled?: boolean
+  restarts?: number
+  memory_mb?: number | null
+  pid?: string
+  port?: string
+  /** null when there is no port to check. */
+  listening?: boolean | null
+  proxy_port?: string
+  unit?: string
+  log?: string
+  /** Why the site is not working, even when the program is "running". */
+  problems?: { level: string; text: string }[]
+}
+
+export interface SiteApp extends LaravelState, PhpState, WebAppState {
   app: string | null
   label?: string
   ok?: boolean
