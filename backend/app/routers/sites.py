@@ -1063,6 +1063,127 @@ async def site_database(site_id: str, db: DBDep, current_user: CurrentUser) -> d
     return result
 
 
+class StagingIn(BaseModel):
+    domain: str = ""
+    copy_data: bool = True
+
+
+@router.get("/sites/{site_id}/staging")
+async def staging_options(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Whether a copy of this site can be made, and what it would be called."""
+    from sqlalchemy import select as _select
+
+    site, server = await _site_and_server(site_id, current_user, db)
+    can, why = site_service.can_have_staging(site)
+    if server.connection_type != "ssh" or server.panel_type:
+        can, why = False, ("A staging copy needs a Linux server we manage directly. This "
+                           "one is behind a control panel, which owns its own site layout.")
+    existing = (await db.execute(
+        _select(Site).where(Site.parent_site_id == site.id, Site.is_present.is_(True))
+    )).scalars().all()
+    return {
+        "can_stage": can,
+        "reason": why,
+        "suggested_domain": (site_service.staging_domain_for(site.domain) if can else ""),
+        "needs_database": bool(__import__(
+            "app.services.staging_service", fromlist=["x"]).needs_database(site.app_type)),
+        "existing": [{"id": str(c.id), "domain": c.domain, "status": c.status}
+                     for c in existing],
+    }
+
+
+@router.post("/sites/{site_id}/staging", status_code=201)
+async def create_staging(site_id: str, body: StagingIn, db: DBDep,
+                         current_user: CurrentUser) -> dict:
+    """Make a safe copy of this site to try changes on.
+
+    **The order is the safety.** Everything that can be refused is refused before a byte
+    moves: the layout, the room, and — the one that matters — whether the copy can be given
+    its own database at all. A staging site left reading and writing the LIVE database is
+    worse than no staging site, so if it cannot be repointed, it is never created.
+    """
+    from app.models.site import Site as SiteModel
+    from app.services import (connection_manager, database_service, robots_service as rb,
+                              site_database_naming as naming, staging_service as st)
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    can, why = site_service.can_have_staging(site)
+    if not can:
+        raise HTTPException(422, why or "A copy of this site cannot be made.")
+    if server.connection_type != "ssh" or server.panel_type:
+        raise HTTPException(400, "A staging copy needs a Linux server we manage directly.")
+
+    try:
+        domain = site_service.check_staging_domain(
+            site, body.domain or site_service.staging_domain_for(site.domain))
+    except site_service.SiteError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    # 1 ─ look at the source. This decides the layout, the size, and whether there is a
+    #     configuration file we could repoint at all.
+    out, err, code = await connection_manager.execute(
+        server, st.build_survey_command(site.doc_root or ""))
+    try:
+        survey = st.parse_survey((out or "") + (err or ""), code)
+        st.check_room(survey["bytes"], survey["free"])
+        # The refusal that gives the feature its meaning.
+        st.check_can_repoint(site.app_type, survey["config"])
+    except st.StagingError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    # 2 ─ its own database, before the files, so a failure here costs nothing on disk.
+    db_name = db_user = db_pass = ""
+    source_db = ""
+    if body.copy_data and st.needs_database(site.app_type):
+        db_name = naming.suggest_name(domain)
+        db_user = naming.suggest_user(db_name)
+        db_pass = naming.generate_password()
+        try:
+            await database_service.create_database(
+                server, engine="mysql", db_name=db_name, user=db_user, password=db_pass)
+        except Exception as exc:  # noqa: BLE001 — the message is already customer-facing
+            raise HTTPException(422, f"The copy's own database could not be made: {exc}")
+
+    # 3 ─ the files, the repoint, and the rollback that removes everything if it fails.
+    target = f"{survey['source'].rstrip('/')}".rsplit("/", 1)[0] + f"/{domain}"
+    out, err, code = await connection_manager.execute(
+        server, st.build_stage_command(
+            source=survey["source"], target=target, domain=domain,
+            source_domain=site.domain, config=survey["config"],
+            db_name=db_name, db_user=db_user, db_pass=db_pass))
+    ok, message = st.explain(code, (out or "") + (err or ""))
+    if not ok:
+        if db_name:
+            # The database was made for a copy that does not exist. Left behind it is a
+            # confusing orphan with a password nobody has.
+            try:
+                await database_service.drop_database(server, engine="mysql",
+                                                     db_name=db_name, user=db_user)
+            except Exception:  # noqa: BLE001
+                logger.info("could not remove the staging database %s", db_name)
+        raise HTTPException(422, message)
+
+    child = SiteModel(
+        user_id=current_user.id, server_id=server.id, domain=domain,
+        aliases=[], doc_root=(f"{target}/public" if survey["scope"] == "app" else target),
+        source="manual", app_type=site.app_type, requested_type=site.requested_type,
+        has_ssl=False, is_present=True, status="live",
+        parent_site_id=site.id, environment="staging",
+        # On from the moment it exists. A staging copy that gets indexed hands the live
+        # site's own content a competitor in search results.
+        no_index=True,
+    )
+    db.add(child)
+    await db.commit()
+    await db.refresh(child)
+
+    await audit_service.audit(db, current_user, "site.staging.created",
+                              target_type="server", target_id=str(server.id),
+                              meta={"from": site.domain, "to": domain,
+                                    "database": bool(db_name)})
+    return {**site_service.serialize(child, server_name=server.name), "message": message}
+
+
 class RobotsIn(BaseModel):
     block: bool
 

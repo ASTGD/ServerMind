@@ -91,6 +91,25 @@ class Site(Base):
     #: single field would have to pick one and silently lose the other.
     requested_type: Mapped[str | None] = mapped_column(String(30))
 
+    # ── Staging ──────────────────────────────────────────────────────────────
+    #
+    # A staging site is an ORDINARY site row plus these three facts. That is the design:
+    # every screen already built works on it the day it exists, rather than a second kind of
+    # thing with its own half of each feature.
+    #
+    # SET NULL, never CASCADE. Deleting the live site must leave the copy standing — it is a
+    # real website with real files, and cascading would delete somebody's work as a side
+    # effect of tidying up. It simply stops being staging.
+    parent_site_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sites.id", ondelete="SET NULL"),
+        nullable=True, index=True)
+    environment: Mapped[str] = mapped_column(String(20), default="production",
+                                             nullable=False)
+    #: Whether the vhost sends `X-Robots-Tag: noindex`. A header rather than a robots.txt
+    #: file — see `robots_service`: robots.txt does not stop a page being indexed, and a
+    #: file inside the site is overwritten by the next deploy.
+    no_index: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

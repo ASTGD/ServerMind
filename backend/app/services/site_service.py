@@ -380,6 +380,12 @@ def serialize(site, *, server_name: str | None = None, uptime: dict | None = Non
         "app_version": site.app_version,
         "has_ssl": site.has_ssl,
         "is_present": site.is_present,
+        # Returned on every payload so the list can group live sites with their copies
+        # without a second request per row.
+        "environment": getattr(site, "environment", "production") or "production",
+        "parent_site_id": (str(site.parent_site_id)
+                           if getattr(site, "parent_site_id", None) else None),
+        "no_index": bool(getattr(site, "no_index", False)),
         # A site is now created, not only found, so its state has to reach the UI — without
         # these three the whole of P2 is invisible to the customer: they would see a row
         # appear with no sign it is still being built or why it failed.
@@ -524,6 +530,87 @@ def monitor_defaults(domain: str, *, https: bool = True) -> dict:
         "failure_threshold": 2,
         "is_active": True,
     }
+
+
+# ── Staging ───────────────────────────────────────────────────────────────────
+#
+# A staging site is an ordinary site row with a parent. The rules below are pure so they can
+# be tested directly, and because two of them are refusals that decide whether a copy is
+# created at all.
+
+#: What a staging domain is called by default. The customer can type anything.
+STAGING_PREFIX = "staging."
+
+
+def staging_domain_for(domain: str) -> str:
+    """The domain to suggest for a copy of this site.
+
+    A leading `www.` is stripped, because `staging.www.shop.com` is a name nobody wants and
+    the certificate for it would have to cover a label that means nothing. A domain that is
+    ALREADY a staging domain is returned unchanged rather than becoming
+    `staging.staging.shop.com` — suggesting that would be a suggestion nobody accepts.
+    """
+    d = (domain or "").strip().lower().rstrip(".")
+    if not d:
+        raise SiteError("We do not know this site's domain.")
+    if d.startswith("www."):
+        d = d[4:]
+    if d.startswith(STAGING_PREFIX):
+        return d
+    return f"{STAGING_PREFIX}{d}"
+
+
+def is_staging(site) -> bool:
+    """Whether this site is a copy of another one.
+
+    Reads `environment` rather than the domain. A site called `staging.shop.com` that
+    somebody created by hand is not staging in the sense that matters — nothing knows what
+    it is a copy of, so nothing can safely promote it.
+    """
+    return (getattr(site, "environment", "") or "").lower() == "staging"
+
+
+def check_staging_domain(parent, domain: str) -> str:
+    """The domain a copy may be created at, or a refusal.
+
+    The one case worth catching HERE is a copy at the parent's own domain: the duplicate
+    rule downstream would report it as "already exists on this server", which reads as a
+    system error rather than as what the customer actually asked for.
+    """
+    try:
+        d = clean_domain(domain)
+    except Exception as exc:                       # InvalidDomain, defined above
+        raise SiteError(str(exc)) from exc
+    if not is_real_domain(d):
+        raise SiteError(f"'{domain}' does not look like a domain name.")
+    if d == (getattr(parent, "domain", "") or "").lower():
+        raise SiteError(
+            f"A staging copy needs its own address. {parent.domain} is the live site — "
+            f"give the copy a different domain, for example {staging_domain_for(parent.domain)}."
+        )
+    return d
+
+
+def can_have_staging(site) -> tuple[bool, str | None]:
+    """Whether a copy of this site can be made at all, and why not when it cannot.
+
+    Refused rather than attempted in three cases, each because the copy would be a lie:
+
+    * a site that is itself a copy — a staging of a staging has no meaning, and promoting it
+      would have two possible destinations;
+    * a site we have never actually seen serving, since there is nothing proven to copy;
+    * a panel server, for the same reason every other site write refuses one — the panel owns
+      the vhost and would revert what we wrote.
+    """
+    if is_staging(site):
+        return False, ("This site is already a staging copy. Make the copy from the live "
+                       "site instead.")
+    if (getattr(site, "status", "") or "") == "installing":
+        return False, "This site is still being set up. Wait for that to finish first."
+    if not (getattr(site, "doc_root", None) or "").strip():
+        return False, ("We do not know which folder holds this site, so there is nothing to "
+                       "copy yet.")
+    return True, None
 
 
 # ── Creating a site ───────────────────────────────────────────────────────────
