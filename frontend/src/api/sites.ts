@@ -831,3 +831,30 @@ export async function setWpXmlrpc(
   const { data } = await apiClient.post(`/api/sites/${siteId}/wp-security/xmlrpc`, { block })
   return data
 }
+
+
+/** Laravel queue workers — the numbers that decide whether a job runs once, twice or never. */
+export interface QueueState {
+  ok: boolean
+  reason?: string
+  default?: string
+  connections?: { name: string; driver: string; queue: string; retry_after: number | null }[]
+  workers?: { unit: string; name: string; active: boolean }[]
+  limits?: Record<string, [number, number]>
+}
+
+export async function getQueueWorkers(siteId: string): Promise<QueueState> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/queue`)
+  return data
+}
+
+export async function addQueueWorkers(
+  siteId: string,
+  body: {
+    connection: string; queue: string; processes: number; timeout: number
+    sleep: number; tries: number; backoff: number; memory: number; environment?: string
+  },
+): Promise<{ message: string; created: string[] }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/queue`, body)
+  return data
+}

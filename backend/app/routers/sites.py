@@ -1063,6 +1063,101 @@ async def site_database(site_id: str, db: DBDep, current_user: CurrentUser) -> d
     return result
 
 
+class QueueWorkerIn(BaseModel):
+    connection: str
+    queue: str = "default"
+    processes: int = 1
+    timeout: int = 60
+    sleep: int = 3
+    tries: int = 3
+    backoff: int = 0
+    memory: int = 128
+    environment: str = ""
+
+
+@router.get("/sites/{site_id}/queue")
+async def read_queue_workers(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """This application's queue connections, and the workers already running for it."""
+    from app.services import connection_manager, queue_worker_service as qw
+    from app.services import site_daemon_service as daemons
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    if (site.app_type or "") != "laravel":
+        raise HTTPException(400, "Queue workers are a Laravel feature, and this site does "
+                                 "not run one.")
+    out, err, _c = await connection_manager.execute(
+        server, qw.build_probe_command(site.doc_root or ""))
+    state = qw.parse_probe((out or "") + (err or ""))
+    if not state.get("ok"):
+        return state
+
+    listed, _e, _c2 = await connection_manager.execute(
+        server, daemons.build_list_command(site.domain))
+    running = [d for d in daemons.parse_list(listed or "")
+               if "--queue-" in d.get("unit", "") or "queue-" in d.get("name", "")]
+    state["workers"] = running
+    state["limits"] = qw.LIMITS
+    return state
+
+
+@router.post("/sites/{site_id}/queue", status_code=201)
+async def add_queue_workers(site_id: str, body: QueueWorkerIn, db: DBDep,
+                            current_user: CurrentUser) -> dict:
+    """Create the workers, refusing the combination that processes a job twice."""
+    from app.services import connection_manager, queue_worker_service as qw
+    from app.services import laravel_service
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    if (site.app_type or "") != "laravel":
+        raise HTTPException(400, "Queue workers are a Laravel feature.")
+
+    app = await laravel_service.read(server, site.doc_root or "")
+    if not app.get("ok"):
+        raise HTTPException(422, app.get("reason") or "We could not read this application.")
+
+    out, err, _c = await connection_manager.execute(
+        server, qw.build_probe_command(site.doc_root or ""))
+    state = qw.parse_probe((out or "") + (err or ""))
+
+    try:
+        connection = qw.valid_name(body.connection, what="connection name")
+        queue = qw.valid_name(body.queue, what="queue name")
+        numbers = {k: qw.check_number(getattr(body, k), k)
+                   for k in ("timeout", "sleep", "tries", "backoff", "memory", "processes")}
+        # The one that matters. Refused, not warned about — the consequence is a customer
+        # charged twice, and a warning is something somebody clicks past.
+        qw.check_timeout(numbers["timeout"],
+                         qw.retry_after_for(state.get("connections", []), connection))
+        units = qw.build_units(
+            domain=site.domain, working_dir=app.get("path") or site.doc_root or "",
+            run_as=app.get("runs_as") or "www-data", queue=queue,
+            php=app.get("php_bin") or "php", connection=connection,
+            environment=body.environment.strip(), **numbers)
+    except qw.QueueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    from app.services import site_daemon_service as daemons
+
+    made, failed = [], []
+    for unit, content, script in units:
+        o, e, code = await connection_manager.execute(
+            server, daemons.build_install_command(unit, content, script))
+        (made if code == 0 else failed).append(unit)
+        if code != 0:
+            failed[-1] = f"{unit}: {((o or '') + (e or '')).strip().splitlines()[-1:] or ['']}"
+
+    if not made:
+        raise HTTPException(422, "No worker would start. " + "; ".join(str(f) for f in failed))
+
+    await audit_service.audit(db, current_user, "site.queue.created",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "queue": queue,
+                                    "processes": len(made)})
+    note = (f"{len(made)} worker(s) running on {queue}."
+            + (f" {len(failed)} did not start." if failed else ""))
+    return {"message": note, "created": made}
+
+
 class WpDebugIn(BaseModel):
     enable: bool
 
