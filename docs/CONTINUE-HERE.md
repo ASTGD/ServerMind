@@ -43,8 +43,19 @@ fixed 2026-07-15; both standing tasks closed).
 [`docs/STAGING-SITES-PLAN.md`](STAGING-SITES-PLAN.md), written 2026-08-02 after reading
 Ploi's own staging feature live on the owner's trial account. Two features, built separately:
 *create a staging copy* (safe, and most of the value) and *copy staging over the live site*
-(the dangerous one, built last). Build order **P0 → P1 → P2 → P5 → P3 → P4**; start at P0
-(one migration, three columns on `sites`).
+(the dangerous one, built last). Build order **P0 → P1 → P2 → P5 → P3 → P4**.
+
+**P0, P1 and P2 are DONE** (2026-08-06 and 2026-08-08). A staging copy can be created from
+the site's **Manage** screen: it gets its own site and vhost, the files, its own database
+holding the live data, a repointed configuration, and robots blocked — and anything that
+fails after the files land takes the whole copy away rather than leaving one pointed at live
+data. **Next is P5** (what a staging site must not inherit), then P3, then P4.
+
+Two things left from P1/P2, both small: the *Advanced settings* checkbox on the New site
+card, and — the honest gap — **the full create-through-the-app path has never run on a real
+machine**, because the account has no site on a non-panel server. The copy engine itself is
+proven against real nginx + PHP-FPM and a real MariaDB; what has not been driven end to end
+is the button → site created → files copied → data imported chain on live hardware.
 
 ---
 

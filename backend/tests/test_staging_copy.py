@@ -315,3 +315,243 @@ def test_an_empty_source_database_stops_before_importing(tmp_path):
                        capture_output=True, text=True)
     assert r.returncode == 8
     assert not (tmp_path / "IMPORTED").exists(), "nothing may be imported from an empty dump"
+
+
+# ── The copy has to be SERVED ────────────────────────────────────────────────
+
+def test_the_copy_is_created_as_php_when_the_files_contain_any(tmp_path):
+    """Answered by the FILES, not by what we believe this site is. A PHP site served with
+    no PHP handler does not fail — it hands the SOURCE of every file to anyone who asks,
+    and wp-config.php holds the database password in clear text."""
+    src = laravel_site(tmp_path)
+    got = st.parse_survey(sh(st.build_survey_command(str(src / "public"))).stdout)
+    assert got["has_php"] is True
+    assert st.site_type_for(got) == "php"
+
+
+def test_a_site_with_no_php_is_created_as_a_static_one(tmp_path):
+    src = tmp_path / "brochure"
+    src.mkdir()
+    (src / "index.html").write_text("<h1>hello</h1>")
+    got = st.parse_survey(sh(st.build_survey_command(str(src))).stdout)
+    assert got["has_php"] is False
+    assert st.site_type_for(got) == "static"
+
+
+def test_php_stays_on_when_the_answer_is_not_a_clear_no():
+    """Being wrong the other way publishes a database password, so anything unreadable
+    leaves PHP on."""
+    assert st.site_type_for({}) == "php"
+    assert st.site_type_for({"has_php": True}) == "php"
+
+
+def test_the_copy_is_never_created_as_the_live_site_s_own_type(tmp_path):
+    """Creating it as `wordpress` would run the WordPress installer and build a fresh site
+    we are about to overwrite — slower, and able to fail on its own."""
+    got = st.parse_survey(sh(st.build_survey_command(str(laravel_site(tmp_path)))).stdout)
+    assert st.site_type_for(got) in ("php", "static")
+
+
+# ── Copying onto the site that was just created ──────────────────────────────
+
+def _created_site(tmp_path, name="staging"):
+    """What `create-site` leaves behind: a folder holding nothing but the placeholder."""
+    d = tmp_path / name
+    (d / "public").mkdir(parents=True)
+    (d / "public" / "index.html").write_text("<h1>staging.shop.example.com is ready</h1>")
+    return d
+
+
+def test_the_copy_lands_on_the_site_that_was_just_created(tmp_path):
+    """The whole reason the copy is served at all: it goes onto a real site with a virtual
+    host, which exists and holds a placeholder by the time the files arrive."""
+    src, dst = laravel_site(tmp_path), _created_site(tmp_path)
+    r = sh(st.build_stage_command(
+        source=str(src), target=str(dst), domain="staging.shop.example.com",
+        source_domain="shop.example.com", config="laravel",
+        db_name="stg_db", db_user="u", db_pass="p"))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (dst / "artisan").exists()
+    assert "DB_DATABASE=stg_db" in (dst / ".env").read_text()
+
+
+def test_the_placeholder_page_never_survives_the_copy(tmp_path):
+    """A live site brings an index.php, and a leftover index.html WINS — so the staging
+    site would serve "your site is ready" while the copy reported success."""
+    src = tmp_path / "live"
+    src.mkdir()
+    (src / "index.php").write_text("<?php echo 'the real site';")
+    dst = _created_site(tmp_path)
+    (dst / "index.html").write_text("<h1>ready</h1>")   # the docroot-scope shape
+
+    r = sh(st.build_stage_command(
+        source=str(src), target=str(dst), domain="s.example.com",
+        source_domain="shop.example.com", config="none",
+        db_name="", db_user="", db_pass=""))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (dst / "index.php").exists()
+    assert not (dst / "index.html").exists(), "the placeholder would be served instead"
+
+
+def test_the_heartbeat_keeps_the_connection_from_being_cut(tmp_path):
+    """Our SSH channel gives up after 60 seconds of SILENCE, and an rsync of a real site
+    says nothing until it finishes — so the copy big enough to be worth watching is exactly
+    the one that would be reported as a connection failure while working perfectly."""
+    import time
+
+    src, dst = laravel_site(tmp_path), tmp_path / "staging"
+    b = tmp_path / "bin"
+    b.mkdir()
+    (b / "rsync").write_text("#!/bin/bash\nsleep 22\n")
+    os.chmod(b / "rsync", 0o755)
+
+    started = time.monotonic()
+    r = subprocess.run(
+        ["bash", "-c", f'export PATH="{b}:$PATH"; ' + st.build_stage_command(
+            source=str(src), target=str(dst), domain="s.example.com",
+            source_domain="shop.example.com", config="none",
+            db_name="", db_user="", db_pass="")],
+        capture_output=True, text=True)
+    elapsed = time.monotonic() - started
+
+    ticks = [ln for ln in r.stdout.splitlines() if "still copying" in ln]
+    assert ticks, "a long copy must say something, or the channel is cut mid-copy"
+    # The longest gap between two things being said, including the silence before the first.
+    assert elapsed / (len(ticks) + 1) < 60
+
+
+# ── Taking a copy away ───────────────────────────────────────────────────────
+
+def test_a_failed_copy_is_removed_and_says_so(tmp_path):
+    src, dst = laravel_site(tmp_path), tmp_path / "staging"
+    r = sh(st.build_discard_command(str(dst)))
+    assert "discarded" in r.stdout
+
+
+def test_the_discard_refuses_a_system_folder():
+    """The only destructive command in the feature. A guard that exists in Python but not
+    in the shell is not a guard, so the path is checked on the machine as well."""
+    for path in ("/", "/home", "/var", "/var/www", "/etc", "/root", "/usr"):
+        r = sh(st.build_discard_command(path))
+        assert "REFUSED" in r.stdout, path
+        assert r.returncode != 0, path
+
+
+def test_the_discard_removes_a_real_copy(tmp_path):
+    d = tmp_path / "a" / "b" / "staging.shop.com"
+    (d / "public").mkdir(parents=True)
+    (d / "public" / "index.php").write_text("<?php")
+    r = sh(st.build_discard_command(str(d)))
+    assert r.returncode == 0 and not d.exists()
+
+
+# ── Which database the live site uses ────────────────────────────────────────
+
+def test_the_live_database_is_read_from_the_site_s_own_config(tmp_path):
+    """Without it the copy's own database is created and left EMPTY — which for WordPress
+    is the install wizard, the exact half-built thing this feature exists to avoid."""
+    src = laravel_site(tmp_path)
+    (src / ".env").write_text('DB_DATABASE="live_db"\nDB_USERNAME=u\n')
+    assert st.parse_survey(
+        sh(st.build_survey_command(str(src / "public"))).stdout)["source_db"] == "live_db"
+
+    wp = tmp_path / "blog"
+    wp.mkdir()
+    (wp / "wp-config.php").write_text("<?php\ndefine( 'DB_NAME', 'wp_live' );\n")
+    assert st.parse_survey(
+        sh(st.build_survey_command(str(wp))).stdout)["source_db"] == "wp_live"
+
+
+def test_a_site_with_no_database_config_reports_none(tmp_path):
+    src = tmp_path / "brochure"
+    src.mkdir()
+    (src / "index.html").write_text("hi")
+    got = st.parse_survey(sh(st.build_survey_command(str(src))).stdout)
+    assert got["source_db"] == "" and got["config"] == "none"
+
+
+# ── The twin refusal: a copy with an EMPTY database ──────────────────────────
+
+@pytest.mark.parametrize("app_type", ["wordpress", "laravel", "php"])
+def test_a_copy_that_would_get_an_empty_database_is_refused(app_type):
+    """The twin of check_can_repoint. That one stops a copy that would WRITE to live data;
+    this one stops a copy that would read from nothing — which WordPress renders as the
+    install wizard, the exact half-built thing Ploi's version produced."""
+    with pytest.raises(st.StagingError) as exc:
+        st.check_can_copy_data(app_type, "")
+    msg = str(exc.value)
+    assert "install wizard, not a copy" in msg
+    assert "Nothing was created" in msg
+
+
+def test_a_copy_with_a_database_we_can_find_gets_one():
+    assert st.check_can_copy_data("wordpress", "wp_live") is True
+
+
+def test_a_site_that_stores_nothing_in_a_database_needs_none():
+    assert st.check_can_copy_data("static", "") is False
+
+
+def test_a_whitespace_only_database_name_counts_as_missing():
+    with pytest.raises(st.StagingError):
+        st.check_can_copy_data("wordpress", "   ")
+
+
+# ── Which engine, and the one that has no server database at all ─────────────
+
+def test_the_copy_uses_the_engine_the_live_site_uses():
+    """A copy on a different engine is not a copy — so it is read from the site rather than
+    chosen, and an unreadable answer falls back to the one nearly every site uses."""
+    assert st.normalise_engine("pgsql") == "postgres"
+    assert st.normalise_engine("postgresql") == "postgres"
+    assert st.normalise_engine("mysql") == "mysql"
+    assert st.normalise_engine("mariadb") == "mysql"
+    assert st.normalise_engine("") == "mysql"
+
+
+def test_a_sqlite_site_needs_no_database_because_its_database_is_a_file():
+    """The database is a FILE inside the site, so the copy has its own the moment the files
+    land. Making one would be pointless, and repointing DB_DATABASE — which holds a file
+    PATH — at a database name would break the copy outright."""
+    assert st.check_can_copy_data("laravel", "database.sqlite", engine="sqlite") is False
+    # and it is not refused for having no database name we recognise
+    st.check_can_copy_data("laravel", "", engine="sqlite")
+
+
+def test_the_engine_is_read_from_the_site_s_own_config(tmp_path):
+    src = laravel_site(tmp_path)
+    (src / ".env").write_text("DB_CONNECTION=pgsql\nDB_DATABASE=live_db\n")
+    got = st.parse_survey(sh(st.build_survey_command(str(src / "public"))).stdout)
+    assert got["engine"] == "postgres"
+
+    (src / ".env").write_text("DB_CONNECTION=sqlite\nDB_DATABASE=database.sqlite\n")
+    got = st.parse_survey(sh(st.build_survey_command(str(src / "public"))).stdout)
+    assert got["engine"] == "sqlite"
+
+
+def test_wordpress_is_always_mysql(tmp_path):
+    wp = tmp_path / "wp"
+    wp.mkdir()
+    (wp / "wp-config.php").write_text("<?php\ndefine( 'DB_NAME', 'wp_live' );\n")
+    assert st.parse_survey(sh(st.build_survey_command(str(wp))).stdout)["engine"] == "mysql"
+
+
+def test_a_sqlite_copy_keeps_its_own_database_path(tmp_path):
+    """Blanking DB_DATABASE here would break a copy that was working: it holds the path to
+    the SQLite file that came across with the files."""
+    src, dst = laravel_site(tmp_path), tmp_path / "staging"
+    (src / ".env").write_text(
+        "APP_ENV=production\nDB_CONNECTION=sqlite\nDB_DATABASE=database.sqlite\n")
+    (src / "database.sqlite").write_text("sqlite-bytes")
+
+    r = sh(st.build_stage_command(
+        source=str(src), target=str(dst), domain="staging.shop.example.com",
+        source_domain="shop.example.com", config="laravel",
+        db_name="", db_user="", db_pass=""))
+    assert r.returncode == 0, r.stdout + r.stderr
+    env = (dst / ".env").read_text()
+    assert "DB_DATABASE=database.sqlite" in env, "the copy's own SQLite file must stay named"
+    assert (dst / "database.sqlite").exists()
+    # the rest of the repoint still happened
+    assert "APP_ENV=staging" in env
+    assert "APP_URL=https://staging.shop.example.com" in env

@@ -79,6 +79,13 @@ export interface Site {
   uptime: SiteUptime | null
   /** Whether this domain's email will actually arrive, if it is being checked. */
   mail?: SiteMail | null
+  /** production | staging. A staging site is an ORDINARY site, which is the point — every
+   *  section works on it — so this says which one you are looking at. */
+  environment?: string
+  /** The live site this one is a copy of, when it is a staging copy. */
+  parent_site_id?: string | null
+  /** Search engines asked to stay away. On for a staging copy from the moment it exists. */
+  no_index?: boolean
 }
 
 export interface SiteList {
@@ -762,6 +769,30 @@ export async function cloneSite(
 ): Promise<CloneStarted> {
   const { data } = await apiClient.post(`/api/sites/${siteId}/clone`,
                                         { domain, server_id: serverId })
+  return data
+}
+
+
+/** Whether a safe copy of this site can be made, and what it would be called. */
+export interface StagingOptions {
+  can_stage: boolean
+  /** Why not, in words the customer can act on. Empty when it can. */
+  reason: string | null
+  suggested_domain: string
+  /** Whether this site keeps its content in a database, so the copy needs one of its own. */
+  needs_database: boolean
+  existing: { id: string; domain: string; status: string }[]
+}
+
+export async function getStagingOptions(siteId: string): Promise<StagingOptions> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/staging`)
+  return data
+}
+
+export async function createStaging(
+  siteId: string, domain: string,
+): Promise<Site & { run_id: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/staging`, { domain })
   return data
 }
 

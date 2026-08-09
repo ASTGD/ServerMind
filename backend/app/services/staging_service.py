@@ -89,6 +89,34 @@ def human(size: int) -> str:
     return f"{step:.1f} GB"
 
 
+#: Read the live site's database name out of its own configuration.
+#:
+#: Written with no literal quote characters, so the program survives being handed to a shell
+#: as a single argument. `\047` is awk's own escape for an apostrophe — the value in a `.env`
+#: may be bare, single-quoted or double-quoted, and all three mean the same database.
+_ENV_DB_AWK = (
+    r'/^DB_DATABASE=/ { v = substr($0, 13); gsub(/["\047]/, "", v); '
+    r'gsub(/\r/, "", v); gsub(/^[ \t]+|[ \t]+$/, "", v); print v; exit }'
+)
+
+#: Which engine the live site talks to. A copy on a different engine is not a copy — and
+#: `sqlite` is the one that matters most, because there is no server database to make at all:
+#: the whole database is a FILE inside the site, so it travels with the copy already and
+#: repointing `DB_DATABASE` at a database name would break it.
+_ENV_CONN_AWK = (
+    r'/^DB_CONNECTION=/ { v = substr($0, 15); gsub(/["\047]/, "", v); '
+    r'gsub(/\r/, "", v); gsub(/^[ \t]+|[ \t]+$/, "", v); print v; exit }'
+)
+
+#: The same for WordPress. Splitting on the apostrophe makes the value the field two along
+#: from the name, which holds for `define( 'DB_NAME', 'x' );` and `define('DB_NAME','x');`
+#: alike — no regex to escape, and nothing that a password or a database name could break.
+_WP_DB_AWK = (
+    r'/define/ && /DB_NAME/ { for (i = 1; i <= NF; i++) '
+    r'if ($i == "DB_NAME") { print $(i + 2); exit } }'
+)
+
+
 def build_survey_command(doc_root: str) -> str:
     """What is there and whether it will fit. Read-only, and bounded."""
     doc = shlex.quote((doc_root or "").rstrip("/"))
@@ -110,10 +138,29 @@ def build_survey_command(doc_root: str) -> str:
         # Which configuration file will have to be repointed. If we cannot find one for an
         # app that needs a database, the copy is refused rather than created pointing at
         # live data.
-        f'if [ -f "$SRC/.env" ]; then echo "CONFIG=laravel"; '
-        f'elif [ -f "$SRC/wp-config.php" ]; then echo "CONFIG=wordpress"; '
-        f'elif [ -f "$DOC/wp-config.php" ]; then echo "CONFIG=wordpress"; '
-        f'else echo "CONFIG=none"; fi'
+        # Whether the copy needs PHP, answered by the FILES rather than by what we believe
+        # this site is. A PHP site served with no PHP handler does not fail — it hands the
+        # SOURCE of every file to anyone who asks, and wp-config.php holds the database
+        # password in clear text. Anything but a clear "no" leaves PHP on.
+        f'if _t 30 find "$SRC" -type f -name "*.php" -print 2>/dev/null | head -1 | grep -q .; '
+        f'  then echo "PHP=yes"; else echo "PHP=no"; fi; '
+        f'CFGF=""; '
+        f'if [ -f "$SRC/.env" ]; then echo "CONFIG=laravel"; CFGF="$SRC/.env"; '
+        f'elif [ -f "$SRC/wp-config.php" ]; then echo "CONFIG=wordpress"; CFGF="$SRC/wp-config.php"; '
+        f'elif [ -f "$DOC/wp-config.php" ]; then echo "CONFIG=wordpress"; CFGF="$DOC/wp-config.php"; '
+        f'else echo "CONFIG=none"; fi; '
+        # WHICH database the live site uses. Without this the copy gets a database of its
+        # own that is EMPTY — and an empty database is not a copy: WordPress renders it as
+        # the install wizard, which is the exact half-built thing this feature exists to
+        # avoid. Read here, while we are already looking, rather than in a second round trip.
+        f'if [ -n "$CFGF" ]; then case "$CFGF" in '
+        f'  *.env) SDB="$(awk {shlex.quote(_ENV_DB_AWK)} "$CFGF" 2>/dev/null)"; '
+        f'         SEN="$(awk {shlex.quote(_ENV_CONN_AWK)} "$CFGF" 2>/dev/null)" ;; '
+        f'  *) SDB="$(awk -F"\'" {shlex.quote(_WP_DB_AWK)} "$CFGF" 2>/dev/null)"; '
+        # WordPress only ever speaks to MySQL or MariaDB, so there is nothing to read.
+        f'     SEN=mysql ;; '
+        f'esac; [ -n "${{SDB:-}}" ] && echo "SOURCE_DB=$SDB"; '
+        f'[ -n "${{SEN:-}}" ] && echo "SOURCE_ENGINE=$SEN"; fi; true'
     )
 
 
@@ -146,7 +193,72 @@ def parse_survey(output: str, code: int = 0) -> dict:
         "bytes": num("BYTES") or 0,
         "free": num("FREE"),
         "config": fields.get("CONFIG", "none"),
+        "source_db": fields.get("SOURCE_DB", ""),
+        "engine": normalise_engine(fields.get("SOURCE_ENGINE", "")),
+        # Anything other than a clear "no" means PHP stays on. Being wrong the other way
+        # publishes a database password.
+        "has_php": fields.get("PHP") != "no",
     }
+
+
+def normalise_engine(value: str) -> str:
+    """Which database engine the live site talks to: mysql, postgres or sqlite.
+
+    A copy on a different engine is not a copy, so this is read from the site rather than
+    chosen. MySQL is the fallback because it is what an unreadable or absent value almost
+    always is — WordPress speaks nothing else, and it is Laravel's own default.
+    """
+    v = (value or "").strip().lower()
+    if v in ("pgsql", "postgres", "postgresql"):
+        return "postgres"
+    if v == "sqlite":
+        return "sqlite"
+    return "mysql"
+
+
+def check_can_copy_data(app_type: str | None, source_db: str, *,
+                        engine: str = "mysql") -> bool:
+    """Whether the copy gets its own database, filled with the live site's data.
+
+    **For a site that keeps its content in a database this is not a choice**, and that is
+    deliberate. Offering to skip it produces the one thing this feature exists to prevent:
+    with no database of its own there is nothing to repoint the copy at, so it goes on
+    reading and writing the LIVE site's data. Anyone who genuinely wants only the files
+    wants *Clone site*, which is exactly that and says so.
+
+    The refusal here is the twin of `check_can_repoint`. That one stops a copy that would
+    WRITE to live data; this one stops a copy that would read from nothing — an application
+    with a database of its own that is EMPTY is not a copy of anything. WordPress renders
+    exactly that as the install wizard, which is the half-built thing Ploi's version produced
+    and this feature exists to avoid.
+
+    Returns whether to make one; raises when the data cannot be found.
+    """
+    if not needs_database(app_type):
+        return False
+    # SQLite keeps the whole database in a FILE inside the site, so the copy already has its
+    # own the moment the files land. Making a database server account for it would be
+    # pointless, and repointing `DB_DATABASE` — which holds a file path — at a database name
+    # would break the copy outright.
+    if engine == "sqlite":
+        return False
+    if not (source_db or "").strip():
+        raise StagingError(
+            "We could not tell which database this site uses, so the copy would have been "
+            "made with an empty one — which is an install wizard, not a copy of your site. "
+            "Nothing was created."
+        )
+    return True
+
+
+def site_type_for(survey: dict) -> str:
+    """What the staging site is created as: an empty site, with PHP on or off.
+
+    Deliberately NOT the live site's own type. Creating the copy as `wordpress` would run
+    the WordPress installer and build a fresh site we are about to overwrite — slower, and
+    able to fail on its own. The copy's content comes from the copy.
+    """
+    return "php" if survey.get("has_php", True) else "static"
 
 
 def check_can_repoint(app_type: str | None, config: str) -> None:
@@ -165,6 +277,46 @@ def check_can_repoint(app_type: str | None, config: str) -> None:
             "would read and write the LIVE site's data — someone testing a change would be "
             "changing the real site. So the copy was not made."
         )
+
+
+def _db_lines(db_name: str, name: str, user: str, pw: str) -> str:
+    """The three keys that point the copy at its own database — or nothing at all.
+
+    Nothing at all when there is no database to point at: a SQLite site, whose database is a
+    FILE that travelled with the copy, or a site that keeps nothing in one. Blanking the keys
+    in that case would break a copy that was working.
+    """
+    if not db_name:
+        return "  # No database of its own to point at — this site does not use one."
+    return (f"  _set DB_DATABASE {name}\n"
+            f"  _set DB_USERNAME {user}\n"
+            f"  _set DB_PASSWORD {pw}")
+
+
+def _db_readback(db_name: str) -> str:
+    """Writing is not the same as having written — a rewrite can silently match nothing."""
+    if not db_name:
+        return "  :"
+    return f'  grep -q "^DB_DATABASE={db_name}$" "$CFG" || FAILED=1'
+
+
+def _wp_db_lines(db_name: str, name: str, user: str, pw: str) -> str:
+    """WordPress's three, quoted the same way Laravel's are.
+
+    A database name or a generated password reaches the shell as one word here, so it is
+    quoted rather than trusted to contain nothing interesting.
+    """
+    if not db_name:
+        return "  # No database of its own to point at."
+    return (f"  _wpset DB_NAME {name}\n"
+            f"  _wpset DB_USER {user}\n"
+            f"  _wpset DB_PASSWORD {pw}")
+
+
+def _wp_readback(db_name: str) -> str:
+    if not db_name:
+        return "  :"
+    return f'  grep -q {shlex.quote(db_name)} "$CFG" || FAILED=1'
 
 
 def build_stage_command(*, source: str, target: str, domain: str, source_domain: str,
@@ -199,16 +351,14 @@ if [ -z "$FAILED" ]; then
       {{ print }}
       END {{ if (!done) print k "=" v }}' "$CFG" > "$CFG.new" && mv "$CFG.new" "$CFG"
   }}
-  _set DB_DATABASE {name}
-  _set DB_USERNAME {user}
-  _set DB_PASSWORD {pw}
+{_db_lines(db_name, name, user, pw)}
   _set APP_URL "https://{domain}"
   _set APP_ENV staging
   # On, because a staging site exists to show you what went wrong. Safe here for exactly
   # the reason it is not safe live: nobody else is looking.
   _set APP_DEBUG true
   # Proof, not assumption: read the value back out of the file we just wrote.
-  grep -q "^DB_DATABASE={db_name}$" "$CFG" || FAILED=1
+{_db_readback(db_name)}
 fi
 '''
     elif config == "wordpress":
@@ -227,10 +377,8 @@ if [ -z "$FAILED" ]; then
         print "define( " q k q ", " q v q " );"; next }}
       {{ print }}' "$CFG" > "$CFG.new" && mv "$CFG.new" "$CFG"
   }}
-  _wpset DB_NAME {db_name}
-  _wpset DB_USER {db_user}
-  _wpset DB_PASSWORD {db_pass}
-  grep -q "{db_name}" "$CFG" || FAILED=1
+{_wp_db_lines(db_name, name, user, pw)}
+{_wp_readback(db_name)}
   # Without this every link, image and redirect on the copy sends the visitor to the LIVE
   # site — which looks like the copy working and is the copy doing nothing.
   if [ -z "$FAILED" ] && command -v wp >/dev/null 2>&1; then
@@ -242,26 +390,40 @@ fi
     else:
         repoint = "\n# Nothing to repoint — this site has no database configuration.\n"
 
-    db_block = f'''
-# Its OWN database. The dump is written with a mode-600 file and removed afterwards; the
-# password never appears on a command line, the same rule the database manager follows.
-if [ -n "{db_name}" ]; then
-  DUMP="$(mktemp)"; chmod 600 "$DUMP"
-  if ! mysqldump --single-transaction --quick {shlex.quote(db_name + "_SOURCE")} \\
-       > "$DUMP" 2>/dev/null; then :; fi
-fi
-''' if db_name else ""
-
     return f'''#!/bin/bash
 set -uo pipefail
 SRC={src}; DST={dst}; FAILED=""
 
 [ -d "$SRC" ] || {{ echo ">>> ERROR: the live site's folder is not there."; exit 3; }}
-[ -e "$DST" ] && {{ echo ">>> ERROR: $DST already exists. Nothing was changed."; exit 4; }}
+
+# The copy lands on a site ServerAlly has just created, so the folder EXISTS and holds the
+# placeholder page that site was given. Anything else in it is somebody's work, and is
+# refused — the same rule `adopt_dir` follows in the shared site guards.
+if [ -e "$DST" ]; then
+  if find "$DST" -mindepth 1 \\
+       ! -path "$DST/public" ! -path "$DST/public/index.html" \\
+       ! -path "$DST/index.html" 2>/dev/null | grep -q .; then
+    echo ">>> ERROR: $DST already exists. Nothing was changed."; exit 4
+  fi
+  # The placeholder must GO, not be copied over: a live WordPress brings an index.php, and
+  # a leftover index.html wins — so the staging site would serve "your site is ready"
+  # while reporting success.
+  rm -rf "$DST"
+fi
 
 echo ">>> Copying the site"
 mkdir -p "$DST"
-if ! rsync -a {rsync_excludes()} "$SRC/" "$DST/" 2>&1 | tail -3; then
+# Copying a real site is minutes of SILENCE, and our SSH channel gives up after 60 seconds
+# of it — so the copy big enough to be worth watching is exactly the one that would be
+# reported as a connection failure while working perfectly. The same lesson the clone
+# feature learned on a real server.
+( rsync -a {rsync_excludes()} "$SRC/" "$DST/" >/dev/null 2>&1 ) & _P=$!
+_i=0
+while kill -0 "$_P" 2>/dev/null; do
+  sleep 2; _i=$((_i + 1))
+  [ $((_i % 10)) -eq 0 ] && echo ">>> still copying ($((_i * 2))s)"
+done
+if ! wait "$_P"; then
   rm -rf "$DST"; echo ">>> ERROR: the copy did not finish."; exit 5
 fi
 
@@ -284,6 +446,25 @@ OWNER="$(stat -c %U:%G "$SRC" 2>/dev/null || true)"
 
 echo ">>> The copy is ready at $DST"
 '''
+
+
+def build_discard_command(target: str) -> str:
+    """Remove a copy that could not be finished.
+
+    This is the only destructive command in the feature, so the path is checked ON the
+    machine as well as here — a guard that exists in Python but not in the shell is not a
+    guard. It only ever runs against a folder the SERVER told us it serves the new staging
+    site from, never against anything a caller supplied.
+    """
+    dst = shlex.quote(target.rstrip("/"))
+    return (
+        f'D={dst}; '
+        f'case "$D" in /|/home|/var|/var/www|/usr|/etc|/root) '
+        f'  echo "REFUSED"; exit 1 ;; esac; '
+        # Anything shallower than three parts is a system folder, not a website.
+        f'[ "$(echo "$D" | awk -F/ \'{{print NF - 1}}\')" -ge 3 ] || {{ echo "REFUSED"; exit 1; }}; '
+        f'rm -rf "$D"; echo "discarded"'
+    )
 
 
 _OUTCOMES: dict[int, str] = {

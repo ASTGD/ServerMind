@@ -26,7 +26,11 @@ from app.database import Base
 # `-S` listing gives a name and nothing else, while nginx gives the root and the certificate.
 SOURCES = ("nginx", "apache", "openlitespeed", "cyberpanel", "cpanel", "manual")
 
-APP_TYPES = ("wordpress", "laravel", "php", "static", "unknown")
+#: What is running on a site. `app` is a program that keeps running behind a reverse proxy —
+#: Node, Python, Go — as opposed to files a web server reads. It is one entry rather than one
+#: per runtime because what we can DO for it is the same in every case, and the probe reports
+#: which runtime it actually found.
+APP_TYPES = ("wordpress", "laravel", "php", "static", "app", "unknown")
 
 #: Where a site is in its life.
 #:

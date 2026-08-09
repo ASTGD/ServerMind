@@ -158,7 +158,23 @@ an IDN); `SET NULL` really leaves the child standing when the parent row is dele
 
 ### P1 — Create a staging copy (the safe half, and most of the value)
 
-New playbook **`site-stage`**, built on `_SITE_GUARDS` like every other site installer.
+> **BUILT 2026-08-08, and NOT as a new playbook.** The plan below asked for a `site-stage`
+> playbook; what shipped instead creates the staging site through **`site_service.create`** —
+> the same door every other site uses — and then copies onto it (`staging_runner`). Every
+> numbered step below is satisfied, and reusing the ordinary path is what gives the copy its
+> vhost, its `installing` status, its `PlaybookRun`, `reconcile_installs`, and the
+> content-not-status `verify_serves` — all things this plan wanted and would have had to
+> re-implement in a second installer. A staging copy is a clone plus three things: its own
+> database with the live data in it, a repointed configuration, and robots blocked.
+>
+> **Still outstanding from this phase:** the *Advanced settings* checkbox on the New site
+> card (a second entry point, matching Ploi's creation-time flow). The button on the site
+> page — the one Ploi cannot offer at all — is live on **Manage**.
+>
+> **One deliberate departure:** `COPY_DB` does not exist. For a site that keeps its content
+> in a database, copying it is **not a choice** — with no database of its own there is
+> nothing to repoint the copy at, so it would go on reading and writing the LIVE site's
+> data. Anyone who wants only the files wants *Clone site*, which is exactly that.
 
 Variables: `SOURCE_DOMAIN`, `DOMAIN`, `WEB_ROOT`, `COPY_DB`.
 

@@ -14,6 +14,7 @@ import {
   type CloneStarted, type SiteDetail,
 } from "@/api/sites"
 import BlockRobots from "@/components/sites/BlockRobots"
+import StagingCopy from "@/components/sites/StagingCopy"
 import { Button, EmptyState } from "@/components/ui"
 import { useThemeStore } from "@/store/themeStore"
 import { cn } from "@/lib/utils"
@@ -42,6 +43,11 @@ export default function SiteManage() {
       <FileBackups site={site} />
       <ResetPermissions site={site} />
       <DomainAliases site={site} />
+      {/* Staging leads the pair: it is the safe one. A clone copies the files and leaves
+          the copy's configuration naming the ORIGINAL database, so on the same server those
+          credentials still work — what looks like a staging copy writes to the live site.
+          Staging exists precisely to close that, so it is offered first. */}
+      <StagingCopy site={site} />
       <CloneSite site={site} />
       <VhostEditor site={site} />
     </div>

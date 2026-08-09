@@ -1065,7 +1065,6 @@ async def site_database(site_id: str, db: DBDep, current_user: CurrentUser) -> d
 
 class StagingIn(BaseModel):
     domain: str = ""
-    copy_data: bool = True
 
 
 @router.get("/sites/{site_id}/staging")
@@ -1101,10 +1100,15 @@ async def create_staging(site_id: str, body: StagingIn, db: DBDep,
     moves: the layout, the room, and — the one that matters — whether the copy can be given
     its own database at all. A staging site left reading and writing the LIVE database is
     worse than no staging site, so if it cannot be repointed, it is never created.
+
+    Returns as soon as the copy's site row exists, with the work carrying on in
+    `staging_runner` — copying a whole website and its database is minutes, not a request.
+    The copy shows as `installing` until a scan SEES it, the same rule every other install
+    follows.
     """
-    from app.models.site import Site as SiteModel
-    from app.services import (connection_manager, database_service, robots_service as rb,
+    from app.services import (connection_manager, database_service,
                               site_database_naming as naming, staging_service as st)
+    from app.workers import staging_runner
 
     site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
     can, why = site_service.can_have_staging(site)
@@ -1119,8 +1123,8 @@ async def create_staging(site_id: str, body: StagingIn, db: DBDep,
     except site_service.SiteError as exc:
         raise HTTPException(422, str(exc)) from exc
 
-    # 1 ─ look at the source. This decides the layout, the size, and whether there is a
-    #     configuration file we could repoint at all.
+    # 1 ─ look at the source. This decides the layout, the size, which database the live
+    #     site uses, and whether there is a configuration file we could repoint at all.
     out, err, code = await connection_manager.execute(
         server, st.build_survey_command(site.doc_root or ""))
     try:
@@ -1131,57 +1135,71 @@ async def create_staging(site_id: str, body: StagingIn, db: DBDep,
     except st.StagingError as exc:
         raise HTTPException(422, str(exc)) from exc
 
-    # 2 ─ its own database, before the files, so a failure here costs nothing on disk.
+    # 2 ─ its own database, before anything is copied, so a failure here costs nothing on
+    #     disk. Refused rather than skipped when the live database cannot be identified: a
+    #     copy with an empty database is an install wizard, not a copy.
     db_name = db_user = db_pass = ""
-    source_db = ""
-    if body.copy_data and st.needs_database(site.app_type):
+    engine = survey.get("engine", "mysql")
+    try:
+        want_data = st.check_can_copy_data(
+            site.app_type, survey.get("source_db", ""), engine=engine)
+    except st.StagingError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if want_data:
         db_name = naming.suggest_name(domain)
         db_user = naming.suggest_user(db_name)
         db_pass = naming.generate_password()
         try:
+            # The engine the LIVE site talks to, read from its own configuration. A copy on
+            # a different engine is not a copy.
             await database_service.create_database(
-                server, engine="mysql", db_name=db_name, user=db_user, password=db_pass)
+                server, engine=engine, db_name=db_name, user=db_user, password=db_pass)
         except Exception as exc:  # noqa: BLE001 — the message is already customer-facing
             raise HTTPException(422, f"The copy's own database could not be made: {exc}")
 
-    # 3 ─ the files, the repoint, and the rollback that removes everything if it fails.
-    target = f"{survey['source'].rstrip('/')}".rsplit("/", 1)[0] + f"/{domain}"
-    out, err, code = await connection_manager.execute(
-        server, st.build_stage_command(
-            source=survey["source"], target=target, domain=domain,
-            source_domain=site.domain, config=survey["config"],
-            db_name=db_name, db_user=db_user, db_pass=db_pass))
-    ok, message = st.explain(code, (out or "") + (err or ""))
-    if not ok:
+    # 3 ─ create the staging site the ordinary way. This is what gives the copy a virtual
+    #     host — without one it is files on a disk that nobody can visit — and its own
+    #     guards are what refuse a domain that is already configured on this server.
+    try:
+        child, run_id, script = await site_service.create(
+            db, server, current_user, domain=domain,
+            site_type=st.site_type_for(survey))
+    except (site_service.SiteError, playbook_service.UnresolvedVariables) as exc:
         if db_name:
-            # The database was made for a copy that does not exist. Left behind it is a
-            # confusing orphan with a password nobody has.
+            # Made for a copy that does not exist. Left behind it is a confusing orphan
+            # with a password nobody has.
             try:
-                await database_service.drop_database(server, engine="mysql",
+                await database_service.drop_database(server, engine=engine,
                                                      db_name=db_name, user=db_user)
             except Exception:  # noqa: BLE001
                 logger.info("could not remove the staging database %s", db_name)
-        raise HTTPException(422, message)
+        raise HTTPException(422, str(exc)) from exc
 
-    child = SiteModel(
-        user_id=current_user.id, server_id=server.id, domain=domain,
-        aliases=[], doc_root=(f"{target}/public" if survey["scope"] == "app" else target),
-        source="manual", app_type=site.app_type, requested_type=site.requested_type,
-        has_ssl=False, is_present=True, status="live",
-        parent_site_id=site.id, environment="staging",
-        # On from the moment it exists. A staging copy that gets indexed hands the live
-        # site's own content a competitor in search results.
-        no_index=True,
-    )
-    db.add(child)
+    child.parent_site_id = site.id
+    child.environment = "staging"
+    # It is a copy, so it runs whatever the original runs — which is what decides the
+    # application section on its own page. A scan re-derives this from the server later,
+    # the same as for any other site; this only stops the copy looking like a bare PHP
+    # site for the few minutes in between.
+    child.app_type = site.app_type
+    # On from the moment it exists, and applied on the server once it is serving. A staging
+    # copy that gets indexed hands the live site's own content a competitor in search
+    # results, under a domain nobody meant to publish.
+    child.no_index = True
     await db.commit()
     await db.refresh(child)
+
+    asyncio.create_task(staging_runner.run_staging(
+        run_id=uuid.UUID(run_id), script=script, server_id=server.id,
+        source_site_id=site.id, new_site_id=child.id, survey=survey,
+        db_name=db_name, db_user=db_user, db_pass=db_pass,
+        source_db=survey.get("source_db", ""), engine=engine))
 
     await audit_service.audit(db, current_user, "site.staging.created",
                               target_type="server", target_id=str(server.id),
                               meta={"from": site.domain, "to": domain,
                                     "database": bool(db_name)})
-    return {**site_service.serialize(child, server_name=server.name), "message": message}
+    return {**site_service.serialize(child, server_name=server.name), "run_id": run_id}
 
 
 class RobotsIn(BaseModel):
