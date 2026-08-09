@@ -1855,7 +1855,7 @@ async def _handle_message(
         return await _handle_message_inner(
             ws, server, user_input, user_language, os_family, page_context, history,
             acting_user_id=acting_user_id, skill=skill, meta=meta,
-            mission_control=mission_control, model=model,
+            mission_control=mission_control, model=model, runbooks=runbooks,
         )
     finally:
         calls = metering_service.finish_collection(tok)
@@ -1881,6 +1881,11 @@ async def _handle_message_inner(
     meta: dict | None = None,
     mission_control: "_MissionHub | None" = None,
     model: str | None = None,
+    #: The account's own runbooks, already loaded by the caller. Passed in rather than
+    #: reached for: this function is defined at module level, so the outer handler's local
+    #: was never in scope here — reading it raised NameError and the customer saw
+    #: "name 'runbooks' is not defined" where Ally's answer should have been.
+    runbooks: list | None = None,
 ) -> dict | None:
     """Plan, validate, execute and explain one user message. Returns a leftover
     client frame (a new message that arrived instead of approve/cancel) or None.

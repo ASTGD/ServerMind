@@ -4,7 +4,7 @@
 >
 > **Rule:** when live-testing and something looks wrong, do NOT fix it in place mid-task. Log it here, keep going with the actual task, fix everything after the session. See the "Live Testing — Bug Capture Protocol" section in `CLAUDE.md`.
 >
-> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-017**.
+> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-018**.
 
 ---
 
@@ -31,6 +31,45 @@ Copy this block for each new finding:
 2. Fix the root cause.
 3. Flip **Status** to `Fixed`, move the entry to the Fixed section, and add one line to the **Decisions Log** in `CLAUDE.md` (existing convention: date + what changed + why).
 4. If it's the kind of thing that could regress, capture it as an eval case (Dev Door "capture as eval case", or add it directly to `app/evals/corpus.py`) so it's covered by the eval suite going forward.
+
+---
+
+## Fixed
+
+### BUG-017 — Ally answered a customer with a Python error instead of an answer
+- **Date:** 2026-08-09
+- **Status:** Fixed (same day)
+- **Context:** a real customer's assistant, focused on the site **BD FISH JOURNAL**, asked
+  about an OJS 3.5.0.5 upgrade failing with *"Composer detected issues in your platform:
+  Your Composer dependencies require a PHP version >= 8.2.0"*.
+- **Observed:** Ally replied **`name 'runbooks' is not defined`** — a raw Python NameError,
+  rendered where the answer should have been. No plan, no diagnosis, nothing.
+- **Expected:** the ordinary chat answer. The customer's question was a good one with a
+  simple cause (the site runs a PHP older than the upgraded OJS requires).
+- **Severity:** Critical — hard failure on the flagship surface, and it exposes our
+  internals to a paying customer.
+- **Cause (confirmed, by parsing rather than reading):** `_handle_message_inner` in
+  `app/websocket/terminal.py` READ `runbooks` at lines 1899 and 1918, but the name is not
+  one of its parameters and is never assigned in it. It existed only as a local of the
+  OUTER `_handle_message`. Both are module-level functions, so there is no closure to
+  inherit it from and the name was simply unbound. Introduced by `585e9de` (26 July,
+  "teach Ally the account's own procedures (Pro #7)"), which gave the outer function the
+  variable and did not thread it into the inner one.
+- **Why it survived two weeks:** nothing in the suite imports-and-calls that websocket
+  path, and Python only raises an unbound name at RUNTIME — so it passes import, passes
+  review, and fails the first time a real person reaches the line.
+- **Fix:** `runbooks` is now a parameter of `_handle_message_inner`, passed by the caller.
+- **Guard:** `tests/test_no_unbound_names.py` — a structural sweep over every file in
+  `app/`: for each function, every name it READS must be bound somewhere it can legally
+  see. Proven by restoring the real bug, which makes it fail with both line numbers.
+  Getting the checker right mattered as much as the fix: its first version walked into
+  nested scopes and therefore MISSED this very bug, and a second version reported thirty
+  false positives (walrus, comprehension targets, lambda arguments, nested handler
+  parameters). Both failures are pinned by self-tests, because a check that cannot fail is
+  not a check and a noisy one gets deleted.
+- **Still to answer for the customer:** their actual question. The site needs PHP ≥ 8.2 for
+  OJS 3.5; the per-site PHP switcher is absent on a CyberPanel server by design, so this is
+  changed in the panel (or with Ally over SSH).
 
 ---
 
