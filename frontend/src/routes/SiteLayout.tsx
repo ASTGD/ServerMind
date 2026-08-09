@@ -1,9 +1,10 @@
-import { Link, NavLink, Outlet, useParams } from "react-router-dom"
+import { Link, NavLink, Navigate, Outlet, useLocation, useParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import {
   ArrowLeft, CircleAlert, CircleCheck, CircleDashed, ExternalLink, Loader2, Server as ServerIcon,
 } from "lucide-react"
 import { getSite, APP_LABEL, type SiteDetail } from "@/api/sites"
+import { redirectForMissingSection } from "@/lib/assetMenu"
 import { menuForSite } from "@/lib/siteMenu"
 import { cn } from "@/lib/utils"
 
@@ -23,6 +24,7 @@ import { cn } from "@/lib/utils"
  */
 export default function SiteLayout() {
   const { siteId = "" } = useParams()
+  const { pathname } = useLocation()
 
   const { data: site, isLoading } = useQuery({
     queryKey: ["site", siteId],
@@ -48,6 +50,21 @@ export default function SiteLayout() {
   }
 
   const menu = menuForSite(site)
+
+  // The menu decides what this site has; until now only the menu did, so a URL still reached
+  // a section the menu had removed — on a control-panel site, `/manage` rendered
+  // Authentication, Suspend, Page cache, Aliases, Staging and Clone in full, every one of
+  // which refuses on a panel server. Same rule and same fix as the server sections, and
+  // deliberately the SAME function: two copies of "which sections exist" is how they drift.
+  //
+  // Reached only after the site has loaded — the early returns above are what guarantee it,
+  // because redirecting on a half-known answer would bounce somebody off a page that is
+  // theirs.
+  const section = pathname.split(`/sites/${site.id}/`)[1]?.split("/")[0] ?? ""
+  const misplaced = redirectForMissingSection(menu, section)
+  if (misplaced !== null) {
+    return <Navigate to={`/sites/${site.id}/${misplaced}`.replace(/\/$/, "")} replace />
+  }
 
   return (
     <div className="space-y-4">

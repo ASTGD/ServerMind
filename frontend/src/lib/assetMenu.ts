@@ -253,11 +253,16 @@ export function installerOptionsFor(server: Server): InstallerOptions {
  * Derived from the same `menuFor` the sidebar draws from, so a section can never exist in
  * one and not the other; the alternative is a second list of rules that drifts.
  *
+ * **Sites use this too**, with `menuForSite` — the rule is identical and the bug was
+ * identical (a control-panel site's Manage screen stayed reachable by URL after the menu
+ * had dropped it). Hence the parameter is the least a menu can be rather than `MenuItem[]`:
+ * one guard for both menus is the whole point, and a second copy is the one that drifts.
+ *
  * Returns null when the section is fine — the caller should only navigate on a string,
  * including the empty one, which is the asset's home.
  */
 export function redirectForMissingSection(
-  items: MenuItem[], section: string,
+  items: readonly { path: string }[], section: string,
 ): string | null {
   if (items.some((item) => item.path === section)) return null
   // The first item is the home this asset actually has: "Start here" on an undecided

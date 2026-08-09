@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { redirectForMissingSection } from "./assetMenu"
 import { menuForSite } from "./siteMenu"
 import type { SiteDetail } from "@/api/sites"
 
@@ -150,5 +151,63 @@ describe("the registry now covers three applications", () => {
     // A panel decides its own sites' PHP version and rewrites the vhost on its own
     // schedule, so a change made behind its back is silently reverted later.
     expect(paths(site({ app_type: "php" }, { panel_type: "cyberpanel" }))).not.toContain("php")
+  })
+})
+
+describe("a URL for a section this site does not have", () => {
+  // The menu already decided what exists here. Until now only the menu did — the router
+  // still served every section by URL, so `/sites/<panel-site>/manage` rendered
+  // Authentication, Suspend site, Page cache, Domain aliases, Staging copy and Clone site
+  // in full, every one of which refuses on a control-panel server.
+  //
+  // Deliberately the SAME guard the server sections use: two copies of "which sections
+  // exist here" is exactly how the two answers drift apart.
+  const panel = () => menuForSite(site({}, { panel_type: "cyberpanel" }))
+  const ours = () => menuForSite(site())
+
+  it("sends a panel site's Manage URL back to its overview", () => {
+    // The exact report, from a real site on panel2.firevps.net.
+    expect(panel().some((i) => i.path === "manage")).toBe(false)
+    expect(redirectForMissingSection(panel(), "manage")).toBe("")
+  })
+
+  it("leaves a section that really is there alone", () => {
+    // Far more important than the redirect: a guard that fires on a valid page would make
+    // whole sections unreachable, which is a worse bug than the one being fixed.
+    for (const items of [ours(), panel()]) {
+      for (const item of items) {
+        expect(redirectForMissingSection(items, item.path)).toBeNull()
+      }
+    }
+  })
+
+  it("redirects every section a panel takes away, and none it leaves", () => {
+    const allowed = new Set(panel().map((i) => i.path))
+    for (const item of ours()) {
+      const to = redirectForMissingSection(panel(), item.path)
+      if (allowed.has(item.path)) expect(to).toBeNull()
+      else expect(to).toBe("")
+    }
+  })
+
+  it("sends a site with no application off its application page", () => {
+    // The app section is added only for an application we have tools for; a static site
+    // has none, so `/app` is a page that cannot exist for it.
+    const plain = menuForSite(site({ app_type: "static", requested_type: "static" }))
+    expect(plain.some((i) => i.path === "app")).toBe(false)
+    expect(redirectForMissingSection(plain, "app")).toBe("")
+  })
+
+  it("never proposes a section the menu does not contain", () => {
+    // The whole point: the destination comes from the same list, so the two cannot drift.
+    //
+    // A site menu always opens with Overview, so today that destination is always "". The
+    // property that it is READ from the list rather than hardcoded is the shared guard's,
+    // and is proved where it is observable — `assetMenu.test.ts` asserts a panel server's
+    // Sites URL lands on "hosting". Asserting it here would only re-prove "" === "".
+    for (const items of [ours(), panel()]) {
+      const to = redirectForMissingSection(items, "no-such-section")
+      expect(items.some((i) => i.path === to)).toBe(true)
+    }
   })
 })
