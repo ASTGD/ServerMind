@@ -17,10 +17,10 @@ from app.models.security_scan import SecurityScan
 from app.models.server import Server
 from app.models.threat_scan import ThreatScan
 from app.models.user import User
-from app.schemas.security import (
+from app.schemas.security import (SkippedCheck, 
     Finding, ScanCounts, SecurityScanOut, ThreatFinding, ThreatScanOut,
 )
-from app.services import security_service, threat_service
+from app.services import security_service, threat_service, privilege
 
 router = APIRouter(prefix="/api", tags=["security"])
 logger = logging.getLogger(__name__)
@@ -141,8 +141,21 @@ def _threat_to_out(scan: ThreatScan) -> ThreatScanOut:
             low=scan.low_count, passed=scan.pass_count, info=scan.info_count,
         ),
         findings=[ThreatFinding(**f) for f in raw],
+        privilege=scan.privilege,
+        skipped=[SkippedCheck(**k) for k in _json_list(scan.skipped)],
+        # Derived, never stored: one wording, in `privilege.explain`, so the page and the
+        # API can never disagree about what a partial scan means.
+        note=privilege.explain(scan.privilege) if scan.privilege else None,
         created_at=scan.created_at,
     )
+
+
+def _json_list(raw: str | None) -> list:
+    try:
+        out = json.loads(raw or "[]")
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return out if isinstance(out, list) else []
 
 
 def _persist_threat(scan_result: dict, server: Server, user_id) -> ThreatScan:
@@ -155,6 +168,8 @@ def _persist_threat(scan_result: dict, server: Server, user_id) -> ThreatScan:
         medium_count=counts.get("medium", 0), low_count=counts.get("low", 0),
         pass_count=counts.get("pass", 0), info_count=counts.get("info", 0),
         findings=json.dumps(scan_result["findings"]),
+        privilege=scan_result.get("privilege"),
+        skipped=json.dumps(scan_result.get("skipped") or []),
     )
 
 

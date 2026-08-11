@@ -64,6 +64,14 @@ class ThreatFinding(BaseModel):
     evidence: str | None = None
 
 
+class SkippedCheck(BaseModel):
+    """A check that did not run. Named, so "unknown" is never a mystery."""
+
+    id: str
+    title: str
+    reason: str
+
+
 class ThreatScanOut(BaseModel):
     """Full threat scan result returned to the client."""
 
@@ -75,6 +83,13 @@ class ThreatScanOut(BaseModel):
     duration_ms: int | None = None
     counts: ScanCounts
     findings: list[ThreatFinding]
+    #: What the scan could read — root | sudo | none. None on scans from before this existed.
+    privilege: str | None = None
+    #: Checks that did not run, and why. Empty means nothing was skipped.
+    skipped: list[SkippedCheck] = []
+    #: One sentence for the customer, derived from `privilege` so the wording lives in one
+    #: place. None when there is nothing to say.
+    note: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

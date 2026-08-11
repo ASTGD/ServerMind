@@ -48,9 +48,9 @@ async def test_it_looks_at_a_server_whose_install_just_finished(monkeypatch):
 
     async def _discover(server):
         looked["server"] = server.name
-        return ([], False, "")
+        return ([], False, "", "root")
 
-    async def _sync(_db, server, found):
+    async def _sync(_db, server, found, *, complete):
         looked["synced"] = (server.name, found)
         return {}
 
@@ -79,7 +79,7 @@ async def test_an_unreachable_server_leaves_the_site_installing(monkeypatch):
     """Honest, not optimistic. We have not seen the site, so it must not be called live —
     and a page that is merely listing sites must not break because one server is down."""
     async def _discover(_server):
-        return ([], False, "Connection refused")
+        return ([], False, "Connection refused", "none")
 
     # RECORDED, not raised. The function deliberately catches everything so a broken server
     # cannot break a page — which means an AssertionError from inside a fake is swallowed
@@ -87,7 +87,7 @@ async def test_an_unreachable_server_leaves_the_site_installing(monkeypatch):
     # error check let `sync` run on a server we never reached, and this test still passed.
     synced = []
 
-    async def _sync(_db, server, found):
+    async def _sync(_db, server, found, *, complete):
         synced.append(server.name)
         return {}
 

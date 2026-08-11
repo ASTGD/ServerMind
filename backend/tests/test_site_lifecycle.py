@@ -78,7 +78,7 @@ async def test_a_site_being_installed_is_not_reported_as_gone():
     """
     installing = _row("new.example.com", status="installing")
     db = _FakeDb([installing])
-    summary = await ss.sync(db, _server(), found=[])  # the scan sees nothing yet
+    summary = await ss.sync(db, _server(), found=[], complete=True)  # the scan sees nothing yet
 
     assert installing.is_present is True, "a site mid-install has not disappeared"
     assert installing.status == "installing"
@@ -90,7 +90,7 @@ async def test_a_failed_site_is_not_reported_as_gone_either():
     """It never arrived, so it cannot vanish. Marking it gone would hide the failure."""
     failed = _row("broken.example.com", status="failed")
     db = _FakeDb([failed])
-    await ss.sync(db, _server(), found=[])
+    await ss.sync(db, _server(), found=[], complete=True)
     assert failed.is_present is True
     assert failed.status == "failed"
     assert failed.install_error, "the reason must survive so the customer can read it"
@@ -101,7 +101,7 @@ async def test_seeing_the_site_is_what_makes_it_live():
     """Not the installer's exit code — the scan actually finding it on the server."""
     installing = _row("new.example.com", status="installing")
     db = _FakeDb([installing])
-    await ss.sync(db, _server(), found=[_found("new.example.com")])
+    await ss.sync(db, _server(), found=[_found("new.example.com")], complete=True)
 
     assert installing.status == "live"
     assert installing.doc_root == "/var/www"
@@ -115,7 +115,7 @@ async def test_a_failed_site_that_turns_up_is_believed():
     """
     failed = _row("fixed.example.com", status="failed")
     db = _FakeDb([failed])
-    await ss.sync(db, _server(), found=[_found("fixed.example.com")])
+    await ss.sync(db, _server(), found=[_found("fixed.example.com")], complete=True)
 
     assert failed.status == "live"
     assert failed.install_error is None, "a live site must not still show why it once failed"
@@ -126,7 +126,7 @@ async def test_a_live_site_that_disappears_is_still_marked_gone():
     """The original behaviour must survive: this is how "when did it vanish?" stays answerable."""
     live = _row("old.example.com", status="live")
     db = _FakeDb([live])
-    summary = await ss.sync(db, _server(), found=[])
+    summary = await ss.sync(db, _server(), found=[], complete=True)
     assert live.is_present is False
     assert summary["gone"] == 1
 
@@ -135,7 +135,7 @@ async def test_a_live_site_that_disappears_is_still_marked_gone():
 async def test_a_discovered_site_is_live_immediately():
     """It was observed, which is the whole definition."""
     db = _FakeDb([])
-    await ss.sync(db, _server(), found=[_found("found.example.com")])
+    await ss.sync(db, _server(), found=[_found("found.example.com")], complete=True)
     assert len(db.added) == 1
     assert db.added[0].status == "live"
 
@@ -1033,7 +1033,7 @@ async def _scan(row, **seen):
     survived its first test in this same file.
     """
     found = ss.DiscoveredSite(domain=row.domain, aliases=[], app_version="", **seen)
-    await ss.sync(_FakeDb([row]), _server(), found=[found])
+    await ss.sync(_FakeDb([row]), _server(), found=[found], complete=True)
     return row
 
 
@@ -1092,7 +1092,7 @@ async def test_a_scan_that_really_identifies_an_app_updates_it():
     found = ss.DiscoveredSite(domain="shop.example.com", aliases=[],
                               doc_root="/var/www/shop", source="nginx",
                               app_type="wordpress", app_version="6.9.1")
-    await ss.sync(_FakeDb([row]), _server(), found=[found])
+    await ss.sync(_FakeDb([row]), _server(), found=[found], complete=True)
     assert row.app_type == "wordpress" and row.app_version == "6.9.1"
 
 
@@ -1176,3 +1176,41 @@ def test_a_site_list_from_an_unreachable_server_says_it_cannot_be_trusted():
     assert "stale_because" in body
     for status in ("host_changed", "auth_failed", "offline"):
         assert status in body, f"{status} must count as 'cannot be looked at'"
+
+
+# ── Being told what a site is outranks looking at it ─────────────────────────
+#
+# Detection is better than asking WHEN IT WORKS and has nothing to fall back on when it does
+# not: a site we cannot name stays Unknown for ever and gets no application section at all.
+# Three sites in the owner's own account are in that state, which is why the owner can now
+# say what a site is. These pin the rule that makes the setting stick.
+
+@pytest.mark.asyncio
+async def test_a_scan_fills_in_a_type_nobody_chose():
+    row = _row("shop.example.com")
+    row.app_type, row.type_source = "unknown", "detected"
+    await _scan(row, doc_root=row.doc_root, source="nginx", app_type="wordpress")
+    assert row.app_type == "wordpress"
+
+
+@pytest.mark.asyncio
+async def test_a_scan_never_overwrites_a_type_the_owner_set():
+    """THE test. Without it the choice reverts on the next scan, minutes later, and the
+    customer cannot tell whether they did something wrong."""
+    row = _row("shop.example.com")
+    row.app_type, row.type_source = "wordpress", "chosen"
+    await _scan(row, doc_root=row.doc_root, source="nginx", app_type="php")
+    assert row.app_type == "wordpress"
+
+
+@pytest.mark.asyncio
+async def test_the_version_is_still_taken_from_a_scan_on_a_chosen_site():
+    """A version is an observation about whatever is running there, not a claim about what
+    the site IS — so being told the type does not blind us to it."""
+    row = _row("shop.example.com")
+    row.app_type, row.type_source = "wordpress", "chosen"
+    found = ss.DiscoveredSite(domain=row.domain, aliases=[], doc_root=row.doc_root,
+                              source="nginx", app_type="php", app_version="8.3")
+    await ss.sync(_FakeDb([row]), _server(), found=[found], complete=True)
+    assert row.app_type == "wordpress"
+    assert row.app_version == "8.3"

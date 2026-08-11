@@ -222,11 +222,15 @@ async def scan_server(server_id: str, db: DBDep, current_user: CurrentUser) -> d
     their site inventory.
     """
     server = await resolve_server(server_id, current_user, db)
-    found, truncated, error = await site_service.discover(server)
+    found, truncated, error, level = await site_service.discover(server)
     if error:
         raise HTTPException(status_code=502, detail=error)
 
-    summary = await site_service.sync(db, server, found)
+    # A scan that could not read everything still records what it DID see — refusing
+    # outright would make a partially-readable server unusable. What it must not do is
+    # conclude that anything is gone.
+    complete = site_service.privilege.can_read_everything(level)
+    summary = await site_service.sync(db, server, found, complete=complete)
 
     # Start watching what we just found. Discovery without monitoring is a phone book:
     # the customer would have to create a monitor for every site by hand, so nobody ever
@@ -237,10 +241,17 @@ async def scan_server(server_id: str, db: DBDep, current_user: CurrentUser) -> d
     return {
         "server": server.name,
         **summary,
+        "privilege": level,
         "watching": watching,
         "truncated": truncated,
-        "note": (f"Only the first {site_service.MAX_SITES} sites were recorded — this server "
-                 "has more." if truncated else None),
+        # ONE note key. Written as two, Python kept the last silently and the privilege
+        # warning vanished — a duplicate key in a dict literal is not an error and not a
+        # warning. Both facts can be true at once, so both are said.
+        "note": " ".join(n for n in (
+            site_service.privilege.explain(level),
+            (f"Only the first {site_service.MAX_SITES} sites were recorded — this server "
+             "has more." if truncated else None),
+        ) if n) or None,
     }
 
 

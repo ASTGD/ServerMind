@@ -264,7 +264,7 @@ async def test_discovery_refuses_a_server_without_ssh():
         connection_type = "winrm"
         name = "win-01"
 
-    found, truncated, error = await sites.discover(Srv())
+    found, truncated, error, _level = await sites.discover(Srv())
     assert found == [] and truncated is False
     assert "SSH" in error
 
@@ -281,7 +281,7 @@ async def test_an_unreachable_server_reports_a_reason_not_an_exception(monkeypat
         connection_type = "ssh"
         name = "web-01"
 
-    found, _truncated, error = await sites.discover(Srv())
+    found, _truncated, error, _level = await sites.discover(Srv())
     assert found == []
     assert "web-01" in error
 

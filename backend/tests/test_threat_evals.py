@@ -177,7 +177,20 @@ def test_fast_tier_never_shells_out_per_site():
         assert " wp " not in f" {s.command} ", f"{s.id}: wp-cli is network-bound, keep it slow"
 
 
-def _fake_ssh_output(sections) -> str:
+def _fake_ssh_output(sections, *, level: str = "root") -> str:
+    """A fake server's reply, including the privilege line the real script now prints first.
+
+    Without it the scan reads the connection as unprivileged and — correctly — skips every
+    privileged probe and refuses to say clean. These tests are about the fast/full split, not
+    about privilege, so the fake answers `root`: the shape a real root connection produces.
+    """
+    from app.services import privilege as _pv
+
+    return (f"{t._marker(_pv.SECTION)}\n{level}\n"
+            + "\n".join(f"{t._marker(s.id)}\n" for s in sections))
+
+
+def _fake_ssh_output_legacy(sections) -> str:
     """Stand in for the server: emit each section marker with clean (empty) output."""
     return "\n".join(f"{t._marker(s.id)}\n" for s in sections)
 

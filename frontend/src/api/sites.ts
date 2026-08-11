@@ -110,6 +110,10 @@ export interface ScanResult {
   gone: number
   truncated: boolean
   note: string | null
+  /** What the scan could read — root | sudo | none. */
+  privilege?: string
+  /** False when the scan could not see everything, so nothing was marked as gone. */
+  complete?: boolean
 }
 
 export async function listSites(params: {

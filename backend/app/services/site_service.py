@@ -32,7 +32,7 @@ import shlex
 from dataclasses import dataclass, field
 
 from app.models.server import Server
-from app.services import connection_manager
+from app.services import connection_manager, privilege
 
 logger = logging.getLogger(__name__)
 
@@ -90,11 +90,20 @@ def build_discovery_command() -> str:
     """
     t = f'_t() {{ local s=$1; shift; if command -v timeout >/dev/null 2>&1; then timeout "$s" "$@"; else "$@"; fi; }}; '
 
+    # What this connection can actually read, decided once and reported, so the caller can
+    # tell "this server has no websites" apart from "I could not look". On a real CyberPanel
+    # box connected as `ubuntu` this probe returns ZERO lines — and `sync` would then mark
+    # every live site as gone and pause its uptime checks. See `privilege.py`.
+    # Kept multi-line. Flattening the newlines to "; " produces `then;` and `else;`, which
+    # is a shell syntax error — the whole probe then returns nothing, which is the exact
+    # failure mode this change exists to remove.
+    priv = privilege.PRELUDE + f'\necho "{_SENTINEL}|privilege|$SA_PRIV||no"\n'
+
     # nginx: `-T` dumps the whole resolved config, so included files and per-site drop-ins are
     # covered without guessing where a distribution puts them.
     nginx = (
         f'if command -v nginx >/dev/null 2>&1; then '
-        f'_t {_T} nginx -T 2>/dev/null | awk \''
+        f'_t {_T} $SA_SUDO nginx -T 2>/dev/null | awk \''
         f'/^[[:space:]]*server[[:space:]]*{{/ {{ d=""; r=""; s="no"; depth=1; next }} '
         f'/^[[:space:]]*server_name[[:space:]]/ {{ for(i=2;i<=NF;i++){{ gsub(/;/,"",$i); '
         f'if(d=="") d=$i; else d=d","$i }} }} '
@@ -119,7 +128,7 @@ def build_discovery_command() -> str:
     apache = (
         f'for a in apachectl apache2ctl httpd; do '
         f'if command -v $a >/dev/null 2>&1; then '
-        f'_t {_T} $a -S 2>/dev/null | awk \''
+        f'_t {_T} $SA_SUDO $a -S 2>/dev/null | awk \''
         f'{{ for (i = 2; i <= NF; i++) if ($i ~ /^\\(\\//) '
         f'{{ print "{_SENTINEL}|apache|" $(i-1) "||no"; break }} }}\'; '
         f'break; fi; done; '
@@ -127,15 +136,19 @@ def build_discovery_command() -> str:
 
     # OpenLiteSpeed / CyberPanel keep one vhost conf per domain, named after the domain.
     ols = (
-        f'if [ -d /usr/local/lsws/conf/vhosts ]; then '
-        f'for v in /usr/local/lsws/conf/vhosts/*/; do d=$(basename "$v"); r=""; '
+        f'if $SA_SUDO test -d /usr/local/lsws/conf/vhosts; then '
+        # The glob must expand INSIDE the escalated shell. `$SA_SUDO ls -d /path/*/` expands as
+        # the unprivileged user first, matches nothing on a directory it cannot read, and hands
+        # `ls` the literal pattern — so a live OpenLiteSpeed server reported no sites while
+        # sudo was working perfectly. Found by running it against a real CyberPanel box.
+        f'for v in $($SA_SUDO sh -c \'ls -d /usr/local/lsws/conf/vhosts/*/\' 2>/dev/null); do d=$(basename "$v"); r=""; '
         # ASK the vhost where its files are, rather than guessing from the domain name. A
         # real production site here is served from /var/www/validemailverifier/public while
         # /home/<domain>/public_html also exists — so guessing recorded the wrong folder,
         # which then reported a Laravel application as a plain PHP site and put its Files,
         # Logs and application sections on a directory nobody serves.
-        f'if [ -f "$v/vhost.conf" ]; then '
-        f'r=$(grep -m1 -E "^[[:space:]]*docRoot" "$v/vhost.conf" 2>/dev/null | awk \'{{print $2}}\'); '
+        f'if $SA_SUDO test -f "$v/vhost.conf"; then '
+        f'r=$($SA_SUDO grep -m1 -E "^[[:space:]]*docRoot" "$v/vhost.conf" 2>/dev/null | awk \'{{print $2}}\'); '
         # $VH_ROOT is LiteSpeed's own variable for the vhost home; left as-is it is a path
         # that does not exist.
         f'r=$(printf "%s" "$r" | sed "s|[\\$]VH_ROOT|/home/$d|"); fi; '
@@ -158,8 +171,8 @@ def build_discovery_command() -> str:
 
     # CyberPanel's own list is authoritative on a CyberPanel box, including child domains.
     cyberpanel = (
-        f'if [ -x /usr/bin/cyberpanel ]; then '
-        f'_t {_T} /usr/bin/cyberpanel listWebsitesJson 2>/dev/null '
+        f'if $SA_SUDO test -x /usr/bin/cyberpanel; then '
+        f'_t {_T} $SA_SUDO /usr/bin/cyberpanel listWebsitesJson 2>/dev/null '
         f'| tr "," "\\n" | grep -oE \'"domain": *"[^"]+"\' '
         f'| sed -E \'s/.*: *"([^"]+)"/{_SENTINEL}|cyberpanel|\\1||no/\'; fi; '
     )
@@ -167,17 +180,17 @@ def build_discovery_command() -> str:
     # What each site RUNS. Presence only — never the contents of wp-config.php, which holds
     # database credentials.
     apps = (
-        f'_t {_T} find /home /var/www /usr/local/lsws/*/html -maxdepth 4 -name wp-includes '
+        f'_t {_T} $SA_SUDO find /home /var/www /usr/local/lsws/*/html -maxdepth 4 -name wp-includes '
         f'-type d 2>/dev/null | head -{MAX_SITES} | while read -r inc; do d=$(dirname "$inc"); '
         f'v=$(grep -m1 "wp_version *=" "$inc/version.php" 2>/dev/null '
         f'| sed -E "s/.*\'([^\']+)\'.*/\\1/"); '
         f'echo "{_SENTINEL}APP|$d|wordpress|$v"; done; '
-        f'_t {_T} find /home /var/www -maxdepth 4 -name artisan -type f 2>/dev/null '
+        f'_t {_T} $SA_SUDO find /home /var/www -maxdepth 4 -name artisan -type f 2>/dev/null '
         f'| head -{MAX_SITES} | while read -r a; do '
         f'echo "{_SENTINEL}APP|$(dirname "$a")|laravel|"; done; '
     )
 
-    return t + nginx + apache + ols + cyberpanel + apps
+    return t + priv + nginx + apache + ols + cyberpanel + apps
 
 
 def parse_discovery(output: str) -> tuple[list[DiscoveredSite], bool]:
@@ -249,14 +262,18 @@ def parse_discovery(output: str) -> tuple[list[DiscoveredSite], bool]:
     return ordered[:MAX_SITES], len(ordered) > MAX_SITES
 
 
-async def discover(server: Server) -> tuple[list[DiscoveredSite], bool, str]:
-    """Run the probe on ``server``. Returns ``(sites, truncated, error)``.
+async def discover(server: Server) -> tuple[list[DiscoveredSite], bool, str, str]:
+    """Run the probe on ``server``. Returns ``(sites, truncated, error, privilege)``.
 
     Never raises: a server that is offline, or not Linux, simply reports nothing so the rest
     of a fleet scan keeps working.
+
+    The fourth value is what the probe could actually READ, and it exists because "no sites"
+    and "could not look" produce byte-identical output. On a real CyberPanel server connected
+    as `ubuntu` this probe returns zero lines while the box serves two live websites.
     """
     if server.connection_type not in ("ssh",):
-        return [], False, "Site discovery needs SSH access to the server."
+        return [], False, "Site discovery needs SSH access to the server.", privilege.NONE
     try:
         # (stdout, stderr, exit_code) — the exit code is deliberately ignored: the probe runs
         # several optional checks, so a missing nginx or apachectl makes it non-zero while the
@@ -266,15 +283,35 @@ async def discover(server: Server) -> tuple[list[DiscoveredSite], bool, str]:
         )
     except Exception as exc:  # noqa: BLE001
         logger.info("Site discovery failed on %s: %s", server.name, exc)
-        return [], False, f"Could not reach {server.name}: {exc}"
+        return [], False, f"Could not reach {server.name}: {exc}", privilege.NONE
     sites, truncated = parse_discovery(stdout or "")
-    return sites, truncated, ""
+    # The privilege line is a probe result like any other, so it arrives through the same
+    # parser and is then removed from the list — it is not a website.
+    level = privilege.NONE
+    kept = []
+    for site in sites:
+        if site.source == "privilege":
+            level = privilege.parse(site.domain)
+        else:
+            kept.append(site)
+    return kept, truncated, "", level
 
 
 # ── Storing what a scan found ────────────────────────────────────────────────
 
-async def sync(db, server: Server, found: list[DiscoveredSite]) -> dict:
+async def sync(db, server: Server, found: list[DiscoveredSite], *, complete: bool) -> dict:
     """Write a scan's results for one server. Returns a summary of what changed.
+
+    ``complete`` says whether the scan could see EVERYTHING. It has no default on purpose:
+    forgetting it is a TypeError at the call, not a silent wrong answer — the same reason
+    `ssh_service._get_client` made its fingerprint keyword-only with no default after three
+    callers quietly skipped host-key verification.
+
+    **When it is False, nothing is marked absent.** You may record what you saw; you may not
+    conclude anything from what you did not. Measured on a live CyberPanel server connected
+    as `ubuntu`, the probe returns zero lines while two production websites are running — so
+    without this guard a single scan would mark both "no longer found" and pause their uptime
+    checks.
 
     Upserts rather than replaces, and marks a vanished site ``is_present=False`` rather than
     deleting it — so "when did this disappear?" stays answerable, and a scan that reached the
@@ -353,7 +390,11 @@ async def sync(db, server: Server, found: list[DiscoveredSite]) -> dict:
             updated += 1
 
     gone = 0
-    for domain, row in existing.items():
+    # A scan that could not read everything may add what it saw, and may conclude NOTHING
+    # from what it did not. Same rule as the malware scan's verdict: bad news while blind is
+    # still news; good news — and "this site is gone" is a conclusion of the same kind — is
+    # not.
+    for domain, row in ({} if not complete else existing).items():
         # A site being built has NOT disappeared — it has not arrived yet. Without this, a
         # scan running in the seconds between "create" and the vhost existing would mark a
         # site the customer just asked for as gone, which reads as a broken product.
@@ -363,7 +404,10 @@ async def sync(db, server: Server, found: list[DiscoveredSite]) -> dict:
             gone += 1
 
     await db.commit()
-    return {"found": len(found), "added": added, "updated": updated, "gone": gone}
+    return {"found": len(found), "added": added, "updated": updated, "gone": gone,
+            # Said, not hidden — a caller that shows "0 gone" from a blind scan would be
+            # reporting a reassurance it did not earn.
+            "complete": complete}
 
 
 def serialize(site, *, server_name: str | None = None, uptime: dict | None = None) -> dict:
@@ -1140,11 +1184,11 @@ async def _look_where_an_install_just_finished(db, user_id) -> int:
     looked = 0
     for server in servers:
         try:
-            found, _truncated, error = await discover(server)
+            found, _truncated, error, level = await discover(server)
             if error:
                 logger.info("Could not look at %s after an install: %s", server.name, error)
                 continue
-            await sync(db, server, found)
+            await sync(db, server, found, complete=privilege.can_read_everything(level))
             looked += 1
         except Exception:                                    # noqa: BLE001
             logger.info("Look-after-install failed on %s", server.name, exc_info=True)

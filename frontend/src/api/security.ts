@@ -74,6 +74,12 @@ export interface ThreatFinding {
   evidence: string | null
 }
 
+export interface SkippedCheck {
+  id: string
+  title: string
+  reason: string
+}
+
 export interface ThreatScan {
   id: string
   server_id: string
@@ -83,6 +89,12 @@ export interface ThreatScan {
   duration_ms: number | null
   counts: ScanCounts
   findings: ThreatFinding[]
+  /** What the scan could read — root | sudo | none. Null on scans predating this. */
+  privilege?: string | null
+  /** Checks that did not run, and why. Empty means nothing was skipped. */
+  skipped?: SkippedCheck[]
+  /** One sentence for the customer. Null when there is nothing to say. */
+  note?: string | null
   created_at: string
 }
 

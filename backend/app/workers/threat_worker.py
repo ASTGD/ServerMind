@@ -108,9 +108,14 @@ async def _scan_and_alert(server: Server, *, fast_only: bool = False) -> None:
     # user gets one clear heads-up per new incident, not a nag every cycle.
     if result["verdict"] in _ALERTING and prev not in _ALERTING:
         await _notify(server, result)
-    elif result["verdict"] not in _ALERTING and prev in _ALERTING:
+    elif result["verdict"] == "clean" and prev in _ALERTING:
         # The server came back clean — close the incident rather than leaving a solved
         # problem paging (or sitting) in the owner's list.
+        #
+        # `== "clean"`, NOT `not in _ALERTING`. A scan that could not read the site folders
+        # returns "unknown", and "unknown" is not good news: closing an open compromise
+        # because we stopped being able to look is the same false all-clear the scan itself
+        # was just fixed to stop making. An unknown leaves the incident exactly as it was.
         try:
             async with AsyncSessionLocal() as db:
                 await incident_service.resolve_key(db, server.user_id, f"threat:{server.id}")

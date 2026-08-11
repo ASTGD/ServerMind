@@ -47,6 +47,20 @@ const VERDICT: Record<Verdict, { label: string; sub: string; cls: string; Icon: 
   unknown: { label: "Not scanned", sub: "Run a threat scan to check this server.", cls: "border-border bg-muted/40 text-muted-foreground", Icon: HelpCircle },
 }
 
+/**
+ * "unknown" means two different things, and saying the wrong one is its own dishonesty.
+ *
+ * A scan that never ran is "Not scanned". A scan that RAN but could not read the site
+ * folders is something else entirely — and telling that customer "run a scan" sends them to
+ * press a button that will do exactly the same thing again.
+ */
+const BLIND = {
+  label: "Could not check everything",
+  sub: "The scan ran, but some checks could not read what they needed.",
+  cls: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  Icon: ShieldAlert,
+}
+
 function ThreatPanel({ serverId }: { serverId: string }) {
   const qc = useQueryClient()
   const openServer = useAssistantStore((s) => s.openServer)
@@ -65,7 +79,9 @@ function ThreatPanel({ serverId }: { serverId: string }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["threat-scans", serverId] }),
   })
   const latest: ThreatScan | undefined = scans[0]
-  const v = VERDICT[latest?.verdict ?? "unknown"]
+  // A scan that ran and was blind is NOT the same as no scan at all.
+  const wasBlind = latest?.verdict === "unknown" && (latest?.skipped?.length ?? 0) > 0
+  const v = wasBlind ? BLIND : VERDICT[latest?.verdict ?? "unknown"]
   // Real IOC findings only (hide the passing/info clutter in this at-a-glance panel).
   const issues = (latest?.findings ?? []).filter((f) => !["pass", "info"].includes(f.severity))
   const scanning = runMut.isPending
@@ -92,6 +108,15 @@ function ThreatPanel({ serverId }: { serverId: string }) {
           <div>
             <h2 className="text-lg font-semibold">Threat scan · {v.label}</h2>
             <p className="text-sm opacity-90">{v.sub}</p>
+            {wasBlind && (
+              <div className="mt-2">
+                <p className="text-sm opacity-90">{latest?.note}</p>
+                <p className="mt-1 text-xs opacity-80">
+                  Not checked:{" "}
+                  {latest?.skipped?.map((s) => s.title).join(", ")}
+                </p>
+              </div>
+            )}
             {latest && (
               <p className="mt-0.5 text-xs opacity-70">
                 Scanned {formatDistanceToNow(new Date(latest.created_at), { addSuffix: true })}

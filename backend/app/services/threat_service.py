@@ -24,7 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from app.models.server import Server
-from app.services import connection_manager
+from app.services import connection_manager, privilege
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,13 @@ class Section:
     #: Defaults to "fast" so a new probe is caught by the affordability test below rather
     #: than quietly making the frequent sweep expensive.
     tier: str = "fast"
+
+    #: Whether this probe reads something an ordinary user cannot.
+    #:
+    #: Defaults to True, and that direction is deliberate: a new probe that forgets to
+    #: declare itself is treated as blind-without-root, which costs a needless "could not
+    #: check" — the opposite mistake to a false all-clear, and the one we can live with.
+    needs_root: bool = True
 
 
 @dataclass
@@ -109,13 +116,13 @@ _WP_SITES_MAX = 12   # per-site wp-cli check is slow; cap it and say so when we 
 _T_WPSITE = 25
 
 LINUX_SECTIONS: list[Section] = [
-    Section("meta", "id -u; hostname; date -u +%Y-%m-%dT%H:%M:%SZ"),
+    Section("meta", "id -u; hostname; date -u +%Y-%m-%dT%H:%M:%SZ", needs_root=False),
     # High-confidence webshell signatures ONLY — user input flowing straight into
     # code execution / obfuscated eval. Deliberately NOT broad patterns like bare
     # preg_replace/assert (legit WP core + minifiers use those); modified core is
     # caught separately by the wp-cli checksum check.
     Section("webshell", (
-        f"_t {_T_GREP} grep -rlEI --include=*.php {_GREP_PRUNE} "
+        f"_t {_T_GREP} $SA_SUDO grep -rlEI --include=*.php {_GREP_PRUNE} "
         r"'eval[[:space:]]*\([[:space:]]*(base64_decode|gzinflate|gzuncompress|str_rot13|\$_)|"
         r"(system|passthru|shell_exec|proc_open|popen)[[:space:]]*\([[:space:]]*\$_(GET|POST|REQUEST|COOKIE)|"
         r"assert[[:space:]]*\([[:space:]]*\$_(GET|POST|REQUEST|COOKIE)' "
@@ -124,30 +131,34 @@ LINUX_SECTIONS: list[Section] = [
     # A .php inside wp-content/uploads is almost always a dropped shell. Matched at ANY
     # depth under the account homes, so a child-domain site is covered too.
     Section("uploads_php", (
-        f"_t {_T_FIND} find {_SCAN_ROOTS} {_FIND_PRUNE} "
+        f"_t {_T_FIND} $SA_SUDO find {_SCAN_ROOTS} {_FIND_PRUNE} "
         r"-type f -name '*.php' -path '*/wp-content/uploads/*' -print 2>/dev/null | head -25"
     )),
     # Processes whose binary lives in a world-writable dir, or a known miner. A bare
     # "(deleted)" exe is NOT flagged — that's the benign case of a running service
     # whose binary was replaced by a package update.
     Section("proc", (
-        r"ls -l /proc/*/exe 2>/dev/null | grep -aE '\-> (/tmp/|/dev/shm/|/var/tmp/)' | head -15; "
+        r"$SA_SUDO ls -l /proc/*/exe 2>/dev/null | grep -aE '\-> (/tmp/|/dev/shm/|/var/tmp/)' | head -15; "
         r"ps -eo comm= 2>/dev/null | grep -iE '^(xmrig|kdevtmpfsi|kinsing|minerd|cnrig|nanominer)$' | head -10"
     )),
     # Persistence: cron/systemd that pulls & runs code from the internet or /tmp.
     Section("persistence", (
-        r"grep -rIElsi 'curl |wget |base64 -d| /tmp/| /dev/shm' /etc/cron.d /etc/cron.hourly /etc/cron.daily /var/spool/cron 2>/dev/null | head -15; "
-        r"grep -rIEls 'ExecStart=.*(curl|wget|/tmp/|/dev/shm|base64)' /etc/systemd/system /run/systemd/system 2>/dev/null | head -15"
+        r"$SA_SUDO grep -rIElsi 'curl |wget |base64 -d| /tmp/| /dev/shm' /etc/cron.d /etc/cron.hourly /etc/cron.daily /var/spool/cron 2>/dev/null | head -15; "
+        r"$SA_SUDO grep -rIEls 'ExecStart=.*(curl|wget|/tmp/|/dev/shm|base64)' /etc/systemd/system /run/systemd/system 2>/dev/null | head -15"
     )),
     # Backdoor accounts + loader hook. A non-root uid-0 user or a non-empty
     # ld.so.preload is a strong compromise signal. (awk uses single quotes so the
     # embedded double quotes need no escaping.)
+    # Both files are world-readable (/etc/passwd is 644, and so is ld.so.preload when it
+    # exists) — checked on a live server as a non-root user, rather than assumed. So this
+    # probe is honest without root, and marking it otherwise would report a "could not
+    # check" that is not true.
     Section("accounts", (
         "awk -F: '$3==0 && $1!=\"root\"{print \"uid0:\"$1}' /etc/passwd; "
         "test -s /etc/ld.so.preload && echo \"ld_preload:$(cat /etc/ld.so.preload)\""
-    )),
+    ), needs_root=False),
     # SUID binaries in user-writable locations — privilege-escalation implants.
-    Section("suid", r"find /tmp /var/tmp /dev/shm /home -xdev -perm -4000 -type f 2>/dev/null | head -15"),
+    Section("suid", r"$SA_SUDO find /tmp /var/tmp /dev/shm /home -xdev -perm -4000 -type f 2>/dev/null | head -15"),
     # WordPress core integrity via wp-cli checksums. Modified/extra core files =
     # tamper. Placed raw inside a subshell, so normal double-quoting is correct
     # (no backslash escaping). Per-site timeout keeps a slow site from hanging.
@@ -155,7 +166,7 @@ LINUX_SECTIONS: list[Section] = [
         'if ! command -v wp >/dev/null 2>&1; then echo NO_WPCLI; else '
         # Locate every WordPress install by its wp-load.php, at any depth under the
         # account homes — a child-domain site never had a */public_html path to match.
-        f'sites=$(_t {_T_LOCATE} find {_SCAN_ROOTS} {_FIND_PRUNE} '
+        f'sites=$(_t {_T_LOCATE} $SA_SUDO find {_SCAN_ROOTS} {_FIND_PRUNE} '
         f'-type f -name wp-load.php -print 2>/dev/null | head -{_WP_SITES_MAX + 1}); '
         'n=$(echo "$sites" | grep -c .); '
         # The per-site wp-cli check is slow, so cap it — and SAY SO rather than
@@ -289,7 +300,10 @@ _TIMEOUT_HELPER = (
 
 
 def _build_script(sections: list[Section]) -> str:
-    parts = ["export LC_ALL=C", _TIMEOUT_HELPER]
+    # The privilege prelude runs FIRST and reports what it decided, so the caller can tell
+    # "found nothing" apart from "could not look" — see `privilege.py`.
+    parts = ["export LC_ALL=C", _TIMEOUT_HELPER, privilege.PRELUDE,
+             f"printf '\\n{_marker(privilege.SECTION)}\\n'", 'echo "$SA_PRIV"']
     for s in sections:
         parts.append(f"printf '\\n{_marker(s.id)}\\n'")
         parts.append(f"( {s.command} ) 2>&1 || true")
@@ -309,19 +323,30 @@ def _parse_sections(output: str) -> dict[str, str]:
 _VERDICT_BY_WORST = {"critical": "compromised", "high": "at_risk", "medium": "suspicious"}
 
 
-def _summarize(findings: list[dict]) -> tuple[str, dict[str, int]]:
+def _summarize(findings: list[dict], *, level: str = privilege.ROOT,
+               skipped: list | None = None) -> tuple[str, dict[str, int]]:
+    """The verdict, and the one rule that makes it trustworthy.
+
+    **Bad news may be reported while blind. Good news may not.** Finding malware with half
+    the disk unreadable is still finding malware, and acting on it is right. Finding
+    *nothing* with half the disk unreadable is not a result — and calling it "clean" is the
+    single outcome that gets somebody hurt.
+    """
     counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "pass": 0}
     for f in findings:
         counts[f["severity"]] = counts.get(f["severity"], 0) + 1
     for sev in ("critical", "high", "medium"):
         if counts.get(sev):
             return _VERDICT_BY_WORST[sev], counts
+    if not privilege.may_report_clean(level, skipped=list(skipped or [])):
+        return "unknown", counts
     return "clean", counts
 
 
 def _failed(started: float, error: str) -> dict:
     return {"verdict": "unknown", "status": "failed", "error": error, "findings": [],
             "counts": {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0, "pass": 0},
+            "privilege": privilege.NONE, "skipped": [], "note": None,
             "duration_ms": int((time.monotonic() - started) * 1000)}
 
 
@@ -351,9 +376,24 @@ async def run_scan(server: Server, *, fast_only: bool = False) -> dict:
         return _failed(started, f"Could not connect to the server: {exc}")
 
     raw = _parse_sections(stdout or "")
+
+    # What we were actually able to read. Anything unrecognised is treated as "none" — see
+    # `privilege.parse`: failing closed is what stops an unreadable server reporting clean.
+    level = privilege.parse(raw.get(privilege.SECTION, ""))
+    blind = not privilege.can_read_everything(level)
+    needs_root = {s.id for s in sections if s.needs_root}
+
     findings: list[dict] = []
+    skipped: list[dict] = []
     for check in LINUX_CHECKS:
         if check.section not in included:
+            continue
+        if blind and check.section in needs_root:
+            # NOT evaluated against empty output. A `find` that was denied everything prints
+            # nothing, and every checker here reads "nothing" as "pass" — which is precisely
+            # the false all-clear this whole change exists to remove.
+            skipped.append({"id": check.id, "title": check.title,
+                            "reason": "needs root or passwordless sudo"})
             continue
         try:
             findings.append(check.evaluate(raw.get(check.section, "")))
@@ -363,7 +403,10 @@ async def run_scan(server: Server, *, fast_only: bool = False) -> dict:
 
     sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "pass": 5}
     findings.sort(key=lambda f: sev_order.get(f["severity"], 9))
-    verdict, counts = _summarize(findings)
+    verdict, counts = _summarize(findings, level=level, skipped=skipped)
     return {"verdict": verdict, "status": "completed", "error": None, "counts": counts,
             "findings": findings, "scope": "fast" if fast_only else "full",
+            # Named, not hidden. A customer reading "unknown" must be able to see WHICH
+            # checks did not run and what to do about it.
+            "privilege": level, "skipped": skipped, "note": privilege.explain(level),
             "duration_ms": int((time.monotonic() - started) * 1000)}
