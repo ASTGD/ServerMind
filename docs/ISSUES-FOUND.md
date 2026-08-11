@@ -4,7 +4,7 @@
 >
 > **Rule:** when live-testing and something looks wrong, do NOT fix it in place mid-task. Log it here, keep going with the actual task, fix everything after the session. See the "Live Testing — Bug Capture Protocol" section in `CLAUDE.md`.
 >
-> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-018**.
+> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-021**.
 
 ---
 
@@ -31,6 +31,70 @@ Copy this block for each new finding:
 2. Fix the root cause.
 3. Flip **Status** to `Fixed`, move the entry to the Fixed section, and add one line to the **Decisions Log** in `CLAUDE.md` (existing convention: date + what changed + why).
 4. If it's the kind of thing that could regress, capture it as an eval case (Dev Door "capture as eval case", or add it directly to `app/evals/corpus.py`) so it's covered by the eval suite going forward.
+
+## Open
+
+### BUG-018 — Ally does not know that `lsphp` is not a command-line PHP, so it burned 10 steps and ran out of budget
+- **Date:** 2026-08-11
+- **Status:** Open
+- **Context:** owner asked Ally to deploy the latest `main` of `github.com/ASTGD/rcmaa` to the
+  live site `rcmalumni.astgd.com` on **Panel2** (CyberPanel / OpenLiteSpeed, Ubuntu 20.04).
+- **Server / mission:** Panel2 — mission `ac2291bd-05d5-4ca6-83ec-0ee244545202`, skill
+  `github-deploy`, **blocked at 23 of 25 steps**.
+- **Observed:** the site's `composer.lock` needs PHP ≥ 8.4.1 and the default `php` is 8.3.30,
+  so Ally correctly went looking for 8.4. It found `/usr/local/lsws/lsphp84/bin/lsphp` and
+  tried to run Composer with it, which refuses: *"Composer cannot be run safely on non-CLI
+  SAPIs"*. Ally then spent **steps 9–21** on that one wall — toggling `register_argc_argv`
+  On and Off (twice, by `sed`-ing the LIVE web PHP's `php.ini`), retrying `-d`/`-c` flag
+  orders five times, adding `ppa:ondrej/php` (which has no PHP 8.4 for *focal*), and trying
+  to download a static PHP build (wget exit 8). At step 17 it listed
+  `/usr/local/lsws/lsphp84/bin/` — whose output **includes a `php` and a `php8.4` binary** —
+  and never tried either. Verified on the box: `/usr/local/lsws/lsphp84/bin/php -v` →
+  **`PHP 8.4.20 (cli)`**, `PHP_SAPI === "cli"`. One command would have worked.
+- **Expected:** on a LiteSpeed/CyberPanel server, use `/usr/local/lsws/lsphpNN/bin/php` for
+  anything on the command line. `lsphp` is the web SAPI and can never run Composer.
+- **Severity:** High — it is the difference between a deploy finishing and a deploy blocking,
+  on the most common server type we manage.
+- **Suspected cause:** **known in the code, absent from the prompt.**
+  `laravel_service._prelude` has resolved exactly this since 2026-08-04 — it globs
+  `/usr/local/lsws/lsphp*/bin/php` newest-first and proves each candidate with
+  `artisan --version`. `app/skills/github-deploy.md` says only `composer install --no-dev`
+  and mentions "PHP via lsphp" in passing. Ally follows the skill, not the service, so it
+  could not inherit the lesson. **The seam is code-vs-prompt**, which the "one rule in one
+  place" habit has not covered until now.
+- **Repro:** Dev Door dry-run of the same request against a CyberPanel server, or read the
+  mission transcript above.
+
+### BUG-019 — an unsupported flag makes `lsphp` print usage and exit 0, and Ally reads that as the command having run
+- **Date:** 2026-08-11
+- **Status:** Open
+- **Context / mission:** same run as BUG-018.
+- **Observed:** `lsphp -d register_argc_argv=On …` is not supported (`lsphp` accepts only
+  `-b`, `-c`, `-n`, `-h`, `-i`, `-q`, `-s`, `-v`, `-?`). It prints its usage banner and exits
+  **0**. Ally read the banner as "still blocked" and retried variants of the same rejected
+  flag five times instead of concluding the flag itself was refused.
+- **Expected:** recognise a usage/help banner as *the command was not accepted* and stop
+  varying that argument.
+- **Severity:** Medium — it multiplies the cost of BUG-018 rather than causing it.
+- **Suspected cause:** nothing tells Ally that a zero exit plus a usage banner is a refusal.
+  A PITFALL line in the deploy skill would cover it.
+
+### BUG-020 — Ally edited the live web server's `php.ini` on a 77-site production panel to make a CLI tool run
+- **Date:** 2026-08-11
+- **Status:** Open
+- **Context / mission:** same run as BUG-018.
+- **Observed:** to get Composer going it ran
+  `sed -i 's/^register_argc_argv = Off/register_argc_argv = On/'` on
+  `/usr/local/lsws/lsphp84/etc/php/8.4/litespeed/php.ini` — the PHP configuration serving
+  **every** site on that panel — without asking. It did set it back later in the run, so the
+  file ended as it started, but nothing guaranteed that: had the mission been stopped or hit
+  its budget between those two steps, the change would have been left in place.
+- **Expected:** never change shared web-server configuration to work around a command-line
+  tool; use the right binary instead (BUG-018). If a shared config genuinely must change, it
+  is a destructive step that needs approval and a guaranteed restore.
+- **Severity:** Medium — no harm this time, by luck rather than design.
+- **Suspected cause:** the deploy skill has no rule separating "this site" from "every site
+  on this machine".
 
 ---
 
