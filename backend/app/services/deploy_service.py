@@ -167,12 +167,17 @@ def release_name(stamp: str) -> str:
 def build_plan(*, path: str, repo: str, branch: str, stamp: str,
                shared: list[str] | None = None,
                build: list[str] | None = None,
-               after: list[str] | None = None) -> DeployPlan:
+               after: list[str] | None = None,
+               commit: str | None = None) -> DeployPlan:
     """The commands for one deploy, in order.
 
     Everything before the switch happens in the new release directory. `current` moves
     only after the last build command has succeeded, so a broken build leaves the live
     site exactly as it was.
+
+    `commit` pins the deploy to one revision instead of the branch tip. Promoting a staging
+    copy uses it, because "put staging live" has to mean the code that was looked at and
+    approved — not whatever somebody pushed to the branch in between.
     """
     root = valid_path(path)
     url = valid_repo(repo)
@@ -196,6 +201,13 @@ def build_plan(*, path: str, repo: str, branch: str, stamp: str,
     steps.append(DeployStep(
         "Fetch the code",
         f"set -e; git clone --depth 1 --single-branch --branch {q(br)} {q(url)} {q(rel_dir)} 2>&1"))
+
+    if commit:
+        # Straight after the clone, so everything below — build, shared links, the atomic
+        # switch — is the unchanged path already proven on a real server.
+        from app.services import promote_service
+        for name, cmd in promote_service.pin_steps(rel_dir, commit):
+            steps.append(DeployStep(name, cmd))
 
     for sp in shared_paths:
         parent = "/".join(sp.split("/")[:-1])

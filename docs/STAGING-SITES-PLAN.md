@@ -235,7 +235,7 @@ engines to honour this request.*
 
 ---
 
-### P3 — Promote: the Git path
+### ~~P3~~ — Promote: the Git path — **SHIPPED 2026-08-11**
 
 When both the staging site and the live site have deploy targets, promoting is:
 
@@ -255,7 +255,7 @@ repo than staging is refused, by name, before anything runs.
 
 ---
 
-### P4 — Promote: the file-copy path (the dangerous one)
+### ~~P4~~ — Promote: the file-copy path — **SHIPPED 2026-08-11**
 
 Only for a site with no repository. Every rule here exists because of a specific way this
 destroys a customer's website.
@@ -284,7 +284,7 @@ replacing the atomic switch with a plain copy must each fail their own test.
 
 ---
 
-### P5 — Housekeeping, and the things a staging site must not inherit
+### ~~P5~~ — Housekeeping — **SHIPPED 2026-08-11** (the four safety rules; the list/DNS polish remains)
 
 This phase is what stops staging from becoming an incident.
 
