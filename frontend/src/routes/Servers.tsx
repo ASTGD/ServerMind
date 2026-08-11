@@ -1,20 +1,21 @@
 import { useMemo, useState } from "react"
+import { Link, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { Cloud, Plus, Search, ServerOff } from "lucide-react"
-import type { LucideIcon } from "lucide-react"
+import { ExternalLink, Plus, Search, ServerOff, Settings2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { listServers } from "@/api/servers"
 import { listCloudAccounts, type CloudAccount } from "@/api/cloud"
 import { listSites } from "@/api/sites"
 import { getFleetHealth } from "@/api/fleet"
-import { ASSET_GROUPS, availableFilters, filterById, groupFor } from "@/lib/assetGroups"
+import { assetZones, availableFilters, filterById, type AssetZone } from "@/lib/assetGroups"
 import AssetRow from "@/components/server/AssetRow"
-import CloudAccountRow from "@/components/server/CloudAccountRow"
 import AddServerModal from "@/components/server/AddServerModal"
 import ConnectCloudModal from "@/components/server/ConnectCloudModal"
 import RdpDesktopModal from "@/components/server/RdpDesktopModal"
 import CloudAccountModal from "@/components/server/CloudAccountModal"
 import { Button, EmptyState } from "@/components/ui"
+import { cloudBrand } from "@/lib/assetBrands"
+import BrandIcon, { providerIconSlug, hasBrandIcon } from "@/components/server/BrandIcon"
 import { cn } from "@/lib/utils"
 import type { Server } from "@/types"
 
@@ -35,6 +36,8 @@ export default function Servers() {
   const [showCloud, setShowCloud] = useState(false)
   const [desktopServer, setDesktopServer] = useState<Server | null>(null)
   const [manageAccount, setManageAccount] = useState<CloudAccount | null>(null)
+  const [params] = useSearchParams()
+  const zoneParam = params.get("zone")
   const [filter, setFilter] = useState<string>("all")
   const [q, setQ] = useState("")
 
@@ -66,10 +69,9 @@ export default function Servers() {
   }, [siteData])
 
   // Where each asset lives is DERIVED (see lib/assetGroups) — a stored column would go stale
-  // the day somebody installs a panel by hand.
-  const byGroup: Record<string, Server[]> = {}
-  for (const s of servers) (byGroup[groupFor(s)] ??= []).push(s)
-  const importedFor = (id: string) => servers.filter((s) => s.cloud_account_id === id).length
+  // the day somebody installs a panel by hand. A connected cloud account IS a zone, so an
+  // account is no longer listed separately: it was the same thing said in two places.
+  const zones = assetZones(servers, cloudAccounts)
 
   // Filters slice ACROSS the groups rather than replacing them, so a filtered view still
   // says where each result lives. One with nothing to show is absent, not disabled.
@@ -96,20 +98,37 @@ export default function Servers() {
     (s) => s.status === "auth_failed" || s.status === "host_changed" || s.status === "offline",
   ).length
 
-  // A cloud ACCOUNT is not an asset, so no asset filter can describe one — while a filter is
-  // on, showing the accounts anyway would be answering a question nobody asked.
-  const shownAccounts = active ? [] : cloudAccounts.filter(
-    (a) => !needle
-      || a.label.toLowerCase().includes(needle)
-      || a.provider.toLowerCase().includes(needle))
-  const anyShown = shownAccounts.length > 0
-    || ASSET_GROUPS.some((g) => (byGroup[g.id] ?? []).some(matches))
+  // A zone is shown when it has a matching asset — or, for an empty cloud account, when
+  // nothing is narrowing the page. An account with nothing imported must stay reachable, but
+  // it should not sit there during a search it does not match.
+  // A zone link from the sidebar narrows to that one account. It composes with the filter
+  // pills rather than replacing them: the pills then slice WITHIN the zone.
+  const inZone = zoneParam
+    ? zones.filter((z) => z.account?.id === zoneParam)
+    : zones
+  const shown = inZone
+    .map((z) => ({ ...z, servers: z.servers.filter(matches) }))
+    .filter((z) => z.servers.length > 0
+      || (z.account && !active && (!needle
+        || z.label.toLowerCase().includes(needle)
+        || z.account.provider.toLowerCase().includes(needle))))
+  const anyShown = shown.length > 0
+  // A link to an account that has since been disconnected must say so rather than render an
+  // empty page that looks broken.
+  const zoneGone = Boolean(zoneParam) && inZone.length === 0
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-h1 text-foreground">{t("nav.servers")}</h1>
+          <h1 className="text-h1 text-foreground">
+            {zoneParam && inZone[0]?.account ? inZone[0].label : t("nav.servers")}
+          </h1>
+          {zoneParam && (
+            <Link to="/servers" className="text-sm text-primary hover:underline">
+              ← All assets
+            </Link>
+          )}
           {!empty && (
             <p className="mt-1 text-sm text-muted-foreground">
               {servers.length} asset{servers.length === 1 ? "" : "s"}
@@ -174,39 +193,33 @@ export default function Servers() {
           </div>
 
           <div className="space-y-5">
-            {ASSET_GROUPS.map((group) => {
-              const list = (byGroup[group.id] ?? []).filter(matches)
-              if (!list.length) return null
-              return (
-                <section key={group.id}>
-                  <SectionHeader Icon={group.icon} label={group.label}
-                    count={list.length} accent={group.accent} />
+            {shown.map((zone) => (
+              <section key={zone.id}>
+                <ZoneHeader zone={zone} onManage={setManageAccount} />
+                {zone.servers.length > 0 ? (
                   <div className="overflow-hidden rounded-xl border border-border bg-card">
-                    {list.map((s) => (
+                    {zone.servers.map((s) => (
                       <AssetRow key={s.id} server={s}
                         grade={gradeFor[s.id]} sites={sitesFor[s.id]}
+                        inProviderZone={Boolean(zone.account)}
                         onOpenDesktop={setDesktopServer} />
                     ))}
                   </div>
-                </section>
-              )
-            })}
-
-            {shownAccounts.length > 0 && (
-              <section key="cloud">
-                <SectionHeader Icon={Cloud} label="Cloud accounts"
-                  count={shownAccounts.length}
-                  accent="bg-violet-500/10 text-violet-600 dark:text-violet-400" />
-                <div className="overflow-hidden rounded-xl border border-border bg-card">
-                  {shownAccounts.map((a) => (
-                    <CloudAccountRow key={a.id} account={a}
-                      importedCount={importedFor(a.id)} onManage={setManageAccount} />
-                  ))}
-                </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-[12.5px] text-muted-foreground">
+                    Connected, with nothing imported yet.
+                  </div>
+                )}
               </section>
-            )}
+            ))}
 
-            {!anyShown && (
+            {zoneGone && (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                That cloud account is no longer connected.{" "}
+                <Link to="/servers" className="text-primary hover:underline">See all assets</Link>.
+              </p>
+            )}
+            {!anyShown && !zoneGone && (
               // Says which of the two narrowed it down, because "nothing matches" with an
               // empty search box reads as the page being broken.
               <p className="py-10 text-center text-sm text-muted-foreground">
@@ -253,16 +266,56 @@ function FilterPill({ label, count, active, onClick }: {
   )
 }
 
-function SectionHeader({ Icon, label, count, accent }: {
-  Icon: LucideIcon; label: string; count: number; accent: string
+/** Each provider's own console, so a zone has a way out to where it came from. */
+const CONSOLE_URL: Record<string, string> = {
+  aws: "https://console.aws.amazon.com",
+  digitalocean: "https://cloud.digitalocean.com",
+  hetzner: "https://console.hetzner.cloud",
+  gcp: "https://console.cloud.google.com",
+  azure: "https://portal.azure.com",
+}
+
+function ZoneHeader({ zone, onManage }: {
+  zone: AssetZone; onManage: (a: CloudAccount) => void
 }) {
+  const Icon = zone.icon
+  const account = zone.account
+  const slug = providerIconSlug(account?.provider)
+  const brand = cloudBrand(account?.provider)
+  const console_ = account ? CONSOLE_URL[account.provider] : undefined
+
   return (
     <div className="mb-2 flex items-center gap-2.5">
-      <div className={cn("flex h-6 w-6 items-center justify-center rounded-md", accent)}>
-        <Icon size={13} />
+      <div className={cn("flex h-6 w-6 items-center justify-center rounded-md", zone.accent)}>
+        {account && hasBrandIcon(slug) ? <BrandIcon slug={slug} size={13} /> : <Icon size={13} />}
       </div>
-      <span className="text-sm font-semibold text-foreground">{label}</span>
-      <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{count}</span>
+      <span className="text-sm font-semibold text-foreground">
+        {account ? `${brand?.name ?? account.provider} · ${zone.label}` : zone.label}
+      </span>
+      <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+        {zone.servers.length}
+      </span>
+
+      {account && (
+        // The zone IS the account, so managing it belongs on its heading — a separate row
+        // for the account would be the same thing listed twice.
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button" onClick={() => onManage(account)}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Settings2 size={13} /> <span className="hidden lg:inline">Manage</span>
+          </button>
+          {console_ && (
+            <a
+              href={console_} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <ExternalLink size={13} /> <span className="hidden lg:inline">Console</span>
+            </a>
+          )}
+        </div>
+      )}
     </div>
   )
 }

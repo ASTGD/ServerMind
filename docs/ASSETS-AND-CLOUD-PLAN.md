@@ -476,10 +476,10 @@ For an MSP that is exactly the control their client will ask for.
 
 | Phase | Work | Size |
 |---|---|---|
-| **0** | Part D — non-root honesty and `sudo -n` escalation | small, benefits every existing customer |
-| **1** | A1 Server merge · A3 Windows merge · A2 panel becomes a chip (tile and group both go) · A6 filter row | small, makes the Add screen and the list honest |
-| **2** | A8 — the import runs the same probe as the manual add | small, removes a real gap |
-| **3** | A4 — Cloud zone, accounts inside, servers grouped by account | real design work |
+| ~~**0**~~ | Part D — non-root honesty and `sudo -n` escalation | **SHIPPED 2026-08-10** |
+| ~~**1**~~ | A1 Server merge · A3 Windows merge · A2 panel becomes a chip (tile and group both go) · A6 filter row | **SHIPPED 2026-08-11** |
+| ~~**2**~~ | A8 — the import runs the same probe as the manual add | **SHIPPED 2026-08-11** — and it was not just a label: the import never pinned the host key, so imported servers connected unverified |
+| ~~**3**~~ | A4 — Cloud zone, accounts inside, servers grouped by account | **SHIPPED 2026-08-11** |
 | **4** | B — SSM as a connection type (`SendCommand`) | the transport |
 | **5** | B2 — cross-account roles with external ID | **this is what makes it an MSP product** |
 | **6** | Files via S3 | unblocks File Manager, editors, certificates, clone, staging |

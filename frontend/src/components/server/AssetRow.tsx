@@ -84,10 +84,13 @@ interface Props {
   grade?: string
   /** How many websites we have recorded on this asset. */
   sites?: number
+  /** True when this row sits inside its own provider's zone, where the heading already
+   *  names the provider — so the badge would be the same fact twice. */
+  inProviderZone?: boolean
   onOpenDesktop?: (server: Server) => void
 }
 
-export default function AssetRow({ server, grade, sites, onOpenDesktop }: Props) {
+export default function AssetRow({ server, grade, sites, inProviderZone, onOpenDesktop }: Props) {
   const [showMsg, setShowMsg] = useState(false)
   const openSession = useTerminalStore((s) => s.openSession)
   const openServer = useAssistantStore((s) => s.openServer)
@@ -108,7 +111,7 @@ export default function AssetRow({ server, grade, sites, onOpenDesktop }: Props)
   const osSlug = osIconSlug(server.os_type)
     ?? (group.id === "windows" || canDesktop ? "windows" : undefined)
   const osBrand = hasBrandIcon(osSlug)
-  const provider = server.cloud_account_id ? server.tags?.[0] : undefined
+  const provider = server.cloud_account_id && !inProviderZone ? server.tags?.[0] : undefined
   const providerSlug = providerIconSlug(provider)
 
   // The second line answers "what is this and where does it live", in the order someone

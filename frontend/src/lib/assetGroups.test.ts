@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest"
 import {
   ADD_TILES, ASSET_FILTERS, ASSET_GROUPS, WINDOWS_METHODS,
-  availableFilters, groupFor, groupForServer,
+  assetZones, availableFilters, groupFor, groupForServer,
 } from "./assetGroups"
+import type { CloudAccount } from "@/api/cloud"
 import type { Server } from "@/types"
+
+function account(over: Partial<CloudAccount> = {}): CloudAccount {
+  return { id: "acc-1", provider: "aws", label: "ceo@astgd.com", created_at: "", ...over }
+}
 
 /**
  * The Assets page answers three different questions, and the old registry answered all three
@@ -117,5 +122,65 @@ describe("filters slice across the groups", () => {
 
   it("offers nothing at all for an empty fleet", () => {
     expect(availableFilters([])).toEqual([])
+  })
+})
+
+
+describe("provider zones", () => {
+  it("an imported asset lives under its account and nowhere else", () => {
+    expect(groupFor(srv({ cloud_account_id: "acc-1" }))).toBe("cloud:acc-1")
+  })
+
+  it("its account beats what kind of machine it is", () => {
+    // An imported Windows EC2 belongs to the AWS zone, not to Windows servers. "There and
+    // nowhere else" is the whole rule; listing it twice is what this replaced.
+    expect(groupFor(srv({ connection_type: "winrm", cloud_account_id: "acc-1" })))
+      .toBe("cloud:acc-1")
+  })
+
+  it("disconnecting the account re-files the asset with no special case", () => {
+    // The FK is SET NULL, so this is what the row actually looks like afterwards.
+    expect(groupFor(srv({ connection_type: "ssh", cloud_account_id: null }))).toBe("server")
+    expect(groupFor(srv({ connection_type: "rdp", cloud_account_id: null }))).toBe("windows")
+  })
+
+  it("a connected account with nothing imported still gets a zone", () => {
+    // Otherwise the account itself becomes invisible and there is no way back to it.
+    const zones = assetZones([], [account()])
+    expect(zones.map((z) => z.id)).toEqual(["cloud:acc-1"])
+    expect(zones[0].servers).toEqual([])
+  })
+
+  it("puts the provider zones before the generic groups", () => {
+    const zones = assetZones(
+      [srv({ id: "a" }), srv({ id: "b", cloud_account_id: "acc-1" })], [account()])
+    expect(zones.map((z) => z.id)).toEqual(["cloud:acc-1", "server"])
+  })
+
+  it("never renders an empty generic group", () => {
+    const zones = assetZones([srv({ id: "a", cloud_account_id: "acc-1" })], [account()])
+    expect(zones.map((z) => z.id)).toEqual(["cloud:acc-1"])
+  })
+
+  it("an asset whose account we cannot see falls back instead of vanishing", () => {
+    // The dangerous failure: it would be filed into a zone nothing draws, disappear from the
+    // page, and look exactly like it had been deleted.
+    const orphan = srv({ id: "lost", cloud_account_id: "acc-DELETED" })
+    const zones = assetZones([orphan], [account()])
+    const shown = zones.flatMap((z) => z.servers.map((s) => s.id))
+    expect(shown).toContain("lost")
+  })
+
+  it("every asset appears in exactly one zone, whatever the accounts say", () => {
+    const fleet = [
+      srv({ id: "1" }),
+      srv({ id: "2", connection_type: "rdp" }),
+      srv({ id: "3", cloud_account_id: "acc-1" }),
+      srv({ id: "4", cloud_account_id: "acc-1", connection_type: "winrm" }),
+      srv({ id: "5", cloud_account_id: "gone" }),
+      srv({ id: "6", connection_type: "hosting", panel_type: "cyberpanel" }),
+    ]
+    const placed = assetZones(fleet, [account()]).flatMap((z) => z.servers.map((s) => s.id))
+    expect(placed.slice().sort()).toEqual(["1", "2", "3", "4", "5", "6"])
   })
 })

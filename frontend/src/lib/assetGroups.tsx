@@ -1,5 +1,6 @@
 import { Server as ServerIcon, AppWindow, Cloud } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
+import type { CloudAccount } from "@/api/cloud"
 import type { Server } from "@/types"
 
 /**
@@ -101,7 +102,10 @@ export const WINDOWS_METHODS = [
 
 // ── 2. Where does it live? ───────────────────────────────────────────────────
 
-export type AssetGroupId = "server" | "windows"
+export const CLOUD_PREFIX = "cloud:"
+
+/** `server`, `windows`, or `cloud:<account-id>` — one zone per connected account. */
+export type AssetGroupId = string
 
 export interface AssetGroup {
   id: AssetGroupId
@@ -134,7 +138,13 @@ export const ASSET_GROUPS: AssetGroup[] = [
  * *Phase 3 adds one branch in front of these: an asset with a `cloud_account_id` lives in
  * that provider's zone. Until the zone exists, sending it there would make it vanish.*
  */
-export function groupFor(s: Pick<Server, "connection_type">): AssetGroupId {
+export function groupFor(
+  s: Pick<Server, "connection_type" | "cloud_account_id">,
+): AssetGroupId {
+  // An asset that came from a cloud account lives THERE and nowhere else. Nobody thinks
+  // "my VPS group"; they think "my AWS" — and for an agency, one zone per client account is
+  // already how they hold it in their head.
+  if (s.cloud_account_id) return `${CLOUD_PREFIX}${s.cloud_account_id}`
   if (s.connection_type === "winrm" || s.connection_type === "rdp") return "windows"
   return "server"
 }
@@ -143,9 +153,65 @@ export function groupById(id: AssetGroupId): AssetGroup {
   return ASSET_GROUPS.find((g) => g.id === id) ?? ASSET_GROUPS[0]
 }
 
-/** The group descriptor for an asset — for the row icon and the section heading. */
+/** The descriptor behind an asset's ROW ICON.
+ *
+ *  Deliberately about what the machine is, not where it is filed: a Linux EC2 sitting in the
+ *  AWS zone should still look like a server. The zone already says whose it is.
+ */
 export function groupForServer(s: Pick<Server, "connection_type">): AssetGroup {
-  return groupById(groupFor(s))
+  return groupById(
+    s.connection_type === "winrm" || s.connection_type === "rdp" ? "windows" : "server")
+}
+
+// ── The zones a page actually renders ────────────────────────────────────────
+
+export interface AssetZone extends AssetGroup {
+  /** Present when this zone IS a connected cloud account. */
+  account?: CloudAccount
+  servers: Server[]
+}
+
+/**
+ * Every zone, in the order they are shown, with its assets.
+ *
+ * Provider zones come first because a customer who has connected an account came here for it,
+ * and this needs no special case to be right for someone who has not: an empty generic group
+ * is not rendered, so a fleet with no cloud accounts is unchanged.
+ *
+ * **A connected account with nothing imported still gets a zone.** Otherwise connecting an
+ * account and importing nothing makes the account itself invisible, with no way back to it.
+ */
+export function assetZones(servers: Server[], accounts: CloudAccount[]): AssetZone[] {
+  const known = new Set(accounts.map((a) => a.id))
+  const byZone = new Map<string, Server[]>()
+
+  for (const s of servers) {
+    let id = groupFor(s)
+    // The guard that matters: a server pointing at an account we cannot see would land in a
+    // zone that is never drawn — and vanish from the page entirely. Falling back is always
+    // recoverable; disappearing is not, and it looks exactly like the asset being deleted.
+    if (id.startsWith(CLOUD_PREFIX) && !known.has(id.slice(CLOUD_PREFIX.length))) {
+      id = groupFor({ connection_type: s.connection_type, cloud_account_id: null })
+    }
+    const list = byZone.get(id)
+    if (list) list.push(s)
+    else byZone.set(id, [s])
+  }
+
+  const zones: AssetZone[] = accounts.map((account) => ({
+    id: `${CLOUD_PREFIX}${account.id}`,
+    label: account.label,
+    icon: Cloud,
+    accent: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+    account,
+    servers: byZone.get(`${CLOUD_PREFIX}${account.id}`) ?? [],
+  }))
+
+  for (const group of ASSET_GROUPS) {
+    const list = byZone.get(group.id) ?? []
+    if (list.length) zones.push({ ...group, servers: list })
+  }
+  return zones
 }
 
 // ── 3. Show me only these. ───────────────────────────────────────────────────

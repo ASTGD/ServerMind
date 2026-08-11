@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
 import type { LucideIcon } from "lucide-react"
-import { ArrowUpRight, GitBranch, BookMarked, BookOpen, Boxes, FileCode, FileText, FlaskConical, Globe, Globe2, LayoutDashboard, Monitor, Moon, Rocket, Settings, Sparkles, Sun, Terminal as TerminalIcon, Users } from "lucide-react"
+import { ArrowUpRight, Cloud, GitBranch, BookMarked, BookOpen, Boxes, FileCode, FileText, FlaskConical, Globe, Globe2, LayoutDashboard, Monitor, Moon, Rocket, Settings, Sparkles, Sun, Terminal as TerminalIcon, Users } from "lucide-react"
 import Logo from "@/components/brand/Logo"
 import UpgradeModal from "./UpgradeModal"
 import { Card, Button, Badge } from "@/components/ui"
@@ -13,6 +13,8 @@ import { useAuthStore } from "@/store/authStore"
 import { useThemeStore, type Theme } from "@/store/themeStore"
 import { getMyUsage } from "@/api/usage"
 import { listMissions } from "@/api/missions"
+import { listCloudAccounts } from "@/api/cloud"
+import { cloudBrand } from "@/lib/assetBrands"
 import { cn } from "@/lib/utils"
 
 /** Mission statuses that want the user's attention — surfaced as a badge on the Missions item. */
@@ -168,6 +170,10 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
 
   const { data: usage } = useQuery({ queryKey: ["usage"], queryFn: getMyUsage, staleTime: 60_000 })
   const { data: missions = [] } = useQuery({ queryKey: ["missions"], queryFn: () => listMissions(), refetchInterval: 60_000 })
+  // Same query key the Assets page uses, so listing the zones here costs no extra request.
+  const { data: cloudAccounts = [] } = useQuery({
+    queryKey: ["cloud-accounts"], queryFn: listCloudAccounts, staleTime: 60_000,
+  })
   const needsYou = missions.filter((m) => NEEDS_YOU.has(m.status)).length
   const isPro = (usage?.plan ?? "free").toLowerCase() === "pro"
   const actionPct = usage ? Math.min(100, Math.round((usage.used / Math.max(1, usage.limit)) * 100)) : 0
@@ -208,6 +214,24 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
           <NavItem to="/sites" icon={Globe} label="Sites" onClick={onClose} />
           <NavItem to="/dns" icon={Globe2} label="DNS" onClick={onClose} />
           <NavItem to="/deployments" icon={GitBranch} label="Deployments" onClick={onClose} />
+
+          {/* One item, however many accounts — an agency with twenty client accounts would
+              otherwise get twenty top-level rows. Absent entirely until an account exists:
+              a heading that always says "nothing here" is worse than no heading. */}
+          {cloudAccounts.length > 0 && (
+            <>
+              <SectionLabel>Cloud</SectionLabel>
+              {cloudAccounts.map((a) => (
+                <NavItem
+                  key={a.id}
+                  to={`/servers?zone=${a.id}`}
+                  icon={Cloud}
+                  label={`${cloudBrand(a.provider)?.name ?? a.provider} · ${a.label}`}
+                  onClick={onClose}
+                />
+              ))}
+            </>
+          )}
 
           <SectionLabel>Automate</SectionLabel>
           <NavItem to="/missions" icon={Rocket} label={t("nav.missions")} badge={needsYou || undefined} onClick={onClose} />
