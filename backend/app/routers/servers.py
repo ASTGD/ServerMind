@@ -15,7 +15,7 @@ from app.models.server import Server
 from app.models.user import User
 from app.schemas.server import ServerCreate, ServerOut, ServerUpdate
 from app.services import audit_service, connection_manager, metering_service, metrics_service
-from app.services import team_service
+from app.services import server_probe, team_service
 from app.services.crypto_service import encrypt
 
 logger = logging.getLogger(__name__)
@@ -45,19 +45,6 @@ async def list_servers(
     return await team_service.accessible_servers(db, current_user)
 
 
-def infer_category(connection_type: str, panel_type: str | None) -> str:
-    """The user-facing Assets category for an asset when the client didn't send one
-    (older clients, or backfill). Bare-metal can't be inferred from transport → a plain
-    SSH box defaults to 'vps'; the user can re-file it in Edit."""
-    if connection_type == "winrm":
-        return "windows"
-    if connection_type == "rdp":
-        return "windows_rdp"
-    if connection_type == "hosting":
-        return "hosting"
-    if connection_type == "ssh" and panel_type:
-        return "hosting"
-    return "vps"
 
 
 @router.post("", response_model=ServerOut, status_code=status.HTTP_201_CREATED)
@@ -87,7 +74,8 @@ async def create_server(
         auth_type=body.auth_type,
         connection_type=body.connection_type,
         panel_type=body.panel_type,
-        category=body.category or infer_category(body.connection_type, body.panel_type),
+        category=body.category or server_probe.infer_category(
+            body.connection_type, body.panel_type),
         encrypted_cred=encrypted,
         shell="powershell" if body.connection_type in ("winrm", "rdp") else "bash",
         tags=body.tags,
@@ -97,40 +85,10 @@ async def create_server(
     await db.commit()
     await db.refresh(server)
 
-    # Probe the new server so its status (and OS) reflect reality immediately,
-    # instead of sitting at "unknown" until the metrics worker runs.
-    from app.services import metrics_service
-    from app.services.ssh_service import is_auth_error
-    try:
-        result = await connection_manager.test_connection(server)
-        if result.ok:
-            server.status = "online"
-            server.last_seen = datetime.now(timezone.utc)
-            if result.fingerprint:
-                server.fingerprint = result.fingerprint  # pin identity on first connect
-            try:
-                info = await metrics_service.detect_os(server)
-                server.os_type = info.get("os_type")
-                server.os_version = info.get("os_version")
-                server.arch = info.get("arch")
-                # A control panel on an SSH box makes it a hosting-panel asset (Hosting tab,
-                # CLI-over-SSH) — file it under Hosting so it's one unified card, not a VPS.
-                if server.connection_type == "ssh":
-                    server.panel_type = info.get("panel")
-                    if info.get("panel"):
-                        server.category = "hosting"
-            except Exception:  # noqa: BLE001 — OS detect is a bonus; status is already set
-                pass
-        elif result.host_key_changed:
-            server.status = "host_changed"
-        elif is_auth_error(message=result.error):
-            server.status = "auth_failed"
-        else:
-            server.status = "offline"
-        await db.commit()
-        await db.refresh(server)
-    except Exception:  # noqa: BLE001 — never let the probe fail the add
-        logger.debug("Post-create probe failed for %s", server.id, exc_info=True)
+    # Look at what we just added, so its status, OS, panel and — above all — its host-key
+    # pin reflect reality immediately. The SAME probe the cloud import runs: a copy of this
+    # is exactly what left imported servers connecting unverified.
+    await server_probe.probe(db, server)
 
     await audit_service.audit(
         db, current_user, "server.create",
@@ -354,16 +312,7 @@ async def detect_server_os(
         logger.warning("OS detection failed for server %s: %s", server_id, exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Detection failed: {exc}")
 
-    server.os_type = info.get("os_type")
-    server.os_version = info.get("os_version")
-    server.arch = info.get("arch")
-    # A control panel on an SSH box IS a hosting-panel asset (managed via the panel CLI over
-    # the same SSH, H1). File it under the Hosting Panel category so it's ONE unified card
-    # (SSH + panel), not ALSO a separate VPS card.
-    if server.connection_type == "ssh":
-        server.panel_type = info.get("panel")
-        if info.get("panel"):
-            server.category = "hosting"
+    server_probe.record_os(server, info)
     server.last_seen = datetime.now(timezone.utc)
     await db.commit()
 

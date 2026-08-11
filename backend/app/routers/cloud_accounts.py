@@ -11,7 +11,7 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,7 +27,7 @@ from app.schemas.cloud import (
     ImportResult,
     InstanceOut,
 )
-from app.services import audit_service, cloud_service, metering_service
+from app.services import audit_service, cloud_service, metering_service, server_probe
 from app.services.cloud_service import CloudError
 from app.services.crypto_service import encrypt
 
@@ -164,6 +164,7 @@ async def import_instances(
     account_id: uuid.UUID,
     body: ImportBody,
     request: Request,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_verified),
 ) -> ImportResult:
@@ -185,6 +186,7 @@ async def import_instances(
     capacity = (sg.limit - sg.used) if sg.enforced else None
 
     encrypted = encrypt(body.credential)
+    fresh: list[Server] = []
     imported = skipped = 0
     limited = no_address = 0
     for inst in selected:
@@ -199,10 +201,11 @@ async def import_instances(
             limited += 1
             continue
         t = cloud_service.transport_defaults(inst.os)
-        # Imported instances ARE machines — categorize by their OS so they land in the
-        # Windows/VPS asset groups (their cloud origin is carried by cloud_account_id +
-        # the provider tag, shown as a provenance badge — not a separate "cloud" bucket).
-        db.add(Server(
+        # The label comes from the SAME function the manual add uses, and the probe below
+        # corrects it if the machine turns out to run a control panel. Hardcoding it here is
+        # what filed a CyberPanel EC2 as a plain VPS while the identical machine added by
+        # hand was filed as a panel.
+        row = Server(
             user_id=current_user.id,
             name=inst.name or inst.instance_id,
             host=host,
@@ -210,17 +213,27 @@ async def import_instances(
             username=body.username,
             auth_type=body.auth_type,
             connection_type=t["connection_type"],
-            category="windows" if t["connection_type"] == "winrm" else "vps",
+            category=server_probe.infer_category(t["connection_type"], None),
             cloud_account_id=account.id,
             cloud_instance_id=inst.instance_id,
             encrypted_cred=encrypted,
             shell=t["shell"],
+            # The provider's coarse guess ("linux"). The probe replaces it with what the
+            # machine actually says, and leaves this in place if it cannot reach it.
             os_type=inst.os,
             tags=[account.provider],
-        ))
+        )
+        db.add(row)
+        fresh.append(row)
         imported += 1
 
     await db.commit()
+
+    # Look at what we just imported — the same probe the manual add runs. Until it lands,
+    # these rows have no host-key pin, and `ssh_service` skips verification entirely when
+    # the pin is NULL. In the background because fifty machines is minutes, not a request.
+    if fresh:
+        background.add_task(server_probe.probe_many, [r.id for r in fresh])
 
     details = []
     if no_address:

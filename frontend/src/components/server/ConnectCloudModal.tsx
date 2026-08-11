@@ -355,7 +355,19 @@ export default function ConnectCloudModal({ onClose }: Props) {
                     {result.detail && ` — ${result.detail}`}
                   </p>
                 )}
-                <button onClick={onClose} className="mt-2 rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                {result.imported > 0 && (
+                  // Say what is still happening. The probe runs after this answers, so the
+                  // rows appear before their OS, panel and status do — and a row that looks
+                  // half-filled with no explanation reads as the import having half-worked.
+                  <p className="text-sm text-muted-foreground">
+                    We are connecting to {result.imported === 1 ? "it" : "each of them"} now —
+                    the operating system, control panel and status will fill in shortly.
+                  </p>
+                )}
+                <button
+                  onClick={() => { qc.invalidateQueries({ queryKey: ["servers"] }); onClose() }}
+                  className="mt-2 rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
                   Done
                 </button>
               </div>

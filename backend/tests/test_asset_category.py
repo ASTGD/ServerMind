@@ -2,7 +2,7 @@
 when the client didn't send one (older clients / backfill). Lock it."""
 import pytest
 
-from app.routers.servers import infer_category
+from app.services.server_probe import infer_category
 
 
 @pytest.mark.parametrize(

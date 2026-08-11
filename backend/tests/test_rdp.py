@@ -10,7 +10,7 @@ import types
 
 import pytest
 
-from app.routers.servers import infer_category
+from app.services.server_probe import infer_category
 from app.services import connection_manager, rdp_service
 
 
