@@ -1,8 +1,8 @@
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, Bug, Loader2, ShieldBan } from "lucide-react"
+import { AlertTriangle, Bug, Clock, Loader2, ShieldBan } from "lucide-react"
 
-import { getWpSecurity, setWpDebug, setWpXmlrpc } from "@/api/sites"
+import { getWpSecurity, setWpDebug, setWpTimer, setWpXmlrpc } from "@/api/sites"
 import { Button } from "@/components/ui"
 
 /**
@@ -127,6 +127,38 @@ export default function WpSecurity({ siteId }: { siteId: string }) {
           </Button>
           <span className="text-caption text-muted-foreground">
             {d.xmlrpc_blocked ? "Currently blocked" : "Currently open"}
+          </span>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="flex items-center gap-2">
+          <Clock size={15} className="text-muted-foreground" />
+          <h3 className="text-h3 text-foreground">Scheduled work</h3>
+        </div>
+        <p className="mt-1 text-small text-muted-foreground">
+          By default WordPress does its scheduled work — publishing posts, sending mail,
+          running backups — while somebody is loading a page. On a quiet site that means it
+          happens late or not at all, and on a busy one every visitor waits for it.
+        </p>
+        <p className="mt-2 text-caption text-muted-foreground">
+          {d.timer_disabled
+            ? "A scheduled job is doing this instead, so pages are not slowed by it."
+            : "Add the scheduled job on this site's Scheduled jobs screen first — then this "
+              + "can be switched off. It is refused until then, because switching it off "
+              + "with nothing else running would stop the work completely and say nothing."}
+        </p>
+        <div className="mt-3 flex items-center gap-3">
+          <Button size="sm" variant={d.timer_disabled ? "outline" : "primary"}
+                  disabled={!!busy}
+                  onClick={() => run("timer", () => setWpTimer(siteId, !d.timer_disabled))}>
+            {busy === "timer" && <Loader2 size={14} className="animate-spin" />}
+            {d.timer_disabled
+              ? "Let WordPress run it during visits again"
+              : "Stop running it during visits"}
+          </Button>
+          <span className="text-caption text-muted-foreground">
+            {d.timer_disabled ? "Handled by a scheduled job" : "Runs during visits"}
           </span>
         </div>
       </div>

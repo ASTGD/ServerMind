@@ -1028,6 +1028,8 @@ export interface WpSecurity {
   leaking_errors?: boolean
   log_in_web_root?: boolean
   xmlrpc_blocked?: boolean
+  /** WordPress has stopped running its scheduled work during visits. */
+  timer_disabled?: boolean
   xmlrpc_breaks?: string[]
   log_path?: string
   can_debug?: boolean
@@ -1051,6 +1053,32 @@ export async function setWpXmlrpc(
   siteId: string, block: boolean,
 ): Promise<{ message: string }> {
   const { data } = await apiClient.post(`/api/sites/${siteId}/wp-security/xmlrpc`, { block })
+  return data
+}
+
+/** Stop WordPress running its scheduled work during visitors' page loads. */
+export async function setWpTimer(
+  siteId: string, disable: boolean,
+): Promise<{ message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/wp-security/timer`, { disable })
+  return data
+}
+
+/** What a search-and-replace would change, or what it changed. */
+export interface WpReplaceResult {
+  ok: boolean
+  total: number
+  changes: { table: string; column: string; rows: number }[]
+  dry_run: boolean
+  message: string
+}
+
+export async function wpSearchReplace(
+  siteId: string, search: string, replace: string, dryRun: boolean,
+): Promise<WpReplaceResult> {
+  const { data } = await apiClient.post(
+    `/api/sites/${siteId}/wp-security/search-replace`,
+    { search, replace, dry_run: dryRun })
   return data
 }
 

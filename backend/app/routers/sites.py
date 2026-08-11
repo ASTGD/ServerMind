@@ -2108,6 +2108,106 @@ async def set_wp_xmlrpc(site_id: str, body: WpXmlrpcIn, db: DBDep,
     return {"message": message}
 
 
+class WpTimerIn(BaseModel):
+    #: True stops WordPress running its scheduled work during visits.
+    disable: bool
+
+
+@router.post("/sites/{site_id}/wp-security/timer")
+async def set_wp_timer(site_id: str, body: WpTimerIn, db: DBDep,
+                       current_user: CurrentUser) -> dict:
+    """Stop WordPress running its scheduled work during visitors' page loads.
+
+    **The refusal is the feature.** Switching the built-in timer off while nothing else does
+    the work stops it COMPLETELY and silently — scheduled posts never publish, and the site
+    keeps serving perfectly, so nobody finds out until they notice something that did not
+    happen. So the site's real crontab is read first, and this is refused unless a job is
+    genuinely there.
+
+    Switching it back on is never refused: restoring WordPress's own timer can only add a
+    way for the work to run, never take one away.
+    """
+    from app.services import (connection_manager, cron_service, site_cron_service,
+                              wp_security_service as wps)
+
+    site, server = await _wp_context(site_id, db, current_user, need_execute=True)
+
+    if body.disable:
+        # Read from the SERVER, not from anything we believe. A row saying a job exists is
+        # not a job running, and being wrong here is the failure this guard exists for.
+        # Read exactly the way the Scheduled jobs screen reads it, so the two can never
+        # disagree about whether this site has a job.
+        try:
+            listing = await cron_service.list_jobs(server)
+            jobs = cron_service.jobs_for_site(
+                listing.get("users", []), site.domain, site.doc_root)
+        except Exception as exc:  # noqa: BLE001 — cannot check means cannot allow
+            raise HTTPException(
+                422, f"We could not read this site's scheduled jobs, so we will not switch "
+                     f"WordPress's own timer off: {exc}")
+        try:
+            wps.check_can_disable_timer(
+                has_real_cron=site_cron_service.already_scheduled("wordpress", jobs))
+        except wps.WpSecurityError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    out, err, code = await connection_manager.execute(
+        server, wps.build_timer_command(site.doc_root or "", disable=body.disable))
+    ok, message = wps.explain_timer((out or "") + (err or ""), disable=body.disable)
+    if not ok:
+        raise HTTPException(422, message)
+
+    await audit_service.audit(db, current_user, "site.wp.timer",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "disabled": body.disable})
+    return {"message": message}
+
+
+class WpReplaceIn(BaseModel):
+    search: str
+    replace: str
+    #: False actually rewrites the database. The screen only offers it after a dry run.
+    dry_run: bool = True
+
+
+@router.post("/sites/{site_id}/wp-security/search-replace")
+async def wp_search_replace(site_id: str, body: WpReplaceIn, db: DBDep,
+                            current_user: CurrentUser) -> dict:
+    """Replace one string with another across this site's own tables.
+
+    What you need when a site changes domain. It rewrites the database in bulk and there is
+    no undo, so a dry run reports how many rows WOULD change and the screen shows that number
+    before offering to do it for real — "412,000 rows" and "3 rows" mean very different
+    things, and only the customer can tell which one is right.
+    """
+    from app.services import connection_manager, wp_security_service as wps
+
+    site, server = await _wp_context(site_id, db, current_user, need_execute=True)
+    try:
+        wps.check_terms(body.search, body.replace)
+    except wps.WpSecurityError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    out, err, _code = await connection_manager.execute(
+        server, wps.build_search_replace_command(
+            site.doc_root or "", body.search, body.replace, dry_run=body.dry_run))
+    result = wps.parse_search_replace((out or "") + (err or ""))
+    if not result.get("ok"):
+        raise HTTPException(422, result.get("reason", "That could not be run."))
+
+    if not body.dry_run:
+        # Recorded because it is not reversible. The terms are content, not credentials —
+        # a domain name — and knowing what was replaced is the only way to reason about a
+        # site afterwards.
+        await audit_service.audit(db, current_user, "site.wp.search_replace",
+                                  target_type="server", target_id=str(server.id),
+                                  meta={"domain": site.domain, "search": body.search[:120],
+                                        "replace": body.replace[:120],
+                                        "changed": result.get("total", 0)})
+    return {**result, "dry_run": body.dry_run,
+            "message": wps.explain_search_replace(result, dry_run=body.dry_run)}
+
+
 class EnvIn(BaseModel):
     content: str
 
