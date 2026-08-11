@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Plus, Search, ServerOff } from "lucide-react"
+import { Cloud, Plus, Search, ServerOff } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { listServers } from "@/api/servers"
 import { listCloudAccounts, type CloudAccount } from "@/api/cloud"
 import { listSites } from "@/api/sites"
 import { getFleetHealth } from "@/api/fleet"
-import { ASSET_CATEGORIES, categoryForServer } from "@/lib/assetCategories"
+import { ASSET_GROUPS, availableFilters, filterById, groupFor } from "@/lib/assetGroups"
 import AssetRow from "@/components/server/AssetRow"
 import CloudAccountRow from "@/components/server/CloudAccountRow"
 import AddServerModal from "@/components/server/AddServerModal"
@@ -65,33 +65,45 @@ export default function Servers() {
     return m
   }, [siteData])
 
-  // Group by category (imported cloud instances land in vps/windows; hosting has its own).
-  const byCat: Record<string, Server[]> = {}
-  for (const s of servers) (byCat[categoryForServer(s).id] ??= []).push(s)
+  // Where each asset lives is DERIVED (see lib/assetGroups) — a stored column would go stale
+  // the day somebody installs a panel by hand.
+  const byGroup: Record<string, Server[]> = {}
+  for (const s of servers) (byGroup[groupFor(s)] ??= []).push(s)
   const importedFor = (id: string) => servers.filter((s) => s.cloud_account_id === id).length
 
-  const pills = ASSET_CATEGORIES.map((c) => ({
-    id: c.id,
-    label: c.label,
-    count: c.id === "cloud" ? cloudAccounts.length : (byCat[c.id]?.length ?? 0),
-  })).filter((p) => p.count > 0)
+  // Filters slice ACROSS the groups rather than replacing them, so a filtered view still
+  // says where each result lives. One with nothing to show is absent, not disabled.
+  const filters = availableFilters(servers)
 
   const empty = servers.length === 0 && cloudAccounts.length === 0
-  const visible = (id: string) => filter === "all" || filter === id
 
   // Search matches name OR address, because someone chasing an alert usually has the IP.
   const needle = q.trim().toLowerCase()
-  const matches = (s: Server) => !needle
-    || s.name.toLowerCase().includes(needle)
-    || s.host.toLowerCase().includes(needle)
-    || (s.os_type ?? "").toLowerCase().includes(needle)
+  // A filter whose last match has gone is no longer offered, so honour it only while it is
+  // still on the row — otherwise the pill vanishes with the filter still applied and there
+  // is nothing left to click to get back.
+  const active = filters.some((f) => f.filter.id === filter) ? filterById(filter) : undefined
+  const filterId = active ? filter : "all"
+  const matches = (s: Server) => (!active || active.match(s))
+    && (!needle
+      || s.name.toLowerCase().includes(needle)
+      || s.host.toLowerCase().includes(needle)
+      || (s.panel_type ?? "").toLowerCase().includes(needle)
+      || (s.os_type ?? "").toLowerCase().includes(needle))
 
   const online = servers.filter((s) => s.status === "online").length
   const attention = servers.filter(
     (s) => s.status === "auth_failed" || s.status === "host_changed" || s.status === "offline",
   ).length
-  const anyShown = ASSET_CATEGORIES.some((c) =>
-    c.id === "cloud" ? cloudAccounts.length > 0 : (byCat[c.id] ?? []).some(matches))
+
+  // A cloud ACCOUNT is not an asset, so no asset filter can describe one — while a filter is
+  // on, showing the accounts anyway would be answering a question nobody asked.
+  const shownAccounts = active ? [] : cloudAccounts.filter(
+    (a) => !needle
+      || a.label.toLowerCase().includes(needle)
+      || a.provider.toLowerCase().includes(needle))
+  const anyShown = shownAccounts.length > 0
+    || ASSET_GROUPS.some((g) => (byGroup[g.id] ?? []).some(matches))
 
   return (
     <div className="space-y-4">
@@ -130,7 +142,7 @@ export default function Servers() {
         <EmptyState
           icon={ServerOff}
           title="No assets yet"
-          description="Add your first server, hosting panel, or cloud account to manage it with AI."
+          description="Add your first server or cloud account to manage it with AI."
           className="py-20"
           action={
             <Button onClick={() => setShowAdd(true)}>
@@ -141,7 +153,17 @@ export default function Servers() {
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[200px] flex-1">
+            {filters.length > 0 && (
+              <>
+                <FilterPill label="All" count={servers.length}
+                  active={filterId === "all"} onClick={() => setFilter("all")} />
+                {filters.map(({ filter: f, count }) => (
+                  <FilterPill key={f.id} label={f.label} count={count}
+                    active={filterId === f.id} onClick={() => setFilter(f.id)} />
+                ))}
+              </>
+            )}
+            <div className="relative ml-auto min-w-[200px] flex-1 sm:max-w-xs sm:flex-none">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={q} onChange={(e) => setQ(e.target.value)}
@@ -149,47 +171,16 @@ export default function Servers() {
                 className="w-full rounded-lg border border-border bg-background py-1.5 pl-8 pr-3 text-sm outline-none focus:border-primary"
               />
             </div>
-            {pills.length > 1 && (
-              <>
-                <FilterPill label="All" active={filter === "all"} onClick={() => setFilter("all")} />
-                {pills.map((p) => (
-                  <FilterPill key={p.id} label={p.label} count={p.count}
-                    active={filter === p.id} onClick={() => setFilter(p.id)} />
-                ))}
-              </>
-            )}
           </div>
 
           <div className="space-y-5">
-            {ASSET_CATEGORIES.map((cat) => {
-              if (!visible(cat.id)) return null
-
-              if (cat.id === "cloud") {
-                const shown = cloudAccounts.filter(
-                  (a) => !needle
-                    || a.label.toLowerCase().includes(needle)
-                    || a.provider.toLowerCase().includes(needle))
-                if (shown.length === 0) return null
-                return (
-                  <section key="cloud">
-                    <SectionHeader Icon={cat.icon} label="Cloud accounts"
-                      count={shown.length} accent={cat.accent} />
-                    <div className="overflow-hidden rounded-xl border border-border bg-card">
-                      {shown.map((a) => (
-                        <CloudAccountRow key={a.id} account={a}
-                          importedCount={importedFor(a.id)} onManage={setManageAccount} />
-                      ))}
-                    </div>
-                  </section>
-                )
-              }
-
-              const list = (byCat[cat.id] ?? []).filter(matches)
+            {ASSET_GROUPS.map((group) => {
+              const list = (byGroup[group.id] ?? []).filter(matches)
               if (!list.length) return null
               return (
-                <section key={cat.id}>
-                  <SectionHeader Icon={cat.icon} label={cat.label}
-                    count={list.length} accent={cat.accent} />
+                <section key={group.id}>
+                  <SectionHeader Icon={group.icon} label={group.label}
+                    count={list.length} accent={group.accent} />
                   <div className="overflow-hidden rounded-xl border border-border bg-card">
                     {list.map((s) => (
                       <AssetRow key={s.id} server={s}
@@ -201,9 +192,27 @@ export default function Servers() {
               )
             })}
 
+            {shownAccounts.length > 0 && (
+              <section key="cloud">
+                <SectionHeader Icon={Cloud} label="Cloud accounts"
+                  count={shownAccounts.length}
+                  accent="bg-violet-500/10 text-violet-600 dark:text-violet-400" />
+                <div className="overflow-hidden rounded-xl border border-border bg-card">
+                  {shownAccounts.map((a) => (
+                    <CloudAccountRow key={a.id} account={a}
+                      importedCount={importedFor(a.id)} onManage={setManageAccount} />
+                  ))}
+                </div>
+              </section>
+            )}
+
             {!anyShown && (
+              // Says which of the two narrowed it down, because "nothing matches" with an
+              // empty search box reads as the page being broken.
               <p className="py-10 text-center text-sm text-muted-foreground">
-                Nothing matches “{q}”.
+                {active
+                  ? <>Nothing under <b>{active.label}</b> matches “{q}”.</>
+                  : <>Nothing matches “{q}”.</>}
               </p>
             )}
           </div>

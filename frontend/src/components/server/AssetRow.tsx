@@ -7,7 +7,7 @@ import {
 } from "lucide-react"
 import type { Server } from "@/types"
 import { getMetrics } from "@/api/servers"
-import { categoryForServer } from "@/lib/assetCategories"
+import { groupForServer } from "@/lib/assetGroups"
 import { hostingBrand } from "@/lib/assetBrands"
 import BrandIcon, { osIconSlug, providerIconSlug, hasBrandIcon } from "./BrandIcon"
 import { useTerminalStore } from "@/store/terminalStore"
@@ -92,8 +92,8 @@ export default function AssetRow({ server, grade, sites, onOpenDesktop }: Props)
   const openSession = useTerminalStore((s) => s.openSession)
   const openServer = useAssistantStore((s) => s.openServer)
 
-  const cat = categoryForServer(server)
-  const CatIcon = cat.icon
+  const group = groupForServer(server)
+  const GroupIcon = group.icon
   const isRdp = server.connection_type === "rdp"
   const canDesktop = server.connection_type === "winrm" || isRdp
   const isHosting = server.connection_type === "hosting"
@@ -106,7 +106,7 @@ export default function AssetRow({ server, grade, sites, onOpenDesktop }: Props)
   const panel = hostingBrand(server.panel_type)
 
   const osSlug = osIconSlug(server.os_type)
-    ?? (cat.id === "windows" || cat.id === "windows_rdp" || canDesktop ? "windows" : undefined)
+    ?? (group.id === "windows" || canDesktop ? "windows" : undefined)
   const osBrand = hasBrandIcon(osSlug)
   const provider = server.cloud_account_id ? server.tags?.[0] : undefined
   const providerSlug = providerIconSlug(provider)
@@ -115,7 +115,6 @@ export default function AssetRow({ server, grade, sites, onOpenDesktop }: Props)
   // scanning actually needs it.
   const facts: string[] = [`${server.host}:${server.port}`]
   if (server.os_type) facts.push(server.os_version ? `${server.os_type} ${server.os_version}` : server.os_type)
-  if (server.panel_type) facts.push(server.panel_type)
   if (sites) facts.push(`${sites} site${sites === 1 ? "" : "s"}`)
   if (needsAttention) facts.push(server.status === "auth_failed" ? "sign-in failing" : "host key changed")
 
@@ -138,17 +137,27 @@ export default function AssetRow({ server, grade, sites, onOpenDesktop }: Props)
 
       <div className={cn(
         "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-        osBrand ? "border border-border bg-muted/40" : cat.accent,
-      )} title={server.os_type || cat.label}>
+        osBrand ? "border border-border bg-muted/40" : group.accent,
+      )} title={server.os_type || group.label}>
         {isHosting && hasBrandIcon(server.panel_type)
           ? <BrandIcon slug={server.panel_type ?? undefined} size={18} />
-          : osBrand ? <BrandIcon slug={osSlug} size={18} /> : <CatIcon size={16} />}
+          : osBrand ? <BrandIcon slug={osSlug} size={18} /> : <GroupIcon size={16} />}
       </div>
 
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1.5 truncate text-[14px] font-medium text-foreground">
           {server.name}
           {hasBrandIcon(providerSlug) && <BrandIcon slug={providerSlug} size={12} />}
+          {/* A control panel is a PROPERTY of this machine, not a kind of machine — so it is
+              a chip here rather than a group of its own, and it is named after the real
+              panel (the 29 July rule), because "Hosting panel" tells nobody anything. */}
+          {server.panel_type && (
+            <span className="shrink-0 rounded border border-border px-1.5 py-px text-[10.5px] font-normal text-muted-foreground">
+              {/* The raw value when we have no brand for it: a panel we do not recognise is
+                  still a panel, and dropping the chip would hide a fact we hold. */}
+              {panel?.name ?? server.panel_type}
+            </span>
+          )}
         </p>
         <p className="truncate text-[11.5px] text-muted-foreground">{facts.join(" · ")}</p>
       </div>

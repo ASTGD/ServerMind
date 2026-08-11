@@ -2,7 +2,6 @@ import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { X, Loader2, Pencil } from "lucide-react"
 import { updateServer, testConnection } from "@/api/servers"
-import { ADDABLE_CATEGORIES, categoryForServer } from "@/lib/assetCategories"
 import type { Server } from "@/types"
 
 const INPUT =
@@ -23,13 +22,9 @@ export default function EditServerModal({ server, onClose }: Props) {
   const [port, setPort] = useState(String(server.port))
   const [tags, setTags] = useState((server.tags ?? []).join(", "))
   const [notes, setNotes] = useState(server.notes ?? "")
-  const currentCat = categoryForServer(server)
-  const [category, setCategory] = useState(currentCat.id)
-  // Re-file only among categories that fit this asset's transport (+ its current one) —
-  // category is a label, not a transport, so a Windows tag on an SSH box makes no sense.
-  const catOptions = ADDABLE_CATEGORIES.filter(
-    (c) => c.connectionType === server.connection_type || c.id === currentCat.id,
-  )
+  // There is no category to choose any more: where an asset appears is DERIVED from how it
+  // connects and where it came from (lib/assetGroups), so a stored answer could only ever
+  // disagree with the real one.
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -38,7 +33,6 @@ export default function EditServerModal({ server, onClose }: Props) {
         name: name.trim(),
         host: host.trim(),
         port: Number(port) || server.port,
-        category,
         tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
         notes: notes.trim() || null,
       })
@@ -78,16 +72,6 @@ export default function EditServerModal({ server, onClose }: Props) {
             <label className="mb-1 block text-sm font-medium text-foreground">Name</label>
             <input value={name} onChange={(e) => setName(e.target.value)} className={INPUT} />
           </div>
-          {catOptions.length > 1 && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Category</label>
-              <select value={category} onChange={(e) => setCategory(e.target.value as typeof category)} className={INPUT}>
-                {catOptions.map((c) => (
-                  <option key={c.id} value={c.id}>{c.label}</option>
-                ))}
-              </select>
-            </div>
-          )}
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2">
               <label className="mb-1 block text-sm font-medium text-foreground">Host</label>

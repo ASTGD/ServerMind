@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft } from "lucide-react"
 import { getMetrics, getServerRole } from "@/api/servers"
 import type { Server } from "@/types"
-import { categoryForServer } from "@/lib/assetCategories"
+import { groupForServer } from "@/lib/assetGroups"
 import { menuFor, type MenuItem } from "@/lib/assetMenu"
 import { cn } from "@/lib/utils"
 
@@ -89,7 +89,7 @@ export default function AssetSidebar({ server }: { server: Server }) {
     enabled: server.connection_type === "ssh",
   })
   const items = menuFor(server, { role: role?.applies ? role.role : undefined })
-  const cat = categoryForServer(server)
+  const cat = groupForServer(server)
 
   // Only render a group heading where there is a group above it to separate from.
   const groups: MenuItem["group"][] = ["manage", "operate", "account"]
