@@ -8,7 +8,20 @@ from pydantic import BaseModel, Field
 class CloudAccountCreate(BaseModel):
     provider: str                       # 'aws' (Phase D adds more)
     label: str = Field(min_length=1)
-    credential: dict[str, str]          # provider-shaped, e.g. {access_key_id, secret_access_key, region}
+    # Provider-shaped: {access_key_id, secret_access_key, region}, or for a cross-account AWS
+    # role {role_arn, region}. Any `external_id` sent here is DISCARDED and replaced with one
+    # we generate — see aws_identity for why a customer-chosen value re-opens the hole the
+    # external ID exists to close.
+    credential: dict[str, str]
+
+
+class AwsRoleSetup(BaseModel):
+    """What the customer needs before they can create the role — generated, not asked for."""
+    supported: bool                     # false when this deployment has no AWS identity
+    our_account_id: str | None = None
+    external_id: str | None = None
+    trust_policy: dict | None = None
+    reason: str | None = None
 
 
 class CloudAccountOut(BaseModel):

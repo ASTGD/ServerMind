@@ -83,16 +83,21 @@ class AWSAdapter(_CloudAdapter):
     configured region, or across ALL enabled regions when no region is set."""
 
     def _session(self):
-        import boto3  # lazy — the module imports fine even without boto3 installed
-        return boto3.session.Session(
-            aws_access_key_id=self.cred.get("access_key_id"),
-            aws_secret_access_key=self.cred.get("secret_access_key"),
-            region_name=self.cred.get("region") or "us-east-1",
-        )
+        # Both kinds of connection — an access key, or a role we assume in the client's
+        # account — resolve in ONE place, so neither caller can end up not knowing about
+        # roles. Lazy import: the module loads fine without boto3.
+        from app.services import aws_identity
+        return aws_identity.session_for(self.cred)
 
     def verify(self) -> dict:
+        from app.services.aws_identity import AwsRoleError
+
         try:
             ident = self._session().client("sts").get_caller_identity()
+        except AwsRoleError as exc:
+            # Already a sentence about roles; wrapping it in "AWS rejected these credentials"
+            # would replace the accurate diagnosis with a wrong one.
+            raise CloudError(str(exc))
         except Exception as exc:  # noqa: BLE001 — surface a friendly message, never a stack
             raise CloudError(_aws_msg(exc))
         return {"account": ident.get("Account"), "arn": ident.get("Arn")}

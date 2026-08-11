@@ -481,7 +481,7 @@ For an MSP that is exactly the control their client will ask for.
 | ~~**2**~~ | A8 — the import runs the same probe as the manual add | **SHIPPED 2026-08-11** — and it was not just a label: the import never pinned the host key, so imported servers connected unverified |
 | ~~**3**~~ | A4 — Cloud zone, accounts inside, servers grouped by account | **SHIPPED 2026-08-11** |
 | ~~**4**~~ | B — SSM as a connection type (`SendCommand`) | **SHIPPED 2026-08-11** — transport (4) and the import door (4b). Every live check in *How it gets validated* still needs the owner's AWS |
-| **5** | B2 — cross-account roles with external ID | **this is what makes it an MSP product** |
+| ~~**5**~~ | B2 — cross-account roles with external ID | **SHIPPED 2026-08-11** — needs a second AWS account to prove live |
 | **6** | Files via S3 | unblocks File Manager, editors, certificates, clone, staging |
 | **7** | Interactive terminal | possibly never |
 

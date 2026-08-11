@@ -21,13 +21,15 @@ from app.models.cloud_account import CloudAccount
 from app.models.server import Server
 from app.models.user import User
 from app.schemas.cloud import (
+    AwsRoleSetup,
     CloudAccountCreate,
     CloudAccountOut,
     ImportBody,
     ImportResult,
     InstanceOut,
 )
-from app.services import audit_service, cloud_service, metering_service, server_probe
+from app.services import (audit_service, aws_identity, cloud_service,
+                          metering_service, server_probe)
 from app.services.cloud_service import CloudError
 from app.services.crypto_service import encrypt
 
@@ -81,6 +83,39 @@ async def list_accounts(
     )
 
 
+@router.get("/aws/role-setup", response_model=AwsRoleSetup)
+async def aws_role_setup(current_user: User = Depends(require_verified)) -> AwsRoleSetup:
+    """What a client needs in order to create the role, handed over rather than described.
+
+    A trust policy typed out from a description is a trust policy with a typo in it, and a
+    typo'd external ID fails as an AccessDenied that reads like a permissions problem.
+
+    The external ID here is the SAME one the connect call will use, because it is derived
+    from the account rather than stored — so there is no window in which it can go stale
+    while the customer waits for their client's IAM approval.
+    """
+    if not aws_identity.base_configured():
+        # Absent, not broken: collecting an ARN we could never assume wastes their time and
+        # teaches them the feature does not work.
+        return AwsRoleSetup(supported=False, reason=(
+            "This ServerAlly deployment has no AWS identity of its own, so a client role has "
+            "nothing to trust. Connect the account with an access key instead."))
+
+    account_id = aws_identity.our_account_id()
+    if not account_id:
+        return AwsRoleSetup(supported=False, reason=(
+            "ServerAlly's own AWS credentials are not working, so we cannot tell you which "
+            "account the role should trust. This is our side to fix."))
+
+    external_id = aws_identity.external_id_for(current_user.id)
+    return AwsRoleSetup(
+        supported=True,
+        our_account_id=account_id,
+        external_id=external_id,
+        trust_policy=aws_identity.trust_policy(external_id, account_id),
+    )
+
+
 @router.post("", response_model=CloudAccountOut, status_code=status.HTTP_201_CREATED)
 async def connect_account(
     request: Request,
@@ -96,9 +131,19 @@ async def connect_account(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported cloud provider: {body.provider}",
         )
+
+    cred = dict(body.credential)
+    if aws_identity.is_role(cred):
+        # **The confused-deputy guard.** A role that trusts our AWS account is, without an
+        # external ID, assumable by anyone who can name its ARN — including another of our
+        # customers, because AWS only checks that the CALLER is us. So the value is ours,
+        # generated here, and whatever arrived in the request is thrown away rather than
+        # merged: a customer who can choose it can choose somebody else's.
+        cred.pop("external_id", None)
+        cred["external_id"] = aws_identity.external_id_for(current_user.id)
     # Prove the key works (and has the read permission) before persisting anything.
     try:
-        await cloud_service.verify_credential(provider, body.credential)
+        await cloud_service.verify_credential(provider, cred)
     except CloudError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
@@ -106,7 +151,9 @@ async def connect_account(
         user_id=current_user.id,
         provider=provider,
         label=body.label,
-        encrypted_credential=encrypt(json.dumps(body.credential)),
+        # Only the ARN, the external ID and the region. The credentials we actually call AWS
+        # with come from AssumeRole per use and are never written anywhere.
+        encrypted_credential=encrypt(json.dumps(cred)),
     )
     db.add(account)
     await db.commit()

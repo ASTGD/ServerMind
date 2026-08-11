@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     # on paid/suspended/cancelled events. Empty (default) = the API is disabled.
     ENTITLEMENT_API_KEY: str = ""
 
+    # ServerAlly's own AWS identity — what a client's cross-account role trusts. Empty by
+    # default: without it the role option is ABSENT rather than broken, which is the same
+    # rule the menus follow. Only ever used to call sts:AssumeRole.
+    AWS_BASE_ACCESS_KEY_ID: str = ""
+    AWS_BASE_SECRET_ACCESS_KEY: str = ""
+
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://servermind:password@localhost:5432/servermind"
 

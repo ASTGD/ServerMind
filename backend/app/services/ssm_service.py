@@ -99,15 +99,14 @@ def _client(server: Server, account) -> object:
     managed instance, never written to a file on it, and never appears in a command — the same
     guarantee the offsite-backup work makes about bucket keys.
     """
-    import boto3  # lazy — this module must import cleanly without boto3 installed
+    from app.services import aws_identity  # lazy — imports cleanly without boto3
 
     cred = json.loads(decrypt(account.encrypted_credential))
     region = _region_for(server, cred)
-    return boto3.session.Session(
-        aws_access_key_id=cred.get("access_key_id"),
-        aws_secret_access_key=cred.get("secret_access_key"),
-        region_name=region,
-    ).client("ssm", region_name=region)
+    # The SAME builder `cloud_service` uses, so an account connected by role works here too
+    # without this module knowing roles exist. A second copy is how one caller ends up not
+    # knowing — the seam that cost ten steps on a live deploy this morning.
+    return aws_identity.session_for({**cred, "region": region}).client("ssm", region_name=region)
 
 
 def _region_for(server: Server, cred: dict) -> str:
