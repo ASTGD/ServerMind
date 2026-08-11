@@ -596,6 +596,23 @@ def clean_domain(value: str) -> str:
     return raw
 
 
+async def by_domain(db, user_id, domain: str):
+    """This user's site for a hostname, or None.
+
+    Hostname is how a monitor and a site are already linked (`settle_uptime_checks`), so this
+    is the same join rather than a second idea of what "the same site" means.
+    """
+    from sqlalchemy import func, select
+
+    from app.models.site import Site
+
+    if not domain:
+        return None
+    return (await db.execute(
+        select(Site).where(Site.user_id == user_id,
+                           func.lower(Site.domain) == domain.lower()))).scalars().first()
+
+
 def monitor_host(url: str) -> str:
     """The hostname a monitored URL points at, lowercased.
 

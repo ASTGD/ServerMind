@@ -150,6 +150,16 @@ async def update_target(target_id: str, body: TargetIn, db: DBDep,
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     t.name = body.name.strip()[:255]
     t.environment = body.environment
+    if body.auto_deploy and t.site_id:
+        # Push-to-deploy on a staging copy means one push deploys to BOTH the copy and the
+        # live site — the opposite of what a staging site is for. Checked here rather than
+        # in the form, because the form is not the only way in.
+        from app.models.site import Site
+        from app.services import staging_rules
+        site = await db.get(Site, t.site_id)
+        ok, why = staging_rules.may_auto_deploy(site) if site else (True, "")
+        if not ok:
+            raise HTTPException(status_code=422, detail=why)
     t.auto_deploy = body.auto_deploy
     t.keep_releases = body.keep_releases
     await db.commit()

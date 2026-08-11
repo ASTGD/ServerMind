@@ -34,6 +34,7 @@ from app.models.mail_health import MailHealthRecord
 from app.models.site import Site
 from app.models.uptime import UptimeMonitor
 from app.models.user import User
+from app.services import staging_rules
 from app.services import (playbook_service, site_cron_service, site_service,
                           team_service, uptime_service)
 
@@ -2573,6 +2574,9 @@ async def add_site_daemon(site_id: str, body: DaemonIn, db: DBDep,
 
     site, server, root, owner = await _daemon_context(
         site_id, db, current_user, need_execute=True)
+    ok, why = staging_rules.may_have_daemons(site)
+    if not ok:
+        raise HTTPException(status_code=422, detail=why)
 
     try:
         unit = site_daemon_service.unit_name(site.domain, body.name)
@@ -3590,6 +3594,9 @@ async def add_site_cron(site_id: str, body: SiteCronIn, db: DBDep,
     from app.services import connection_manager, cron_service
 
     site, server = await _site_for_cron(site_id, db, current_user, need_execute=True)
+    ok, why = staging_rules.may_have_cron(site)
+    if not ok:
+        raise HTTPException(status_code=422, detail=why)
     if not site.doc_root:
         raise HTTPException(
             status_code=422,

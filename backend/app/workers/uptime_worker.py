@@ -37,6 +37,17 @@ async def _escalate_down(db, monitor: UptimeMonitor) -> bool:
     skipped — the ladder's first step already tells the owner, and sending both would
     double-notify for the same outage.
     """
+    # A staging copy still gets a monitor — its row should be able to say "down" rather than
+    # "not checked" — but it must never wake anybody. Staging breaks constantly; that is its
+    # job, and a copy that pages at 3am is how a team learns to ignore the pager for the LIVE
+    # site too.
+    from app.services import site_service, staging_rules
+    from app.services.site_service import monitor_host
+
+    site = await site_service.by_domain(db, monitor.user_id, monitor_host(monitor.url))
+    if site is not None and not staging_rules.may_escalate(site):
+        return False
+
     server = await db.get(Server, monitor.server_id) if monitor.server_id else None
     raised = await incident_service.raise_for(
         db, user_id=monitor.user_id, server=server, source="uptime",
