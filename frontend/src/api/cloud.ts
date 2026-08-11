@@ -18,6 +18,9 @@ export interface CloudInstance {
   state: string
   region: string | null
   instance_type: string | null
+  /** Registered with AWS Systems Manager and answering — reachable with no key and no open
+   *  port. Absent or false for providers that have no such thing. */
+  ssm_managed?: boolean
   already_imported: boolean
 }
 
@@ -40,6 +43,9 @@ export interface ImportInstancesBody {
   auth_type: "password" | "key"
   credential: string
   use_private_ip: boolean
+  /** Use Systems Manager wherever it is available, rather than only where there is no
+   *  address to reach. */
+  prefer_ssm?: boolean
 }
 
 export async function listCloudAccounts(): Promise<CloudAccount[]> {

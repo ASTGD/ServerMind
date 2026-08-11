@@ -34,10 +34,15 @@ class InstanceOut(BaseModel):
 
 class ImportBody(BaseModel):
     instance_ids: list[str] = Field(min_length=1)
-    username: str = Field(min_length=1)      # applied to the whole batch (edit per-asset later)
-    auth_type: str                           # 'password' | 'key'
-    credential: str                          # the SSH key / password for the batch
+    # Optional now: an instance reached through Systems Manager has no login of its own, and
+    # demanding one would be demanding the exact artefact SSM exists to remove. Required
+    # again — checked in the router, against what each instance actually resolves to — the
+    # moment one selected instance will use SSH or WinRM.
+    username: str = ""                       # applied to the whole batch (edit per-asset later)
+    auth_type: str = "password"              # 'password' | 'key'
+    credential: str = ""                     # the SSH key / password for the batch
     use_private_ip: bool = False             # prefer the private IP as the host
+    prefer_ssm: bool = False                 # use Systems Manager wherever it is available
 
 
 class ImportResult(BaseModel):

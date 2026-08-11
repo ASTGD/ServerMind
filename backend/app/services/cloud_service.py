@@ -43,6 +43,10 @@ class Instance:
     state: str         # 'running' | 'stopped' | ...
     region: str | None = None
     instance_type: str | None = None
+    #: Registered with AWS Systems Manager and answering. Best-effort: a key without
+    #: `ssm:DescribeInstanceInformation` leaves this False for everything, which costs the
+    #: SSM option rather than the whole import.
+    ssm_managed: bool = False
 
     def dict(self) -> dict:
         return asdict(self)
@@ -128,13 +132,41 @@ class AWSAdapter(_CloudAdapter):
         for region in self._regions(sess):
             try:
                 ec2 = sess.client("ec2", region_name=region)
+                found: list[Instance] = []
                 for page in ec2.get_paginator("describe_instances").paginate():
                     for res in page.get("Reservations", []):
                         for inst in res.get("Instances", []):
-                            out.append(self._map(inst, region))
+                            found.append(self._map(inst, region))
             except Exception as exc:  # noqa: BLE001 — one bad region shouldn't kill discovery
                 logger.warning("AWS describe_instances failed in %s: %s", region, exc)
+                continue
+
+            managed = self._ssm_managed(sess, region)
+            for inst in found:
+                inst.ssm_managed = inst.instance_id in managed
+            out.extend(found)
         return out
+
+    @staticmethod
+    def _ssm_managed(sess, region: str) -> set[str]:
+        """Which instances in this region answer through Systems Manager.
+
+        **Best-effort on purpose.** Most keys have no `ssm:DescribeInstanceInformation`, and
+        an import that refused to list anything because of a permission the customer does not
+        need yet would be worse than one that simply does not offer the SSM option. So a
+        failure here costs the option, never the discovery.
+        """
+        try:
+            ssm = sess.client("ssm", region_name=region)
+            ids: set[str] = set()
+            for page in ssm.get_paginator("describe_instance_information").paginate():
+                for item in page.get("InstanceInformationList", []) or []:
+                    if item.get("PingStatus") == "Online" and item.get("InstanceId"):
+                        ids.add(item["InstanceId"])
+            return ids
+        except Exception as exc:  # noqa: BLE001
+            logger.info("SSM instance check unavailable in %s: %s", region, exc)
+            return set()
 
 
 class _TokenAdapter(_CloudAdapter):
@@ -454,6 +486,41 @@ def transport_defaults(os: str) -> dict:
     if os == "windows":
         return {"connection_type": "winrm", "port": 5985, "shell": "powershell"}
     return {"connection_type": "ssh", "port": 22, "shell": "bash"}
+
+
+def transport_for(inst: Instance, *, host: str | None, prefer_ssm: bool = False) -> dict | None:
+    """How this particular instance should be reached, or None if it cannot be.
+
+    **Systems Manager is the fallback, not the default**, and that is a deliberate call rather
+    than caution. SSM has no file transfer and no interactive terminal yet, so choosing it for
+    a machine that has a perfectly good address would quietly hand the customer a server with
+    no File Manager, no `.env` editor, no certificate install and no terminal — a downgrade
+    they never asked for and would have no way to explain. So: an address wins, unless the
+    customer says otherwise.
+
+    What it DOES unlock is the case SSH cannot do at all. An instance with no public and no
+    private address we can reach used to be skipped outright ("no reachable IP"); if it is
+    registered with Systems Manager it is now importable, because the agent dials out.
+    """
+    if not host:
+        return dict(SSM_TRANSPORT) if inst.ssm_managed else None
+    if prefer_ssm and inst.ssm_managed:
+        return dict(SSM_TRANSPORT)
+    return transport_defaults(inst.os)
+
+
+#: An SSM asset has no address, no port and no login of its own — the shape says so rather
+#: than filling those in with numbers that mean nothing.
+SSM_TRANSPORT = {"connection_type": "ssm", "port": 0, "shell": "bash"}
+
+
+def credential_needed(transports: list[dict]) -> bool:
+    """Whether this import has to ask for a username and key at all.
+
+    A batch that is entirely Systems Manager needs no credential, and asking for one anyway
+    would be asking for the exact artefact SSM exists to remove.
+    """
+    return any(t.get("connection_type") != "ssm" for t in transports)
 
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────

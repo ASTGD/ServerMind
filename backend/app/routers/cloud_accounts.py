@@ -185,22 +185,39 @@ async def import_instances(
     sg = await metering_service.servers_gate(db, current_user)
     capacity = (sg.limit - sg.used) if sg.enforced else None
 
+    # What each selected instance will actually use, decided before anything is written —
+    # because it decides whether we need a credential at all.
+    plan: list[tuple] = []
+    for inst in selected:
+        host = inst.private_ip if body.use_private_ip else (inst.public_ip or inst.private_ip)
+        plan.append((inst, host, cloud_service.transport_for(
+            inst, host=host, prefer_ssm=body.prefer_ssm)))
+
+    if cloud_service.credential_needed([t for _i, _h, t in plan if t]) and not (
+            body.username.strip() and body.credential):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=("Some of these instances are reached over SSH or WinRM, which needs a "
+                    "username and a key or password. Instances managed through AWS Systems "
+                    "Manager need neither."))
+
     encrypted = encrypt(body.credential)
     fresh: list[Server] = []
     imported = skipped = 0
     limited = no_address = 0
-    for inst in selected:
+    for inst, host, t in plan:
         if inst.instance_id in already:
             skipped += 1
             continue
-        host = inst.private_ip if body.use_private_ip else (inst.public_ip or inst.private_ip)
-        if not host:
+        if t is None:
+            # No address AND not registered with Systems Manager — there is genuinely no way
+            # in. Counted rather than silently dropped.
             no_address += 1
             continue
         if capacity is not None and imported >= capacity:
             limited += 1
             continue
-        t = cloud_service.transport_defaults(inst.os)
+        is_ssm = t["connection_type"] == "ssm"
         # The label comes from the SAME function the manual add uses, and the probe below
         # corrects it if the machine turns out to run a control panel. Hardcoding it here is
         # what filed a CyberPanel EC2 as a plain VPS while the identical machine added by
@@ -208,20 +225,29 @@ async def import_instances(
         row = Server(
             user_id=current_user.id,
             name=inst.name or inst.instance_id,
-            host=host,
+            # There is no address to connect to over SSM. The private IP is kept when there
+            # is one because it is still how a person recognises the machine; otherwise the
+            # instance id is what AWS itself calls it.
+            host=(host or inst.private_ip or inst.instance_id) if is_ssm else host,
             port=t["port"],
-            username=body.username,
+            username="" if is_ssm else body.username,
             auth_type=body.auth_type,
             connection_type=t["connection_type"],
             category=server_probe.infer_category(t["connection_type"], None),
             cloud_account_id=account.id,
             cloud_instance_id=inst.instance_id,
-            encrypted_cred=encrypted,
+            # An SSM asset borrows the ACCOUNT's AWS key and has no secret of its own. An
+            # empty encrypted blob is the honest record of that — storing the batch password
+            # on a row that can never use it would be a secret kept for no reason.
+            encrypted_cred=encrypt("") if is_ssm else encrypted,
             shell=t["shell"],
             # The provider's coarse guess ("linux"). The probe replaces it with what the
             # machine actually says, and leaves this in place if it cannot reach it.
             os_type=inst.os,
-            tags=[account.provider],
+            # The region travels WITH the asset: an account left on "all regions" imports
+            # from several, and ssm_service has to know which one to call or AWS answers
+            # `InvalidInstanceId` for an instance that exists perfectly well elsewhere.
+            tags=[account.provider] + ([f"region:{inst.region}"] if inst.region else []),
         )
         db.add(row)
         fresh.append(row)

@@ -9,6 +9,7 @@ import {
   type CloudInstance,
   type ImportResult,
 } from "@/api/cloud"
+import { needsLogin, ssmCount } from "@/lib/cloudImport"
 
 interface Props {
   onClose: () => void
@@ -192,6 +193,14 @@ export default function ConnectCloudModal({ onClose }: Props) {
   const [authType, setAuthType] = useState<"password" | "key">("key")
   const [credential, setCredential] = useState("")
   const [usePrivateIp, setUsePrivateIp] = useState(false)
+  const [preferSsm, setPreferSsm] = useState(false)
+
+  // The rule lives in lib/cloudImport, next to a note about why it is that way round — and
+  // in one place, so the button and the endpoint cannot start disagreeing.
+  const choices = { preferSsm, usePrivateIp }
+  const chosen = instances.filter((i) => selected.has(i.instance_id))
+  const ssmChosen = ssmCount(chosen, choices)
+  const loginNeeded = needsLogin(chosen, choices)
   const [showCred, setShowCred] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
@@ -204,6 +213,7 @@ export default function ConnectCloudModal({ onClose }: Props) {
         auth_type: authType,
         credential,
         use_private_ip: usePrivateIp,
+        prefer_ssm: preferSsm,
       }),
     onSuccess: (res) => {
       setResult(res)
@@ -434,7 +444,18 @@ export default function ConnectCloudModal({ onClose }: Props) {
                             <td className="py-2">
                               <span className={["running", "active"].includes(i.state) ? "text-green-500" : "text-muted-foreground"}>{i.state}</span>
                             </td>
-                            <td className="py-2 font-mono text-xs text-muted-foreground">{i.public_ip ?? "—"}</td>
+                            <td className="py-2 font-mono text-xs text-muted-foreground">
+                              {i.public_ip ?? i.private_ip ?? (i.ssm_managed ? "no address" : "—")}
+                              {i.ssm_managed && (
+                                // Worth saying on the row rather than only in the footer: for
+                                // an instance with no address this is the difference between
+                                // importable and not, and that is not guessable.
+                                <span className="ml-2 rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-normal text-violet-700 dark:text-violet-300"
+                                  title="Reachable through AWS Systems Manager — no key and no open port needed">
+                                  SSM
+                                </span>
+                              )}
+                            </td>
                             <td className="py-2 text-xs text-muted-foreground">{i.region ?? "—"}</td>
                           </tr>
                         ))}
@@ -447,6 +468,9 @@ export default function ConnectCloudModal({ onClose }: Props) {
                 {importable.length > 0 && (
                   <div className="border-t border-border bg-muted/30 p-5">
                     <p className="mb-3 text-xs text-muted-foreground">
+                      {ssmChosen > 0 && !loginNeeded
+                        ? "Nothing to fill in — Systems Manager needs no login. "
+                        : ""}
                       Cloud providers don't share instance logins, so set the SSH login for the{" "}
                       <strong className="text-foreground">{selected.size}</strong> selected — you can adjust each asset later.
                     </p>
@@ -495,6 +519,27 @@ export default function ConnectCloudModal({ onClose }: Props) {
                       <input type="checkbox" checked={usePrivateIp} onChange={(e) => setUsePrivateIp(e.target.checked)} />
                       Connect over the private IP (use inside a VPN / same VPC)
                     </label>
+                    {instances.some((i) => i.ssm_managed) && (
+                      <label className="mt-2 flex items-start gap-2 text-xs text-muted-foreground">
+                        <input type="checkbox" className="mt-0.5" checked={preferSsm}
+                          onChange={(e) => setPreferSsm(e.target.checked)} />
+                        <span>
+                          Use AWS Systems Manager wherever it is available — no SSH key, and
+                          nothing has to be open.
+                          {/* The trade is stated, because it is one they cannot see. */}
+                          <span className="block text-[11px] opacity-80">
+                            Otherwise it is used only where there is no address to reach.
+                            Systems Manager cannot do file management or the terminal yet.
+                          </span>
+                        </span>
+                      </label>
+                    )}
+                    {ssmChosen > 0 && (
+                      <p className="mt-2 text-xs text-violet-700 dark:text-violet-300">
+                        {ssmChosen} of {chosen.length} will use Systems Manager
+                        {loginNeeded ? " — the login below applies to the rest." : ", so no login is needed."}
+                      </p>
+                    )}
 
                     {importError && <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{importError}</p>}
 
@@ -507,7 +552,8 @@ export default function ConnectCloudModal({ onClose }: Props) {
                           setImportError(null)
                           importMut.mutate()
                         }}
-                        disabled={importMut.isPending || selected.size === 0 || !credential.trim() || !username.trim()}
+                        disabled={importMut.isPending || selected.size === 0
+                          || (loginNeeded && (!credential.trim() || !username.trim()))}
                         className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                       >
                         {importMut.isPending && <Loader2 size={14} className="animate-spin" />}
