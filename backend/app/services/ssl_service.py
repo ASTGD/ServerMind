@@ -266,5 +266,138 @@ def dns_message(domain: str, check: dict) -> str:
                 f"for it — the authority has to reach this server through that name to "
                 f"prove it is yours. {fix}")
     where = ", ".join(check["points_to"][:3])
+    # Naming the common innocent cause matters. A site behind Cloudflare's proxy or any CDN
+    # resolves to THEIR addresses by design, and a certificate can usually still be issued
+    # because the request is forwarded here — so "not to this server" on its own would send
+    # somebody to break a working setup.
     return (f"{domain} currently points to {where}, not to this server, so a certificate "
-            f"cannot be issued for it yet. {fix}")
+            f"cannot be issued for it yet. {fix} If you use Cloudflare's proxy or another "
+            f"CDN, this is expected and you can request the certificate anyway.")
+
+
+# --- More than one name on one certificate --------------------------------------------
+#
+# Until now a certificate covered exactly the site's own domain. Nearly every real site is
+# also served at `www.`, and a certificate that does not name it gives half the visitors a
+# browser security warning — on a site whose owner has been told HTTPS is on. That is worse
+# than no certificate, because it looks handled.
+#
+# Ploi asks for the extra names in a comma-separated box. Ours already knows them: they are
+# the site's aliases. Asking again would be a worse version of something already solved —
+# the same reasoning that keeps us finding a config file rather than asking where it is.
+
+# --- Which authority issues it ----------------------------------------------------------
+#
+# Ploi offers Let's Encrypt and ZeroSSL. The reason to have a second one is narrow but real:
+# Let's Encrypt allows five certificates per domain per week, and an agency adding
+# subdomains to one domain reaches that in an afternoon — after which every attempt fails
+# for days with an error that reads like a configuration problem.
+#
+# ZeroSSL needs External Account Binding: a key id and an HMAC key from the customer's own
+# ZeroSSL account. Those are credentials, so they never appear on a command line — they go
+# into a mode-600 config file that certbot reads and that is removed afterwards, the same
+# shape the offsite-backup URL uses.
+
+AUTHORITIES = {
+    "letsencrypt": {
+        "label": "Let's Encrypt",
+        "server": "",           # certbot's default
+        "eab": False,
+        "blurb": "Free, automatic, and renews itself. The right choice unless you have run "
+                 "out of its weekly allowance.",
+    },
+    "zerossl": {
+        "label": "ZeroSSL",
+        "server": "https://acme.zerossl.com/v2/DV90",
+        "eab": True,
+        "blurb": "Also free, and a separate allowance — useful when Let's Encrypt has "
+                 "refused because this domain asked too many times this week. Needs a key "
+                 "id and HMAC key from your ZeroSSL account.",
+    },
+}
+
+
+def check_authority(name: str, *, eab_kid: str = "", eab_key: str = "") -> dict:
+    """Which authority, and the credentials it needs. Refuses rather than half-configuring."""
+    spec = AUTHORITIES.get((name or "letsencrypt").strip().lower())
+    if spec is None:
+        raise SslError(f"'{name}' is not an authority we can use.")
+    if not spec["eab"]:
+        return {"server": spec["server"], "eab_kid": "", "eab_key": ""}
+
+    kid, key = (eab_kid or "").strip(), (eab_key or "").strip()
+    if not kid or not key:
+        raise SslError(
+            f"{spec['label']} needs a key id and an HMAC key. Both are on the "
+            f"'Developer' page of your ZeroSSL account.")
+    # These reach a config file, not a shell — but a newline would end the line they are on
+    # and start a directive of its own, so the shape is checked rather than trusted.
+    for value, what in ((kid, "key id"), (key, "HMAC key")):
+        if len(value) > 512 or any(c in value for c in "\n\r\x00" ) or " " in value:
+            raise SslError(f"That {what} does not look right — it should be one long "
+                           f"line with no spaces.")
+    return {"server": spec["server"], "eab_kid": kid, "eab_key": key}
+
+
+def names_for(domain: str, aliases: list[str] | None = None) -> list[str]:
+    """Every name this certificate should cover, the site's own domain first.
+
+    Order matters to certbot: the first `-d` becomes the certificate's name and the
+    directory it lives in under /etc/letsencrypt/live, which everything else then refers to.
+    """
+    seen, out = set(), []
+    for name in [domain, *(aliases or [])]:
+        clean = (name or "").strip().lower().rstrip(".")
+        if clean and clean not in seen:
+            seen.add(clean)
+            out.append(clean)
+    return out
+
+
+async def check_names(names: list[str], server_host: str) -> dict:
+    """Which of these names point at this server, and which do not.
+
+    **This has to be per-name, because Let's Encrypt validates every name on the request and
+    fails the WHOLE thing if one cannot be reached.** One stale alias left over from a domain
+    the customer stopped using would otherwise stop the certificate from being issued at all,
+    and the error certbot gives names the alias without explaining that the rest were fine.
+
+    So the ones that resolve here are reported separately from the ones that do not, and the
+    screen shows both before anything is requested. A name is never silently dropped: an
+    owner who believes `www` is covered when it was excluded is back to the original problem.
+    """
+    ready: list[str] = []
+    not_ready: list[dict] = []
+    for name in names:
+        check = await check_dns(name, server_host)
+        if check.get("ready"):
+            ready.append(name)
+        else:
+            not_ready.append({"name": name, "why": dns_message(name, check)})
+    return {"ready": ready, "not_ready": not_ready}
+
+
+def certbot_domain_flags(names: list[str]) -> str:
+    """`-d one -d two`, quoted. A domain reaching a shell is validated, never escaped —
+    `valid_name` refuses anything that is not a hostname."""
+    import shlex
+
+    if not names:
+        raise SslError("A certificate needs at least one domain name.")
+    return " ".join(f"-d {shlex.quote(valid_name(n))}" for n in names)
+
+
+#: A hostname, and nothing else. Wildcards are deliberately absent: they cannot be issued
+#: over the HTTP challenge this uses, so offering one would fail every time.
+_NAME_OK = __import__("re").compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$")
+
+
+def valid_name(name: str) -> str:
+    clean = (name or "").strip().lower().rstrip(".")
+    if clean.startswith("*."):
+        raise SslError(
+            f"'{name}' is a wildcard. A wildcard certificate has to be proved through DNS "
+            f"rather than over the web, which this cannot do — name each subdomain instead.")
+    if not _NAME_OK.match(clean):
+        raise SslError(f"'{name}' is not a domain name.")
+    return clean

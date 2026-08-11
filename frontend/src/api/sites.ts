@@ -227,6 +227,10 @@ export interface SslReadiness {
   reason: string | null
   /** Plain-English why-not, with the fix. Null when it is ready. */
   message: string | null
+  /** Every name the certificate will cover — the site's own domain and its aliases. */
+  covers: string[]
+  /** Names left out because they do not point here, each with the reason. */
+  excluded: { name: string; why: string }[]
 }
 
 export async function getSslReadiness(siteId: string): Promise<SslReadiness> {
@@ -234,8 +238,87 @@ export async function getSslReadiness(siteId: string): Promise<SslReadiness> {
   return data
 }
 
-export async function turnOnSsl(siteId: string): Promise<{ run_id: string }> {
-  const { data } = await apiClient.post(`/api/sites/${siteId}/ssl`)
+export async function turnOnSsl(
+  siteId: string,
+  opts: {
+    /** Skip our DNS check. For a site behind Cloudflare or a CDN, where it is wrong. */
+    force?: boolean
+    /** "letsencrypt" (default) or "zerossl". */
+    authority?: string
+    eab_kid?: string
+    eab_key?: string
+  } = {},
+): Promise<{ run_id: string; covers: string[]; excluded: { name: string; why: string }[] }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/ssl`, {
+    force: opts.force ?? false,
+    authority: opts.authority ?? "letsencrypt",
+    eab_kid: opts.eab_kid ?? "",
+    eab_key: opts.eab_key ?? "",
+  })
+  return data
+}
+
+export async function createSigningRequest(
+  siteId: string,
+  subject: { country?: string; state?: string; locality?: string; organisation?: string;
+             unit?: string },
+): Promise<{ csr: string; domain: string }> {
+  const { data } = await apiClient.post(
+    `/api/sites/${siteId}/certificate/signing-request`, subject)
+  return data
+}
+
+export interface Http3State {
+  supported: boolean
+  enabled: boolean
+  nginx?: boolean
+  version?: string | null
+  https?: boolean
+  reuseport_free?: boolean
+  udp_open?: boolean
+  /** Why it cannot be switched on, in words. Null when it can. */
+  why: string | null
+}
+
+export async function getHttp3(siteId: string): Promise<Http3State> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/http3`)
+  return data
+}
+
+export async function setHttp3(
+  siteId: string, enabled: boolean,
+): Promise<{ enabled: boolean; message: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/http3`, { enabled })
+  return data
+}
+
+export interface CertFacts {
+  names: string[]
+  issuer: string
+  expires: string
+  days_left: number
+  chain_length: number
+  self_signed: boolean
+  message?: string
+}
+
+/** Read what a pasted certificate is, without installing it. Nothing is stored. */
+export async function checkCertificate(
+  siteId: string, certificate: string, privateKey: string,
+): Promise<CertFacts> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/certificate/check`,
+    { certificate, private_key: privateKey })
+  return data
+}
+
+export async function installCertificate(
+  siteId: string, certificate: string, privateKey: string,
+): Promise<CertFacts> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/certificate`,
+    { certificate, private_key: privateKey })
+  return data
+}
+
   return data
 }
 

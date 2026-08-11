@@ -644,15 +644,42 @@ async def ssl_readiness(site_id: str, db: DBDep, current_user: CurrentUser) -> d
     server = await resolve_server(str(site.server_id), current_user, db)
 
     check = await ssl_service.check_dns(site.domain, server.host)
+
+    # The aliases too, so the screen can say which names the certificate will cover BEFORE
+    # it is requested. Ploi asks for the extra names in a box; ours already knows them, and
+    # asking again would be a worse version of something already solved.
+    others = ssl_service.names_for(site.domain, site.aliases)[1:]
+    extra = await ssl_service.check_names(others, server.host) if others else \
+        {"ready": [], "not_ready": []}
+
     return {
         **check,
         "has_ssl": bool(site.has_ssl),
         "message": None if check["ready"] else ssl_service.dns_message(site.domain, check),
+        "covers": ([site.domain] if check["ready"] else []) + extra["ready"],
+        "excluded": extra["not_ready"],
     }
 
 
+class SslIn(BaseModel):
+    #: Which authority. Let's Encrypt unless asked otherwise, so nothing an existing caller
+    #: does changes. ZeroSSL needs the two External Account Binding values from the
+    #: customer's own ZeroSSL account.
+    authority: str = "letsencrypt"
+    eab_kid: str = ""
+    eab_key: str = ""
+
+    """`force` is Ploi's "skip DNS verification", and it exists because our check can be
+    wrong in one very common case: a site behind Cloudflare's proxy (or any CDN) resolves to
+    the CDN's addresses, not the server's, so comparing addresses says "points somewhere
+    else" — while an HTTP request still reaches this server and the certificate would issue
+    perfectly well. Refusing those customers outright is worse than letting them decide."""
+    force: bool = False
+
+
 @router.post("/sites/{site_id}/ssl")
-async def turn_on_ssl(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+async def turn_on_ssl(site_id: str, db: DBDep, current_user: CurrentUser,
+                      body: SslIn | None = None) -> dict:
     """Get a certificate for this site and serve it over HTTPS.
 
     Refuses up front when the domain does not point here yet. Let's Encrypt allows five
@@ -676,10 +703,35 @@ async def turn_on_ssl(site_id: str, db: DBDep, current_user: CurrentUser) -> dic
             detail="HTTPS is set up over SSH on a Linux server. A hosting panel issues its "
                    "own certificates — use its own screen for that.")
 
-    check = await ssl_service.check_dns(site.domain, server.host)
-    if not check["ready"]:
+    # Every name this site answers to, not just its own domain. A certificate that does not
+    # cover `www` hands half the visitors a browser warning on a site whose owner has been
+    # told HTTPS is on — worse than no certificate, because it looks handled.
+    names = ssl_service.names_for(site.domain, site.aliases)
+    force = bool(body and body.force)
+
+    if force:
+        # No filtering at all — one rule, easy to explain: ask for every name without
+        # checking DNS first. The screen says plainly that if ANY one of them cannot be
+        # reached the whole request fails, because that is Let's Encrypt's own rule and
+        # quietly dropping a name would put the owner back where they started.
+        dns = {"ready": names, "not_ready": []}
+    else:
+        dns = await ssl_service.check_names(names, server.host)
+
+    if site.domain not in dns["ready"]:
+        # Its own domain is the one that cannot be skipped: it names the certificate.
+        own = next((n for n in dns["not_ready"] if n["name"] == site.domain), None)
         raise HTTPException(status_code=422,
-                            detail=ssl_service.dns_message(site.domain, check))
+                            detail=own["why"] if own else
+                            ssl_service.dns_message(site.domain, {"ready": False}))
+
+    # An alias that does not point here is EXCLUDED rather than fatal. Let's Encrypt fails
+    # the whole request if any one name cannot be reached, so a stale alias from a domain
+    # the customer stopped using would otherwise block the certificate entirely — and
+    # certbot's error names the alias without saying the rest were fine. What is excluded
+    # is reported back, never dropped silently: an owner who believes `www` is covered when
+    # it was left out is back where they started.
+    excluded = dns["not_ready"]
 
     pb = (await db.execute(
         select(Playbook).where(Playbook.slug == "site-ssl",
@@ -689,7 +741,22 @@ async def turn_on_ssl(site_id: str, db: DBDep, current_user: CurrentUser) -> dic
         raise HTTPException(status_code=422,
                             detail="The HTTPS installer is not available on this ServerAlly.")
 
-    variables = {"DOMAIN": site.domain, "EMAIL": current_user.email}
+    try:
+        acme = ssl_service.check_authority(
+            (body.authority if body else "letsencrypt"),
+            eab_kid=(body.eab_kid if body else ""),
+            eab_key=(body.eab_key if body else ""))
+    except ssl_service.SslError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    variables = {
+        "DOMAIN": site.domain,
+        "EMAIL": current_user.email,
+        "DOMAIN_FLAGS": ssl_service.certbot_domain_flags(dns["ready"]),
+        "ACME_SERVER": acme["server"],
+        "EAB_KID": acme["eab_kid"],
+        "EAB_KEY": acme["eab_key"],
+    }
     script = playbook_service.substitute_variables(pb.script_bash, variables)
 
     run = PlaybookRun(server_id=server.id, user_id=current_user.id, playbook_id=pb.id,
@@ -701,8 +768,277 @@ async def turn_on_ssl(site_id: str, db: DBDep, current_user: CurrentUser) -> dic
     run_playbook_task.delay(str(run.id), str(server.id), script)
     await audit_service.audit(db, current_user, "site.ssl_requested",
                               target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "names": dns["ready"],
+                                    "forced": force})
+    return {
+        "run_id": str(run.id),
+        "domain": site.domain,
+        # Both lists, always. What the certificate covers is the thing the customer wanted
+        # to know, and what it does NOT cover is the thing they would otherwise discover
+        # from a visitor's browser warning weeks later.
+        "covers": dns["ready"],
+        "excluded": excluded,
+    }
+
+
+class CertIn(BaseModel):
+    """A certificate the customer already has — Ploi's "install existing certificate".
+
+    Not a file upload, because what people actually have is text they can select and copy
+    out of an email or a control panel.
+    """
+    certificate: str = Field(min_length=1, max_length=200_000)
+    #: Optional, because a certificate ordered through "create signing request" already has
+    #: its key waiting on the server — and the whole point of that pairing is that nobody
+    #: has to handle the key at all.
+    private_key: str = Field(default="", max_length=200_000)
+
+
+@router.post("/sites/{site_id}/certificate/check")
+async def check_certificate(site_id: str, body: CertIn, db: DBDep,
+                            current_user: CurrentUser) -> dict:
+    """What this certificate is, before anything is installed.
+
+    Everything here is decided from the pasted text with no server involved, which is the
+    point: a key that does not match its certificate stops nginx from starting — and that
+    takes down every site on the machine, not only this one.
+    """
+    from app.services import cert_install_service as certs
+
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+    try:
+        return certs.check(body.certificate, body.private_key, site.domain)
+    except certs.CertError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/sites/{site_id}/certificate")
+async def install_certificate(site_id: str, body: CertIn, db: DBDep,
+                              current_user: CurrentUser) -> dict:
+    """Install it and serve the site over HTTPS with it.
+
+    The private key never touches a command line — not as an argument, not through a
+    heredoc. It goes over SFTP, and the shell only handles the permissions, the config edit
+    and the reload. It is not stored in our database and not written to any log.
+    """
+    from app.services import cert_install_service as certs
+    from app.services import connection_manager, file_service
+
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+
+    server = await resolve_server(str(site.server_id), current_user, db, need_execute=True)
+    if server.connection_type != "ssh":
+        raise HTTPException(status_code=400,
+                            detail="This needs a Linux server we can reach over SSH.")
+    if server.panel_type:
+        # The panel owns this vhost and rewrites it on its own schedule, so a certificate we
+        # wire in behind its back is reverted later — at a moment nobody can connect to us.
+        raise HTTPException(
+            status_code=400,
+            detail=f"{server.panel_type} manages this site's certificates. Install it from "
+                   f"the panel, or ServerAlly's change will be undone the next time the "
+                   f"panel rewrites the site.")
+
+    paths = certs.paths_for(site.domain)
+
+    # A certificate ordered through a signing request made here has its key already on the
+    # server. Read as a FACT rather than remembered — the request may have been made weeks
+    # ago, and a file on the machine is the only thing that actually decides it.
+    key_text = body.private_key
+    from_request = False
+    if not key_text.strip():
+        out, err, _c = await connection_manager.execute(
+            server, certs.build_pending_key_check(site.domain))
+        if "pending=yes" not in (out or "") + (err or ""):
+            raise HTTPException(
+                422, "Paste the private key that goes with this certificate. If you created "
+                     "a signing request here, its key is missing from the server — create "
+                     "the request again.")
+        # Read back to check the pair, then discarded: it exists on the server already, so
+        # this is the one moment it is in our memory and it does not outlive the request.
+        try:
+            key_text = (await file_service.download_file(
+                server, f"{paths['dir']}/{certs.CSR_KEY}")).decode("utf-8", "replace")
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(422, "The waiting key could not be read.") from exc
+        from_request = True
+
+    # Refused before the server is touched at all.
+    try:
+        facts = certs.check(body.certificate, key_text, site.domain)
+        chain = certs.normalise_chain(body.certificate)
+    except certs.CertError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    path, apache, why = await _resolve_site_config(server, site)
+    if path is None:
+        raise HTTPException(status_code=422,
+                            detail=why or "Its configuration file could not be found.")
+
+    try:
+        # The directory first: SFTP will not create it, and on a site's FIRST certificate it
+        # does not exist yet. Its mode is set here rather than left to the umask, because the
+        # key that lands in it must not be readable by anyone else even for a moment.
+        await connection_manager.execute(
+            server, certs.build_prepare_command(site.domain))
+        await file_service.upload_file(server, paths["cert"] + ".new", chain.encode())
+        await file_service.upload_file(server, paths["key"] + ".new",
+                                       key_text.strip().encode() + b"\n")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=422,
+                            detail=f"The certificate could not be sent: {exc}") from exc
+
+    out, err, code = await connection_manager.execute(
+        server, certs.build_install_command(path, site.domain, apache=apache))
+    ok, message = certs.explain(code, (out or "") + (err or ""))
+    if not ok:
+        raise HTTPException(status_code=422, detail=message)
+
+    site.has_ssl = True
+    await db.commit()
+    # Records THAT a certificate was installed and what it covers — never the key, and never
+    # anything that would help somebody use it.
+    await audit_service.audit(db, current_user, "site.certificate_installed",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "issuer": facts["issuer"],
+                                    "expires": facts["expires"],
+                                    "from_signing_request": from_request})
+    return {**facts, "message": message}
+
+
+class CsrIn(BaseModel):
+    """What a certificate authority asks for. Only the domain is required — the rest matters
+    only for an organisation-validated certificate."""
+    country: str = ""
+    state: str = ""
+    locality: str = ""
+    organisation: str = ""
+    unit: str = ""
+
+
+@router.post("/sites/{site_id}/certificate/signing-request")
+async def create_signing_request(site_id: str, body: CsrIn, db: DBDep,
+                                 current_user: CurrentUser) -> dict:
+    """Ploi's "create signing request".
+
+    The key and the request are made ON the server and the key never leaves it. That is the
+    whole point of the pairing: when the certificate comes back, "Install it" finds the key
+    already waiting and nobody has to handle it.
+    """
+    from app.services import cert_install_service as certs
+    from app.services import connection_manager
+
+    site, server = await _cert_context(site_id, db, current_user)
+    try:
+        cmd = certs.build_csr_command(site.domain, body.model_dump(),
+                                      names=list(site.aliases or []))
+    except (certs.CertError, ssl_service.SslError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    out, err, code = await connection_manager.execute(server, cmd)
+    text = (out or "") + (err or "")
+    if code != 0:
+        raise HTTPException(422, "The signing request could not be created on this server.")
+    try:
+        csr = certs.parse_csr(text)
+    except certs.CertError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    await audit_service.audit(db, current_user, "site.csr_created",
+                              target_type="server", target_id=str(server.id),
                               meta={"domain": site.domain})
-    return {"run_id": str(run.id), "domain": site.domain}
+    return {"csr": csr, "domain": site.domain}
+
+
+async def _cert_context(site_id: str, db, current_user, *, need_execute: bool = True):
+    """A site whose certificates are ours to manage."""
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+    server = await resolve_server(str(site.server_id), current_user, db,
+                                  need_execute=need_execute)
+    if server.connection_type != "ssh":
+        raise HTTPException(400, "This needs a Linux server we can reach over SSH.")
+    if server.panel_type:
+        raise HTTPException(
+            400, f"{server.panel_type} manages this site's certificates. Do it from the "
+                 f"panel, or ServerAlly's change will be undone the next time the panel "
+                 f"rewrites the site.")
+    return site, server
+
+
+@router.get("/sites/{site_id}/http3")
+async def read_http3(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Whether this server can do HTTP/3 at all, and whether this site has it on.
+
+    Asked of the machine every time rather than remembered: nginx can be replaced under us
+    by an unattended upgrade, and a stored "supported" would then be a promise the binary
+    cannot keep.
+    """
+    from app.services import connection_manager, http3_service
+
+    site, server = await _cert_context(site_id, db, current_user, need_execute=False)
+    path, apache, why = await _resolve_site_config(server, site)
+    if apache:
+        return {"supported": False, "enabled": False,
+                "why": "HTTP/3 here is an nginx feature, and this site is served by Apache."}
+    if path is None:
+        raise HTTPException(422, why or "Its configuration file could not be found.")
+
+    out, err, _code = await connection_manager.execute(
+        server, http3_service.build_probe_command(path))
+    return http3_service.parse_probe((out or "") + (err or ""))
+
+
+class Http3In(BaseModel):
+    enabled: bool
+
+
+@router.post("/sites/{site_id}/http3")
+async def set_http3(site_id: str, body: Http3In, db: DBDep,
+                    current_user: CurrentUser) -> dict:
+    """Turn HTTP/3 on or off for this site."""
+    from app.services import connection_manager, http3_service
+
+    site, server = await _cert_context(site_id, db, current_user)
+    path, apache, why = await _resolve_site_config(server, site)
+    if path is None or apache:
+        raise HTTPException(422, why or "HTTP/3 needs a site served by nginx.")
+
+    probe_out, probe_err, _c = await connection_manager.execute(
+        server, http3_service.build_probe_command(path))
+    facts = http3_service.parse_probe((probe_out or "") + (probe_err or ""))
+    if body.enabled and facts["why"]:
+        # Refused rather than attempted: writing a `quic` listener nginx cannot parse would
+        # make it refuse the whole configuration, which is every site on the machine.
+        raise HTTPException(422, facts["why"])
+
+    out, err, code = await connection_manager.execute(
+        server,
+        http3_service.build_apply_command(
+            path, site.domain, on=body.enabled,
+            # Exactly one listener in the whole configuration may carry it, so this is read
+            # from the server rather than assumed.
+            with_reuseport=body.enabled and facts["reuseport_free"]))
+    ok, message = http3_service.explain(code, (out or "") + (err or ""), on=body.enabled)
+    if not ok:
+        raise HTTPException(422, message)
+
+    await audit_service.audit(db, current_user,
+                              "site.http3_on" if body.enabled else "site.http3_off",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain})
+    return {"enabled": body.enabled, "message": message}
 
 
 class RemoveIn(BaseModel):
