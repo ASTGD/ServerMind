@@ -72,6 +72,74 @@ def _skill_body(slug: str) -> str:
     return " ".join(match.body.lower().split())
 
 
+def test_deploy_skill_knows_lsphp_is_not_a_cli_php():
+    """BUG-018, found live (2026-08-11): deploying to rcmalumni.astgd.com on a CyberPanel
+    box, Ally hit `composer install` needing PHP 8.4 while `command -v php` gave 8.3. It
+    found `/usr/local/lsws/lsphp84/bin/lsphp` — the WEB SAPI, which Composer refuses — and
+    spent ten of its twenty-five steps toggling php.ini settings and retrying flags before
+    blocking. The CLI build was in the same folder, named `php`, and it had already listed
+    that folder without trying it.
+
+    The uncomfortable part is that our own `laravel_service._prelude` has globbed
+    `/usr/local/lsws/lsphp*/bin/php` since 2026-08-04. The knowledge was in the CODE and not
+    in the PROMPT, and Ally follows the skill. This test holds the prompt half.
+    """
+    body = _skill_body("github-deploy")
+    assert "/usr/local/lsws/lsphp" in body, "the skill must name where the real PHP lives"
+    assert "lsphp84/bin/php" in body, "it must be explicit that the CLI binary is `php`"
+    # Naming the folder is not enough — the reason lsphp can NEVER work has to be there, or
+    # Ally will reasonably keep trying to make lsphp behave, which is what it did.
+    # Asserting on "sapi" alone passes on the quoted Composer error further up the same
+    # paragraph, so it proves nothing; this asserts the explanation itself.
+    assert "it is the sapi, not the setting" in body
+
+
+def test_deploy_skill_reads_a_usage_banner_as_a_refusal():
+    """BUG-019: `lsphp` prints its usage banner and exits 0 for an unsupported flag, so Ally
+    read it as "the command ran and is still blocked" and retried variants five times."""
+    body = _skill_body("github-deploy")
+    # Both halves: that a banner appears, and what it MEANS. The first alone is satisfied by
+    # any passing mention; the second is the rule.
+    assert "usage banner" in body
+    assert "your argument was refused" in body
+    # And that it generalises — the trap is not specific to lsphp.
+    assert "from any tool" in body
+
+
+def test_deploy_skill_forbids_editing_shared_web_config():
+    """BUG-020: it sed-ed `register_argc_argv` in the php.ini serving all 77 sites on a
+    production panel to work around a command-line tool. It happened to restore it."""
+    body = _skill_body("github-deploy")
+    assert "shared web-server configuration" in body
+    assert "every site" in body, "the reason has to be there, not just the prohibition"
+
+
+def test_the_deploy_skill_and_the_laravel_service_look_in_the_same_places():
+    """The seam this bug came through: the same rule living in code and in prose, with only
+    one of them taught. If the service's search path ever gains a location, the skill has to
+    gain it too — otherwise Ally goes back to being the half that does not know."""
+    from app.services import laravel_service
+
+    import re
+
+    code = laravel_service._prelude("/srv/app")
+    body = _skill_body("github-deploy")
+
+    # Read the search list OUT of the service rather than restating it here: a hardcoded
+    # list only catches a path being removed, and the drift that actually hurts is a path
+    # being ADDED to one side. (Found by mutation — the first version of this test missed
+    # exactly that.)
+    match = re.search(r"for _c in \$\(ls -d (.+?)2>/dev/null", code, re.S)
+    assert match, "the service's PHP search list moved — this test needs updating with it"
+    paths = [w for w in match.group(1).split() if w.startswith("/")]
+    assert len(paths) >= 3, paths
+
+    for place in paths:
+        assert place.lower() in body, (
+            f"the service looks in {place} and the skill does not — Ally follows the skill, "
+            f"so it would go on not knowing")
+
+
 def test_incident_response_requires_live_containment():
     """Regression guard for the gap found live (2026-07-05): the incident-response
     mission quarantined the webshells but left the live /etc/cron.d backdoor running

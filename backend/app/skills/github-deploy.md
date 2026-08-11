@@ -30,6 +30,13 @@ STAGE 1 — DISCOVER THE SERVER:
   Prefer creating the site through the panel the user already uses; on plain servers
   create an nginx vhost instead.
 - Runtimes available: `command -v git node npm php composer python3 docker | xargs -n1 echo`.
+- **On LiteSpeed/CyberPanel, `command -v php` is the WRONG PHP.** It answers with the
+  distribution's old CLI (often 7.4 or 8.3) while the sites run a much newer lsphp. Find the
+  real one, newest first, and prove it before using it:
+  `ls -d /usr/local/lsws/lsphp*/bin/php /usr/bin/php8* /usr/local/bin/php8* /usr/bin/php
+  /usr/local/bin/php 2>/dev/null | sort -rV`
+  then `"$c" -v` on each until one is new enough. This is the same list
+  `laravel_service` uses — keep the two in step.
 
 STAGE 2 — DISCOVER THE APP (clone first, shallow):
 Clone to a staging path, NOT the docroot: `git clone --depth 1 <repo> /opt/deploy/<name>`.
@@ -50,9 +57,15 @@ STAGE 3 — HOST IT BY TYPE:
 - NODE SERVICE: `npm ci` (+ build if the app has one); run under pm2
   (`pm2 start <entry> --name <name> && pm2 save && pm2 startup systemd`) on an internal
   port (3000+; check it's free: `ss -ltn`); reverse-proxy the domain to it.
-- PHP/Laravel: `composer install --no-dev`; docroot to /public; `cp .env.example .env`
-  + `php artisan key:generate`; DB if required (create db+user, put creds in .env on
-  the server — never echo them); `php artisan migrate` only with user approval.
+- PHP/Laravel: `$PHP /usr/local/bin/composer install --no-dev` using the PHP you resolved
+  in STAGE 1 — **never the bare `composer`**, which picks up the wrong PHP. Docroot to
+  /public; `cp .env.example .env` + `$PHP artisan key:generate`; DB if required (create
+  db+user, put creds in .env on the server — never echo them); `$PHP artisan migrate` only
+  with user approval.
+  If Composer reports a dependency needing a NEWER PHP than any binary here, say which
+  version is needed and stop — installing a whole new PHP on a live shared server is the
+  owner's decision, not a workaround to improvise. Note that `composer.json` and
+  `composer.lock` can disagree: the lock is what Composer enforces.
 - PYTHON: venv + pip install; gunicorn/uvicorn behind the proxy; a systemd unit so it
   survives reboots.
 - DOCKER: `docker compose up -d`, then proxy to the exposed port.
@@ -71,6 +84,18 @@ and where.
 
 PITFALLS:
 - NEVER build inside the live docroot — build in /opt/deploy, then move the output.
+- **`lsphp` is the web server's PHP, not a command-line PHP.** Composer refuses it outright
+  ("cannot be run safely on non-CLI SAPIs"), and NO combination of `-d register_argc_argv`,
+  `-c`, or a php.ini edit will change that — it is the SAPI, not the setting. The CLI build
+  sits beside it: `/usr/local/lsws/lsphp84/bin/php` (note: `php`, not `lsphp`). Use that.
+- **`lsphp` prints its usage banner and exits 0 when given a flag it does not support**
+  (it accepts only `-b -c -n -h -i -q -s -v -?`). A usage banner means YOUR ARGUMENT WAS
+  REFUSED, not that the command ran and failed — do not retry variants of that argument.
+  Treat any help/usage output plus exit 0 the same way, from any tool.
+- **Never edit shared web-server configuration to make a command-line tool run.** A panel's
+  `php.ini` serves every site on the machine, so a change there is a change to sites that
+  have nothing to do with this deploy. If a shared config genuinely must change, that is a
+  destructive step: ask first, and restore it in the same step that changes it.
 - Don't overwrite an existing site: if the docroot is non-empty, STOP and ask.
 - `npm ci`/builds can OOM small VPSes — if RAM < 2GB, check `free -h` first and warn;
   a temporary swap file is the fix, with the user's OK.

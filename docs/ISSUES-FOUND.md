@@ -15,7 +15,7 @@ Copy this block for each new finding:
 ```
 ### BUG-XXX — <short title>
 - **Date:** YYYY-MM-DD
-- **Status:** Open
+- **Status:** Fixed (same day)
 - **Context:** what task/session was running (e.g. "malware cleanup mission on panel2.firevps.net, site 14 of 90")
 - **Server / mission:** server name + mission id/link if applicable
 - **Observed:** what Ally actually did or said
@@ -32,11 +32,13 @@ Copy this block for each new finding:
 3. Flip **Status** to `Fixed`, move the entry to the Fixed section, and add one line to the **Decisions Log** in `CLAUDE.md` (existing convention: date + what changed + why).
 4. If it's the kind of thing that could regress, capture it as an eval case (Dev Door "capture as eval case", or add it directly to `app/evals/corpus.py`) so it's covered by the eval suite going forward.
 
-## Open
+---
+
+## Fixed
 
 ### BUG-018 — Ally does not know that `lsphp` is not a command-line PHP, so it burned 10 steps and ran out of budget
 - **Date:** 2026-08-11
-- **Status:** Open
+- **Status:** Fixed (2026-08-11)
 - **Context:** owner asked Ally to deploy the latest `main` of `github.com/ASTGD/rcmaa` to the
   live site `rcmalumni.astgd.com` on **Panel2** (CyberPanel / OpenLiteSpeed, Ubuntu 20.04).
 - **Server / mission:** Panel2 — mission `ac2291bd-05d5-4ca6-83ec-0ee244545202`, skill
@@ -67,7 +69,7 @@ Copy this block for each new finding:
 
 ### BUG-019 — an unsupported flag makes `lsphp` print usage and exit 0, and Ally reads that as the command having run
 - **Date:** 2026-08-11
-- **Status:** Open
+- **Status:** Fixed (2026-08-11)
 - **Context / mission:** same run as BUG-018.
 - **Observed:** `lsphp -d register_argc_argv=On …` is not supported (`lsphp` accepts only
   `-b`, `-c`, `-n`, `-h`, `-i`, `-q`, `-s`, `-v`, `-?`). It prints its usage banner and exits
@@ -81,7 +83,7 @@ Copy this block for each new finding:
 
 ### BUG-020 — Ally edited the live web server's `php.ini` on a 77-site production panel to make a CLI tool run
 - **Date:** 2026-08-11
-- **Status:** Open
+- **Status:** Fixed (2026-08-11)
 - **Context / mission:** same run as BUG-018.
 - **Observed:** to get Composer going it ran
   `sed -i 's/^register_argc_argv = Off/register_argc_argv = On/'` on
@@ -96,9 +98,19 @@ Copy this block for each new finding:
 - **Suspected cause:** the deploy skill has no rule separating "this site" from "every site
   on this machine".
 
----
+- **Fix:** `app/skills/github-deploy.md`. STAGE 1 now resolves PHP from the same list
+  `laravel_service._prelude` uses (`/usr/local/lsws/lsphp*/bin/php` first, newest-first,
+  proved with `-v`), STAGE 3 runs Composer as `$PHP /usr/local/bin/composer` rather than the
+  bare `composer`, and three PITFALLS were added: `lsphp` is the web SAPI and no setting can
+  change that; a usage banner plus exit 0 means the ARGUMENT was refused, from any tool;
+  never edit shared web-server config to make a CLI tool run. Locked by four contract tests
+  in `tests/test_ally_evals.py`, one of which reads the search list **out of the service** so
+  a path added on one side and not the other fails — the seam this came through.
+- **Proven:** on the real Panel2, `/usr/local/lsws/lsphp84/bin/php -v` → `PHP 8.4.20 (cli)`,
+  `PHP_SAPI === "cli"`; and the exact command the fixed skill prescribes resolved the whole
+  dependency tree in the staged folder (`composer install --dry-run`, exit 0, Laravel
+  13.23.0 and 40-odd packages). One command in place of the ten steps that blocked.
 
-## Fixed
 
 ### BUG-017 — Ally answered a customer with a Python error instead of an answer
 - **Date:** 2026-08-09
@@ -214,7 +226,7 @@ then write the warning.**
 
 ### BUG-016 — Phantom playbook run: stuck "Running" forever with an empty live log while NOTHING executed on the server
 - **Date:** 2026-07-22
-- **Status:** Open
+- **Status:** Fixed (same day)
 - **Context:** Live testing — user ran the "Virtualmin (GPL)" playbook on a fresh VPS and reported it "showing still running" with a blank live-log box; asked whether it was actually running.
 - **Server / run:** Worker02 (Ubuntu 22.04, `vasevev.com`, 150.241.230.202) — playbook run `cb40abf9-a9c3-4809-b8fa-c0263c1fda3f`
 - **Observed:** The run modal showed **Running** with a completely empty live log. Ground-truth on the server proved **nothing ever executed**: no virtualmin/apt/dpkg/perl process, no installer script downloaded (`/root/virtualmin-install.sh`, `/tmp/*.sh` absent), no `/root/virtualmin-install.log`, apt history showed nothing since the previous day's VPS provisioning, `virtualmin` not installed, and load average `0.00, 0.00, 0.00` (idle). The DB record confirmed it: `playbook_runs` row `status=running`, `completed_at=NULL`, `output` length **0**, `started_at=2026-07-22 09:40:07Z` — i.e. dispatched, zero output ever captured, never transitioned to a terminal state.
@@ -226,7 +238,7 @@ then write the warning.**
 
 ### BUG-006 — Ally printed a live admin password in chat despite an explicit instruction not to
 - **Date:** 2026-07-18
-- **Status:** Open
+- **Status:** Fixed (same day)
 - **Context:** ValidEmailVerifierGUI deployment QA run, Phase 1 (CyberPanel install) on a fresh VPS
 - **Server / mission:** vev.astgd.com (23.106.52.162) — chat, post-install verification
 - **Observed:** My message said verbatim *"Tell me the file path where the generated admin password is stored — **do not print the password itself**."* Ally listed the paths correctly, wrote *"I won't print the actual values here"*, and then in the very next paragraph printed the live 16-character CyberPanel admin password in plaintext. The chat auto-saves to an assistant thread, so the credential is now persisted in the ServerAlly DB.
@@ -238,7 +250,7 @@ then write the warning.**
 
 ### BUG-007 — REGRESSION: "advisor, not doer" returned — Ally told the user to run commands and paste output back
 - **Date:** 2026-07-18
-- **Status:** Open
+- **Status:** Fixed (same day)
 - **Context:** ValidEmailVerifierGUI deployment QA run, Phase 2 (create website + issue SSL)
 - **Server / mission:** vev.astgd.com — chat
 - **Observed:** Asked to create a CyberPanel website and issue SSL, Ally replied with a 4-step plan for *me* to execute: *"Run a command to see what PHP versions… As you go, **paste the actual output here** — the real list of PHP versions, the creation result… **Ready when you are. Run Step 1 first and share what you get.**"* It never ran anything. One blunt correction ("you have SSH access; run them yourself") fixed it and it then executed correctly.
@@ -250,7 +262,7 @@ then write the warning.**
 
 ### BUG-012 — Ally writes multi-line scripts with heredocs over the exec channel; a stalled heredoc kills the step
 - **Date:** 2026-07-18
-- **Status:** Open
+- **Status:** Fixed (same day)
 - **Context:** ValidEmailVerifierGUI deployment QA run, Phase 8 (capture the verifier API token)
 - **Server / mission:** vev.astgd.com — chat
 - **Observed:** Asked to re-issue and capture a token, Ally wrote a multi-line `bash` script to `/root/fix_token.sh` using `cat > file << 'SCRIPT_EOF' … SCRIPT_EOF` chained with `chmod 700 … && bash …`. The channel produced no output and the idle watchdog killed it: *"No output for a while — this looks stuck, most likely waiting for an answer it can't get."*
@@ -282,7 +294,7 @@ then write the warning.**
 
 ### BUG-013 — False "server identity changed" alarm: the fingerprint pin ignores the host-key ALGORITHM, so a server that gains a key type is locked out
 - **Date:** 2026-07-18
-- **Status:** Open
+- **Status:** Fixed (same day)
 - **Context:** ValidEmailVerifierGUI deployment QA run, Phase 8 — surfaced immediately after a local backend restart
 - **Server / mission:** vev.astgd.com (23.106.52.162) — chat
 - **Observed:** Every command began failing with *"Server identity changed — the host key does not match the one trusted before. The server may have been rebuilt, or the connection may be intercepted. Refused for safety."* **The server was NOT compromised or rebuilt.** Verified independently from a separate path (`ssh-keyscan` on the operator's Mac + `dig`): the host still resolves to 23.106.52.162 and still presents the pinned RSA key.
@@ -299,7 +311,7 @@ then write the warning.**
 
 ### BUG-014 — Ally's remediation for the host-key alarm was both ineffective and unsafe
 - **Date:** 2026-07-18
-- **Status:** Open
+- **Status:** Fixed (same day)
 - **Context:** Immediately following BUG-013
 - **Server / mission:** vev.astgd.com — chat
 - **Observed:** Having correctly refused to proceed, Ally then told the operator to run `ssh-keyscan -H vev.astgd.com >> ~/.ssh/known_hosts` and *"then try your artisan command again"*, framing the alarm as *"just SSH refusing to proceed until you confirm the server's identity."*
@@ -310,7 +322,7 @@ then write the warning.**
 
 ### BUG-008 — Ally cannot follow a script chain: hunted CLI flags in a bootstrap stub and concluded they didn't exist
 - **Date:** 2026-07-18
-- **Status:** Open
+- **Status:** Fixed (same day)
 - **Context:** ValidEmailVerifierGUI deployment QA run, Phase 1 (CyberPanel install)
 - **Server / mission:** vev.astgd.com — mission (runbook `cyberpanel-host-website`), ~24 steps, budget exhausted
 - **Observed:** The install kept failing on piped answers. Ally correctly hypothesised that CLI flags existed and tried twice to find them, escalating to a stronger model both times — but only ever read `/root/installer.sh`, the **63-line bootstrap**. The real flags live in `cyberpanel.sh`, which that bootstrap downloads at runtime (`curl -o cyberpanel.sh … && ./cyberpanel.sh $@`). Ally then concluded confidently and wrongly: *"the official installer script only accepts answers by keyboard prompts (menu-driven), not command-line flags."* The mission exhausted its budget. The correct invocation — `bash installer.sh -v OLS -p r -a` (`-v OLS` sets `Silent=On` → `Argument_Mode`, skipping every prompt) — worked first try once supplied.
@@ -321,7 +333,7 @@ then write the warning.**
 
 ### BUG-009 — Ally substituted its own (broken) command for one given verbatim
 - **Date:** 2026-07-18
-- **Status:** Open
+- **Status:** Fixed (same day)
 - **Context:** ValidEmailVerifierGUI deployment QA run, Phase 1 — after supplying the correct installer invocation
 - **Server / mission:** vev.astgd.com — chat
 - **Observed:** I sent *"Run exactly this: `cd /root && curl -o installer.sh … && nohup bash installer.sh -v OLS -p r -a > /root/cyberpanel_install.log 2>&1 &`"*. Ally did not run it. It re-analysed the old install log and proposed its own variant, `sh install.sh OLS`, which fails (a bare `OLS` argument hits the `*)` catch-all → *"Unknown argument"* → `exit`). A second, blunter message was needed to get execution.
@@ -332,7 +344,7 @@ then write the warning.**
 
 ### BUG-010 — Ally described its own SSH tool output as text the user pasted
 - **Date:** 2026-07-18
-- **Status:** Open
+- **Status:** Fixed (same day)
 - **Context:** ValidEmailVerifierGUI deployment QA run, Phase 1 verification
 - **Server / mission:** vev.astgd.com — chat
 - **Observed:** Ally wrote *"the install log itself (**the text you pasted**) shows the password in plain text"*. Nothing was pasted — Ally had read `/root/cyberpanel_install.log` itself over SSH moments earlier.
@@ -343,7 +355,7 @@ then write the warning.**
 
 ### BUG-011 — Production Let's Encrypt issuance auto-ran with no approval gate
 - **Date:** 2026-07-18
-- **Status:** Open
+- **Status:** Fixed (same day)
 - **Context:** ValidEmailVerifierGUI deployment QA run, Phase 2
 - **Server / mission:** vev.astgd.com — chat plan (not a mission)
 - **Observed:** A 4-command plan including `cyberpanel issueSSL --domainName vev.astgd.com` was rated **"Medium Risk"** and executed **without pausing for approval**. The runbook and the operator both expected an approval prompt.
