@@ -301,7 +301,18 @@ def _run_probe_with_fakes(tmp_path, nginx_dump: str = "", apache_dump: str = "")
     fake.mkdir()
     (fake / "nginx").write_text(f"#!/bin/sh\ncat <<'EOF'\n{nginx_dump}\nEOF\n")
     (fake / "apachectl").write_text(f"#!/bin/sh\ncat <<'EOF'\n{apache_dump}\nEOF\n")
-    for name in ("nginx", "apachectl"):
+    # A fake `sudo` that keeps PATH, because the REAL one does not.
+    #
+    # The probe became `$SA_SUDO nginx -T` when privilege escalation was added (2026-08-10),
+    # and sudo resets PATH from secure_path — so on any machine with passwordless sudo it
+    # found the system nginx and ignored the fake entirely. That is correct on a real server
+    # and useless here. It passed on a Mac (where `sudo -n` fails, leaving $SA_SUDO empty)
+    # and failed on the CI runner, which is exactly the kind of difference that makes a test
+    # look fine until it runs somewhere else. Escalation has its own tests; these are about
+    # parsing what the probe prints.
+    (fake / "sudo").write_text(
+        '#!/bin/sh\n[ "$1" = "-n" ] && shift\n[ "$1" = "true" ] && exit 0\nexec "$@"\n')
+    for name in ("nginx", "apachectl", "sudo"):
         os.chmod(fake / name, 0o755)
 
     env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}"}

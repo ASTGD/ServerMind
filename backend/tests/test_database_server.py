@@ -65,6 +65,16 @@ def run(tmp_path, engine: str, allow: str, os_id: str = "ubuntu"):
     # container per case, and what is under test is the firewall logic, not path strings.
     body = body.replace("/etc/postgresql /var/lib/pgsql", str(tmp_path / "etc" / "postgresql"))
     body = body.replace("/etc/mysql/mariadb.conf.d", str(mycnf))
+    # Point the script at a FAKE /etc/os-release instead of the machine's own.
+    #
+    # These tests fake the OS with `ID=debian` in the environment, which works only where
+    # /etc/os-release does not exist — a Mac. On any Linux (the CI runner included) the
+    # script sources the real file and OVERWRITES that variable, so a "Debian refuses MySQL"
+    # test silently became "Ubuntu installs MySQL" and passed as a success. Substituting the
+    # path keeps the fake OS true wherever the test runs.
+    osr = tmp_path / "os-release"
+    osr.write_text(f'ID={os_id}\nID_LIKE=debian\nPRETTY_NAME="{os_id} (test)"\n')
+
     src = tmp_path / "s.sh"
     src.write_text(body)
     proc = subprocess.run(

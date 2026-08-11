@@ -148,9 +148,11 @@ def test_the_shared_php_layer_is_used_by_both_playbooks():
 # recorder, because a `case` statement contains every branch whether it is taken or not —
 # so "postgresql appears in the text" is true even when MariaDB is what gets installed.
 #
-# The multi-distro layer reads /etc/os-release, which does not exist off Linux; it falls
-# back to $ID, so the operating system can be named from the environment and every branch
-# exercised on any machine.
+# The multi-distro layer reads /etc/os-release. Naming the OS through $ID in the environment
+# works only where that file is ABSENT — a Mac — because on Linux the script sources it and
+# overwrites the variable. On the CI runner that silently turned "Debian refuses MySQL" into
+# "Ubuntu installs MySQL", which passes as a success. So the script is pointed at a fake file
+# instead, and the fake OS holds wherever the test runs.
 
 def run_script(tmp_path, php: str, db: str, os_id: str = "ubuntu") -> tuple[int, list[str], str]:
     binstub = tmp_path / "bin"
@@ -169,9 +171,12 @@ def run_script(tmp_path, php: str, db: str, os_id: str = "ubuntu") -> tuple[int,
     for f in binstub.iterdir():
         f.chmod(0o755)
 
-    src = tmp_path / "s.sh"
-    src.write_text(script(php, db))
     like = "debian" if os_id in ("ubuntu", "debian") else "rhel"
+    osr = tmp_path / "os-release"
+    osr.write_text(f'ID={os_id}\nID_LIKE={like}\nPRETTY_NAME="{os_id} (test)"\n')
+
+    src = tmp_path / "s.sh"
+    src.write_text(script(php, db).replace("/etc/os-release", str(osr)))
     proc = subprocess.run(
         ["bash", str(src)], capture_output=True, text=True,
         env={"PATH": f"{binstub}:/usr/bin:/bin:/usr/sbin:/sbin",

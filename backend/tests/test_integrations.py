@@ -20,6 +20,8 @@ import pytest
 from app.services import api_key_service, outbound_guard, webhook_service
 from app.services.outbound_guard import BlockedURL, check_url
 
+from tests.routes import all_routes
+
 NOW = datetime(2026, 7, 26, 12, 0, tzinfo=timezone.utc)
 
 
@@ -365,7 +367,7 @@ def test_the_signature_instructions_we_publish_match_the_code():
 
 def _v1_paths() -> set[str]:
     import main
-    return {r.path for r in main.app.routes if getattr(r, "path", "").startswith("/api/v1")}
+    return {r.path for r in all_routes(main.app) if getattr(r, "path", "").startswith("/api/v1")}
 
 
 def _routes_using_api_key_auth() -> set[str]:
@@ -374,7 +376,7 @@ def _routes_using_api_key_auth() -> set[str]:
     from app.dependencies.api_key import get_api_caller, require_write
 
     accepting = set()
-    for route in main.app.routes:
+    for route in all_routes(main.app):
         for dep in getattr(getattr(route, "dependant", None), "dependencies", []) or []:
             if dep.call in (get_api_caller, require_write):
                 accepting.add(route.path)
@@ -393,7 +395,7 @@ def test_only_v1_routes_accept_an_api_key():
     from app.dependencies.api_key import get_api_caller, require_write
 
     offenders = []
-    for route in main.app.routes:
+    for route in all_routes(main.app):
         path = getattr(route, "path", "")
         dependant = getattr(route, "dependant", None)
         if dependant is None:
@@ -424,7 +426,7 @@ def test_the_api_surface_has_no_shell_and_no_delete():
     and audit trail — not something a long-lived key can reach."""
     import main
 
-    for route in main.app.routes:
+    for route in all_routes(main.app):
         path = getattr(route, "path", "")
         if not path.startswith("/api/v1"):
             continue
@@ -440,7 +442,7 @@ def test_key_management_requires_a_browser_session():
     import main
     from app.dependencies.auth import get_current_user
 
-    managed = [r for r in main.app.routes
+    managed = [r for r in all_routes(main.app)
                if getattr(r, "path", "") in ("/api/api-keys", "/api/webhooks")]
     assert managed, "management routes not registered"
     for route in managed:

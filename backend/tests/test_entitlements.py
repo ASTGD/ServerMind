@@ -21,6 +21,8 @@ from fastapi import HTTPException
 from app.config import settings
 from app.services import entitlements as ent
 
+from tests.routes import all_routes
+
 
 class U:
     """Minimal stand-in for a User row."""
@@ -262,7 +264,7 @@ def test_gates_are_only_on_create_endpoints():
     import main
 
     offenders = []
-    for route in main.app.routes:
+    for route in all_routes(main.app):
         path = getattr(route, "path", "")
         methods = getattr(route, "methods", set()) or set()
         endpoint = getattr(route, "endpoint", None)
@@ -315,7 +317,7 @@ def test_the_paid_feature_creates_are_actually_gated():
         "/api/team/invite": ent.TEAM,
     }
     found: dict[str, bool] = {p: False for p in must_be_gated}
-    for route in main.app.routes:
+    for route in all_routes(main.app):
         path = getattr(route, "path", "")
         if path not in found or "POST" not in (getattr(route, "methods", set()) or set()):
             continue

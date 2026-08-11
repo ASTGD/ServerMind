@@ -12,6 +12,26 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # About twenty tests exercise real SQL against a real Postgres — the ones checking
+    # ownership, cascades and constraints, which a fake session cannot answer honestly. With
+    # no database here they failed on connect, and because they failed the "Ally evals" step
+    # below never ran at all: it is a later step in the same job.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: servermind
+          POSTGRES_PASSWORD: servermind
+          POSTGRES_DB: servermind
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U servermind"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      # Same shape as the local dev URL, so a test that reads it needs no CI special case.
+      DATABASE_URL: postgresql+asyncpg://servermind:servermind@localhost:5432/servermind
+      SECRET_KEY: ci-secret-not-a-real-key
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,6 +40,9 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Create the schema
+        run: alembic upgrade head
+
       - name: Run tests
         run: pytest
       - name: Ally evals (deterministic gate)

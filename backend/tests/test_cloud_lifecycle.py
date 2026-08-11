@@ -12,6 +12,8 @@ import pytest
 from app.services import cloud_lifecycle_service as cl
 from app.services.cloud_service import CloudError, Instance
 
+from tests.routes import all_routes
+
 
 def size(slug, vcpu=1, mem=1024, disk=25, price=6.0):
     return cl.SizeOption(slug=slug, label=slug, vcpus=vcpu, memory_mb=mem,
@@ -298,7 +300,7 @@ def test_every_lifecycle_route_resolves_to_its_own_handler():
     for path, want in expected.items():
         scope = {"type": "http", "method": "POST", "path": path, "headers": [],
                  "root_path": "", "query_string": b""}
-        hit = next((r for r in main.app.routes
+        hit = next((r for r in all_routes(main.app)
                     if r.matches(scope)[0] == Match.FULL), None)
         assert hit is not None, f"{path} matches no route at all"
         assert hit.name == want, f"{path} was handled by {hit.name}, not {want}"
@@ -312,7 +314,7 @@ def test_a_made_up_action_is_not_a_route():
              "query_string": b"",
              "path": "/api/cloud-accounts/11111111-1111-1111-1111-111111111111"
                      "/instances/42/wipe-everything"}
-    assert not any(r.matches(scope)[0] == Match.FULL for r in main.app.routes)
+    assert not any(r.matches(scope)[0] == Match.FULL for r in all_routes(main.app))
 
 
 # ── the guard has to be able to run at all ───────────────────────────────────
