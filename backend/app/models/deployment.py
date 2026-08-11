@@ -90,3 +90,44 @@ class DeployRun(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
                                                  server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+#: What a customer can ask to be told about. Ploi's three, named the same way.
+DEPLOY_EVENTS = ("started", "completed", "failed")
+
+
+class DeployNotification(Base):
+    """Tell me when this site deploys — Ploi's per-site Notifications.
+
+    A subscription, not a second notification system. The destination is a channel the
+    customer already made (Slack, email, Telegram, SMS) and the sending is
+    `channel_service.deliver`, so there is still one implementation of "talk to Slack".
+
+    `channel_id` is nullable ON PURPOSE. Deleting a channel must not silently delete the rule
+    that used it — the customer would lose the fact that they asked to be told at all, and
+    find out by not being told. A rule with no channel is shown as needing one.
+    """
+
+    __tablename__ = "deploy_notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True,
+                                          default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("deploy_targets.id", ondelete="CASCADE"),
+        nullable=False, index=True)
+    channel_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("notification_channels.id", ondelete="SET NULL"))
+
+    #: A subset of DEPLOY_EVENTS.
+    events: Mapped[list | None] = mapped_column(JSONB, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    #: What happened last time, so the screen can be honest rather than assume it works —
+    #: the same reason a notification channel reads "Not tested yet" until one has arrived.
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                 server_default=func.now())

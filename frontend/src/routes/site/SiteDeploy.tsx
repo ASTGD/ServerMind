@@ -9,6 +9,7 @@ import {
 } from "@/api/sites"
 import { deployNow, listDeployRuns, rollback } from "@/api/deployments"
 import { Button, EmptyState, Input, Label } from "@/components/ui"
+import DeployNotifications from "@/components/sites/DeployNotifications"
 
 /**
  * Getting code from a repository onto this website.
@@ -200,6 +201,11 @@ export default function SiteDeploy() {
           ))
         )}
       </div>
+
+      {/* Deploy events come from here, so this is where someone thinks about being told
+          about them. A "Notifications" menu row holding only deploy settings would send
+          people looking for uptime and security alerts, which live at server level. */}
+      <DeployNotifications siteId={site.id} />
     </div>
   )
 }

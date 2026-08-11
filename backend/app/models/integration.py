@@ -46,6 +46,11 @@ WEBHOOK_EVENTS = (
     "mission.finished",
     "backup.failed",
     "certificate.expiring",
+    # Ploi POSTs a raw body to a per-site URL for these two. Ours go through the endpoint
+    # system that already signs, retries and logs every delivery — the same event either
+    # way, but auditable.
+    "deploy.started",
+    "deploy.finished",
 )
 
 

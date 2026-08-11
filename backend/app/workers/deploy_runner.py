@@ -22,6 +22,7 @@ from app.database import AsyncSessionLocal
 from app.models.deployment import DeployRun, DeployTarget
 from app.models.server import Server
 from app.services import connection_manager, deploy_service as dep
+from app.services import deploy_notify_service as notify
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,14 @@ async def start_deploy(target_id, user_id, *, trigger: str = "manual") -> str:
         await db.commit()
         await db.refresh(run)
         run_id, steps, discard = run.id, plan.steps, plan.discard
+        # Read off the row while its session is open — the notification runs
+        # after this block, by which time `target` is detached.
+        name, repo, branch = target.name, target.repo, target.branch
+
+    # Told BEFORE the work starts, because "started" is only useful if it arrives while the
+    # deploy is still running. Never raises — see `deploy_notify_service.notify`.
+    await notify.notify(target_id, "started", user_id=user_id, site=name, repo=repo,
+                        branch=branch, release=stamp, trigger=trigger)
 
     async def go():
         ok = await _execute(run_id, steps, server, discard=discard)
@@ -137,6 +146,11 @@ async def start_deploy(target_id, user_id, *, trigger: str = "manual") -> str:
                     t.current_release = stamp
                     t.last_deployed_at = datetime.now(timezone.utc)
                 await db2.commit()
+            run = await db2.get(DeployRun, run_id)
+            step = getattr(run, "failed_step", None) if run else None
+        await notify.notify(target_id, "completed" if ok else "failed", user_id=user_id,
+                            site=name, repo=repo, branch=branch, release=stamp,
+                            failed_step=step, trigger=trigger)
 
     asyncio.create_task(go())
     return str(run_id)

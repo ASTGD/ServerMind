@@ -1617,6 +1617,141 @@ async def connect_site_deploy(site_id: str, body: SiteDeployIn, db: DBDep,
             "served_from": deploy_service.served_path(target.path, target.web_dir)}
 
 
+class DeployNotifyIn(BaseModel):
+    channel_id: str
+    events: list[str] = []
+
+
+async def _deploy_target_for(site_id: str, current_user, db, *, need_execute: bool = False):
+    """The site and the thing that actually deploys it, or an honest refusal."""
+    from app.models.deployment import DeployTarget
+
+    site, server = await _site_and_server(site_id, current_user, db,
+                                          need_execute=need_execute)
+    target = (await db.execute(
+        select(DeployTarget).where(DeployTarget.site_id == site.id)
+    )).scalars().first()
+    if target is None:
+        raise HTTPException(
+            status_code=422,
+            detail="This site does not deploy from a repository yet, so there are no "
+                   "deploys to be told about. Connect one first.")
+    return site, server, target
+
+
+@router.get("/sites/{site_id}/deploy/notifications")
+async def list_deploy_notifications(site_id: str, db: DBDep,
+                                    current_user: CurrentUser) -> dict:
+    """Who gets told when this site deploys, and where they could be told."""
+    from app.models.deployment import DEPLOY_EVENTS, DeployNotification
+    from app.models.notification_channel import NotificationChannel
+    from app.services import channel_service, deploy_notify_service as dn
+
+    _site, _server, target = await _deploy_target_for(site_id, current_user, db)
+
+    rules = (await db.execute(
+        select(DeployNotification).where(DeployNotification.target_id == target.id)
+    )).scalars().all()
+    channels = (await db.execute(
+        select(NotificationChannel).where(NotificationChannel.user_id == current_user.id)
+    )).scalars().all()
+    by_id = {str(c.id): c for c in channels}
+
+    return {
+        "events": [{"value": e, "label": {"started": "When a deploy starts",
+                                          "completed": "When a deploy finishes",
+                                          "failed": "When a deploy fails"}[e]}
+                   for e in DEPLOY_EVENTS],
+        # Only the channels that could actually carry a message. A rule pointed at a dead
+        # channel is a rule that looks set up and sends nothing.
+        "channels": [channel_service.public(c) for c in channels if c.is_active],
+        "rules": [{
+            "id": str(r.id),
+            "channel_id": str(r.channel_id) if r.channel_id else None,
+            "channel": (channel_service.public(by_id[str(r.channel_id)])
+                        if str(r.channel_id) in by_id else None),
+            "events": r.events or [],
+            "summary": dn.summarise(r),
+            "is_active": r.is_active,
+            "last_sent_at": r.last_sent_at.isoformat() if r.last_sent_at else None,
+            # Shown rather than swallowed: a rule that failed last time is not a rule that
+            # works, and the customer finds out otherwise by not being told.
+            "last_error": r.last_error,
+        } for r in rules],
+    }
+
+
+@router.post("/sites/{site_id}/deploy/notifications", status_code=201)
+async def add_deploy_notification(site_id: str, body: DeployNotifyIn, db: DBDep,
+                                  current_user: CurrentUser) -> dict:
+    """Be told when this site deploys — Ploi's per-site Notifications."""
+    from app.models.deployment import DeployNotification
+    from app.models.notification_channel import NotificationChannel
+    from app.services import deploy_notify_service as dn
+
+    site, server, target = await _deploy_target_for(site_id, current_user, db,
+                                                    need_execute=True)
+    try:
+        events = dn.clean_events(body.events)
+    except dn.DeployNotifyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # The channel must be one of THEIRS. Without this check a guessed id would send this
+    # customer's deploy notices to somebody else's Slack.
+    channel = (await db.execute(
+        select(NotificationChannel).where(
+            NotificationChannel.id == body.channel_id,
+            NotificationChannel.user_id == current_user.id)
+    )).scalars().first()
+    if channel is None:
+        raise HTTPException(status_code=404, detail="No such notification channel.")
+
+    existing = (await db.execute(
+        select(DeployNotification).where(
+            DeployNotification.target_id == target.id,
+            DeployNotification.channel_id == channel.id)
+    )).scalars().first()
+    if existing is not None:
+        # Updated rather than refused: pressing it again with different events plainly means
+        # "make it these", and a duplicate-key error would explain nothing.
+        existing.events = events
+        existing.is_active = True
+    else:
+        db.add(DeployNotification(user_id=current_user.id, target_id=target.id,
+                                  channel_id=channel.id, events=events))
+    await db.commit()
+
+    await audit_service.audit(db, current_user, "site.deploy.notification.set",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "channel": channel.label,
+                                    "events": events})
+    return {"ok": True}
+
+
+@router.delete("/sites/{site_id}/deploy/notifications/{rule_id}", status_code=204)
+async def remove_deploy_notification(site_id: str, rule_id: str, db: DBDep,
+                                     current_user: CurrentUser) -> None:
+    from app.models.deployment import DeployNotification
+
+    site, server, target = await _deploy_target_for(site_id, current_user, db,
+                                                    need_execute=True)
+    rule = (await db.execute(
+        select(DeployNotification).where(
+            DeployNotification.id == rule_id,
+            # Scoped to THIS site's target, so an id from another site cannot be deleted
+            # through this site's screen.
+            DeployNotification.target_id == target.id,
+            DeployNotification.user_id == current_user.id)
+    )).scalars().first()
+    if rule is None:
+        raise HTTPException(status_code=404, detail="No such notification.")
+    await db.delete(rule)
+    await db.commit()
+    await audit_service.audit(db, current_user, "site.deploy.notification.removed",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain})
+
+
 @router.post("/sites/{site_id}/deploy/serve")
 async def serve_site_from_deploy(site_id: str, db: DBDep,
                                  current_user: CurrentUser) -> dict:

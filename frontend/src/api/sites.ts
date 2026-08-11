@@ -954,6 +954,43 @@ export async function readLaravel(siteId: string, which: string): Promise<Larave
 
 
 /** Who gets told when this site deploys — Ploi's per-site Notifications. */
+export interface DeployNotifications {
+  events: { value: string; label: string }[]
+  /** Only channels that could actually carry a message. */
+  channels: { id: string; kind: string; label: string; verified_at: string | null }[]
+  rules: {
+    id: string
+    channel_id: string | null
+    channel: { id: string; kind: string; label: string } | null
+    events: string[]
+    summary: string
+    is_active: boolean
+    last_sent_at: string | null
+    /** Shown, not swallowed: a rule that failed last time is not a rule that works. */
+    last_error: string | null
+  }[]
+}
+
+export async function getDeployNotifications(siteId: string): Promise<DeployNotifications> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/deploy/notifications`)
+  return data
+}
+
+export async function setDeployNotification(
+  siteId: string, channelId: string, events: string[],
+): Promise<void> {
+  await apiClient.post(`/api/sites/${siteId}/deploy/notifications`,
+                       { channel_id: channelId, events })
+}
+
+export async function removeDeployNotification(
+  siteId: string, ruleId: string,
+): Promise<void> {
+  await apiClient.delete(`/api/sites/${siteId}/deploy/notifications/${ruleId}`)
+}
+
+
+/** What a site is, who decided, and what its owner may change it to. */
 export interface SiteTypeOptions {
   app_type: string
   /** True when a person set this, rather than a scan concluding it. */
