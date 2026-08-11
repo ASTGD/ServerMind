@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from app.models.server import Server
-from app.services import ssh_service, winrm_service
+from app.services import ssh_service, ssm_service, winrm_service
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,12 @@ async def test_connection(server: Server) -> ConnectionResult:
             expected_fingerprint=server.fingerprint,
         )
         return ConnectionResult(**result)
+
+    if server.connection_type == "ssm":
+        # AWS Systems Manager: no address, no port, no host key — the agent dials out and
+        # identity is IAM rather than a fingerprint we pin.
+        return ConnectionResult(**await ssm_service.test_connection(
+            server, await ssm_service.account_for(server)))
 
     if server.connection_type == "winrm":
         result = await winrm_service.test_connection(
@@ -71,6 +77,11 @@ async def execute(server: Server, command: str,
             server.username, server.auth_type, server.encrypted_cred,
             command, expected_fingerprint=server.fingerprint, read_timeout=read_timeout,
         )
+
+    if server.connection_type == "ssm":
+        return await ssm_service.execute(
+            server, await ssm_service.account_for(server), command,
+            read_timeout=read_timeout)
     if server.connection_type == "winrm":
         return await winrm_service.execute(
             str(server.id), server.host, server.port,
@@ -88,6 +99,9 @@ async def execute_stream(server: Server, command: str) -> AsyncIterator[str]:
             server.username, server.auth_type, server.encrypted_cred,
             command, expected_fingerprint=server.fingerprint,
         )
+    if server.connection_type == "ssm":
+        return ssm_service.execute_stream(
+            server, await ssm_service.account_for(server), command)
     if server.connection_type == "winrm":
         return winrm_service.execute_stream(
             str(server.id), server.host, server.port,
@@ -103,3 +117,4 @@ async def close(server: Server) -> None:
         await ssh_service.close(str(server.id))
     elif server.connection_type == "winrm":
         await winrm_service.close(str(server.id))
+    # ssm holds nothing to close — every command is its own API call.
