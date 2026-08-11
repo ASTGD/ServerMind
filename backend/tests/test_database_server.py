@@ -74,6 +74,11 @@ def run(tmp_path, engine: str, allow: str, os_id: str = "ubuntu"):
     # path keeps the fake OS true wherever the test runs.
     osr = tmp_path / "os-release"
     osr.write_text(f'ID={os_id}\nID_LIKE=debian\nPRETTY_NAME="{os_id} (test)"\n')
+    body = body.replace("/etc/os-release", str(osr))
+    assert "/etc/os-release" not in body, (
+        "the script still reads the machine's own os-release, so the fake OS above is a "
+        "decoration — on Linux it would be overwritten and the test would pass for the "
+        "wrong reason")
 
     src = tmp_path / "s.sh"
     src.write_text(body)
