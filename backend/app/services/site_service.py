@@ -396,6 +396,8 @@ def serialize(site, *, server_name: str | None = None, uptime: dict | None = Non
         "parent_site_id": (str(site.parent_site_id)
                            if getattr(site, "parent_site_id", None) else None),
         "no_index": bool(getattr(site, "no_index", False)),
+        "notes": getattr(site, "notes", None),
+        "tags": list(getattr(site, "tags", None) or []),
         # A site is now created, not only found, so its state has to reach the UI — without
         # these three the whole of P2 is invisible to the customer: they would see a row
         # appear with no sign it is still being built or why it failed.

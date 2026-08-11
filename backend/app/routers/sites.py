@@ -1203,6 +1203,263 @@ async def site_app(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     return {"app": spec.id, "label": spec.label, **data}
 
 
+@router.get("/sites/{site_id}/app/read/{which}")
+async def site_app_read(site_id: str, which: str, db: DBDep,
+                        current_user: CurrentUser) -> dict:
+    """Show one thing about this site's application, without changing anything.
+
+    Deliberately a GET on its own path rather than another `action`. Until now we shipped
+    only the WRITING half — we could run migrations but not show which were pending — which
+    is backwards for troubleshooting, and mixing the two behind one verb is how a "look at
+    this" button ends up changing a site.
+
+    Read permission, not execute: looking is not operating.
+    """
+    from app.services import app_registry, laravel_service
+
+    site, server = await _site_and_server(site_id, current_user, db)
+    spec = app_registry.app_for(site.app_type)
+    if spec is None or spec.id != "laravel":
+        raise HTTPException(status_code=422,
+                            detail="This is only available for a Laravel site.")
+    try:
+        return await laravel_service.read_one(server, site.doc_root or "", which)
+    except laravel_service.LaravelError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+class SiteDetailsIn(BaseModel):
+    """What the customer owns about a site: a note, and how it is grouped.
+
+    Both fields are optional and only what is SENT is changed — so a screen that edits notes
+    cannot silently wipe the tags a different screen set.
+    """
+    notes: str | None = None
+    tags: list[str] | None = None
+
+
+@router.put("/sites/{site_id}/details")
+async def set_site_details(site_id: str, body: SiteDetailsIn, db: DBDep,
+                           current_user: CurrentUser) -> dict:
+    """Ploi's "Site notes" and "Project grouping".
+
+    Nothing derives either of these, which is exactly why they live in our database: an
+    agency's note about a client, and the grouping that lets fifty sites be read as five
+    accounts, cannot be recovered by looking at a server.
+    """
+    from app.services import site_service
+
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+
+    try:
+        if body.notes is not None:
+            site.notes = site_service.check_notes(body.notes)
+        if body.tags is not None:
+            site.tags = site_service.check_tags(body.tags)
+    except site_service.SiteError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    await db.commit()
+    await db.refresh(site)
+    return {"notes": site.notes, "tags": list(site.tags or [])}
+
+
+@router.get("/site-tags")
+async def list_site_tags(db: DBDep, current_user: CurrentUser) -> dict:
+    """Every tag this customer has used, so the form can offer them instead of asking them
+    to remember the exact spelling — which is what makes grouping actually group."""
+    rows = (await db.execute(
+        select(Site.tags).where(Site.user_id == current_user.id)
+    )).scalars().all()
+    seen: dict[str, str] = {}
+    for tags in rows:
+        for tag in tags or []:
+            seen.setdefault(tag.lower(), tag)
+    return {"tags": sorted(seen.values(), key=str.lower)}
+
+
+@router.get("/sites/{site_id}/app/commands")
+async def site_app_commands(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """The commands this site's application offers, grouped.
+
+    Served from the backend so the list has ONE home — the same reason the site catalogue is.
+    A copy in the browser is a copy that drifts the first time a command is added.
+    """
+    from app.services import app_registry, laravel_service
+
+    site, _server = await _site_and_server(site_id, current_user, db)
+    spec = app_registry.app_for(site.app_type)
+    if spec is None or spec.id != "laravel":
+        return {"groups": [], "custom": False}
+
+    groups: dict[str, list] = {}
+    for key, c in laravel_service.ACTIONS.items():
+        groups.setdefault(c["group"], []).append({
+            "key": key, "label": c["label"], "blurb": c["blurb"],
+            "confirm": key in laravel_service.DESTRUCTIVE,
+        })
+    return {
+        "groups": [{"name": name, "commands": cmds} for name, cmds in groups.items()],
+        "custom": True,
+        "forbidden": list(laravel_service.FORBIDDEN_COMMANDS),
+    }
+
+
+def _wp_root(site) -> str:
+    """Where WordPress lives. Refused rather than defaulted — an empty document root would
+    make every path below it start at `/`."""
+    root = (site.doc_root or "").rstrip("/")
+    if not root:
+        raise HTTPException(422, "We do not know which folder holds this site.")
+    return root
+
+
+@router.get("/sites/{site_id}/wp-config")
+async def read_wp_config(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """Read wp-config.php so it can be edited — Ploi's WordPress → Configuration.
+
+    Fetched over SFTP rather than through a command, for the same reason it is written that
+    way: the file holds the database password and every authentication salt in clear text,
+    and a command's output is stored.
+    """
+    from app.services import file_service, wp_config_service as wc
+
+    _site, server = await _wp_context(site_id, db, current_user, need_execute=False)
+    root = _wp_root(_site)
+    try:
+        raw = await file_service.download_file(server, wc.config_path(root))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(422, f"That file could not be read: {exc}") from exc
+
+    text = raw.decode("utf-8", "replace")
+    _masked, hidden = wc.redact(text)
+    return {"path": wc.config_path(root), "content": text, "secrets": hidden,
+            "warnings": wc.warnings(text)}
+
+
+class WpCliIn(BaseModel):
+    """One wp-cli command, typed by the customer."""
+    command: str = Field(min_length=1, max_length=200)
+
+
+@router.post("/sites/{site_id}/wp-cli")
+async def run_wp_cli(site_id: str, body: WpCliIn, db: DBDep,
+                     current_user: CurrentUser) -> dict:
+    """Ploi's WordPress → WP-CLI tab.
+
+    wp-cli is how WordPress is actually administered from a server, and a plugin brings its
+    own commands — so no fixed list here could cover what somebody legitimately needs. The
+    bound is a refusal list (anything that empties the database or runs arbitrary code) plus
+    a shape that cannot become a second command.
+    """
+    from app.services import wordpress_service
+
+    site, server = await _wp_context(site_id, db, current_user, need_execute=True)
+    root = _wp_root(site)
+    try:
+        cleaned = wordpress_service.check_wp_command(body.command)
+        result = await wordpress_service.run_wp(server, root, body.command)
+    except wordpress_service.WordPressError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    await audit_service.audit(db, current_user, "site.wp_cli",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "command": cleaned})
+    return result
+
+
+class WpConfigIn(BaseModel):
+    content: str = Field(min_length=1, max_length=200_000)
+
+
+@router.post("/sites/{site_id}/wp-config")
+async def save_wp_config(site_id: str, body: WpConfigIn, db: DBDep,
+                         current_user: CurrentUser) -> dict:
+    """Save it, and put the old one back if the site stops loading.
+
+    Nothing about the content reaches a command line. It is uploaded over SFTP beside the
+    real file; the shell performs the parse check, the backup, the ownership, the rename and
+    the check that the site still serves — none of which carry a value.
+    """
+    from app.services import connection_manager, file_service, wordpress_service
+    from app.services import wp_config_service as wc
+
+    site, server = await _wp_context(site_id, db, current_user, need_execute=True)
+    root = _wp_root(site)
+    try:
+        data = wc.check_content(body.content)
+    except wc.WpConfigError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    tmp = f"{root}/{wc.TMP_NAME}"
+    try:
+        await file_service.upload_file(server, tmp, data)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(422, f"That file could not be sent: {exc}") from exc
+
+    php_bin = ""
+    try:
+        probe = await wordpress_service.read(server, root)
+        php_bin = probe.get("php_bin") or ""
+    except Exception:  # noqa: BLE001 — a missing probe only costs us the `php -l` check
+        pass
+
+    out, err, code = await connection_manager.execute(
+        server, wc.build_apply_command(root, site.domain, php_bin=php_bin))
+    ok, message = wc.explain(code, (out or "") + (err or ""))
+    if not ok:
+        # Never leave our half-written copy behind: it sits beside the real file and holds
+        # the same credentials.
+        await connection_manager.execute(server, wc.build_discard_command(root))
+        raise HTTPException(422, message)
+
+    # Records THAT it changed and nothing about what is in it.
+    await audit_service.audit(db, current_user, "site.wp_config_saved",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain})
+    return {"message": message, "warnings": wc.warnings(body.content)}
+
+
+class ArtisanIn(BaseModel):
+    """One artisan command, typed by the customer. Refused rather than escaped."""
+    command: str = Field(min_length=1, max_length=200)
+
+
+@router.post("/sites/{site_id}/app/artisan")
+async def run_artisan(site_id: str, body: ArtisanIn, db: DBDep,
+                      current_user: CurrentUser) -> dict:
+    """Run one of the application's OWN commands — Ploi's "Custom commands".
+
+    A Laravel application defines its own commands (`app:send-invoices`, `reports:nightly`),
+    and those are the whole reason artisan exists — no fixed list here could know them. So
+    the bound is a refusal list plus a shape that cannot become a second command, rather than
+    an allow-list that would make the feature useless.
+    """
+    from app.services import app_registry, laravel_service
+
+    site, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    spec = app_registry.app_for(site.app_type)
+    if spec is None or spec.id != "laravel" or server.connection_type != "ssh":
+        raise HTTPException(422, "This is only available for a Laravel site.")
+
+    try:
+        cleaned = laravel_service.check_custom(body.command)
+        result = await laravel_service.act_custom(server, site.doc_root or "", body.command)
+    except laravel_service.LaravelError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    # The command itself is recorded: unlike a password or a key, what somebody ran on their
+    # own site is exactly what an audit trail is for.
+    await audit_service.audit(db, current_user, "site.laravel.artisan",
+                              target_type="server", target_id=str(server.id),
+                              meta={"domain": site.domain, "command": cleaned})
+    return result
+
+
 @router.post("/sites/{site_id}/app/action")
 async def site_app_action(site_id: str, body: AppActionIn, db: DBDep,
                           current_user: CurrentUser) -> dict:

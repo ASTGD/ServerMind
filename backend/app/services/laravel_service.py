@@ -52,8 +52,15 @@ def _prelude(doc_root: str) -> str:
 # can it actually boot this application? `artisan --version` runs the autoloader and the
 # platform check, so a PHP that answers it is a PHP that can run the commands below.
 PHP_BIN=""
-for _c in $(ls -d /usr/local/lsws/lsphp*/bin/php /usr/bin/php8* /usr/bin/php 2>/dev/null \
-            | sort -rV); do
+# /usr/local/bin is the default prefix when PHP is built from source, and it is where the
+# official images put it too. Leaving it out reported "we could not find PHP" on a machine
+# that plainly had it, and every Laravel action failed with it — found by running these
+# against a real Laravel rather than by reading the list. `command -v` comes last, so an
+# explicit versioned binary still wins; each candidate is still proved by `artisan --version`
+# below, so widening the search can never pick a wrong one.
+for _c in $(ls -d /usr/local/lsws/lsphp*/bin/php /usr/bin/php8* /usr/local/bin/php8* \
+                  /usr/bin/php /usr/local/bin/php 2>/dev/null | sort -rV) \
+          $(command -v php 2>/dev/null); do
   [ -x "$_c" ] || continue
   if [ -f "$APP_PATH/artisan" ] \
      && $RUNAS "$_c" "$APP_PATH/artisan" --version >/dev/null 2>&1; then
@@ -291,37 +298,155 @@ async def read(server: Server, doc_root: str) -> dict:
 # Each is ONE named artisan command, never something the caller composes. None of them takes
 # a target, so there is no customer input in any of these command lines at all.
 
-ACTIONS: dict[str, str] = {
-    "optimize": "cache the configuration, routes and views",
-    "clear": "clear every cache",
-    "migrate": "run the database migrations that are waiting",
-    "down": "put the site into maintenance mode",
-    "up": "take the site out of maintenance mode",
-    "storage_link": "link the uploads folder so uploaded files can be served",
-    "queue_restart": "restart the queue workers so they pick up the new code",
+#: Grouped the way Ploi groups them, because 20 buttons in a row is a wall and the groups
+#: are how somebody finds the one they came for. Every entry is ONE named artisan command
+#: chosen from this map — never something the caller composes.
+ACTIONS: dict[str, dict] = {
+    # Caches — the everyday ones.
+    "optimize": {"group": "Optimise", "label": "Cache everything",
+                 "cmd": "optimize", "t": 120,
+                 "blurb": "Cache the configuration, routes and views so pages load faster."},
+    "clear": {"group": "Optimise", "label": "Clear everything",
+              "cmd": "optimize:clear", "t": 120,
+              "blurb": "Clear every cache. Safe, and the first thing to try when a change "
+                       "does not appear."},
+    "cache_clear": {"group": "Cache", "label": "Clear application cache",
+                    "cmd": "cache:clear", "t": 120,
+                    "blurb": "Empty the data the application itself cached."},
+    "config_clear": {"group": "Config", "label": "Clear config cache",
+                     "cmd": "config:clear", "t": 60,
+                     "blurb": "Read the settings from the files again."},
+    "config_cache": {"group": "Config", "label": "Cache the config",
+                     "cmd": "config:cache", "t": 60,
+                     "blurb": "Faster, but the settings file is then ignored until you "
+                              "clear it again."},
+    "route_cache": {"group": "Routes", "label": "Cache the routes",
+                    "cmd": "route:cache", "t": 60,
+                    "blurb": "Faster page routing. Some applications cannot use this."},
+    "route_clear": {"group": "Routes", "label": "Clear the route cache",
+                    "cmd": "route:clear", "t": 60, "blurb": "Undo route caching."},
+    "view_cache": {"group": "Views", "label": "Compile the templates",
+                   "cmd": "view:cache", "t": 120,
+                   "blurb": "Compile every page template up front."},
+    "view_clear": {"group": "Views", "label": "Clear compiled templates",
+                   "cmd": "view:clear", "t": 60,
+                   "blurb": "Throw the compiled templates away and build them again."},
+
+    # Database.
+    "migrate": {"group": "Database", "label": "Run migrations",
+                "cmd": "migrate --force", "t": 300,
+                "blurb": "Apply the database changes this version of the code needs."},
+
+    # Availability.
+    "down": {"group": "General", "label": "Maintenance mode on",
+             "cmd": "down", "t": 60,
+             "blurb": "Show visitors a maintenance page instead of the site."},
+    "up": {"group": "General", "label": "Maintenance mode off",
+           "cmd": "up", "t": 60, "blurb": "Put the site back."},
+
+    # Queue.
+    "queue_restart": {"group": "Queue", "label": "Restart the workers",
+                      "cmd": "queue:restart", "t": 60,
+                      "blurb": "Make the background workers pick up the new code. Without "
+                               "this they keep running the previous version."},
+    "queue_retry_all": {"group": "Queue", "label": "Retry every failed job",
+                        "cmd": "queue:retry all", "t": 120,
+                        "blurb": "Put the failed jobs back in the queue to be tried again."},
+    "queue_flush": {"group": "Queue", "label": "Delete the failed jobs",
+                    "cmd": "queue:flush", "t": 60,
+                    "blurb": "Throw away the record of every failed job. They cannot be "
+                             "retried afterwards."},
+
+    # Scheduler and storage.
+    "schedule_run": {"group": "Scheduler", "label": "Run due tasks now",
+                     "cmd": "schedule:run", "t": 300,
+                     "blurb": "Run whatever the scheduler is due to run, immediately."},
+    "storage_link": {"group": "Storage", "label": "Link the uploads folder",
+                     "cmd": "storage:link", "t": 60,
+                     "blurb": "Make uploaded files reachable from the web."},
 }
 
-#: `migrate` is the only one here that can lose data — a migration may drop a column. It is
-#: offered, because a deploy is not finished without it, but it is named as what it is and
-#: the screen only offers it when something is actually waiting.
-DESTRUCTIVE = {"migrate"}
+#: The ones a customer should be asked about first, and WHY — because "are you sure" with no
+#: reason teaches people to click through it.
+#:
+#: `migrate` can lose data (a migration may drop a column); it is still offered, because a
+#: deploy is not finished without it. `queue:flush` destroys the record of work that failed,
+#: so nobody can ever see what went wrong or retry it. `queue:retry all` re-runs jobs that
+#: may have half-succeeded — the classic outcome is a customer charged or emailed twice.
+#: `schedule:run` fires real scheduled work outside its schedule.
+DESTRUCTIVE = {"migrate", "queue_flush", "queue_retry_all", "schedule_run"}
+
+#: Artisan commands nobody should reach through a web panel, whatever they type. Each one
+#: EMPTIES the database, and there is no undo anywhere in this system.
+#:
+#: Refused rather than confirmed: a confirmation is a thing people click, and the cost here
+#: is the customer's entire dataset. Somebody who genuinely means it has a terminal.
+FORBIDDEN_COMMANDS = ("db:wipe", "migrate:fresh", "migrate:reset", "migrate:refresh",
+                      "migrate:rollback", "tinker")
 
 
 def build_action_command(action: str, doc_root: str) -> str:
-    if action not in ACTIONS:
+    """One named command from the map above. The key indexes a table; there is no path by
+    which caller text becomes part of the command line."""
+    spec = ACTIONS.get(action)
+    if spec is None:
         raise LaravelError(f"'{action}' is not something we can do to a Laravel site.")
-    body = {
-        # --force because artisan refuses to run migrations unattended in production
-        # otherwise, and there is nobody at a terminal to confirm.
-        "migrate": f"_t 300 $ART migrate --force --no-ansi",
-        "optimize": f"_t 120 $ART optimize --no-ansi",
-        "clear": f"_t 120 $ART optimize:clear --no-ansi",
-        "down": f"_t 60 $ART down --no-ansi",
-        "up": f"_t 60 $ART up --no-ansi",
-        "storage_link": f"_t 60 $ART storage:link --no-ansi",
-        "queue_restart": f"_t 60 $ART queue:restart --no-ansi",
-    }[action]
-    return _prelude(doc_root) + body + "\n"
+    # `migrate --force` carries its flag in the map because artisan otherwise refuses to run
+    # migrations unattended in production, and there is nobody at a terminal to confirm.
+    return _prelude(doc_root) + f"_t {spec['t']} $ART {spec['cmd']} --no-ansi" + "\n"
+
+
+def check_custom(command: str) -> str:
+    """A command the customer typed. Returns it cleaned, or refuses.
+
+    Ploi offers this and it is genuinely useful — an application's own commands are the whole
+    reason artisan exists. The bound is not a list of what is allowed (we cannot know a
+    customer's own command names) but a list of what is REFUSED, plus a shape that cannot
+    become a second command.
+    """
+    raw = command or ""
+    # Newlines FIRST, before whitespace is normalised. Collapsing them into spaces would turn
+    # a two-line paste into one command with surprise arguments — silently, and the check
+    # below could then never fire on the character it names.
+    if "\n" in raw or "\r" in raw:
+        raise LaravelError("One artisan command at a time — that looks like more than one "
+                           "line.")
+    text = " ".join(raw.split())
+    if not text:
+        raise LaravelError("Type an artisan command to run.")
+    if len(text) > 200:
+        raise LaravelError("That command is too long.")
+
+    # A shell metacharacter would let one command become several. The command is quoted
+    # before it reaches the shell as well, so this is the second layer, not the only one —
+    # but a message naming the character beats a mysterious quoting failure.
+    bad = set(text) & set(";|&`$><\n\\\"'")
+    if bad:
+        raise LaravelError(
+            f"Remove {' '.join(sorted(bad))} — one artisan command at a time, and no shell "
+            f"characters.")
+    if text.split()[0] in ("php", "artisan", "./artisan"):
+        raise LaravelError("Just the artisan command itself, for example `about` or "
+                           "`app:send-invoices`.")
+
+    name = text.split()[0].lower()
+    if name in FORBIDDEN_COMMANDS:
+        raise LaravelError(
+            f"`{name}` empties the database, and nothing in ServerAlly can undo that. "
+            f"If you really mean it, run it over SSH where you can see what you are doing.")
+    return text
+
+
+def build_custom_command(command: str, doc_root: str) -> str:
+    import shlex
+
+    safe = check_custom(command)
+    # Quoted WORD BY WORD, not as one string. `shlex.quote` on the whole thing would hand
+    # artisan a single argument literally named "app:send-invoices --dry", which is not a
+    # command — the same mistake the daemons work made with systemd's ExecStart, inverted.
+    # The quoting is the second layer; the validation above is what makes it correct.
+    words = " ".join(shlex.quote(w) for w in safe.split())
+    return _prelude(doc_root) + f"_t 300 $ART {words} --no-ansi\n"
 
 
 async def act(server: Server, doc_root: str, action: str) -> dict:
@@ -344,3 +469,143 @@ async def act(server: Server, doc_root: str, action: str) -> dict:
     if code != 0:
         raise LaravelError(body[-600:] or "Laravel reported a failure.")
     return {"output": body}
+
+
+async def act_custom(server: Server, doc_root: str, command: str) -> dict:
+    """Run a command the customer typed, and report exactly what artisan said.
+
+    Its own message is the useful part — a command that does not exist, a missing argument,
+    an exception inside the job — and nothing written here could improve on it.
+    """
+    from app.services.secret_redact import redact_secrets
+
+    try:
+        stdout, stderr, code = await connection_manager.execute(
+            server, build_custom_command(command, doc_root))
+    except Exception as exc:  # noqa: BLE001
+        raise LaravelError(f"We could not reach the server: {exc}") from exc
+
+    output = (stdout or "") + (("\n" + stderr) if stderr else "")
+    for marker, message in _ERRORS.items():
+        if f"{_S}|error|{marker}" in output:
+            raise LaravelError(message)
+    body = "\n".join(l for l in output.splitlines() if not l.startswith(_S)).strip()
+    text, hidden = redact_secrets(body[:_MAX_OUTPUT])
+    return {"ok": code == 0, "output": text, "hidden": hidden,
+            "trimmed": len(body) > _MAX_OUTPUT}
+
+
+# --- Reads --------------------------------------------------------------------------------
+#
+# Kept as their own map rather than mixed into ACTIONS, and that separation is the point: a
+# read and a write are different kinds of thing, and one list holding both is one typo away
+# from a "look at this" button that changes the site. Nothing here alters anything — the
+# guarantee is asserted by a test, not by intention.
+#
+# Until now we shipped only the WRITING half: we could run migrations but not show which were
+# pending, restart the queue but not show what had failed. That is backwards for
+# troubleshooting, which is what somebody opens this screen to do.
+
+READS: dict[str, dict] = {
+    "about": {
+        "label": "Overview",
+        "blurb": "Laravel and PHP versions, the environment, and which drivers are in use.",
+        "cmd": "about --no-ansi",
+        "timeout": 60,
+    },
+    "migrate_status": {
+        "label": "Migrations",
+        "blurb": "Which database migrations have run, and which are still waiting.",
+        "cmd": "migrate:status --no-ansi",
+        "timeout": 120,
+    },
+    "route_list": {
+        "label": "Routes",
+        "blurb": "Every URL this application answers, and what handles it.",
+        "cmd": "route:list --no-ansi",
+        "timeout": 90,
+    },
+    "schedule_list": {
+        "label": "Scheduled work",
+        "blurb": "What the scheduler is meant to run, and when it next will.",
+        "cmd": "schedule:list --no-ansi",
+        "timeout": 60,
+    },
+    "queue_failed": {
+        "label": "Failed jobs",
+        "blurb": "Work the queue tried and could not finish.",
+        "cmd": "queue:failed --no-ansi",
+        "timeout": 60,
+    },
+    "env": {
+        "label": "Environment",
+        "blurb": "Which environment this application thinks it is running in.",
+        "cmd": "env --no-ansi",
+        "timeout": 30,
+    },
+}
+
+#: Anything that would change the site. A read whose command contains one of these is a
+#: write wearing a read's label, and the test that checks for them is what keeps this map
+#: honest as it grows.
+_MUTATING = (
+    "migrate ", "migrate:fresh", "migrate:refresh", "migrate:reset", "migrate:rollback",
+    "db:seed", "db:wipe", "cache:clear", "config:cache", "config:clear", "optimize",
+    "route:cache", "route:clear", "view:cache", "view:clear", "event:cache",
+    "queue:retry", "queue:flush", "queue:forget", "queue:restart", "queue:work",
+    "schedule:run", "storage:link", "down", "up", "key:generate", "tinker",
+    ">", ">>", "rm ", "mv ", "chmod", "chown",
+)
+
+#: Long output is trimmed rather than streamed. A site with 900 routes would otherwise put
+#: a megabyte through the websocket to answer "what URLs does this have".
+_MAX_OUTPUT = 60_000
+
+
+def build_read_command(read: str, doc_root: str) -> str:
+    """One named artisan command. The caller picks a key, never a command."""
+    spec = READS.get(read)
+    if spec is None:
+        raise LaravelError(
+            f"'{read}' is not something we can show. Choose one of: "
+            + ", ".join(READS) + ".")
+    return _prelude(doc_root) + f"_t {spec['timeout']} $ART {spec['cmd']}\n"
+
+
+async def read_one(server: Server, doc_root: str, which: str) -> dict:
+    """Run one read and hand back what artisan said.
+
+    The output is passed through the secret redactor before it leaves the server. `about`
+    prints a configuration summary, and on a site whose config has been customised that can
+    include more than driver names — the browser is not the place to find that out.
+    """
+    from app.services.secret_redact import redact_secrets
+
+    spec = READS.get(which)
+    if spec is None:
+        raise LaravelError(f"'{which}' is not something we can show.")
+    try:
+        stdout, stderr, code = await connection_manager.execute(
+            server, build_read_command(which, doc_root))
+    except Exception as exc:  # noqa: BLE001
+        raise LaravelError(f"We could not reach the server: {exc}") from exc
+
+    output = (stdout or "") + (("\n" + stderr) if stderr else "")
+    for marker, message in _ERRORS.items():
+        if marker in output:
+            return {"ok": False, "label": spec["label"], "reason": message, "output": ""}
+
+    text, hidden = redact_secrets(output.strip())
+    trimmed = len(text) > _MAX_OUTPUT
+    if trimmed:
+        text = text[:_MAX_OUTPUT] + "\n… trimmed. Ask Ally if you need the rest."
+    return {
+        "ok": code == 0,
+        "label": spec["label"],
+        "output": text,
+        "hidden": hidden,
+        "trimmed": trimmed,
+        # A non-zero exit is worth showing rather than hiding: `queue:failed` on a site with
+        # no failed-jobs table fails, and the reason artisan gives is the useful part.
+        "reason": None if code == 0 else "artisan could not complete this — see below.",
+    }

@@ -88,6 +88,10 @@ export interface Site {
   no_index?: boolean
   /** detected | chosen — who decided what `app_type` says. */
   type_source?: string
+  /** The customer's own note about this site. */
+  notes?: string | null
+  /** Free-form grouping — Ploi's "project grouping". */
+  tags?: string[]
 }
 
 export interface SiteList {
@@ -319,6 +323,69 @@ export async function installCertificate(
   return data
 }
 
+export interface AppCommand {
+  key: string
+  label: string
+  blurb: string
+  /** Destroys or duplicates something a customer would miss — ask first. */
+  confirm: boolean
+}
+
+export interface AppCommands {
+  groups: { name: string; commands: AppCommand[] }[]
+  custom: boolean
+  forbidden?: string[]
+}
+
+export async function getAppCommands(siteId: string): Promise<AppCommands> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/app/commands`)
+  return data
+}
+
+export async function runArtisan(
+  siteId: string, command: string,
+): Promise<{ ok: boolean; output: string; hidden: number; trimmed: boolean }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/app/artisan`, { command })
+  return data
+}
+
+export async function setSiteDetails(
+  siteId: string, body: { notes?: string; tags?: string[] },
+): Promise<{ notes: string | null; tags: string[] }> {
+  const { data } = await apiClient.put(`/api/sites/${siteId}/details`, body)
+  return data
+}
+
+/** Every tag already in use, so the form can offer them rather than ask for the spelling. */
+export async function listSiteTags(): Promise<{ tags: string[] }> {
+  const { data } = await apiClient.get("/api/site-tags")
+  return data
+}
+
+export interface WpConfig {
+  path: string
+  content: string
+  /** How many lines hold a password or a salt — said, so nobody is surprised by the file. */
+  secrets: number
+  warnings: string[]
+}
+
+export async function getWpConfig(siteId: string): Promise<WpConfig> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/wp-config`)
+  return data
+}
+
+export async function saveWpConfig(
+  siteId: string, content: string,
+): Promise<{ message: string; warnings: string[] }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/wp-config`, { content })
+  return data
+}
+
+export async function runWpCli(
+  siteId: string, command: string,
+): Promise<{ ok: boolean; output: string; hidden: number; trimmed: boolean }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/wp-cli`, { command })
   return data
 }
 
@@ -869,6 +936,24 @@ export interface StagingOptions {
   existing: { id: string; domain: string; status: string }[]
 }
 
+/** One read-only look at a Laravel site — versions, migrations, routes, failed jobs. */
+export interface LaravelRead {
+  ok: boolean
+  label: string
+  output: string
+  /** How many secrets were masked before this left the server. */
+  hidden?: number
+  trimmed?: boolean
+  reason?: string | null
+}
+
+export async function readLaravel(siteId: string, which: string): Promise<LaravelRead> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/app/read/${which}`)
+  return data
+}
+
+
+/** Who gets told when this site deploys — Ploi's per-site Notifications. */
 export interface SiteTypeOptions {
   app_type: string
   /** True when a person set this, rather than a scan concluding it. */

@@ -197,3 +197,123 @@ def test_the_sweep_understands_ordinary_python(tmp_path):
         "    return handler\n"
     )
     assert _unbound_reads(p) == []
+
+
+# ── A module may not define the same name twice ──────────────────────────────
+#
+# Found the hard way: `laravel_service` grew a second `read()` with a different signature,
+# which SILENTLY replaced the first. Three callers of the original then raised TypeError, and
+# nothing at import time or in review said a word — the whole Laravel section was broken.
+#
+# Python allows redefinition on purpose (a `try/except ImportError` fallback, a decorator
+# rebinding a name, a platform branch), so this only flags redefinitions in the SAME
+# unconditional block — where there is no reason to want one.
+
+def _redefinitions(tree) -> list[str]:
+    """Top-level defs/classes bound more than once in one straight-line body."""
+    import ast
+
+    bad = []
+
+    def scan(body, where):
+        seen = {}
+        for node in body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                # A decorator may deliberately rebind (`@x.setter`), so only plain ones count.
+                if node.name in seen and not node.decorator_list:
+                    bad.append(f"{where}{node.name} (lines {seen[node.name]} and {node.lineno})")
+                seen[node.name] = node.lineno
+            elif isinstance(node, ast.ClassDef):
+                pass
+        # Class bodies have the same hazard.
+        for node in body:
+            if isinstance(node, ast.ClassDef):
+                scan(node.body, f"{where}{node.name}.")
+
+    scan(tree.body, "")
+    return bad
+
+
+def test_no_module_defines_the_same_name_twice():
+    """The second definition wins and the first disappears, taking its callers with it."""
+    import ast
+
+    offenders = []
+    for path in sorted(APP.rglob("*.py")):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for dup in _redefinitions(tree):
+            offenders.append(f"{path.relative_to(APP)}: {dup}")
+    assert not offenders, "a later definition silently replaces the earlier one:\n" + \
+        "\n".join(offenders)
+
+
+def test_the_redefinition_sweep_would_actually_catch_one():
+    """A check that cannot fail is not a check — this is the exact shape of the real bug."""
+    import ast
+
+    src = "def read(a, b):\n    pass\n\n\ndef read(a, b, c):\n    pass\n"
+    assert _redefinitions(ast.parse(src))
+
+
+def test_a_conditional_fallback_is_not_flagged():
+    """`try: from x import y / except ImportError: def y(): ...` is deliberate and common."""
+    import ast
+
+    src = ("try:\n    from x import thing\nexcept ImportError:\n"
+           "    def thing():\n        pass\n")
+    assert not _redefinitions(ast.parse(src))
+
+
+# ── A dict literal may not repeat a key ──────────────────────────────────────
+#
+# Found the hard way, twice in one day. Python keeps the LAST value for a repeated key and
+# says nothing — no error, no warning. The site-scan endpoint grew a second `"note"` and the
+# first one, which warned that the scan could not read everything, silently disappeared.
+#
+# Same family as the redefinition sweep above: the language quietly picks a winner, and the
+# loser is invisible in review.
+
+def _duplicate_dict_keys(tree) -> list[str]:
+    import ast
+
+    bad = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        seen = {}
+        for key in node.keys:
+            # Only constant keys can be compared safely; `**spread` shows up as None and a
+            # computed key is not something we can judge.
+            if not isinstance(key, ast.Constant):
+                continue
+            if key.value in seen:
+                bad.append(f"{key.value!r} (lines {seen[key.value]} and {key.lineno})")
+            seen[key.value] = key.lineno
+    return bad
+
+
+def test_no_dict_literal_repeats_a_key():
+    import ast
+
+    offenders = []
+    for path in sorted(APP.rglob("*.py")):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for dup in _duplicate_dict_keys(tree):
+            offenders.append(f"{path.relative_to(APP)}: {dup}")
+    assert not offenders, "a repeated key silently drops the earlier value:\n" + \
+        "\n".join(offenders)
+
+
+def test_the_duplicate_key_sweep_would_catch_the_real_one():
+    """A check that cannot fail is not a check — this is the exact shape of the bug."""
+    import ast
+
+    src = 'x = {"server": s, "note": a, "watching": w, "note": b}\n'
+    assert _duplicate_dict_keys(ast.parse(src))
+
+
+def test_a_spread_is_not_mistaken_for_a_duplicate():
+    """`{**summary, "note": n}` is normal and correct."""
+    import ast
+
+    assert not _duplicate_dict_keys(ast.parse('x = {**a, "note": n}\n'))

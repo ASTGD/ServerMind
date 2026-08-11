@@ -271,6 +271,100 @@ def build_action_command(action: str, doc_root: str, target: str = "") -> str:
     return _wp_prelude(doc_root) + body + "\n"
 
 
+# --- The WP-CLI console -------------------------------------------------------------------
+#
+# Ploi's WordPress → WP-CLI tab. wp-cli is how WordPress is actually administered from a
+# server, and a plugin's own command (`wp woocommerce update`, `wp elementor flush-css`) is
+# something no fixed list here could know — so the bound is a refusal list plus a shape that
+# cannot become a second command, not an allow-list that would make the feature useless.
+#
+# What is refused is what destroys data with no undo anywhere in this system, and what turns
+# this into a shell.
+
+FORBIDDEN_WP = (
+    "db",            # `wp db drop`, `wp db reset`, `wp db query` — the whole database
+    "eval",          # arbitrary PHP
+    "eval-file",
+    "shell",         # an interactive REPL that would simply hang here
+    "server",        # starts a long-running process nothing would ever stop
+    "package",       # installs code from the internet into wp-cli itself
+)
+
+MAX_WP_OUTPUT = 60_000
+
+
+def check_wp_command(command: str) -> str:
+    """A wp-cli command the customer typed. Returns it cleaned, or refuses."""
+    raw = command or ""
+    # Newlines FIRST: collapsing them into spaces would silently turn a two-line paste into
+    # one command with surprise arguments, and the check below could never fire.
+    if "\n" in raw or "\r" in raw:
+        raise WordPressError("One command at a time — that looks like more than one line.")
+    text = " ".join(raw.split())
+    if not text:
+        raise WordPressError("Type a wp-cli command to run.")
+    if len(text) > 200:
+        raise WordPressError("That command is too long.")
+
+    bad = set(text) & set(";|&`$><\\\"'")
+    if bad:
+        raise WordPressError(
+            f"Remove {' '.join(sorted(bad))} — one wp-cli command at a time, and no shell "
+            f"characters.")
+
+    words = text.split()
+    if words[0] == "wp":
+        # People paste the whole line they use over SSH. Leaving it would run `wp wp …`,
+        # which fails for a reason nobody could guess.
+        words = words[1:]
+        if not words:
+            raise WordPressError("Type the command after `wp`, for example `plugin list`.")
+    if words[0].lower() in FORBIDDEN_WP:
+        raise WordPressError(
+            f"`wp {words[0].lower()}` is not available here — it can empty the database or "
+            f"run arbitrary code, and nothing in ServerAlly could undo that. Use the "
+            f"terminal if you really mean it.")
+    return " ".join(words)
+
+
+def build_wp_command(command: str, doc_root: str) -> str:
+    """`wp <command>` as the account that owns the site.
+
+    Quoted WORD BY WORD, not as one string: quoting the whole thing hands wp-cli a single
+    argument literally named "plugin list --status=active", which is not a command.
+    """
+    import shlex
+
+    safe = check_wp_command(command)
+    words = " ".join(shlex.quote(w) for w in safe.split())
+    # stderr is merged in because wp-cli writes its warnings and its "Error:" line there,
+    # and that is exactly what the customer needs to read. The exit code is left alone —
+    # `|| true` would throw away the one signal that says whether it worked.
+    return _wp_prelude(doc_root) + f"_t 300 $WP {words} 2>&1\n"
+
+
+async def run_wp(server: Server, doc_root: str, command: str) -> dict:
+    """Run it and report exactly what wp-cli said — its own message is the useful part."""
+    from app.services.secret_redact import redact_secrets
+
+    try:
+        stdout, stderr, code = await connection_manager.execute(
+            server, build_wp_command(command, doc_root))
+    except Exception as exc:  # noqa: BLE001
+        raise WordPressError(f"We could not reach the server: {exc}") from exc
+
+    output = (stdout or "") + (("\n" + stderr) if stderr else "")
+    for marker, message in _ERRORS.items():
+        if f"{_S}|error|{marker}" in output:
+            raise WordPressError(message)
+    body = "\n".join(l for l in output.splitlines() if not l.startswith(_S)).strip()
+    text, hidden = redact_secrets(body[:MAX_WP_OUTPUT])
+    # wp-cli prints its own "Error:" line and still exits 0 in places, so the verdict is read
+    # from what it SAID as well as from the code.
+    ok = code == 0 and not body.lstrip().lower().startswith("error:")
+    return {"ok": ok, "output": text, "hidden": hidden, "trimmed": len(body) > MAX_WP_OUTPUT}
+
+
 async def act(server: Server, doc_root: str, action: str, target: str = "") -> dict:
     """Run one action and report honestly what happened.
 

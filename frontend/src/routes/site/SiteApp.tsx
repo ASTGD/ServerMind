@@ -8,8 +8,13 @@ import WordPressPanel from "@/components/sites/WordPressPanel"
 import AppPanel from "@/components/sites/AppPanel"
 import EnvEditor from "@/components/sites/EnvEditor"
 import QueueWorkers from "@/components/sites/QueueWorkers"
+import WpCliConsole from "@/components/sites/WpCliConsole"
+import WpConfigEditor from "@/components/sites/WpConfigEditor"
+import WpSearchReplace from "@/components/sites/WpSearchReplace"
 import WpSecurity from "@/components/sites/WpSecurity"
 import LaravelPanel from "@/components/sites/LaravelPanel"
+import LaravelCommands from "@/components/sites/LaravelCommands"
+import LaravelReads from "@/components/sites/LaravelReads"
 import PhpPanel from "@/components/sites/PhpPanel"
 
 /**
@@ -93,6 +98,9 @@ export default function SiteAppPage() {
       <div className="space-y-4">
         <WordPressPanel data={data} domain={site.domain} onAct={act} busy={busy} note={note} />
         <WpSecurity siteId={site.id} />
+        <WpSearchReplace siteId={site.id} />
+        <WpConfigEditor siteId={site.id} />
+        <WpCliConsole siteId={site.id} />
       </div>
     )
   }
@@ -100,6 +108,14 @@ export default function SiteAppPage() {
     return (
       <div className="space-y-4">
         <LaravelPanel data={data} onAct={act} busy={busy} />
+        {/* Below the actions, deliberately: the writing half is what somebody came
+            here to do, and these change nothing. */}
+        <LaravelReads siteId={site.id} />
+        {/* The long tail, folded away: the panel above already leads with what is wrong
+            and the button that fixes it, and a grid of 17 buttons beside that would bury
+            the part somebody actually needs. */}
+        <LaravelCommands siteId={site.id}
+                         onRan={() => qc.invalidateQueries({ queryKey: ["site-app", site.id] })} />
         <EnvEditor siteId={site.id} />
         <QueueWorkers siteId={site.id} />
         {note && (

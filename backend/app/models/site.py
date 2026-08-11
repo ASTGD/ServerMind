@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint, func,
+    Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -126,6 +126,15 @@ class Site(Base):
     #: file — see `robots_service`: robots.txt does not stop a page being indexed, and a
     #: file inside the site is overwritten by the next deploy.
     no_index: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    #: The customer's own note about this site — "client pays annually", "they edit the
+    #: theme live, do not touch it". Nothing derives it, so nothing can recover it: it has to
+    #: live here rather than in a file on the server that a redeploy would take away.
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    #: Free-form grouping, Ploi's "project grouping". An agency with fifty sites needs to
+    #: see one client's together, and no fact about the server can tell us which those are.
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String(40)), default=list, nullable=False)
 
     first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

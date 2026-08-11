@@ -206,7 +206,10 @@ def test_migrations_run_unattended_and_are_marked_as_the_destructive_one():
     # artisan refuses to migrate in production without this, and nobody is at a terminal.
     assert "--force" in cmd
     assert "migrate" in lv.DESTRUCTIVE
-    assert lv.DESTRUCTIVE == {"migrate"}, "only the one that can lose data"
+    # The exact contents of DESTRUCTIVE, and the reasoning for each member, live in
+    # test_laravel_commands.py. Asserting the whole set here too would be a second copy of
+    # one rule — which is how the two answers drift the first time a command is added.
+    assert "clear" not in lv.DESTRUCTIVE, "clearing a cache must never need confirming"
 
 
 # ── Three bugs found by pointing this at a real production Laravel ────────────
