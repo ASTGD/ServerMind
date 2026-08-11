@@ -1,9 +1,12 @@
 import { useState } from "react"
 import { useNavigate, useOutletContext } from "react-router-dom"
-import { useMutation } from "@tanstack/react-query"
-import { AlertTriangle } from "lucide-react"
-import { forgetSite, removeSite, type SiteDetail } from "@/api/sites"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { AlertTriangle, Loader2 } from "lucide-react"
+import {
+  forgetSite, getSiteTypeOptions, removeSite, setSiteType, type SiteDetail,
+} from "@/api/sites"
 import { Button } from "@/components/ui"
+import SiteNotes from "@/components/sites/SiteNotes"
 import { wasCreatedHere } from "@/lib/siteInstall"
 
 /**
@@ -51,8 +54,14 @@ export default function SiteSettings() {
           {site.doc_root && <Row label="Folder" value={site.doc_root} mono />}
           <Row label="Running" value={site.app_type + (site.app_version ? ` ${site.app_version}` : "")} />
           <Row label="Added" value={ours ? "created by ServerAlly" : "found on the server"} />
+          {/* Ploi shows this too, and for the same reason: it is what you pass to the API
+              or to an AI assistant over MCP when you mean THIS site. */}
+          <Row label="Site ID" value={site.id} mono />
         </dl>
       </section>
+
+      <ProjectType site={site} />
+      <SiteNotes site={site} />
 
       <section className="rounded-xl border border-destructive/40 bg-card p-4">
         <h2 className="flex items-center gap-2 text-sm font-medium text-destructive">
@@ -130,6 +139,100 @@ export default function SiteSettings() {
         )}
       </section>
     </div>
+  )
+}
+
+/**
+ * What this site is — Ploi's "Project type".
+ *
+ * They never detect; they ask, so they always have an answer. We detect, which is better
+ * when it works and has nothing to fall back on when it does not: a site we cannot name
+ * stays Unknown for ever and gets no application section at all. This is the fallback.
+ *
+ * The card only argues for itself when it needs to. On a site we named correctly it is a
+ * quiet line saying what we found; on an Unknown one it says plainly what that costs and
+ * what picking a type will give them.
+ */
+function ProjectType({ site }: { site: SiteDetail }) {
+  const qc = useQueryClient()
+  const [error, setError] = useState<string | null>(null)
+
+  const opts = useQuery({
+    queryKey: ["site-type", site.id],
+    queryFn: () => getSiteTypeOptions(site.id),
+  })
+
+  const save = useMutation({
+    mutationFn: (value: string) => setSiteType(site.id, value),
+    onSuccess: () => {
+      setError(null)
+      // The menu, the breadcrumb and the application section all read the site.
+      qc.invalidateQueries({ queryKey: ["site", site.id] })
+      qc.invalidateQueries({ queryKey: ["site-type", site.id] })
+      qc.invalidateQueries({ queryKey: ["sites"] })
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      setError(e.response?.data?.detail ?? "That could not be saved."),
+  })
+
+  const unknown = site.app_type === "unknown"
+  const chosen = opts.data?.chosen ?? false
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-4">
+      <h2 className="text-sm font-medium text-foreground">What this site is</h2>
+
+      {unknown && !chosen ? (
+        <p className="mt-1 text-small text-muted-foreground">
+          We could not tell what runs here by looking at the server, so this site has no
+          application section. Tell us and it appears.
+        </p>
+      ) : (
+        <p className="mt-1 text-small text-muted-foreground">
+          {chosen
+            ? "You set this. A scan will not change it back."
+            : "Detected by looking at the server. Change it if we got it wrong."}
+        </p>
+      )}
+
+      {opts.isLoading ? (
+        <p className="mt-3 text-small text-muted-foreground">Checking…</p>
+      ) : (
+        <div className="mt-3 max-w-sm">
+          <select
+            value={chosen ? site.app_type : ""}
+            disabled={save.isPending}
+            onChange={(e) => { setError(null); save.mutate(e.target.value) }}
+            className="w-full rounded-lg border border-border bg-background px-3 py-2
+                       text-small text-foreground"
+          >
+            <option value="">
+              Detect automatically{!chosen && site.app_type !== "unknown"
+                ? ` — currently ${site.app_type}` : ""}
+            </option>
+            {(opts.data?.options ?? []).map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          {save.isPending && (
+            <p className="mt-2 flex items-center gap-1.5 text-caption text-muted-foreground">
+              <Loader2 size={12} className="animate-spin" /> Saving…
+            </p>
+          )}
+          <p className="mt-2 text-caption text-muted-foreground">
+            Only types ServerAlly has tools for are listed. Choosing one decides which
+            application section this site gets and which commands run against it.
+            {chosen && " Going back to Detect automatically forgets your answer, so this "
+              + "site is Unknown again until the next scan of the server."}
+          </p>
+        </div>
+      )}
+
+      {error && (
+        <p className="mt-2 rounded-lg border-l-2 border-destructive bg-destructive/5 px-3 py-2
+                      text-small text-destructive">{error}</p>
+      )}
+    </section>
   )
 }
 

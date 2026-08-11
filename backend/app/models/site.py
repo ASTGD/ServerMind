@@ -95,6 +95,19 @@ class Site(Base):
     #: single field would have to pick one and silently lose the other.
     requested_type: Mapped[str | None] = mapped_column(String(30))
 
+    #: Who decided what `app_type` says: a scan, or the person who owns the site.
+    #:
+    #: Detection is better than asking WHEN IT WORKS, and has nothing to fall back on when
+    #: it does not — a site we cannot name stays `unknown` for ever and gets no application
+    #: section at all. So the owner can say what it is, and that answer lives in `app_type`
+    #: like any other, because everything already reads that field.
+    #:
+    #: This exists for one rule: **a scan may fill a gap, but it may not overrule a person.**
+    #: Without it the next discovery run would quietly undo the choice, and the customer
+    #: would watch their setting revert for no visible reason.
+    type_source: Mapped[str] = mapped_column(String(20), nullable=False,
+                                             server_default="detected", default="detected")
+
     # ── Staging ──────────────────────────────────────────────────────────────
     #
     # A staging site is an ORDINARY site row plus these three facts. That is the design:

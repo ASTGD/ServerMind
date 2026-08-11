@@ -328,8 +328,15 @@ async def sync(db, server: Server, found: list[DiscoveredSite]) -> dict:
             # `unknown` means "I could not tell", not "nothing is installed". Without a doc
             # root there is nothing to match an app against, so an Apache scan downgraded
             # every site it saw to Unknown.
+            #
+            # A type the OWNER set is never overwritten. Detection exists to fill a gap it
+            # can fill; being told what a site is outranks looking at it. Without this the
+            # next scan would quietly undo the choice and the setting would appear to revert
+            # by itself. The VERSION is still taken, because that is an observation about
+            # whatever is running there and not a claim about what the site is.
             if site.app_type and site.app_type != "unknown":
-                row.app_type = site.app_type
+                if not type_is_chosen(row):
+                    row.app_type = site.app_type
                 row.app_version = site.app_version or None
             row.has_ssl = site.has_ssl
             row.last_seen = now
@@ -377,6 +384,9 @@ def serialize(site, *, server_name: str | None = None, uptime: dict | None = Non
         "doc_root": site.doc_root,
         "source": site.source,
         "app_type": site.app_type,
+        # So the screen can say "you set this" rather than presenting a guess and a choice
+        # as the same thing.
+        "type_source": getattr(site, "type_source", "detected") or "detected",
         "app_version": site.app_version,
         "has_ssl": site.has_ssl,
         "is_present": site.is_present,
@@ -396,6 +406,95 @@ def serialize(site, *, server_name: str | None = None, uptime: dict | None = Non
         "last_seen": site.last_seen.isoformat() if site.last_seen else None,
         "uptime": uptime,
     }
+
+
+#: What the owner may say a site is.
+#:
+#: Only types we genuinely have tools for. Ploi offers Statamic, Craft and Symfony because
+#: their tab is the same either way; ours would promise an application section that does not
+#: exist — the "absent, not disabled" rule the menus already follow, one level down.
+CHOOSABLE_TYPES: dict[str, str] = {
+    "wordpress": "WordPress",
+    "laravel": "Laravel",
+    "php": "PHP",
+    "app": "Web application (Node, Python, Go)",
+    "static": "Static site (HTML files)",
+}
+
+
+#: A tag is a label a person types and later reads in a list, so the bound is legibility
+#: rather than safety — it never reaches a shell or a path. Long enough for "client: acme",
+#: short enough that a list of them still fits on a row.
+MAX_TAGS = 12
+MAX_TAG = 40
+MAX_NOTES = 4000
+
+
+def check_tags(tags: list[str] | None) -> list[str]:
+    """Tidy and bound. Refuses rather than truncates, because a tag silently cut in half is
+    a tag that stops matching the ones already on other sites — which is the whole point."""
+    out: list[str] = []
+    for raw in tags or []:
+        tag = " ".join(str(raw).split())
+        if not tag:
+            continue
+        if len(tag) > MAX_TAG:
+            raise SiteError(f"'{tag[:20]}…' is too long for a tag — keep it under "
+                            f"{MAX_TAG} characters.")
+        low = tag.lower()
+        # Case-insensitive dedupe: "Acme" and "acme" on two sites would look like two groups
+        # and group nothing.
+        if low not in {t.lower() for t in out}:
+            out.append(tag)
+    if len(out) > MAX_TAGS:
+        raise SiteError(f"That is more than {MAX_TAGS} tags. Grouping stops helping past a "
+                        f"handful.")
+    return out
+
+
+def check_notes(notes: str | None) -> str | None:
+    text = (notes or "").strip()
+    if not text:
+        return None
+    if len(text) > MAX_NOTES:
+        raise SiteError("That note is too long — keep it under 4,000 characters.")
+    return text
+
+
+def type_is_chosen(site) -> bool:
+    """Whether a person set this site's type, as opposed to a scan concluding it."""
+    return (getattr(site, "type_source", "") or "").lower() == "chosen"
+
+
+def check_chosen_type(value: str) -> str:
+    """The type the owner picked, or a refusal naming what they can pick.
+
+    Empty means "go back to detecting", which has to be offered: a wrong choice must be
+    undoable, and the only honest way back is to let the server answer again.
+    """
+    v = (value or "").strip().lower()
+    if not v:
+        return ""
+    if v not in CHOOSABLE_TYPES:
+        raise SiteError(
+            f"'{value}' is not a type we have tools for. Choose one of: "
+            + ", ".join(CHOOSABLE_TYPES) + " — or leave it to be detected."
+        )
+    return v
+
+
+def next_type_state(chosen: str) -> tuple[str, str]:
+    """What `(app_type, type_source)` become when the owner answers.
+
+    Forgetting a choice puts the type back to `unknown`, and that is the whole subtlety.
+    Keeping the old value would leave the screen saying "detected by looking at the server"
+    about an answer a PERSON gave — true only after the next scan, and a lie until then. The
+    only way to be in the chosen state is to have chosen, so forgetting it means we genuinely
+    do not know again until we look.
+    """
+    if chosen:
+        return chosen, "chosen"
+    return "unknown", "detected"
 
 
 def app_label(app_type: str, version: str | None = None) -> str:

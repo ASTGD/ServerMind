@@ -86,6 +86,8 @@ export interface Site {
   parent_site_id?: string | null
   /** Search engines asked to stay away. On for a staging copy from the moment it exists. */
   no_index?: boolean
+  /** detected | chosen — who decided what `app_type` says. */
+  type_source?: string
 }
 
 export interface SiteList {
@@ -783,6 +785,27 @@ export interface StagingOptions {
   needs_database: boolean
   existing: { id: string; domain: string; status: string }[]
 }
+
+export interface SiteTypeOptions {
+  app_type: string
+  /** True when a person set this, rather than a scan concluding it. */
+  chosen: boolean
+  options: { value: string; label: string }[]
+}
+
+export async function getSiteTypeOptions(siteId: string): Promise<SiteTypeOptions> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/type`)
+  return data
+}
+
+/** Pass "" to hand the question back to detection. */
+export async function setSiteType(
+  siteId: string, appType: string,
+): Promise<{ app_type: string; chosen: boolean }> {
+  const { data } = await apiClient.put(`/api/sites/${siteId}/type`, { app_type: appType })
+  return data
+}
+
 
 export async function getStagingOptions(siteId: string): Promise<StagingOptions> {
   const { data } = await apiClient.get(`/api/sites/${siteId}/staging`)

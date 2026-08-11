@@ -492,6 +492,71 @@ async def get_site(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     }
 
 
+class SiteTypeIn(BaseModel):
+    #: A type from `CHOOSABLE_TYPES`, or "" to hand the question back to detection.
+    app_type: str = ""
+
+
+@router.get("/sites/{site_id}/type")
+async def site_type_options(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """What this site is, who decided, and what it may be changed to."""
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+    return {
+        "app_type": site.app_type,
+        "chosen": site_service.type_is_chosen(site),
+        "options": [{"value": v, "label": lbl}
+                    for v, lbl in site_service.CHOOSABLE_TYPES.items()],
+    }
+
+
+@router.put("/sites/{site_id}/type")
+async def set_site_type(site_id: str, body: SiteTypeIn, db: DBDep,
+                        current_user: CurrentUser) -> dict:
+    """Say what this site is, when looking at the server could not tell.
+
+    Detection is better than asking when it works, and has nothing to fall back on when it
+    does not: a site we cannot name stays `unknown` for ever and gets no application section
+    at all. Ploi never detects — it asks, so it always has an answer. This is the fallback
+    ours was missing.
+
+    **Being told outranks looking.** The choice is recorded on the row so the next discovery
+    scan leaves it alone; otherwise the setting would appear to revert by itself a few
+    minutes later, which is worse than not offering it.
+
+    An empty value hands the question back to detection, and the type goes back to `unknown`
+    with it. Keeping the old value would leave the screen saying "detected by looking at the
+    server" about an answer a PERSON gave — true only after the next scan, and a lie until
+    then. The only way to be in the chosen state is to have chosen, so forgetting that choice
+    means we genuinely do not know again until we look.
+    """
+    site = (await db.execute(
+        select(Site).where(Site.id == site_id, Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if site is None:
+        raise HTTPException(status_code=404, detail="No such site.")
+    # Changing what a site IS decides which tools run against it, so it is a write.
+    await resolve_server(str(site.server_id), current_user, db, need_execute=True)
+
+    try:
+        chosen = site_service.check_chosen_type(body.app_type)
+    except site_service.SiteError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    site.app_type, site.type_source = site_service.next_type_state(chosen)
+    await db.commit()
+    await db.refresh(site)
+
+    await audit_service.audit(db, current_user, "site.type.set",
+                              target_type="server", target_id=str(site.server_id),
+                              meta={"domain": site.domain,
+                                    "app_type": chosen or "(detect automatically)"})
+    return {"app_type": site.app_type, "chosen": site_service.type_is_chosen(site)}
+
+
 @router.get("/sites/{site_id}/details")
 async def site_details(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
     """Where this site's files are, who owns them, which PHP it runs, how big it is.
