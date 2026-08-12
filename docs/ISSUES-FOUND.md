@@ -4,7 +4,7 @@
 >
 > **Rule:** when live-testing and something looks wrong, do NOT fix it in place mid-task. Log it here, keep going with the actual task, fix everything after the session. See the "Live Testing — Bug Capture Protocol" section in `CLAUDE.md`.
 >
-> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-021**.
+> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-022**.
 
 ---
 
@@ -31,6 +31,39 @@ Copy this block for each new finding:
 2. Fix the root cause.
 3. Flip **Status** to `Fixed`, move the entry to the Fixed section, and add one line to the **Decisions Log** in `CLAUDE.md` (existing convention: date + what changed + why).
 4. If it's the kind of thing that could regress, capture it as an eval case (Dev Door "capture as eval case", or add it directly to `app/evals/corpus.py`) so it's covered by the eval suite going forward.
+
+---
+
+## Open
+
+### BUG-021 — removing a staging copy leaves its database behind
+- **Date:** 2026-08-12
+- **Status:** Open
+- **Context:** end-to-end test of the new promote feature on **TestServer** — created
+  `promo.firevps.net` (WordPress), made the staging copy `staging.promo.firevps.net`,
+  promoted it by file copy, then removed both sites through the product with
+  `drop_database: true`.
+- **Server / mission:** TestServer — removal runs `ee701a2b` (copy) and `a44b9519` (live).
+- **Observed:** the LIVE site's database was dropped correctly
+  (`>>> Dropped the database promo_wp`), but the staging copy's was not —
+  `>>> No database was recorded for this site, so none was removed.` The database
+  `staging_promo_firevps_net` and its user `staging_promo_firevps_net_user` were left on the
+  server after the copy was gone. I dropped them by hand.
+- **Expected:** removing a staging copy should offer to take its own database with it. The
+  copy's database exists only for that copy, so nothing else can ever use it.
+- **Severity:** Medium — nothing breaks, but every staging copy an agency makes and deletes
+  leaves an orphan database with a password nobody has. Over a year that is real clutter on
+  a customer's server, and the owner has no way to tell which orphans are safe to drop.
+- **Suspected cause:** removal reads the database from the values the INSTALLER recorded
+  (`DB_NAME`/`DB_USER` in the site's install variables). `create_staging` makes the copy's
+  database directly through `database_service.create_database` and never records it against
+  the child site row, so removal has nothing to find. **The removal itself is not at fault —
+  it said plainly that it had no record rather than guessing a name, which is right.**
+- **Repro:** create any site whose type needs a database, make a staging copy of it, then
+  remove the copy with `drop_database: true`. Its database survives.
+- **Fix sketch:** `create_staging` already knows `db_name`/`db_user` — record them on the
+  child's install run variables (the same place the installer writes them), so the existing
+  removal path finds them with no change to removal at all.
 
 ---
 
