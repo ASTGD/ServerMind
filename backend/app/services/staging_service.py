@@ -444,8 +444,62 @@ fi
 OWNER="$(stat -c %U:%G "$SRC" 2>/dev/null || true)"
 [ -n "$OWNER" ] && chown -R "$OWNER" "$DST" 2>/dev/null || true
 
+# Written LAST, and only here — past the FAILED check, so the record can only exist for a
+# copy that really has its own database and really got repointed at it.
+{build_record_db(domain, db_name, db_user, db_pass)}
 echo ">>> The copy is ready at $DST"
 '''
+
+
+def creds_path(domain: str) -> str:
+    """Where a site's own database is recorded on the server.
+
+    Chosen by the REMOVER, not by us: `site-remove` drops the database named in
+    `/root/<domain>_db.txt` and never guesses one from the domain, because guessing would
+    drop a database belonging to another site. Every installer that makes a database writes
+    this file; a staging copy makes one too, so it has to write it as well.
+    """
+    return f"/root/{domain}_db.txt"
+
+
+def build_record_db(domain: str, db_name: str, db_user: str, db_pass: str) -> str:
+    """Record the copy's own database, in the exact shape the remover reads.
+
+    Two things depend on this file existing, and both were broken without it:
+
+    1. **Removing the copy leaves its database behind.** `site-remove` reads the `database:`
+       and `user:` lines here; with no file it says so honestly and removes nothing, so
+       every copy an agency makes and deletes orphans a database with a password nobody
+       has, and no way to tell later which orphans are safe to drop.
+    2. **The password exists nowhere the owner can reach.** It is generated for the copy and
+       written into its wp-config or .env and nowhere else. This is the same root-only
+       record every installer leaves.
+
+    Returns an empty string when there is no database — a copy of a site that has none must
+    not leave a file claiming otherwise, because the remover would then try to drop a
+    database called nothing.
+    """
+    if not (db_name and db_user):
+        return ""
+    dom = shlex.quote(domain)
+    creds = shlex.quote(creds_path(domain))
+    # `printf` with the values as ARGUMENTS: a password is data, and putting it in the
+    # format string would let a `%` in it be read as a directive.
+    return f'''
+printf 'Staging database for %s\\n\\ndatabase: %s\\nuser:     %s\\npassword: %s\\n' \\
+  {dom} {shlex.quote(db_name)} {shlex.quote(db_user)} {shlex.quote(db_pass)} > {creds}
+chmod 600 {creds}
+echo ">>> Recorded this copy's database in {creds_path(domain)} (root only)"
+'''
+
+
+def build_forget_db_record(domain: str) -> str:
+    """Remove that record when the copy is thrown away.
+
+    The record names a database; if the copy is undone the database is dropped, and a file
+    left behind would point the remover at something that no longer exists.
+    """
+    return f"rm -f {shlex.quote(creds_path(domain))}"
 
 
 def build_discard_command(target: str) -> str:

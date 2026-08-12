@@ -34,11 +34,11 @@ Copy this block for each new finding:
 
 ---
 
-## Open
+## Fixed
 
 ### BUG-021 — removing a staging copy leaves its database behind
 - **Date:** 2026-08-12
-- **Status:** Open
+- **Status:** Fixed (2026-08-12)
 - **Context:** end-to-end test of the new promote feature on **TestServer** — created
   `promo.firevps.net` (WordPress), made the staging copy `staging.promo.firevps.net`,
   promoted it by file copy, then removed both sites through the product with
@@ -61,13 +61,22 @@ Copy this block for each new finding:
   it said plainly that it had no record rather than guessing a name, which is right.**
 - **Repro:** create any site whose type needs a database, make a staging copy of it, then
   remove the copy with `drop_database: true`. Its database survives.
-- **Fix sketch:** `create_staging` already knows `db_name`/`db_user` — record them on the
-  child's install run variables (the same place the installer writes them), so the existing
-  removal path finds them with no change to removal at all.
+- **Fix sketch (superseded — see *Fixed by* below):** I first guessed the record lived in
+  the site's install VARIABLES. Reading `site-remove` showed it does not: the removal passes
+  only DOMAIN and DROP_DB to a script, and the script reads a FILE on the server. The real
+  fix was smaller than the guess, and it is the reason to read the consumer before writing
+  the producer.
 
----
-
-## Fixed
+- **Fixed by:** `staging_service.build_record_db` — the copy's database is now recorded in
+  `/root/<domain>_db.txt`, the same root-only file every installer writes and the only file
+  `site-remove` reads. **Removal is unchanged.** Written LAST, past the guard that tears
+  down a copy which could not be repointed, so a record can only exist for a copy that
+  really has its own database; `_undo` removes it alongside the database it names. Second
+  thing it fixes: the copy's password previously existed only inside its own wp-config/.env,
+  so the owner had no way to reach it.
+- **Test:** `tests/test_staging_db_record.py` — the drift test pulls the extraction lines
+  out of `site-remove`'s own script and runs them against the file staging writes, so the
+  two sides cannot disagree again. 9 tests, all 8 mutations killed.
 
 ### BUG-018 — Ally does not know that `lsphp` is not a command-line PHP, so it burned 10 steps and ran out of budget
 - **Date:** 2026-08-11

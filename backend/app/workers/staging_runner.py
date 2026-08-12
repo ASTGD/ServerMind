@@ -86,12 +86,16 @@ async def _set_doc_root(site_id, doc_root: str) -> None:
 
 
 async def _undo(server: Server, target: str, db_name: str, db_user: str,
-                log: list[str], engine: str = "mysql") -> None:
+                log: list[str], engine: str = "mysql", domain: str = "") -> None:
     """Take the copy away — the files first, then the database made for them.
 
     This is what makes the rule enforceable. Anything that fails after the files are on disk
     would otherwise leave an application configured to talk to the LIVE database, which is
     worse than no staging site at all.
+
+    The database RECORD goes too. It names a database that is about to be dropped, and a
+    file left pointing at one that no longer exists would have the remover try to drop it
+    again later — reporting a failure about something that was never there.
     """
     from app.services import database_service
 
@@ -112,6 +116,11 @@ async def _undo(server: Server, target: str, db_name: str, db_user: str,
             log.append("The database made for the copy was removed.")
         except Exception:  # noqa: BLE001 — an orphan database is worth a line, not a crash
             log.append(f"The database {db_name} made for the copy could not be removed.")
+        if domain:
+            # Best-effort, and deliberately not worth a line in the log: the record is
+            # bookkeeping, and a leftover file is a much smaller problem than the database
+            # it named.
+            await _run(server, st.build_forget_db_record(domain), 60)
 
 
 async def run_staging(*, run_id, script: str, server_id, source_site_id, new_site_id,
@@ -170,7 +179,7 @@ async def run_staging(*, run_id, script: str, server_id, source_site_id, new_sit
     log.append(out)
     ok, message = st.explain(code, out)
     if not ok:
-        await _undo(server, target, db_name, db_user, log, engine)
+        await _undo(server, target, db_name, db_user, log, engine, domain)
         await _finish(run_id, "failed", log, message)
         return
 
@@ -184,7 +193,7 @@ async def run_staging(*, run_id, script: str, server_id, source_site_id, new_sit
         ok, message = st.explain_data(code, out)
         log.append(message)
         if not ok:
-            await _undo(server, target, db_name, db_user, log, engine)
+            await _undo(server, target, db_name, db_user, log, engine, domain)
             await _finish(run_id, "failed", log, message)
             return
 
