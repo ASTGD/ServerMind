@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useOutletContext } from "react-router-dom"
 import { Loader2, RefreshCw, Sparkles } from "lucide-react"
 import { APP_LABEL, type SiteDetail } from "@/api/sites"
+import PromoteToLive from "@/components/sites/PromoteToLive"
 import SiteCode from "@/components/sites/SiteCode"
 import SiteInstaller from "@/components/sites/SiteInstaller"
 import SiteHttps from "@/components/sites/SiteHttps"
@@ -49,6 +50,10 @@ export default function SiteOverview() {
           {site.install_error}
         </p>
       )}
+
+      {/* First, on a staging copy only: the reason that copy exists. Renders nothing at all
+          on an ordinary site, so it costs the other screens nothing. */}
+      {!installing && <PromoteToLive site={site} />}
 
       {/* An empty site: the plain chooser, no warnings, nothing to lose. */}
       {canInstall && (

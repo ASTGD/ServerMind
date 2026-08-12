@@ -219,6 +219,27 @@ def check_file_promote(*, staging_site, live_site, server, confirm_domain: str) 
             f"website and cannot be undone from here.")
 
 
+def check_layouts_match(staging_scope: str, live_scope: str) -> None:
+    """Both sites must keep their application in the same place.
+
+    A Laravel site keeps its application ABOVE the folder it serves, so a copy of it is the
+    application folder, `public/` included. Unpacking that into a site whose served folder IS
+    its root would put the application one level too deep and publish `.env` — the database
+    password in a text file at a guessable address. The reverse leaves the live site serving
+    a folder that no longer holds an index.
+
+    Refused rather than resolved, for the same reason `clone_service.destination_target`
+    refuses it: there is no safe guess, and the cost of guessing wrong is a public credential.
+    """
+    if staging_scope == live_scope:
+        return
+    raise PromoteRefused(
+        "These two sites are laid out differently — one keeps its application above the "
+        "folder it serves and the other does not. Copying between them would put the files "
+        "in the wrong place and could publish the application's own settings, so nothing "
+        "was changed.")
+
+
 def build_file_promote_command(*, staging_root: str, live_root: str, stamp: str,
                                shared: list[str] | None = None) -> str:
     """Copy staging's files onto the live site, safely.

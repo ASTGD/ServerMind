@@ -2007,6 +2007,224 @@ async def create_staging(site_id: str, body: StagingIn, db: DBDep,
     return {**site_service.serialize(child, server_name=server.name), "run_id": run_id}
 
 
+class PromoteIn(BaseModel):
+    method: str = ""
+    confirm_domain: str = ""
+
+
+async def _promote_targets(db, staging: Site, live: Site | None):
+    """The deploy targets for the copy and the site it came from, if they have any."""
+    from app.models.deployment import DeployTarget
+
+    ids = [staging.id] + ([live.id] if live is not None else [])
+    rows = (await db.execute(
+        select(DeployTarget).where(DeployTarget.site_id.in_(ids))
+    )).scalars().all()
+    by_site = {r.site_id: r for r in rows}
+    return by_site.get(staging.id), (by_site.get(live.id) if live is not None else None)
+
+
+async def _live_site(db, staging: Site, current_user) -> Site | None:
+    """The site this copy was made from — scoped to the caller, always.
+
+    `parent_site_id` is only ever written by the staging endpoint, from a site the caller
+    owns, so an id pointing anywhere else is not reachable today. It is scoped anyway
+    because of where it LEADS: promoting writes to whatever this returns, and the Git path
+    hands the id straight to the deploy runner, which does not check access itself. A row
+    that could be edited would otherwise become a way to deploy onto somebody else's site.
+    """
+    if not staging.parent_site_id:
+        return None
+    return (await db.execute(
+        select(Site).where(Site.id == staging.parent_site_id,
+                           Site.user_id == current_user.id)
+    )).scalar_one_or_none()
+
+
+@router.get("/sites/{site_id}/promote")
+async def promote_options(site_id: str, db: DBDep, current_user: CurrentUser) -> dict:
+    """What putting this staging copy live would mean, and which way is available.
+
+    Deliberately cheap: this runs when somebody opens the page, so it reads rows and — only
+    when there is a repository to read from — asks the server which commit the copy is
+    serving. The real checks happen when the button is pressed, which is also the only
+    moment at which they are still true.
+    """
+    from app.services import connection_manager, promote_service as pr
+
+    staging, server = await _site_and_server(site_id, current_user, db)
+    if not staging_rules.is_staging(staging):
+        return {"is_staging": False, "can_promote": False,
+                "reason": "This is not a staging copy, so there is nothing to promote."}
+
+    live = await _live_site(db, staging, current_user)
+    if live is None:
+        return {"is_staging": True, "can_promote": False,
+                "reason": ("This copy is not linked to a live site any more, so we cannot "
+                           "tell which site to put it on. That happens when the original "
+                           "was removed.")}
+
+    staging_target, live_target = await _promote_targets(db, staging, live)
+
+    # ── the Git path ──────────────────────────────────────────────────────────
+    # The SAME check the button runs, so the page and the endpoint can never disagree about
+    # why a promotion is refused — and the customer reads one wording, not two.
+    git: dict = {"available": False, "reason": "", "commit": ""}
+    try:
+        pr.check_git_promote(staging_site=staging, staging_target=staging_target,
+                             live_site=live, live_target=live_target)
+    except pr.PromoteRefused as exc:
+        git["reason"] = str(exc)
+    else:
+        # Read off the server, through `current` — the release a visitor is actually being
+        # served, which differs from the newest folder the moment somebody has rolled back.
+        try:
+            out, err, _code = await connection_manager.execute(
+                server, pr.read_commit_command(staging_target.path))
+            commit = pr.parse_commit((out or "") + (err or ""))
+        except Exception:  # noqa: BLE001 — a page that cannot reach the server still renders
+            commit = None
+        if commit:
+            git = {"available": True, "reason": "", "commit": commit,
+                   "repo": staging_target.repo, "branch": live_target.branch}
+        else:
+            git["reason"] = ("We could not read which commit this copy is running, so there "
+                             "is nothing to pin the deploy to. Use the file copy instead.")
+
+    # ── the file path ─────────────────────────────────────────────────────────
+    files: dict = {"available": False, "reason": "", "caveat": pr.PLUGIN_CAVEAT,
+                   "excluded": list(pr.EXCLUDED)}
+    try:
+        pr.check_file_promote(staging_site=staging, live_site=live, server=server,
+                              confirm_domain=live.domain)
+        files["available"] = True
+    except pr.PromoteRefused as exc:
+        files["reason"] = str(exc)
+
+    return {
+        "is_staging": True,
+        "can_promote": bool(git["available"] or files["available"]),
+        "reason": "",
+        "live": {"id": str(live.id), "domain": live.domain},
+        "git": git,
+        "files": files,
+    }
+
+
+@router.post("/sites/{site_id}/promote", status_code=202)
+async def promote_site(site_id: str, body: PromoteIn, db: DBDep,
+                       current_user: CurrentUser) -> dict:
+    """Put this staging copy live.
+
+    Two ways, because a site either has a repository or it does not.
+
+    **Git** deploys the exact commit the copy is serving to the live site's own deploy
+    target. Everything that makes a deploy safe comes with it — build in a folder nobody is
+    serving, atomic switch, rollback afterwards. The commit is **read off the server here**
+    and never taken from the caller: a commit in the request body would let anyone deploy
+    any revision to a live website, which is precisely the accident the pin exists to stop.
+
+    **Files** copies staging's files over the live site's, excluding the configuration, the
+    uploads and the database. It backs up first and stops if that fails.
+    """
+    from app.models.playbook import PlaybookRun
+    from app.services import connection_manager, deploy_service, promote_service as pr
+    from app.services import staging_service as st
+    from app.workers import deploy_runner, promote_runner
+
+    staging, server = await _site_and_server(site_id, current_user, db, need_execute=True)
+    live = await _live_site(db, staging, current_user)
+    # Execute on the site being WRITTEN TO, not only on the copy. The file path also
+    # requires one server for both, but the Git path does not — and `start_deploy` checks
+    # nothing itself, so without this a target on another server would be deployed to with
+    # no permission check at all.
+    if live is not None:
+        await resolve_server(str(live.server_id), current_user, db, need_execute=True)
+    staging_target, live_target = await _promote_targets(db, staging, live)
+
+    if body.method == "git":
+        try:
+            pr.check_git_promote(staging_site=staging, staging_target=staging_target,
+                                 live_site=live, live_target=live_target)
+        except pr.PromoteRefused as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+        out, err, _code = await connection_manager.execute(
+            server, pr.read_commit_command(staging_target.path))
+        commit = pr.parse_commit((out or "") + (err or ""))
+        if not commit:
+            raise HTTPException(
+                422, "We could not read which commit this copy is running, so there is "
+                     "nothing to put live. Use the file copy instead.")
+        try:
+            run_id = await deploy_runner.start_deploy(
+                live_target.id, current_user.id, trigger="promote", commit=commit)
+        except deploy_service.InvalidDeploy as exc:
+            # Only the deploy's own refusals become a 422. A database or connection error
+            # is not the customer's input being wrong, and dressing it as one sends them
+            # looking for a mistake they did not make.
+            raise HTTPException(422, str(exc)) from exc
+
+        await audit_service.audit(db, current_user, "site.promoted",
+                                  target_type="server", target_id=str(server.id),
+                                  meta={"method": "git", "from": staging.domain,
+                                        "to": live.domain, "commit": commit})
+        return {"method": "git", "run_id": run_id, "kind": "deploy", "commit": commit}
+
+    if body.method != "files":
+        raise HTTPException(422, "Choose how to put this copy live: by deploying its "
+                                 "commit, or by copying its files.")
+
+    # ── the file copy ─────────────────────────────────────────────────────────
+    try:
+        pr.check_file_promote(staging_site=staging, live_site=live, server=server,
+                              confirm_domain=body.confirm_domain)
+    except pr.PromoteRefused as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    # Both sides are surveyed before anything moves, for the same reason the staging copy
+    # surveys before it creates: this is where the folder that actually holds the
+    # application is decided. A Laravel site keeps it above the folder it serves, so
+    # copying the served folder alone would promote almost nothing.
+    roots: dict[str, dict] = {}
+    for label, s in (("staging", staging), ("live", live)):
+        out, err, code = await connection_manager.execute(
+            server, st.build_survey_command(s.doc_root or ""))
+        try:
+            roots[label] = st.parse_survey((out or "") + (err or ""), code)
+        except st.StagingError as exc:
+            raise HTTPException(422, f"{s.domain}: {exc}") from exc
+    try:
+        pr.check_layouts_match(roots["staging"]["scope"], roots["live"]["scope"])
+    except pr.PromoteRefused as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    stamp = _promote_stamp()
+    run = PlaybookRun(server_id=server.id, user_id=current_user.id, status="running")
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+
+    asyncio.create_task(promote_runner.run_promote(
+        run_id=run.id, server_id=server.id,
+        staging_root=roots["staging"]["source"], live_root=roots["live"]["source"],
+        stamp=stamp, live_domain=live.domain, staging_domain=staging.domain))
+
+    await audit_service.audit(db, current_user, "site.promoted",
+                              target_type="server", target_id=str(server.id),
+                              meta={"method": "files", "from": staging.domain,
+                                    "to": live.domain, "backup": stamp})
+    return {"method": "files", "run_id": str(run.id), "kind": "files", "backup": stamp}
+
+
+def _promote_stamp() -> str:
+    """Names the backup and the kept-aside copy. Read back by a human looking for their
+    files, so it is a readable timestamp rather than an id."""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+
 class RobotsIn(BaseModel):
     block: bool
 

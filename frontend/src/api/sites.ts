@@ -1029,6 +1029,39 @@ export async function createStaging(
 }
 
 
+/** Putting a staging copy live — the two ways, and why either is unavailable. */
+export interface PromoteOptions {
+  is_staging: boolean
+  can_promote: boolean
+  reason: string
+  live?: { id: string; domain: string }
+  /** Deploy the exact commit the copy is serving. The commit is read off the server. */
+  git?: { available: boolean; reason: string; commit: string; repo?: string; branch?: string }
+  /** Copy the files. `caveat` is the thing to read BEFORE pressing, not after. */
+  files?: { available: boolean; reason: string; caveat: string; excluded: string[] }
+}
+
+export async function getPromoteOptions(siteId: string): Promise<PromoteOptions> {
+  const { data } = await apiClient.get(`/api/sites/${siteId}/promote`)
+  return data
+}
+
+/**
+ * Put this staging copy live.
+ *
+ * There is deliberately no way to say WHICH commit — the server reads that from the copy
+ * itself. A commit chosen here would let anyone deploy any revision to a live website.
+ */
+export async function promoteSite(
+  siteId: string, method: "git" | "files", confirmDomain = "",
+): Promise<{ method: string; run_id: string; kind: string; commit?: string;
+             backup?: string }> {
+  const { data } = await apiClient.post(`/api/sites/${siteId}/promote`,
+                                        { method, confirm_domain: confirmDomain })
+  return data
+}
+
+
 /** A Laravel site's `.env` — every credential the application owns. */
 export interface SiteEnv {
   path: string

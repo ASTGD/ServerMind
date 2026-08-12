@@ -105,8 +105,14 @@ def _before_switch(steps: list[dep.DeployStep], step: dep.DeployStep) -> bool:
         return False
 
 
-async def start_deploy(target_id, user_id, *, trigger: str = "manual") -> str:
-    """Create the run, kick off the work, return the run id immediately."""
+async def start_deploy(target_id, user_id, *, trigger: str = "manual",
+                       commit: str | None = None) -> str:
+    """Create the run, kick off the work, return the run id immediately.
+
+    `commit` pins the deploy to one revision instead of the branch tip. Promoting a staging
+    copy uses it, so "put staging live" means the code that was actually looked at — not
+    whatever somebody pushed to the branch while the page was open.
+    """
     async with AsyncSessionLocal() as db:
         target = await db.get(DeployTarget, target_id)
         if not target:
@@ -119,7 +125,7 @@ async def start_deploy(target_id, user_id, *, trigger: str = "manual") -> str:
         plan = dep.build_plan(
             path=target.path, repo=target.repo, branch=target.branch, stamp=stamp,
             shared=target.shared_paths, build=target.build_commands,
-            after=target.after_commands)
+            after=target.after_commands, commit=commit)
 
         run = DeployRun(target_id=target.id, user_id=user_id, release=plan.release,
                         kind="deploy", trigger=trigger, status="running")
