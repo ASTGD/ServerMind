@@ -77,6 +77,17 @@ Copy this block for each new finding:
 - **Test:** `tests/test_staging_db_record.py` — the drift test pulls the extraction lines
   out of `site-remove`'s own script and runs them against the file staging writes, so the
   two sides cannot disagree again. 9 tests, all 8 mutations killed.
+- **Verified live (2026-08-12, after deploying):** the same cycle re-run on TestServer —
+  created `cyc.firevps.net` (WordPress), made the copy, removed the copy with
+  `drop_database: true`. The removal logged `>>> Dropped the database
+  staging_cyc_firevps_net` and `>>> Removed the database user staging_cyc_firevps_net_user`
+  where it previously said *"No database was recorded"*. Confirmed on the server: the
+  database, its user and the record are gone, **and the live site was untouched** — still
+  serving, still pointing at `cyc_wp`, its own record intact. TestServer left as found.
+- **Not verified live:** a staging copy of a site that has NO database, where the correct
+  behaviour is to write no record at all. Covered by a test and mutation-proven, and the
+  remover independently refuses an empty database name — but it has not been watched on a
+  real machine.
 
 ### BUG-018 — Ally does not know that `lsphp` is not a command-line PHP, so it burned 10 steps and ran out of budget
 - **Date:** 2026-08-11
