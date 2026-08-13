@@ -1405,11 +1405,16 @@ async def serverally_run_command(
 # TTL below the floor. Every one of them is a value the provider would happily accept and
 # which breaks the domain quietly.
 
-def _dns_write_allowed() -> str | None:
-    """Whether this connection may change DNS. A message when it may not.
+def _full_access_required() -> str | None:
+    """Whether this connection is Full access. A message when it is not.
 
-    The server-based tools get this from `_executor`; DNS has no server to resolve, so the
-    scope is checked on its own rather than skipped.
+    The server-based tools get this from `_executor`, which resolves a server at the same
+    time. DNS has no server, and the .env tools resolve theirs differently — so the scope is
+    checked on its own here rather than quietly skipped.
+
+    Named for what it CHECKS rather than for its first caller: it now guards DNS changes and
+    both settings-file tools, and a rule named after one of its callers is how a second copy
+    gets written for the next one.
     """
     from mcp.server.auth.middleware.auth_context import get_access_token
 
@@ -1585,7 +1590,7 @@ async def serverally_set_dns_record(
     """
     from app.services import dns_service as dns
 
-    denied = _dns_write_allowed()
+    denied = _full_access_required()
     if denied:
         return denied
 
@@ -1652,3 +1657,205 @@ async def serverally_set_dns_record(
         msg += f"\n\n⚠️ {warning}"
     msg += f"\n\nChanges can take up to the TTL ({saved.ttl}s) to reach everyone."
     return msg
+
+
+# ── a site's settings file (.env) ─────────────────────────────────────────────
+#
+# Built because the alternative was worse. `read_file` REDACTS secrets over MCP — deliberately,
+# since there is no client-side redaction out here — so an AI that needs an application's
+# credentials cannot get them through the proper tool, and its workaround is `run_command`:
+# a full shell, with none of ServerAlly's higher protections and no rollback. Asking for the
+# shell in order to read one file is a safety control being walked around.
+#
+# So these two tools do the job the shell was being borrowed for, bounded to one file, and
+# with the protections `cat > .env` could never have: the content never touches a command
+# line, the old file is kept and put back if the site stops serving, ownership and mode
+# travel across, and Laravel's config cache is rebuilt (without which the edit appears to do
+# nothing at all).
+#
+# **Reading requires Full access, not Read-only.** These return real credentials, and a
+# customer who picked "Read-only" believes they granted something that cannot hurt them —
+# handing over every database password would make that label a lie.
+
+async def _resolve_site(db, user: User, ref: str):
+    """Find one of the caller's sites by DOMAIN (or id). Returns ``(site, message)``."""
+    from sqlalchemy import or_
+    from app.models.site import Site
+
+    wanted = (ref or "").strip().lower().rstrip(".")
+    if not wanted:
+        return None, "Which site? Give its domain, for example shop.example.com."
+    rows = (await db.execute(
+        select(Site).where(Site.user_id == user.id, Site.is_present.is_(True))
+    )).scalars().all()
+    hits = [s for s in rows if (s.domain or "").lower() == wanted or str(s.id) == ref]
+    if not hits:
+        known = ", ".join(sorted(s.domain for s in rows)[:15]) or "none"
+        return None, f"No site called “{ref}” on this account. Sites here: {known}."
+    if len(hits) > 1:
+        # One domain on two servers. Which one holds the credentials being asked for is not
+        # something to guess at.
+        where = ", ".join(str(s.server_id) for s in hits)
+        return None, (f"“{ref}” exists on more than one server ({where}). Use the site's id "
+                      f"rather than its domain.")
+    return hits[0], None
+
+
+async def _env_target(db, user: User, ref: str):
+    """The site, its server and where its application really lives — or a message.
+
+    The app root comes from the Laravel probe, which finds it by locating `artisan`. Never
+    from the caller and never guessed from the document root, because this path decides
+    which file gets read or rewritten.
+    """
+    from app.services import laravel_service
+
+    site, err = await _resolve_site(db, user, ref)
+    if err:
+        return None, None, None, err
+    acc = await _resolve_server(db, user, str(site.server_id))
+    if acc is None:
+        return None, None, None, f"You do not have access to the server {site.domain} is on."
+    if not acc.can_execute:
+        return None, None, None, (f"You have view-only access to {acc.server.name}, so its "
+                                  f"settings files are not available.")
+    server = acc.server
+    if server.connection_type != "ssh":
+        return None, None, None, ("Settings files are read over SSH on a Linux server.")
+    if (site.app_type or "") != "laravel":
+        return None, None, None, (
+            f"{site.domain} does not run a Laravel application, and this reads the .env of "
+            f"one. For other files use serverally_read_file (which masks secrets).")
+    app = await laravel_service.read(server, site.doc_root or "")
+    if not app.get("ok") or not app.get("path"):
+        return None, None, None, (app.get("reason") or "We could not read this application.")
+    return site, server, app, None
+
+
+@mcp_server.tool(name="serverally_get_site_env",
+                 annotations={"title": "Read a site's settings (.env)", **_RO})
+async def serverally_get_site_env(
+    site: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Read a Laravel site's ``.env`` — the real values, not masked.
+
+    Unlike ``serverally_read_file``, which masks secrets, this returns them: reading the
+    credentials IS the purpose here, rather than an accident of reading some other file.
+
+    For that reason it needs a **Full access** connection even though it only reads. A
+    Read-only connection is one the customer believes cannot hurt them, and handing it every
+    database password would make that promise false.
+
+    Fetched over SFTP, never through a shell command — a command's arguments are visible in
+    ``ps`` and are kept in the stored output of the run, and every line of this file is a
+    credential.
+
+    Args:
+        site: the domain, e.g. ``shop.example.com``.
+    """
+    from app.services import connection_manager, env_service, file_service
+
+    denied = _full_access_required()
+    if denied:
+        return ("Reading a settings file returns real credentials, so it needs a Full access "
+                "connection. " + denied.split(". ", 1)[-1])
+
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        site_row, server, app, err = await _env_target(db, user, site)
+        if err:
+            return err
+        try:
+            path = env_service.env_path(app["path"])
+        except env_service.EnvError as exc:
+            return str(exc)
+
+        out, e, _c = await connection_manager.execute(
+            server, env_service.build_facts_command(app["path"], site_row.domain))
+        facts = env_service.parse_facts((out or "") + (e or ""))
+        content = ""
+        if facts["exists"]:
+            try:
+                content = (await file_service.download_file(server, path)).decode(
+                    "utf-8", errors="replace")
+            except Exception as exc:  # noqa: BLE001
+                return f"That file could not be read: {exc}"
+        await _audit(db, user, "site_env_read", server.id)
+
+    warning = env_service.exposure_warning(facts)
+    if response_format == ResponseFormat.JSON:
+        return json.dumps({"site": site_row.domain, "path": path, "exists": facts["exists"],
+                           "content": content, "warning": warning}, indent=2)
+    head = f"# {site_row.domain} — `{path}`"
+    if warning:
+        head += f"\n\n⚠️ {warning}"
+    if not facts["exists"]:
+        return head + "\n\n_There is no .env file here yet._"
+    return head + f"\n\n```dotenv\n{content.rstrip()}\n```"
+
+
+@mcp_server.tool(name="serverally_set_site_env",
+                 annotations={"title": "Save a site's settings (.env)", **_WRITE})
+async def serverally_set_site_env(
+    site: str, content: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Replace a Laravel site's ``.env``, and put the old one back if the site stops working.
+
+    Send the WHOLE file, not a fragment — this replaces it. Read it first with
+    ``serverally_get_site_env``, change what you need, and send the result back.
+
+    What this does that writing the file through a shell would not:
+
+    - the content never touches a command line, so it cannot leak into ``ps`` or the stored
+      output of the run
+    - the previous file is kept and **restored if the site stops serving** after the change
+    - ownership and mode are carried across, or the application can no longer read its own
+      configuration and every page becomes a 500
+    - Laravel's config cache is rebuilt when it was in use — without that the edit appears
+      to do nothing, which is the most confusing outcome available here
+
+    The audit records THAT the file changed and nothing about what is in it.
+    """
+    from app.services import connection_manager, env_service, file_service
+
+    denied = _full_access_required()
+    if denied:
+        return denied
+
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        site_row, server, app, err = await _env_target(db, user, site)
+        if err:
+            return err
+        try:
+            data = env_service.check_content(content)
+            root = app["path"].rstrip("/")
+            tmp = f"{root}/{env_service.TMP_NAME}"
+        except env_service.EnvError as exc:
+            return f"❌ {exc}"
+
+        try:
+            await file_service.upload_file(server, tmp, data)
+        except Exception as exc:  # noqa: BLE001
+            return f"Those settings could not be sent: {exc}"
+
+        out, e, code = await connection_manager.execute(
+            server, env_service.build_apply_command(
+                root, site_row.domain, php_bin=app.get("php_bin", ""),
+                rebuild_cache=bool(app.get("cache_config"))))
+        ok, message = env_service.explain(code, (out or "") + (e or ""))
+        if not ok:
+            # Never leave our half-written copy beside the real file — it holds the same
+            # credentials.
+            await connection_manager.execute(server, env_service.build_discard_command(root))
+            return f"❌ {message}"
+        await _audit(db, user, "site_env_saved", server.id)
+
+    if response_format == ResponseFormat.JSON:
+        return json.dumps({"site": site_row.domain, "saved": True,
+                           "bytes": len(data), "message": message}, indent=2)
+    return f"✅ Saved `{site_row.domain}` settings ({len(data)} bytes). {message}"

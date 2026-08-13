@@ -111,10 +111,10 @@ def test_a_read_only_connection_cannot_change_dns():
     """The server tools get this from `_executor`; DNS has no server to resolve, so the
     scope is checked on its own rather than quietly skipped."""
     body = code(mcp.serverally_set_dns_record)
-    assert "_dns_write_allowed()" in body
+    assert "_full_access_required()" in body
     # Before anything else — a permission check after the work is not a permission check.
-    assert body.index("_dns_write_allowed()") < body.index("_resolve_caller")
-    assert "SCOPE_WRITE" in code(mcp._dns_write_allowed)      # noqa: SLF001
+    assert body.index("_full_access_required()") < body.index("_resolve_caller")
+    assert "SCOPE_WRITE" in code(mcp._full_access_required)      # noqa: SLF001
 
 
 def test_the_provider_token_never_leaves_the_server():
