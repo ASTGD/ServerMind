@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
+from html import unescape
 
 import winrm
 
@@ -65,14 +67,50 @@ def _decode(value) -> str:
     return value or ""
 
 
+#: A CLIXML record worth showing. PowerShell serialises FIVE streams into std_err —
+#: error, warning, verbose, debug and progress — and only the first two are news.
+_CLIXML_KEEP = re.compile(r'<S\s+S="(?:Error|Warning)">(.*?)</S>', re.S | re.I)
+#: `_x000D_`-style escapes: CLIXML encodes control characters this way.
+_CLIXML_ESCAPE = re.compile(r"_x([0-9A-Fa-f]{4})_")
+
+
 def _clean_ps_error(err: str) -> str:
-    """PowerShell errors arrive as CLIXML; strip the wrapper for readability."""
-    err = err.strip()
-    if err.startswith("#< CLIXML"):
-        # Best-effort: drop the CLIXML preamble line.
-        parts = err.split("\n", 1)
-        err = parts[1] if len(parts) > 1 else err
-    return err
+    """Turn PowerShell's CLIXML std_err into something a person can read — or nothing.
+
+    **The old version returned the XML almost untouched**, and the cost was not cosmetic:
+    `execute_stream` yields std_err into the output stream and the playbook runner emits it
+    to the screen, so every Windows playbook run showed a wall of markup; and several
+    callers treat a non-empty std_err as "something went wrong".
+
+    The thing that makes that bite on EVERY first command is that PowerShell reports
+    *progress* down this channel — a fresh session emits "Preparing modules for first use"
+    before it has done anything at all. A command that worked perfectly came back with a
+    std_err full of XML saying so.
+
+    So only genuine **error and warning** records survive. Progress, verbose and debug are
+    dropped, and a std_err that held nothing else becomes empty — which is the honest
+    answer, because nothing was wrong.
+
+    Anything that is not CLIXML is passed through untouched: a transport failure
+    ("WinRM error: …") is a real message and must not be filtered away by a parser written
+    for a different shape.
+    """
+    text = (err or "").strip()
+    if not text:
+        return ""
+    if "<Objs" not in text and not text.startswith("#< CLIXML"):
+        return text
+
+    kept = [_clixml_text(m.group(1)) for m in _CLIXML_KEEP.finditer(text)]
+    # PowerShell splits one long error across several records, so they are joined rather
+    # than listed — the customer is meant to read a sentence, not fragments.
+    return "".join(kept).strip()
+
+
+def _clixml_text(raw: str) -> str:
+    """The readable text inside one CLIXML record."""
+    out = _CLIXML_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), raw)
+    return unescape(out)
 
 
 # ── Public API (mirrors ssh_service) ────────────────────────────────────────

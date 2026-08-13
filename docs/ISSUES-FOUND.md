@@ -4,7 +4,7 @@
 >
 > **Rule:** when live-testing and something looks wrong, do NOT fix it in place mid-task. Log it here, keep going with the actual task, fix everything after the session. See the "Live Testing — Bug Capture Protocol" section in `CLAUDE.md`.
 >
-> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-022**.
+> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-023**.
 
 ---
 
@@ -35,6 +35,41 @@ Copy this block for each new finding:
 ---
 
 ## Fixed
+
+### BUG-022 — PowerShell progress records leak into std_err as raw CLIXML
+- **Date:** 2026-08-12
+- **Status:** Fixed (2026-08-12)
+- **Context:** the FIRST command ever run against a live Windows box — Windows Server 2022,
+  WinRM, added to test the .NET verifier engine. Everything before this was tested against
+  mocked `pywinrm`.
+- **Server:** engine.vev.astgd.com (23.106.52.144)
+- **Observed:** a command that succeeded (`$PSVersionTable`, exit 0, clean stdout) returned a
+  std_err full of `<Objs …><Obj S="progress">Preparing modules for first use.</Obj></Objs>`.
+  A later command that downloaded one web page produced ~45 progress records, about 12 KB of
+  XML. `_clean_ps_error` only dropped a `#< CLIXML` preamble line, which pywinrm had already
+  stripped, so the entire body passed through.
+- **Expected:** std_err carries errors. A command that worked should report none.
+- **Severity:** Medium — not cosmetic. `execute_stream` yields std_err into the output
+  stream and `playbook_tasks` emits it to the screen, so every Windows playbook run would
+  show a wall of markup; several callers treat a non-empty std_err as failure; and the MCP
+  `truncated` flag was raised on results that were complete. (Checked and NOT true: stdout
+  is capped before std_err, so the real output was never crowded out.)
+- **Root cause:** PowerShell serialises FIVE streams into std_err — error, warning, verbose,
+  debug and progress — and only the first two are news. A fresh session emits progress
+  before running anything, so this fired on every first command.
+- **Fixed by:** `winrm_service._clean_ps_error` now keeps only `S="Error"` and `S="Warning"`
+  records, decodes `_x000D_`-style escapes and XML entities, joins records split across a
+  long message, and returns empty when nothing real is left. Anything that is not CLIXML —
+  a transport failure like `WinRM error: …` — is passed through untouched, because a parser
+  written for one shape must not swallow the message that explains why nothing ran.
+- **Test:** `tests/test_winrm_clixml.py` — built on the EXACT bytes the live box sent, kept
+  verbatim. An invented sample would only prove the parser handles what I expected, which is
+  precisely how this survived: the mocks returned what their author imagined. 14 tests, all
+  7 mutations killed.
+- **Why it was never caught:** Phase 2B's own note said it — "all via mocked pywinrm (no live
+  Windows host available for a real WinRM handshake)". The first real host found it in one
+  command.
+
 
 ### BUG-021 — removing a staging copy leaves its database behind
 - **Date:** 2026-08-12
