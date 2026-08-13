@@ -135,6 +135,22 @@ function RecordForm({
  * typed, and the records that could hand the domain away (NS, SOA) are shown but never
  * editable here.
  */
+/**
+ * The server's reason, if it gave one.
+ *
+ * The create form had this inline and the edit and delete paths had nothing, so a rejected
+ * edit did exactly what a rejected edit must never do: closed nothing, changed nothing, and
+ * said nothing. A customer pressing Save on a real error (`Cloudflare: An identical record
+ * already exists.`) saw the form sit there and concluded the product was broken.
+ */
+function detailOf(error: unknown): string | null {
+  const d = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof d === "string") return d
+  if (Array.isArray(d)) return d.map((x) => (x as { msg?: string })?.msg).filter(Boolean).join(" · ") || null
+  return error ? "That change could not be saved." : null
+}
+
+
 export default function Dns() {
   const qc = useQueryClient()
   const [accountId, setAccountId] = useState<string>("")
@@ -178,6 +194,8 @@ export default function Dns() {
       updateRecord(acct!.id, zone!.id, zone!.name, id, r),
     onSuccess: () => { setEditing(null); invalidate() },
   })
+  // Opening a different record must not show the error from the last one.
+  const startEditing = (id: string | null) => { edit.reset(); setEditing(id) }
   const del = useMutation({
     mutationFn: (id: string) => deleteRecord(acct!.id, zone!.id, zone!.name, id),
     onSuccess: invalidate,
@@ -249,9 +267,9 @@ export default function Dns() {
             <div className="mb-3">
               <RecordForm zone={zone.name} saving={add.isPending}
                 onSave={(r) => add.mutate(r)} onCancel={() => setAdding(false)} />
-              {(add.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail && (
+              {detailOf(add.error) && (
                 <p className="mt-1 text-[12.5px] text-red-600 dark:text-red-400">
-                  {(add.error as { response?: { data?: { detail?: string } } }).response!.data!.detail}
+                  {detailOf(add.error)}
                 </p>
               )}
             </div>
@@ -312,9 +330,16 @@ export default function Dns() {
               {grouped.map((r) => (
                 <li key={r.id}>
                   {editing === r.id && zone ? (
-                    <RecordForm zone={zone.name} initial={r} saving={edit.isPending}
-                      onSave={(body) => edit.mutate({ id: r.id, r: body })}
-                      onCancel={() => setEditing(null)} />
+                    <>
+                      <RecordForm zone={zone.name} initial={r} saving={edit.isPending}
+                        onSave={(body) => edit.mutate({ id: r.id, r: body })}
+                        onCancel={() => startEditing(null)} />
+                      {detailOf(edit.error) && (
+                        <p className="mt-1 text-[12.5px] text-red-600 dark:text-red-400">
+                          {detailOf(edit.error)}
+                        </p>
+                      )}
+                    </>
                   ) : (
                     <div className={cn(
                       "flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2",
@@ -334,7 +359,7 @@ export default function Dns() {
                       </span>
                       {r.editable ? (
                         <div className="flex shrink-0 gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => setEditing(r.id)}>
+                          <Button size="sm" variant="ghost" onClick={() => startEditing(r.id)}>
                             Edit
                           </Button>
                           <Button size="sm" variant="ghost" disabled={del.isPending}

@@ -1382,3 +1382,273 @@ async def serverally_run_command(
     if not stdout.strip() and not stderr.strip():
         out.append("\n_(no output)_")
     return "\n".join(out)
+
+
+# ── DNS ───────────────────────────────────────────────────────────────────────
+#
+# Three tools, and the shape of them is the design.
+#
+# **There is one write tool, `set_dns_record`, not a create and an update.** The caller's
+# AI is asked for an intent — "make api.example.com point at 1.2.3.4" — and should not have
+# to first discover whether that record exists. More importantly, separate create/update is
+# how the most common DNS accident happens: a SECOND A record is added instead of the first
+# being changed, so half the visitors keep reaching the old server. That failure looks
+# intermittent, survives a cache flush, and is genuinely hard to diagnose.
+#
+# **There is deliberately no delete tool.** MCP's rule is no shell, no delete, no restore
+# (Decisions Log, 2026-07-23) and DNS is exactly why: removing an MX record stops mail with
+# no undo anywhere in the system. Fixing a wrong record — the thing people actually need —
+# is what `set` does.
+#
+# The rules that decide whether a record is sane live in `dns_service.validate`, and are
+# reused rather than restated here: a CNAME on the apex, an MX pointing at an IP address, a
+# TTL below the floor. Every one of them is a value the provider would happily accept and
+# which breaks the domain quietly.
+
+def _dns_write_allowed() -> str | None:
+    """Whether this connection may change DNS. A message when it may not.
+
+    The server-based tools get this from `_executor`; DNS has no server to resolve, so the
+    scope is checked on its own rather than skipped.
+    """
+    from mcp.server.auth.middleware.auth_context import get_access_token
+
+    from app.mcp.oauth_provider import SCOPE_WRITE
+
+    token = get_access_token()
+    if token is not None and SCOPE_WRITE not in (token.scopes or []):
+        return ("This connection is read-only. Reconnect from ServerAlly → Settings → "
+                "Connected applications with Full access to change DNS.")
+    return None
+
+
+def _dns_match(existing: list, rec: dict) -> list:
+    """The records this change would replace: same type, same name.
+
+    Pulled out and named because it is the whole rule. Inline, the only thing a test could
+    check was that the existing records had been READ — and a mutation that read them and
+    then ignored them, always creating, passed happily. That mutation IS the bug: a second
+    A record beside the first, half the visitors on the old server.
+
+    Compared case-insensitively because DNS names are, and a provider may return them in a
+    different case from the one we sent.
+    """
+    return [r for r in existing
+            if r.type == rec["type"] and r.name.lower() == rec["name"].lower()]
+
+
+async def _dns_zone(db, user: User, zone: str):
+    """Find a zone by NAME across the caller's DNS accounts.
+
+    By name because that is what the caller knows — an AI asked to fix `example.com` has no
+    zone id and no account id. Returns ``(account, zone, None)`` or ``(None, None, message)``.
+    """
+    from app.models.dns_account import DnsAccount
+    from app.services import dns_service as dns
+
+    wanted = (zone or "").strip().lower().rstrip(".")
+    if not wanted:
+        return None, None, "Which domain? Give the zone, for example example.com."
+
+    accounts = (await db.execute(
+        select(DnsAccount).where(DnsAccount.user_id == user.id)
+    )).scalars().all()
+    if not accounts:
+        return None, None, ("No DNS provider is connected to this ServerAlly account. "
+                            "Connect one in ServerAlly → DNS first.")
+
+    seen: list[str] = []
+    for a in accounts:
+        try:
+            for z in await dns.list_zones(a):
+                seen.append(z.name)
+                if z.name.lower().rstrip(".") == wanted:
+                    return a, z, None
+        except dns.DnsError:
+            # One provider being unreachable must not hide a zone held by another.
+            continue
+    known = ", ".join(sorted(set(seen))[:20]) or "none"
+    return None, None, f"No zone called “{zone}” on this account. Zones here: {known}."
+
+
+@mcp_server.tool(name="serverally_list_dns_zones",
+                 annotations={"title": "List DNS zones", **_RO})
+async def serverally_list_dns_zones(
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """List every DNS zone (domain) the caller's connected providers manage.
+
+    Read-only. Never returns the provider API token.
+    """
+    from app.models.dns_account import DnsAccount
+    from app.services import dns_service as dns
+
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        accounts = (await db.execute(
+            select(DnsAccount).where(DnsAccount.user_id == user.id)
+        )).scalars().all()
+        if not accounts:
+            return "No DNS provider is connected. Connect one in ServerAlly → DNS."
+        out = []
+        for a in accounts:
+            try:
+                for z in await dns.list_zones(a):
+                    out.append({"zone": z.name, "status": z.status,
+                                "provider": a.provider, "account": a.label})
+            except dns.DnsError as exc:
+                out.append({"zone": None, "provider": a.provider,
+                            "account": a.label, "error": str(exc)})
+
+    if response_format == ResponseFormat.JSON:
+        return json.dumps({"count": len(out), "zones": out}, indent=2)
+    lines = [f"# DNS zones ({len(out)})", ""]
+    for z in out:
+        if z.get("error"):
+            lines.append(f"- ⚠️ {z['account']} ({z['provider']}): {z['error']}")
+        else:
+            lines.append(f"- **{z['zone']}** — {z['status']} · {z['provider']}")
+    return "\n".join(lines)
+
+
+@mcp_server.tool(name="serverally_list_dns_records",
+                 annotations={"title": "List DNS records", **_RO})
+async def serverally_list_dns_records(
+    zone: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """List the DNS records in a zone. ``zone`` is the domain, e.g. ``example.com``.
+
+    Read-only. Records the provider manages itself (NS, SOA) are shown but marked
+    non-editable — they are visible because a wrong answer often makes sense only once you
+    can see them, and they are not changeable because editing them breaks the domain.
+    """
+    from app.services import dns_service as dns
+
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        account, z, err = await _dns_zone(db, user, zone)
+        if err:
+            return err
+        try:
+            found = await dns.list_records(account, z.zone_id)
+        except dns.DnsError as exc:
+            return f"Could not read the records for {z.name}: {exc}"
+
+    records = [dns.public_record(r) for r in found]
+    if response_format == ResponseFormat.JSON:
+        return json.dumps({"zone": z.name, "count": len(records),
+                           "editable_types": list(dns.MANAGED_TYPES),
+                           "records": records}, indent=2)
+    lines = [f"# {z.name} — {len(records)} records", ""]
+    for r in records:
+        lock = "" if r["editable"] else "  _(managed by the provider)_"
+        pri = f" priority {r['priority']}" if r["priority"] is not None else ""
+        lines.append(f"- **{r['type']}** `{r['name']}` → `{r['content']}`"
+                     f" · TTL {r['ttl']}{pri}{lock}")
+    return "\n".join(lines)
+
+
+@mcp_server.tool(name="serverally_set_dns_record",
+                 annotations={"title": "Set a DNS record", **_WRITE})
+async def serverally_set_dns_record(
+    zone: str, type: str, name: str, content: str, ttl: int = 300,
+    priority: int | None = None, proxied: bool | None = None,
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Point a DNS name at a value — creating the record, or changing the existing one.
+
+    This is an upsert on purpose. Ask for what the record SHOULD be and it is made so:
+    if no record of this type and name exists it is created, and if exactly one exists it
+    is changed. That avoids the most common DNS accident, which is adding a second A record
+    instead of correcting the first — leaving half of visitors on the old server, a failure
+    that looks intermittent and is very hard to trace.
+
+    **When several records already share this type and name it REFUSES** and lists them.
+    That is legitimate for MX, TXT and round-robin A records, and choosing which one to
+    replace is the owner's decision, not a guess this tool should make.
+
+    There is no delete tool. Removing a record — an MX above all — stops something working
+    with no undo; fixing a wrong value is what this does.
+
+    Args:
+        zone: the domain, e.g. ``example.com``.
+        type: A, AAAA, CNAME, TXT, MX, SRV or CAA. NS and SOA cannot be changed.
+        name: the host — ``@`` or the domain for the apex, or ``www``/``api``.
+        content: the value — an IP for A, a hostname for CNAME/MX, text for TXT.
+        ttl: seconds; 1 means automatic at Cloudflare.
+        priority: required for MX and SRV.
+        proxied: Cloudflare's orange cloud, when the provider supports it.
+    """
+    from app.services import dns_service as dns
+
+    denied = _dns_write_allowed()
+    if denied:
+        return denied
+
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        account, z, err = await _dns_zone(db, user, zone)
+        if err:
+            return err
+
+        # The rules live in one place and are reused, never restated: a CNAME on the apex,
+        # an MX pointing at an IP, a TTL under the floor. Each is a value the provider
+        # accepts and which breaks the domain quietly.
+        try:
+            rec = dns.validate(type_=type, name=name, content=content,
+                               zone=z.name, ttl=ttl, priority=priority)
+        except dns.InvalidRecord as exc:
+            return f"❌ {exc}"
+        if proxied is not None:
+            rec["proxied"] = proxied
+
+        try:
+            existing = await dns.list_records(account, z.zone_id)
+        except dns.DnsError as exc:
+            # Cannot look, so cannot know whether this would duplicate. Refusing is the
+            # honest answer — creating blind is how the second A record appears.
+            return (f"Could not read the existing records for {z.name}, so nothing was "
+                    f"changed: {exc}")
+
+        matches = _dns_match(existing, rec)
+        if len(matches) > 1:
+            listed = "; ".join(f"{r.content}" for r in matches)
+            return (f"❌ {z.name} already has {len(matches)} {rec['type']} records for "
+                    f"`{rec['name']}` ({listed}). Several records sharing a name is normal "
+                    f"for MX, TXT and round-robin A records, so this tool will not guess "
+                    f"which one you meant to replace. Change it in ServerAlly → DNS.")
+
+        warning = dns.warn_for(type_=rec["type"], name=rec["name"], zone=z.name,
+                               existing=existing)
+        try:
+            if matches:
+                saved = await dns.update_record(account, z.zone_id,
+                                                matches[0].record_id, rec)
+                action, before = "updated", matches[0].content
+            else:
+                saved = await dns.create_record(account, z.zone_id, rec)
+                action, before = "created", None
+        except dns.DnsError as exc:
+            return f"Could not save the record: {exc}"
+
+        # DNS changes are the ones people need to reconstruct later — "when did this
+        # break?" is usually answered by finding the record change that caused it.
+        await _audit(db, user, f"dns_record_{action}")
+
+    data = {"zone": z.name, "action": action, "previous": before,
+            "record": dns.public_record(saved), "warning": warning}
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+    was = f" (was `{before}`)" if before else ""
+    msg = (f"✅ {action.capitalize()} **{saved.type}** `{saved.name}` → "
+           f"`{saved.content}`{was} in {z.name}.")
+    if warning:
+        msg += f"\n\n⚠️ {warning}"
+    msg += f"\n\nChanges can take up to the TTL ({saved.ttl}s) to reach everyone."
+    return msg
