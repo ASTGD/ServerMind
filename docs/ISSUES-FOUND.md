@@ -4,7 +4,7 @@
 >
 > **Rule:** when live-testing and something looks wrong, do NOT fix it in place mid-task. Log it here, keep going with the actual task, fix everything after the session. See the "Live Testing — Bug Capture Protocol" section in `CLAUDE.md`.
 >
-> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-023**.
+> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-024**.
 
 ---
 
@@ -35,6 +35,37 @@ Copy this block for each new finding:
 ---
 
 ## Fixed
+
+### BUG-023 — the Windows security audit produced an unreadable report and called it success
+- **Date:** 2026-08-12
+- **Status:** Fixed (2026-08-12)
+- **Context:** first ever run of a Windows playbook on a real machine — validating WinRM for
+  the .NET verifier engine.
+- **Server:** engine.vev.astgd.com (Windows Server 2022)
+- **Observed:** `win-audit` exited 0, status `success`, 13 seconds — and its report had the
+  OS table printed underneath the *Local Users* heading, with every later section rendered
+  as blank padded rows. The whole thing was useless and nothing said so.
+- **Expected:** each section under its own heading, with its data.
+- **Severity:** Medium — the report is the entire product of that playbook, and a green
+  success on worthless output is worse than a failure, which would at least be noticed.
+- **Root cause:** two PowerShell behaviours that only appear over remoting. (1) `Write-Host`
+  writes to the information stream while `Get-*` sends OBJECTS down the success pipeline;
+  remoting renders them separately and merges at the end, so a heading and its data arrive
+  apart. (2) Objects of different types in one pipeline are all formatted using the FIRST
+  object's shape, so everything after it becomes blank rows.
+- **Fixed by:** each block converted to text where it is produced (`| Out-String`), headings
+  emitted as plain strings rather than `Write-Host` so everything is in one stream, an empty
+  section says "(nothing to report)" instead of leaving a gap that reads as failure, and
+  `-ErrorAction SilentlyContinue` per cmdlet so one missing on a trimmed edition of Windows
+  costs one section rather than the report. The same one-line trap in `win-openssh` and
+  `win-iis` (`Get-Service X`) fixed too. **The rewrite was proven on the live box before
+  being written into the playbook.**
+- **Test:** `tests/test_windows_playbook_output.py` — a contract over EVERY PowerShell
+  playbook, not just this one, since the trap is one careless line away in any of them.
+  Verified by restoring the original broken script and confirming the tests fail.
+- **Why it was never caught:** the Windows playbooks were authored and syntax-checked but
+  never run. Same root as BUG-022, found in the same hour on the same box.
+
 
 ### BUG-022 — PowerShell progress records leak into std_err as raw CLIXML
 - **Date:** 2026-08-12

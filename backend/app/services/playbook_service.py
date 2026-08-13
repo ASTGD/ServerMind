@@ -2543,7 +2543,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
             "Set-Service -Name sshd -StartupType Automatic\n"
             "New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 -ErrorAction SilentlyContinue\n"
             "Write-Host 'OpenSSH Server enabled on port 22.'\n"
-            "Get-Service sshd\n"
+            "(Get-Service sshd | Format-Table -AutoSize | Out-String).Trim()\n"
         ),
     },
 
@@ -2566,7 +2566,7 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
             "Start-Service W3SVC\n"
             "Set-Service -Name W3SVC -StartupType Automatic\n"
             "Write-Host 'IIS installed.'\n"
-            "Get-Service W3SVC\n"
+            "(Get-Service W3SVC | Format-Table -AutoSize | Out-String).Trim()\n"
         ),
     },
 
@@ -2702,20 +2702,39 @@ OFFICIAL_PLAYBOOKS: list[dict] = [
         "variables": [],
         "script_powershell": (
             "#Requires -Version 5.1\n"
-            "Write-Host '=== ServerAlly Windows Security Audit ==='\n"
-            "Write-Host \"Date: $(Get-Date)\"\n"
-            "Write-Host ''\n"
-            "Write-Host '--- OS Info ---'\n"
-            "Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion\n"
-            "Write-Host '--- Local Users ---'\n"
-            "Get-LocalUser | Select-Object Name, Enabled, LastLogon\n"
-            "Write-Host '--- Administrators ---'\n"
-            "Get-LocalGroupMember -Group 'Administrators'\n"
-            "Write-Host '--- Open Ports ---'\n"
-            "Get-NetTCPConnection -State Listen | Select-Object LocalPort, State | Sort-Object LocalPort\n"
-            "Write-Host '--- Firewall Profiles ---'\n"
-            "Get-NetFirewallProfile | Select-Object Name, Enabled, DefaultInboundAction\n"
-            "Write-Host 'Audit complete.'\n"
+            "# Every block is turned into TEXT where it is produced. Two things go wrong over WinRM\n"
+            "# otherwise, and the first live run of this report hit both:\n"
+            "#\n"
+            "#  1. `Write-Host` writes to the information stream while `Get-*` sends OBJECTS down the\n"
+            "#     success pipeline. Remoting renders the two separately and merges them at the end, so\n"
+            "#     a heading and the data it labels arrive in different places - the OS table came out\n"
+            "#     underneath \"Local Users\".\n"
+            "#  2. Objects of DIFFERENT types in one pipeline are all formatted using the FIRST object's\n"
+            "#     shape, so everything after it renders as blank padded rows. That is what left most of\n"
+            "#     the report empty.\n"
+            "#\n"
+            "# `| Out-String` where each block is produced fixes both: one stream, in order, each block\n"
+            "# formatted on its own terms.\n"
+            "function Section($title, $data) {\n"
+            "  \"\"\n"
+            "  \"--- $title ---\"\n"
+            "  $text = ($data | Out-String).Trim()\n"
+            "  # A section that found nothing says so. A blank gap reads as the audit having failed.\n"
+            "  if ([string]::IsNullOrWhiteSpace($text)) { \"  (nothing to report)\" } else { $text }\n"
+            "}\n"
+            "\"=== ServerAlly Windows Security Audit ===\"\n"
+            "\"Date: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')\"\n"
+            "# Win32_OperatingSystem rather than Get-ComputerInfo: the same facts, seconds faster, and\n"
+            "# it is what the metrics probe already uses.\n"
+            "Section \"OS\" (Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, OSArchitecture | Format-List)\n"
+            "# -ErrorAction SilentlyContinue on each: one cmdlet missing on a trimmed edition of Windows\n"
+            "# must not take the whole report down with it.\n"
+            "Section \"Local users\" (Get-LocalUser -ErrorAction SilentlyContinue | Select-Object Name, Enabled, LastLogon | Format-Table -AutoSize)\n"
+            "Section \"Administrators\" (Get-LocalGroupMember -Group 'Administrators' -ErrorAction SilentlyContinue | Select-Object Name, PrincipalSource | Format-Table -AutoSize)\n"
+            "Section \"Listening ports\" (Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort | Sort-Object -Unique)\n"
+            "Section \"Firewall profiles\" (Get-NetFirewallProfile -ErrorAction SilentlyContinue | Select-Object Name, Enabled, DefaultInboundAction | Format-Table -AutoSize)\n"
+            "\"\"\n"
+            "\"Audit complete.\"\n"
         ),
     },
 ]
