@@ -4,7 +4,7 @@
 >
 > **Rule:** when live-testing and something looks wrong, do NOT fix it in place mid-task. Log it here, keep going with the actual task, fix everything after the session. See the "Live Testing — Bug Capture Protocol" section in `CLAUDE.md`.
 >
-> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-024**.
+> Newest entries at the top of each section. Each entry gets a sequential ID (BUG-001, BUG-002, ...) — next ID to use: **BUG-025**.
 
 ---
 
@@ -35,6 +35,34 @@ Copy this block for each new finding:
 ---
 
 ## Fixed
+
+### BUG-024 — every file upload succeeded on the server and reported HTTP 500
+- **Date:** 2026-08-13
+- **Status:** Fixed (2026-08-13)
+- **Context:** owner reported "upload failed" in the File Manager on `vev.astgd.com`.
+- **Observed:** reproducing against production found TWO faults. A 900 KB upload returned
+  **500** — and the file was on the server, complete. A 2 MB upload returned a raw nginx
+  **413** page and never arrived.
+- **Severity:** High — the file manager's upload has been visibly broken for every file
+  while actually working. A failure that is really a success is the worst kind: nothing is
+  wrong, the customer sees an error, and retries.
+- **Root cause (the 500):** `upload_file` was declared `-> dict[str, str]` and returns
+  `"size": len(data)`, an int. FastAPI validates the response against the declared type and
+  raised `ResponseValidationError` — **after** the SFTP write had already happened.
+- **Root cause (the 413):** `frontend/nginx.conf` never set `client_max_body_size`, so
+  nginx's 1 MB default applied to `/api/`.
+- **Fixed by:** the response type now admits the int; `client_max_body_size 80m` on `/api/`;
+  and a 64 MB app-side cap deliberately BELOW the proxy's, so an oversized upload gets the
+  app's sentence rather than nginx's raw HTML.
+- **Test:** `tests/test_file_upload.py` drives the REAL app, because the fault was in
+  FastAPI's response validation — calling the handler directly returns the dict happily and
+  proves nothing. 12 tests, all 7 mutations killed, including restoring `dict[str, str]`
+  and removing the nginx line.
+- **Notes on the fix's own testing:** two size checks were each individually removable
+  because the other caught it, so they became one named rule used at two moments with a test
+  each; and `limit=MAX_UPLOAD_BYTES` as a default argument is bound at import and cannot be
+  changed afterwards, including by a test — now read at call time.
+
 
 ### BUG-023 — the Windows security audit produced an unreadable report and called it success
 - **Date:** 2026-08-12

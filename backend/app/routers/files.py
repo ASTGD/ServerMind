@@ -170,6 +170,34 @@ async def rename_path(
 
 # ── Upload ────────────────────────────────────────────────────────────────────
 
+#: What one upload may carry. Deliberately below the proxy's own limit, so a file that is
+#: too big gets THIS message rather than the web server's raw "413" page.
+MAX_UPLOAD_BYTES = 64 * 1024 * 1024
+
+
+def refuse_if_too_big(size: int | None, limit: int | None = None) -> None:
+    """One rule, applied at two moments.
+
+    Called first with the size the client DECLARED, before the body is read — because the
+    body is read into memory here, and refusing after reading still costs the allocation
+    the limit exists to prevent. Then again with the bytes actually received, because a
+    client is free to under-report, or not report at all.
+
+    An unknown size is allowed through to the second check rather than refused: plenty of
+    clients omit a per-part length, and rejecting every one of those would break ordinary
+    uploads to stop a rare one.
+    """
+    # Read here, not bound as a default argument: a module constant captured in the
+    # signature is fixed at import and cannot be changed afterwards — including by a test.
+    limit = MAX_UPLOAD_BYTES if limit is None else limit
+    if size is not None and size > limit:
+        mb = limit // (1024 * 1024)
+        raise HTTPException(
+            status_code=413,
+            detail=(f"That file is {size // (1024 * 1024)} MB, and uploads here are limited "
+                    f"to {mb} MB. For something larger, copy it onto the server directly."))
+
+
 @router.post("/servers/{server_id}/files/upload", status_code=201)
 async def upload_file(
     server_id: str,
@@ -177,10 +205,16 @@ async def upload_file(
     current_user: CurrentUser,
     path: str = Form(...),
     file: UploadFile = File(...),
-) -> dict[str, str]:
+    # `size` is an int, so the response type has to admit one. Declaring `dict[str, str]`
+    # made FastAPI reject our OWN response — and it did so AFTER the file had already been
+    # written, so every upload succeeded on the server and reported HTTP 500 to the
+    # customer. A failure that is really a success is the worst kind: it invites a retry.
+) -> dict[str, str | int]:
     """Upload a local file into a remote directory (multipart/form-data)."""
     server = await _get_server(server_id, current_user, db, need_execute=True)
+    refuse_if_too_big(file.size)
     data = await file.read()
+    refuse_if_too_big(len(data))
     dest = posixpath.join(
         posixpath.normpath("/" + path.lstrip("/")),
         file.filename or "upload",
