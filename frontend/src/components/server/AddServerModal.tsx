@@ -4,6 +4,7 @@ import { X, Eye, EyeOff, Loader2 } from "lucide-react"
 import { createServer, type ServerCreateBody } from "@/api/servers"
 import { ADD_TILES, WINDOWS_METHODS, type AddTile } from "@/lib/assetGroups"
 import { useTranslation } from "react-i18next"
+import { WindowsSetupHelp } from "./WindowsSetupHelp"
 
 interface Props {
   onClose: () => void
@@ -180,6 +181,10 @@ export default function AddServerModal({ onClose, onPickCloud }: Props) {
               </select>
             </div>
           ) : null}
+
+          {/* WinRM cannot be switched on remotely, so the command has to be handed over.
+              Above the fields on purpose: read before you fill them in, not after. */}
+          {form.connection_type === "winrm" ? <WindowsSetupHelp port={form.port} /> : null}
 
           {/* Host + Port */}
           <div className="grid grid-cols-3 gap-3">

@@ -14,7 +14,7 @@ from app.dependencies.auth import get_current_user, require_verified
 from app.models.server import Server
 from app.models.user import User
 from app.schemas.server import ServerCreate, ServerOut, ServerUpdate
-from app.services import audit_service, connection_manager, metering_service, metrics_service
+from app.services import audit_service, connection_manager, metering_service, metrics_service, windows_setup_service
 from app.services import server_probe, team_service
 from app.services.crypto_service import encrypt
 
@@ -98,6 +98,22 @@ async def create_server(
     )
     logger.info("Server %s created by user %s", server.id, current_user.id)
     return server
+
+
+@router.get("/windows-setup")
+async def windows_setup(
+    port: int = 5985,
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """What to run once on a Windows server so ServerAlly can reach it.
+
+    Registered BEFORE ``/{server_id}`` on purpose: a literal path declared after a path
+    parameter of the same depth is swallowed by it — which is how ``/resize`` and
+    ``/destroy`` silently stopped existing in the cloud lifecycle work.
+    """
+    if port not in (5985, 5986):
+        raise HTTPException(422, detail="Windows Remote Management uses port 5985 or 5986.")
+    return windows_setup_service.enable_command(port, windows_setup_service.our_address())
 
 
 @router.get("/{server_id}", response_model=ServerOut)

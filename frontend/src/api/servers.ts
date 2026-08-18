@@ -159,3 +159,24 @@ export async function getServerRole(serverId: string): Promise<ServerRole> {
   const { data } = await apiClient.get(`/api/servers/${serverId}/setup/role`)
   return data
 }
+
+/** What a customer must run once on a Windows server before ServerAlly can reach it.
+ *
+ *  There is no way round this step: remote management cannot be switched on remotely when
+ *  nothing is on yet. What the form can remove is the hunting — so the command comes from
+ *  the backend, already correct for a cloud VM and already scoped to our own address. */
+export interface WindowsSetup {
+  command: string
+  address: string | null
+  scoped: boolean
+  note: string
+  unscoped_warning: string | null
+  other_admin_note: string
+}
+
+export async function getWindowsSetup(port: number): Promise<WindowsSetup> {
+  const { data } = await apiClient.get<WindowsSetup>("/api/servers/windows-setup", {
+    params: { port },
+  })
+  return data
+}

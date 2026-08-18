@@ -24,6 +24,7 @@ from html import unescape
 import winrm
 
 from app.services.crypto_service import decrypt
+from app.services.windows_setup_service import explain_failure
 from app.services.ssh_service import CommandError
 
 logger = logging.getLogger(__name__)
@@ -189,7 +190,11 @@ async def test_connection(
                 "error": _clean_ps_error(_decode(result.std_err))[:300] or "non-zero exit",
             }
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "latency_ms": 0, "error": str(exc)}
+            # A raw pywinrm/requests exception means nothing to the person reading it —
+            # "HTTPConnectionPool(...): Max retries exceeded" is the message a customer got
+            # when their firewall was simply closed. Say what happened and what to do.
+            return {"ok": False, "latency_ms": 0,
+                    "error": explain_failure(str(exc), host, port)}
 
     return await loop.run_in_executor(_executor, _test)
 

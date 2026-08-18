@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     # Error monitoring (optional)
     SENTRY_DSN: str = ""
 
+    # The address a customer's firewall should allow so ServerAlly can reach their
+    # Windows server. Stated rather than detected: a detected value can be wrong behind
+    # a NAT or a second egress, and a wrong address here sends the customer to open
+    # their firewall to a machine that is not us. Empty means "we do not know".
+    SERVERALLY_EGRESS_IP: str = ""
+
     # Plan-limits wall (docs/AI-METERING.md + PRICING-FREE-VS-PRO.md). The pricing
     # model is "open features, two meters": every feature is available on every plan;
     # only the Ally-action allowance and the server cap differ. The ai_usage ledger
