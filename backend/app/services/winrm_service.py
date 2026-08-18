@@ -14,9 +14,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import threading
 import time
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from html import unescape
 
 import winrm
@@ -30,6 +32,16 @@ _executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="winrm")
 
 # Cached pywinrm sessions: {server_id_str: winrm.Session}
 _sessions: dict[str, "winrm.Session"] = {}
+
+#: One lock per server — see ``_session_for`` for why this exists at all.
+#:
+#: Deliberately NEVER removed. A lock is a few bytes and the set is bounded by how many
+#: Windows servers the customer has; dropping one while a command still holds it would let
+#: the next caller build a fresh lock and run straight into the race this fixes.
+_locks: dict[str, threading.Lock] = {}
+#: Guards ``_locks`` itself, so two threads asking for one server get the SAME lock rather
+#: than each building their own and neither excluding the other.
+_locks_guard = threading.Lock()
 
 DEFAULT_HTTP_PORT = 5985
 DEFAULT_HTTPS_PORT = 5986
@@ -53,12 +65,53 @@ def _make_session(host: str, port: int, username: str, credential: str) -> "winr
     )
 
 
-def _get_session(server_id: str, host: str, port: int, username: str, credential: str) -> "winrm.Session":
-    session = _sessions.get(server_id)
-    if session is None:
-        session = _make_session(host, port, username, credential)
-        _sessions[server_id] = session
-    return session
+def _lock_for(server_id: str) -> threading.Lock:
+    with _locks_guard:
+        lock = _locks.get(server_id)
+        if lock is None:
+            lock = threading.Lock()
+            _locks[server_id] = lock
+        return lock
+
+
+@contextmanager
+def _session_for(server_id: str, host: str, port: int, username: str, credential: str):
+    """The only way to get a session — and it arrives with that server's lock already held.
+
+    **A winrm.Session cannot be used by two threads at once.** It builds ONE ``requests.
+    Session`` whose ``auth`` is a single ``HttpNtlmAuth`` — a stateful conversation with its
+    own sequence numbers and message signing — and a single ``run_ps`` is five HTTP calls
+    over it (open_shell → run_command → get_command_output → cleanup_command → close_shell).
+    Interleave two of those and NTLM rejects the out-of-order signature:
+    ``SpnegoError (6): invalid MIC``. Sharing was safe for SSH because a paramiko client
+    multiplexes independent channels by design; this protocol has no such thing.
+
+    So the session and its lock are handed out together and there is no unguarded way to
+    reach one — the same reason ``ssh_service._get_client`` made its fingerprint
+    keyword-only after three callers quietly skipped verification.
+
+    A ``threading.Lock`` rather than an ``asyncio.Lock``, and that is not a preference:
+    ``playbook_tasks`` calls ``asyncio.run()`` **per Celery task**, so a module-level
+    asyncio lock would be bound to the first task's loop and raise on every task after it —
+    breaking exactly the Windows playbook path this protects.
+
+    Per SERVER, never global: one lock for the whole service would let a slow Windows box
+    hold up every other one, turning a correctness fix into an outage.
+
+    A failure evicts the session so the next command rebuilds it. It is **not** retried
+    here: a WinRM command that failed on the way back has still run on the server, and
+    quietly running it a second time is worse than reporting the failure.
+    """
+    with _lock_for(server_id):
+        session = _sessions.get(server_id)
+        if session is None:
+            session = _make_session(host, port, username, credential)
+            _sessions[server_id] = session
+        try:
+            yield session
+        except Exception:
+            _sessions.pop(server_id, None)  # possibly broken — rebuilt on the next command
+            raise
 
 
 def _decode(value) -> str:
@@ -125,8 +178,8 @@ async def test_connection(
     def _test() -> dict:
         t0 = time.monotonic()
         try:
-            session = _get_session(server_id, host, port, username, credential)
-            result = session.run_ps("Write-Output ok")
+            with _session_for(server_id, host, port, username, credential) as session:
+                result = session.run_ps("Write-Output ok")
             latency_ms = int((time.monotonic() - t0) * 1000)
             if result.status_code == 0:
                 return {"ok": True, "latency_ms": latency_ms, "error": None}
@@ -136,7 +189,6 @@ async def test_connection(
                 "error": _clean_ps_error(_decode(result.std_err))[:300] or "non-zero exit",
             }
         except Exception as exc:  # noqa: BLE001
-            _sessions.pop(server_id, None)  # drop a possibly-broken session
             return {"ok": False, "latency_ms": 0, "error": str(exc)}
 
     return await loop.run_in_executor(_executor, _test)
@@ -151,11 +203,10 @@ async def execute(
 
     def _run() -> tuple[str, str, int]:
         try:
-            session = _get_session(server_id, host, port, username, credential)
-            result = session.run_ps(command)
+            with _session_for(server_id, host, port, username, credential) as session:
+                result = session.run_ps(command)
             return _decode(result.std_out), _clean_ps_error(_decode(result.std_err)), int(result.status_code)
         except Exception as exc:  # noqa: BLE001
-            _sessions.pop(server_id, None)
             return "", f"WinRM error: {exc}", 1
 
     return await loop.run_in_executor(_executor, _run)
