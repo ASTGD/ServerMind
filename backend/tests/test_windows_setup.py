@@ -159,6 +159,14 @@ def test_a_rejected_login_says_so():
     assert "administrator" in said.lower()
 
 
+def test_the_domain_example_is_written_the_way_windows_writes_it():
+    """Caught live: over-escaping in the source printed `DOMAIN\\\\user` to the customer.
+    This text is an instruction somebody will copy, so the separator has to be the one
+    Windows actually uses."""
+    said = ws.explain_failure(REAL_ERRORS["wrong password"])
+    assert "DOMAIN\\user" in said and "DOMAIN\\\\user" not in said
+
+
 def test_a_closed_port_is_not_reported_as_a_password_problem():
     """The two most common failures must not be confused — they send the customer to
     completely different places."""

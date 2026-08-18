@@ -118,7 +118,7 @@ def enable_command(port: int = 5985, address: str | None = None) -> dict:
 _CAUSES: list[tuple[re.Pattern, str, str]] = [
     (re.compile(r"credentials were rejected", re.I),
      "The username or password was refused by Windows.",
-     "Check both, and include the domain if this server is in one (DOMAIN\\\\user). "
+     "Check both, and include the domain if this server is in one (DOMAIN\\user). "
      "The account must be an administrator on that server."),
 
     (re.compile(r"invalid Message Integrity Check|SpnegoError", re.I),
