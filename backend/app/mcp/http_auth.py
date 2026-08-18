@@ -51,7 +51,7 @@ def _advertise_public_clients(metadata):
     return metadata
 
 from app.config import settings
-from app.mcp.oauth_provider import ALL_SCOPES, DEFAULT_SCOPES, SCOPE_READ, oauth_provider
+from app.mcp.oauth_provider import ALL_SCOPES, SCOPE_READ, oauth_provider
 
 
 def issuer_url() -> AnyHttpUrl:
@@ -71,7 +71,10 @@ def oauth_root_routes() -> list[Route]:
     client_registration_options = ClientRegistrationOptions(
         enabled=True,                 # Dynamic Client Registration (oauth_dcr)
         valid_scopes=ALL_SCOPES,
-        default_scopes=DEFAULT_SCOPES,  # read-only by default
+        # What a client may REQUEST when it does not declare a scope of its own —
+        # everything we advertise. What it is GRANTED is the consent page's choice,
+        # which defaults to read-only. See oauth_provider.requestable_scope().
+        default_scopes=ALL_SCOPES,
     )
     revocation_options = RevocationOptions(enabled=True)
     routes = create_auth_routes(

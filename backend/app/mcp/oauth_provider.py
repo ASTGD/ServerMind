@@ -62,6 +62,29 @@ DEFAULT_SCOPES = [SCOPE_READ]  # read-only by default — the safe first connect
 SCOPE = SCOPE_READ  # back-compat alias (the base scope every connection has)
 
 
+
+def requestable_scope() -> str:
+    """What a registered client may ASK for: everything this server advertises.
+
+    Not what it is GRANTED — that is decided by the person on the consent page
+    (``scopes_for_access_level``), which overrides the client's request entirely. So the
+    client's own declaration was never a control here, and enforcing it only ever refused
+    legitimate connections.
+
+    The accident it caused: a client that omits ``scope`` when it registers is stamped with
+    the server's default (read-only). If it then asks ``/authorize`` for the scopes our own
+    metadata advertises, the SDK refuses it — ``invalid_scope: Client was not registered
+    with scope mcp:write``. That is exactly what stopped ChatGPT connecting: it registers
+    without a scope and then requests all three. Refusing a client for asking for precisely
+    what we advertise is our metadata contradicting itself.
+
+    Applied on READ, so it is a live property rather than a value frozen at registration
+    time — clients registered before this fix heal on their next attempt, and a future
+    client that omits its scope cannot hit the same wall.
+    """
+    return " ".join(ALL_SCOPES)
+
+
 def scopes_for_access_level(level: str) -> list[str]:
     """Map a consent-page access level to the scopes granted (each tier includes the ones
     below it). Unknown/blank levels fall back to the safe read-only default."""
@@ -147,7 +170,11 @@ class ServerAllyOAuthProvider(
             )).scalar_one_or_none()
         if row is None:
             return None
-        return OAuthClientInformationFull.model_validate(row.data)
+        client = OAuthClientInformationFull.model_validate(row.data)
+        # A client may request anything this server advertises; the person on the consent
+        # page decides what is actually granted. See requestable_scope().
+        client.scope = requestable_scope()
+        return client
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         async with AsyncSessionLocal() as db:
