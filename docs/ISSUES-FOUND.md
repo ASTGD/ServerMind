@@ -36,6 +36,47 @@ Copy this block for each new finding:
 
 ## Fixed
 
+### BUG-025 — two commands at once to a Windows server break both, and everything after
+- **Date:** 2026-08-18
+- **Status:** Fixed (2026-08-18)
+- **Context:** the WinRM per-server lock had been agreed as a plan and never built. Windows
+  is newly in use for the .NET verifier engine, where an AI client will run several commands.
+- **Observed:** measured against the real box (`engine.vev.astgd.com`) through the real
+  service — **8 concurrent commands, 0 succeeded**. The first returned
+  `SpnegoError (6): A token had an invalid Message Integrity Check (MIC)` and the other seven
+  `Bad HTTP response returned from server. Code 500`, the corrupted session cascading.
+  Not intermittent: total failure under any concurrency, and it persists until the session is
+  rebuilt. No instance of this was ever stored — it lived in memory and container logs — so
+  it had to be demonstrated rather than recalled.
+- **Root cause:** what a `winrm.Session` actually is. It builds ONE `requests.Session` whose
+  `auth` is a single `HttpNtlmAuth` — a stateful conversation with its own sequence numbers
+  and message signing — and one `run_ps` is FIVE HTTP calls over it (open_shell,
+  run_command, get_command_output, cleanup_command, close_shell). That object was cached per
+  server in a plain dict and handed to a 20-thread pool, so two commands interleaved two
+  five-call sequences through one signing context. NTLM's answer to a signed message arriving
+  out of order is the invalid MIC. Sharing was safe for SSH and that is not luck — a paramiko
+  client multiplexes independent channels by design — so this needed its own answer, not a
+  copy of that one.
+- **Fixed by:** `winrm_service._session_for` hands out the session and its per-server lock
+  TOGETHER, and `_get_session` is gone, so there is no unguarded way to reach one. A
+  `threading.Lock`, not an `asyncio.Lock`, because `playbook_tasks` calls `asyncio.run()` PER
+  Celery task — a module-level asyncio lock would bind to the first task's loop and raise on
+  every task after it, breaking exactly the Windows playbook path this protects. Per server,
+  never global, or one slow box would hold up every other. Not retried: a command that failed
+  on the way back has still run on the server.
+- **Test:** `tests/test_winrm_concurrency.py` — the race is **demonstrated**, not asserted:
+  before the fix the stub reported 7 concurrent entries out of 8 commands. Plus a timing test
+  that two servers still overlap (what a global lock would break), a test across three
+  separate event loops (the Celery shape), a test that reads `playbook_tasks` so the reason
+  for a threading lock stops being an assumption, and an AST sweep that fails if any new
+  function touches the session cache outside the lock. 11 tests, all 5 mutations killed.
+- **Verified live:** same box, same probe, after deploying — **8/8**, then **20/20** at full
+  pool size, and an ordinary single command straight after returned
+  `Microsoft Windows Server 2022 Standard` with empty stderr.
+- **Why it was never caught:** the same reason as BUG-022 and BUG-023 — Phase 2B was tested
+  entirely against mocked `pywinrm`, and a mock has no NTLM state to corrupt. Three bugs now
+  from that one gap, all found within days of a real Windows host existing.
+
 ### BUG-024 — every file upload succeeded on the server and reported HTTP 500
 - **Date:** 2026-08-13
 - **Status:** Fixed (2026-08-13)
