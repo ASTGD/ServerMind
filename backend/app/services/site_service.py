@@ -970,6 +970,40 @@ def catalogue(playbooks_by_slug: dict) -> list[dict]:
     return out
 
 
+def _derived_database(playbook, domain: str) -> dict[str, str]:
+    """Per-site database details, for an installer that asks for them.
+
+    Two live failures on a real server made this necessary, and both were in the ordinary
+    flow — a customer typing a domain and picking a type:
+
+    * **WordPress could not be created at all.** Its installer declares `DB_PASS` as
+      required with an empty default, so the substitution guard refused the run with
+      *"This installer still needs DB_PASS"*. The script itself generates one when none is
+      given; the variable layer never let it get that far. Nobody should have to invent a
+      database password for a site they are creating.
+    * **The SECOND site of a type failed.** The defaults are fixed — `wordpress`/`wpuser`,
+      `laravel`/`laravel` — so the second Laravel site on a server was refused with
+      *"a database called 'laravel' already exists"*. Two sites on one server is the
+      ordinary case for an agency, not an edge case.
+
+    Naming comes from `site_database_naming`, the module the per-site database feature
+    already uses, so "what is this site's database called" has ONE answer rather than two
+    that drift. One database and one account per site is also the containment rule that
+    feature was built on: a leaked password reaches that site's data and no other.
+    """
+    from app.services import site_database_naming as naming
+
+    declared = {v.get("name") for v in (getattr(playbook, "variables", None) or [])}
+    out: dict[str, str] = {}
+    if "DB_NAME" in declared:
+        out["DB_NAME"] = naming.suggest_name(domain)
+    if "DB_USER" in declared:
+        out["DB_USER"] = naming.suggest_user(naming.suggest_name(domain))
+    if "DB_PASS" in declared:
+        out["DB_PASS"] = naming.generate_password()
+    return out
+
+
 def install_variables(playbook, spec: dict, domain: str,
                       supplied: dict | None, *, takeover: bool,
                       replace: bool = False) -> dict:
@@ -981,15 +1015,17 @@ def install_variables(playbook, spec: dict, domain: str,
     own declared defaults; when that link was missing, creating any site at all failed with
     *"This installer still needs WEB_ROOT"*.
 
-    Order is the meaning: the playbook's defaults are the weakest, the customer's answers
-    beat them, and the values this feature decides — the domain, what the chosen type
-    fixes, whether an empty site may be replaced — beat everything, because they are not
-    the customer's to override.
+    Order is the meaning: the playbook's defaults are the weakest, then what this feature
+    derives for THIS site (a database named after the domain, rather than the playbook's
+    one-size-fits-all default), then the customer's own answers, and finally the values
+    that are not the customer's to override — the domain, what the chosen type fixes, and
+    whether an empty site may be replaced.
     """
     from app.services import playbook_service  # imported here, as elsewhere in this file
 
     return {
         **playbook_service.declared_defaults(playbook),
+        **_derived_database(playbook, domain),
         **(supplied or {}),
         "DOMAIN": domain,
         **spec["extra"],

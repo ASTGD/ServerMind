@@ -12,6 +12,11 @@ import secrets
 #: for the ``_user`` suffix.
 _SAFE = re.compile(r"[^a-z0-9]+")
 _MAX = 48
+#: MySQL caps an ACCOUNT name at 32 characters — shorter than the database-name limit, and
+#: it is a hard error rather than a truncation: `String 'x' is too long for user name`.
+#: Found by generating names for a long domain: `suggest_user` was producing 48, so a site
+#: on a long domain would have failed at CREATE USER after its database already existed.
+_MAX_USER = 32
 
 #: Deliberately no backslash and no quote. A backslash in a MySQL password is read as an
 #: escape, so the user is created, success is reported, and the password then does not
@@ -35,8 +40,13 @@ def suggest_name(domain: str) -> str:
 
 
 def suggest_user(db_name: str) -> str:
-    """One account per database, named after it, so a leak is bounded to that database."""
-    base = db_name[: _MAX - 5].rstrip("_")
+    """One account per database, named after it, so a leak is bounded to that database.
+
+    Capped to what MySQL will actually accept for an account. A name that is too long is
+    refused outright, and by then the database itself has already been created — leaving a
+    half-made site behind.
+    """
+    base = db_name[: _MAX_USER - 5].rstrip("_")
     return f"{base}_user"
 
 
