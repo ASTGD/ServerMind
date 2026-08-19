@@ -77,6 +77,54 @@ Copy this block for each new finding:
   entirely against mocked `pywinrm`, and a mock has no NTLM state to corrupt. Three bugs now
   from that one gap, all found within days of a real Windows host existing.
 
+### BUG-015 — 🔴 CONFIRMED LIVE INCIDENT: Ally locked ServerAlly out of its own server by disabling root password SSH
+- **Date:** 2026-07-18
+- **Status:** Fixed (2026-08-18) — the lockout was APPLIED to a live server and manually reverted at the time; the product now refuses the command outright.
+- **Context:** ValidEmailVerifierGUI deployment QA run, Phase 9 — security audit mission (`harden-server` runbook)
+- **Server / mission:** vev.astgd.com — mission (approved and executed)
+- **What actually happened (corrected — this was first logged as a near-miss):** the step WAS approved and applied. `sshd -T` afterwards reported `permitrootlogin without-password`; `/etc/ssh/sshd_config:33` read `PermitRootLogin prohibit-password`. Because the step used `systemctl reload` (not `restart`), **the live session kept working and nothing appeared wrong** — the failure was silent and deferred to the next reconnect. Recovered by forcing `PermitRootLogin yes` + `sshd -t` + reload, then **verified on a brand-new TCP+KEX handshake** (not the pooled connection, which would have reported success either way): `root auth methods: ['publickey','password'] | password ok: True`. Backups left at `/etc/ssh/sshd_config.bak.*` and `.before_restore.*`.
+- **The compounding failure — Ally's own post-change report was wrong in the reassuring direction:** it summarised *"Password-only SSH login is still allowed because no login key was found."* That reads `PasswordAuthentication yes` (which governs NORMAL users) and misses `PermitRootLogin prohibit-password` (which governs root, the account it uses). So the verification step actively concealed the damage it had just caused.
+- **Observed:** The hardening mission proposed `sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config` followed by `systemctl reload sshd`. Its own description said: *"root can still use a key, **but no key is set up** so this just closes a risky path."*
+- **Why this is critical:** ServerAlly connects to this server as **root via PASSWORD** — confirmed directly in `servers`: `vev.astgd.com | root | password | ssh`. `PermitRootLogin prohibit-password` disables exactly that. The current session survives (`reload`, not `restart`), so the step would report **success** — and every subsequent connection would fail. There is no key configured to fall back to, and no recovery path from inside ServerAlly; it would need out-of-band console access at the VPS provider.
+- **The reasoning is inverted, and that's the real defect:** Ally *correctly observed* that no root SSH key exists, then treated that as evidence the change was **harmless** ("so this just closes a risky path"). The opposite is true — "no key is set up" is precisely what makes it fatal. It is a generic-hardening-advice pattern applied without checking how *it itself* is connected.
+- **Expected:** Before proposing any change to `sshd_config`, auth methods, the SSH port, firewall rules on 22, or the account Ally uses, Ally must check its OWN connection (`auth_type`, username, port) and refuse-or-warn if the change would break it. This is the same self-footprint blind spot as the incident-response false positive (see the 2026-07-05 entry) — Ally reasons about the server as though it were not the one connected to it.
+- **Severity:** **Critical** — a non-technical customer clicking "Approve" on a plausible-sounding hardening step would lose all access to their own server, with no in-product recovery. The safety scaffolding present (config backup, `sshd -t`, gentle reload) does not help: it protects the live session, not the next one, so the failure is silent and delayed.
+- **Suggested fix:** a hard pre-flight guard in the safety layer — any command touching `sshd_config` / `PermitRootLogin` / `PasswordAuthentication` / `Port` / firewall rules on the SSH port is checked against the server's stored `auth_type`+`username`; if it would disable the method Ally is using, BLOCK (not merely confirm) and explain. Add the connection facts (`you are connected as root via password`) to the mission/chat prompt context so the model can reason about it at all.
+- **Repro:** Ask Ally to harden/audit SSH on any server added with `auth_type='password'` and `username='root'`. Dry-run-able via the Dev Door — inspect the planned commands.
+- **Fixed by (2026-08-18):** three layers, because a prompt is a request and not a guarantee
+  (BUG-001's lesson).
+  1. **Code refuses it.** `safety_service.lockout_risk` is wired into `validate_command` /
+     `validate_plan` — the one choke point every AI-planned command already passes through
+     (chat plans, mission steps, MCP `run_command`, autopilot, cron). It **refuses rather than
+     warns**, the same call `firewall_service.lockout_risk` makes for the same reason: a
+     warning is something a customer clicks through once, and the cost here is a server nobody
+     can reach. The **stored** credential is the right authority — ServerAlly reconnects with
+     whatever is on the asset, so if that says "password", closing password login locks us out
+     whatever keys exist on the box for humans. Covers `PermitRootLogin`, `PasswordAuthentication
+     no`, `AuthenticationMethods publickey`, locking the root account, and moving the SSH port.
+     `PermitRootLogin yes` is deliberately **not** refused — that is the recovery.
+  2. **The skill stops proposing it.** `harden-server.md` no longer says "Safe always" about
+     anything in that stage. New Stage 0 (establish how ServerAlly got in, before touching
+     sshd), the correction that "no key is set up" is what makes it fatal rather than safe, and
+     that a surviving session proves nothing about the *next* connection.
+  3. **The prompt states the facts.** The server profile now says "ServerAlly reaches this
+     server as root using a password", so the model can reason about it at all.
+- **A trap found while building it:** the first version skipped anything
+  `is_read_only_command` called read-only. Despite its docstring that classifier is a
+  DENY-list — it returns True for anything without a known mutating token, so it calls
+  `ssh_set PermitRootLogin prohibit-password` **read-only** and would have waved the incident
+  command straight through. Replaced with an explicit allow-list of ways to LOOK, which also
+  catches a read chained to a change (`grep x && ssh_set PermitRootLogin no`).
+- **Test:** `tests/test_ssh_lockout_guard.py` — 33 tests, **all 12 mutations killed**,
+  including restoring the shipped wording, downgrading the refusal to a warning, ignoring the
+  stored auth type, and dropping the facts at the MCP call site. A structural test parses every
+  caller and fails if one stops supplying them — the `ssh_service._get_client` lesson, where an
+  optional argument left host-key verification off at three call sites.
+- **Verified live on production against real stored credentials:** **12 of 13** Linux servers
+  are reached as root with a password and would have been locked out by that exact command —
+  every one is now refused, while `BD FISH JOURNAL` (reached as `journ305`) is correctly not
+  blocked, and ordinary work is untouched on all 13.
+
 ### BUG-024 — every file upload succeeded on the server and reported HTTP 500
 - **Date:** 2026-08-13
 - **Status:** Fixed (2026-08-13)
@@ -464,21 +512,6 @@ then write the warning.**
   3. **That "refuted" verdict was itself wrong.** Laravel's own log later showed `MissingInputException: Aborted` — *"console command needed input but none was given"* — twice during this run (13:51 and 16:05), proving an artisan command in the deployment genuinely DID block on an interactive prompt. **Ally's original diagnosis was substantially correct**; my test used `--no-interaction`, which suppresses the very prompt that caused the stall, so it could not have reproduced it.
   - **Net:** two causes, not one. (a) The wrapped artisan command really can prompt when the `ADMIN_*`/`VERIFIER_SERVICE_*` env vars are missing — this is why the runbook mandates `--no-interaction`. (b) The heredoc still converts that prompt into total silence instead of a visible error, which is what makes it hard to diagnose and what then triggers BUG-007.
   - **Methodological lesson (the reason this entry was wrong three times):** I twice reached a confident verdict from a test that differed from the failing case in exactly the variable under investigation. Reproduce with the *original* invocation before declaring a diagnosis refuted — and prefer the system's own logs (which recorded the truth all along) over a re-run that quietly changes the conditions.
-
-### BUG-015 — 🔴 CONFIRMED LIVE INCIDENT: Ally locked ServerAlly out of its own server by disabling root password SSH
-- **Date:** 2026-07-18
-- **Status:** Open — **the lockout was APPLIED to a live server and then manually reverted**
-- **Context:** ValidEmailVerifierGUI deployment QA run, Phase 9 — security audit mission (`harden-server` runbook)
-- **Server / mission:** vev.astgd.com — mission (approved and executed)
-- **What actually happened (corrected — this was first logged as a near-miss):** the step WAS approved and applied. `sshd -T` afterwards reported `permitrootlogin without-password`; `/etc/ssh/sshd_config:33` read `PermitRootLogin prohibit-password`. Because the step used `systemctl reload` (not `restart`), **the live session kept working and nothing appeared wrong** — the failure was silent and deferred to the next reconnect. Recovered by forcing `PermitRootLogin yes` + `sshd -t` + reload, then **verified on a brand-new TCP+KEX handshake** (not the pooled connection, which would have reported success either way): `root auth methods: ['publickey','password'] | password ok: True`. Backups left at `/etc/ssh/sshd_config.bak.*` and `.before_restore.*`.
-- **The compounding failure — Ally's own post-change report was wrong in the reassuring direction:** it summarised *"Password-only SSH login is still allowed because no login key was found."* That reads `PasswordAuthentication yes` (which governs NORMAL users) and misses `PermitRootLogin prohibit-password` (which governs root, the account it uses). So the verification step actively concealed the damage it had just caused.
-- **Observed:** The hardening mission proposed `sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config` followed by `systemctl reload sshd`. Its own description said: *"root can still use a key, **but no key is set up** so this just closes a risky path."*
-- **Why this is critical:** ServerAlly connects to this server as **root via PASSWORD** — confirmed directly in `servers`: `vev.astgd.com | root | password | ssh`. `PermitRootLogin prohibit-password` disables exactly that. The current session survives (`reload`, not `restart`), so the step would report **success** — and every subsequent connection would fail. There is no key configured to fall back to, and no recovery path from inside ServerAlly; it would need out-of-band console access at the VPS provider.
-- **The reasoning is inverted, and that's the real defect:** Ally *correctly observed* that no root SSH key exists, then treated that as evidence the change was **harmless** ("so this just closes a risky path"). The opposite is true — "no key is set up" is precisely what makes it fatal. It is a generic-hardening-advice pattern applied without checking how *it itself* is connected.
-- **Expected:** Before proposing any change to `sshd_config`, auth methods, the SSH port, firewall rules on 22, or the account Ally uses, Ally must check its OWN connection (`auth_type`, username, port) and refuse-or-warn if the change would break it. This is the same self-footprint blind spot as the incident-response false positive (see the 2026-07-05 entry) — Ally reasons about the server as though it were not the one connected to it.
-- **Severity:** **Critical** — a non-technical customer clicking "Approve" on a plausible-sounding hardening step would lose all access to their own server, with no in-product recovery. The safety scaffolding present (config backup, `sshd -t`, gentle reload) does not help: it protects the live session, not the next one, so the failure is silent and delayed.
-- **Suggested fix:** a hard pre-flight guard in the safety layer — any command touching `sshd_config` / `PermitRootLogin` / `PasswordAuthentication` / `Port` / firewall rules on the SSH port is checked against the server's stored `auth_type`+`username`; if it would disable the method Ally is using, BLOCK (not merely confirm) and explain. Add the connection facts (`you are connected as root via password`) to the mission/chat prompt context so the model can reason about it at all.
-- **Repro:** Ask Ally to harden/audit SSH on any server added with `auth_type='password'` and `username='root'`. Dry-run-able via the Dev Door — inspect the planned commands.
 
 ### BUG-013 — False "server identity changed" alarm: the fingerprint pin ignores the host-key ALGORITHM, so a server that gains a key type is locked out
 - **Date:** 2026-07-18

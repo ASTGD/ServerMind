@@ -44,36 +44,20 @@ Shipped and working:
 
 ---
 
-## 1. The one genuinely open bug
+## 1. Open bugs
 
-**BUG-015 — the hardening runbook can still lock ServerAlly out of a server.** 🔴
+**None.** `docs/ISSUES-FOUND.md` has no genuinely open entry.
 
-This is the top of the list and it is not new: it was logged 2026-07-18 after being **applied
-to a live server** (`vev.astgd.com`) and manually reverted.
+BUG-015 — the hardening runbook that locked ServerAlly out of a live server — was **fixed on
+2026-08-18**. The command is now refused by the safety layer at the one choke point every
+AI-planned command passes through, the `harden-server` skill no longer calls closing root
+password login "safe always", and the server profile tells Ally how ServerAlly itself
+connects. Proven against real stored credentials: **12 of 13** Linux servers would have been
+locked out by that exact command, and every one is now refused.
 
-`backend/app/skills/harden-server.md:42` still reads:
-
-> *"Safe always: disable direct root PASSWORD login (PermitRootLogin prohibit-password)"*
-
-It is **not** safe always. When ServerAlly connects as root with a password — which it does
-for several servers — that setting removes our own way in. The step uses `reload`, not
-`restart`, so the live session keeps working and **the failure is silent until the next
-connection**. Ally's own verification then read `PasswordAuthentication` (which governs normal
-users) and reported success, concealing the damage.
-
-**Why it is still open even though similar work shipped:** the 2026-08-01 fix (`_SSH_SAFE`)
-hardened the **playbook** path — it resolves how we actually authenticate and skips the
-dangerous change with a reason. The **mission runbook** never got the same treatment. Same
-code-vs-prompt seam as BUG-018/019/020, where `laravel_service` knew where PHP lives and the
-skill did not.
-
-**Fix shape:** teach `harden-server.md` the rule `_SSH_SAFE` already enforces — the server is
-believed over the stored setting, and root password login is only closed once a working key
-is confirmed to be the one we use. Then a skill-content contract test so it cannot regress.
-
-> **Bug-log hygiene:** the Open section of `docs/ISSUES-FOUND.md` currently lists 11 entries,
-> but **10 of them are marked `Fixed` and were simply never moved** to the Fixed section.
-> Only BUG-015 is genuinely open. Worth tidying so the section can be trusted at a glance.
+> **Bug-log hygiene, still outstanding:** the Open section of `docs/ISSUES-FOUND.md` still
+> lists 10 entries that are all marked `Fixed` and were simply never moved to the Fixed
+> section. Nothing is broken, but the section cannot be read at a glance until they are moved.
 
 ---
 
