@@ -65,7 +65,7 @@ locked out by that exact command, and every one is now refused.
 
 | # | Item | Exact next action |
 |---|---|---|
-| 1 | **Prove the 4 remaining Ploi installers** | Statamic, Craft CMS, Matomo, phpMyAdmin are **written but have never been run**. Each needs a throwaway server. This codebase's own history is emphatic that an unrun installer is not a shipped installer. |
+| 1 | **Build (not just prove) 3 Ploi installers** | **Correction, 2026-08-19:** the previous line here said they were "written but never run". They are **not written at all** — zero playbooks, zero site types; the only mention in the codebase is a comment explaining why Statamic and Craft are kept out of the *type picker*. The claim came from misreading a decisions-log line that sits under the heading *"Deliberately still absent"*. Real remaining work: **Statamic** (Laravel-based, so it inherits the Laravel section), **Craft CMS**, **Matomo**. **phpMyAdmin is NOT on this list** — it is a recorded refusal in three places (`MARKET-RESEARCH-2026-07.md`, `PANEL-PARITY-PLAN.md`, `COMPETITOR-COMPARISON.md`): control-panel territory, and we already ship a database manager. One throwaway server proves all three once written. |
 | 2 | **cPanel adapter happy-path** | Mock-tested only. **Correction to the old snapshot:** it claimed cPanel/WHM was live on "TestServer2 (192.3.193.50)" — that address is the ServerAlly production VPS, and the account holds **no cPanel server at all** today (checked 2026-08-18: 14 assets, panels are CyberPanel ×5 and CloudPanel ×1). Validating it needs a real WHM, and a license — see `memory/cpanel-live-validation-needs-license.md`. |
 | 3 | **Cloud import happy-path (5 providers)** | Connect + discover + error paths are live-verified; importing a real instance needs one read-only API key per provider. **AWS also unlocks SSM**, which has only ever been proven against a stand-in. |
 | 4 | **RHEL/multi-distro playbook smoke test** | The WordPress/LAMP/LEMP `_DISTRO` layer's AlmaLinux/RHEL path was written against documented practice, never run end to end. Needs a *fresh* AlmaLinux/Rocky/CentOS box. |
@@ -81,7 +81,7 @@ locked out by that exact command, and every one is now refused.
 Checked against the current code on 2026-08-18. These are genuine, not doc staleness.
 
 **Ploi replication — what is left:**
-- The **4 installers** above (written, unproven).
+- **3 installers** above — Statamic, Craft CMS, Matomo — **not yet written** (phpMyAdmin is a recorded refusal, not a gap).
 - **DNS-based SSL validation** (for wildcard certificates). Deliberately designed differently
   from Ploi: they put the customer's DNS token on the managed server; we already hold those
   credentials, and the offsite-backup precedent says the server must never receive them — so
