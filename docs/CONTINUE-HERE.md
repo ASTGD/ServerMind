@@ -91,8 +91,14 @@ Checked against the current code on 2026-08-18. These are genuine, not doc stale
 **Never driven end to end on real hardware** (built and unit-proven, but the button-to-result
 chain has not been run):
 - **Staging site creation through the app** — the copy engine is proven against real nginx,
-  PHP-FPM and MariaDB; the full create-through-the-UI path has not run, because the account
-  has no site on a non-panel server.
+  PHP-FPM and MariaDB; the full create-through-the-UI path has not run.
+  *(Corrected 2026-08-19: the old reason given here — "the account has no site on a non-panel
+  server" — was wrong. TestServer is non-panel and has three.)*
+- **Site creation itself is now proven** (2026-08-19) through the real API on TestServer for
+  static, PHP, Laravel and WordPress, including a second site of the same type. Doing it found
+  two bugs in the ordinary path, both now fixed. What has still not been driven is the same
+  flow **through the browser**, and a genuinely RAW server (add → set up → first site) end to
+  end in one pass.
 - **`.env` over MCP** — proven by parsing and mutation, never exercised against a real Laravel
   site.
 - **RDP desktop** — the whole pipeline (browser ↔ `/ws/rdp` ↔ guacd ↔ RDP) is proven; an
