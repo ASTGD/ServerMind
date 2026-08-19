@@ -1,251 +1,249 @@
-# Continue Here — build status, pending work & testing plans (2026-07-16)
+# Continue Here — build status, pending work & testing plans (2026-08-18)
 
 The single living "where are we, what's left, what needs a decision" doc for ServerAlly.
 Full dated history is in **CLAUDE.md's Decisions Log**; this doc is the *current snapshot*.
-Every item here was checked against the current code, not just against what a doc *claims*
-(the 2026-07-16 pass found the previous snapshot had gone 10 days / 76 commits stale and was
-actively wrong about RDP streaming — see §6).
+
+> **Read this warning before trusting the rest.** The previous snapshot was dated 2026-07-16
+> and had gone **319 commits and 30 migrations** stale by the time it was refreshed. It was
+> actively wrong about six things, including claiming the bug log's Open section was empty
+> when it held a confirmed live incident. Every item below was checked against the current
+> code and against production, not against what a doc claimed. **If you are reading this more
+> than a couple of weeks after the date above, verify before believing.**
 
 ## Where we are
 
-All core phases (0–13), the whole Assets premium plan, and the Ally intelligence stack are
-**build-complete** and CI-green:
-- **Ally** — AI chat, agentic missions (durable/resumable/detached, verification gate,
-  concurrent workspace cards), memory + its own work record, skills, recipes, Smart Model
-  Ladder, scout/live-look, autonomy modes.
-- **One Ally** — a single dockable Ally window: chat left, live Workspace right (missions,
-  streamed command output, table/chart artifacts).
-- **Any OS/host** — Linux (SSH, live-proven), Windows (WinRM, built, **not** live-validated),
-  hosting panels (CyberPanel live-proven; cPanel/Plesk/DirectAdmin adapters built).
-- **Assets & categories** — Bare Metal · VPS · Hosting · Windows · Windows (RDP) · Cloud.
-  **All phases A–E shipped, including live in-browser Remote Desktop** (guacd tunnel +
-  guacamole-common-js viewer, pipeline proven end-to-end).
-- **Cloud Accounts — all 5 providers** (AWS, DigitalOcean, Hetzner, Google Cloud, Azure):
-  connect → discover → import. Reject/error paths live-verified; import happy-path needs a
-  real key per provider.
-- **Proactive** — Fleet Intelligence (health scores), threat monitoring + guided incident
-  response, fleet-health email digest.
-- **Reports** — "Explain this incident" (per-mission narrative from the durable transcript)
-  and the whole-server aggregate report, with PDF/Markdown export.
-- **Dev Door** (`/dev`, admin-only) — prompt inspector (dry-run the exact chat prompt),
-  eval runner + capture-as-eval flywheel, LLM judge, AI usage/cost ledger, Cost A/B.
-- **Ops** — playbooks, script generator, scheduler, file manager, monitoring/alerts,
-  security audit, backups, team roles, terminal.
+**Production:** `serverally.firevps.net`, running commit `b1201bd`. Migrations at **063**.
+Backend suite green (**3,601 tests**), frontend `npm run build` + **191 vitest**, CI-gated
+including the Ally eval gate.
 
-The product is in a **polish + live-validation** phase, not a build phase. Nearly everything
-below is either (a) blocked on something only the user can provide, or (b) a small, known,
-deliberately-deferred residual — not a surprise gap.
+The product is in **live-validation and Ploi-replication** phase, not a build phase.
 
-**Bug log:** `docs/ISSUES-FOUND.md` — **Open section is empty** (BUG-001 and BUG-002 both
-fixed 2026-07-15; both standing tasks closed).
-
-**Next build, approved and planned:** **staging sites** —
-[`docs/STAGING-SITES-PLAN.md`](STAGING-SITES-PLAN.md), written 2026-08-02 after reading
-Ploi's own staging feature live on the owner's trial account. Two features, built separately:
-*create a staging copy* (safe, and most of the value) and *copy staging over the live site*
-(the dangerous one, built last). Build order **P0 → P1 → P2 → P5 → P3 → P4**.
-
-**P0, P1 and P2 are DONE** (2026-08-06 and 2026-08-08). A staging copy can be created from
-the site's **Manage** screen: it gets its own site and vhost, the files, its own database
-holding the live data, a repointed configuration, and robots blocked — and anything that
-fails after the files land takes the whole copy away rather than leaving one pointed at live
-data. **Next is P5** (what a staging site must not inherit), then P3, then P4.
-
-Two things left from P1/P2, both small: the *Advanced settings* checkbox on the New site
-card, and — the honest gap — **the full create-through-the-app path has never run on a real
-machine**, because the account has no site on a non-panel server. The copy engine itself is
-proven against real nginx + PHP-FPM and a real MariaDB; what has not been driven end to end
-is the button → site created → files copied → data imported chain on live hardware.
+Shipped and working:
+- **Ally** — chat, agentic missions (durable, resumable, detached, verification gate),
+  memory + its own work record, skills, recipes, Smart Model Ladder, scout/live-look,
+  autonomy modes, Autopilot (scheduled work within a policy you set).
+- **MCP connector** — a customer's own AI (Claude Desktop, Claude Code, ChatGPT) manages
+  their fleet over OAuth. **27 tools.** Three consent tiers: Read-only / Full access /
+  Full power. Both Claude and ChatGPT verified connecting to production.
+- **Any OS/host** — Linux (SSH), **Windows (WinRM — now live-validated)**, RDP,
+  hosting panels (CyberPanel proven live), AWS **Systems Manager** (no WinRM, no open port).
+- **Sites** — the Ploi replication: create (4 installers), redirects, aliases, password
+  protection, suspend, page cache, clone, staging (create + promote), permissions, `.env` and
+  `wp-config` editors, PHP version, cron, databases, daemons, queue workers, WP security
+  switches, WP-CLI + artisan consoles, notes/tags, HTTPS (Let's Encrypt, ZeroSSL, CSR,
+  bring-your-own certificate, HTTP/3), deploy notifications.
+- **Operate** — deploy pipeline (atomic switch, push-to-deploy, rollback), offsite backups,
+  uptime + certificate-expiry + service monitoring, notification channels (Slack/Email/
+  Telegram/SMS), server log viewer, firewall + SSH key managers, cloud lifecycle
+  (DigitalOcean, Hetzner), public status pages, white-label + client reports.
+- **Proactive** — fleet intelligence, threat monitoring (**5-minute** malware scans) with
+  guided incident response, fleet-health email digest. **Email genuinely delivers** — our own
+  Postfix relay with DKIM; Gmail returns `250 OK`.
+- **Dev Door** (`/dev`, admin-only) — prompt inspector, eval runner + capture flywheel, LLM
+  judge, AI cost ledger, operator console (read-only support/ops view).
 
 ---
 
-## 1. Blocked on the user (ordered by effort)
+## 1. The one genuinely open bug
+
+**BUG-015 — the hardening runbook can still lock ServerAlly out of a server.** 🔴
+
+This is the top of the list and it is not new: it was logged 2026-07-18 after being **applied
+to a live server** (`vev.astgd.com`) and manually reverted.
+
+`backend/app/skills/harden-server.md:42` still reads:
+
+> *"Safe always: disable direct root PASSWORD login (PermitRootLogin prohibit-password)"*
+
+It is **not** safe always. When ServerAlly connects as root with a password — which it does
+for several servers — that setting removes our own way in. The step uses `reload`, not
+`restart`, so the live session keeps working and **the failure is silent until the next
+connection**. Ally's own verification then read `PasswordAuthentication` (which governs normal
+users) and reported success, concealing the damage.
+
+**Why it is still open even though similar work shipped:** the 2026-08-01 fix (`_SSH_SAFE`)
+hardened the **playbook** path — it resolves how we actually authenticate and skips the
+dangerous change with a reason. The **mission runbook** never got the same treatment. Same
+code-vs-prompt seam as BUG-018/019/020, where `laravel_service` knew where PHP lives and the
+skill did not.
+
+**Fix shape:** teach `harden-server.md` the rule `_SSH_SAFE` already enforces — the server is
+believed over the stored setting, and root password login is only closed once a working key
+is confirmed to be the one we use. Then a skill-content contract test so it cannot regress.
+
+> **Bug-log hygiene:** the Open section of `docs/ISSUES-FOUND.md` currently lists 11 entries,
+> but **10 of them are marked `Fixed` and were simply never moved** to the Fixed section.
+> Only BUG-015 is genuinely open. Worth tidying so the section can be trusted at a glance.
+
+---
+
+## 2. Blocked on the user (ordered by effort)
 
 | # | Item | Exact next action |
 |---|---|---|
-| 1 | **Live Windows box (WinRM + RDP)** | Add via **Assets → Add Asset → Windows Server** (WinRM 5985; `Enable-PSRemoting -Force` once via RDP/console) and/or **Windows (RDP)** (port 3389). Both paths are fully **built**; this unblocks *validation only* — WinRM has only ever been mock-tested, and the RDP viewer has been proven end-to-end through guacd but never against a real desktop. |
-| 2 | **cPanel adapter happy-path** | cPanel/WHM is live on **TestServer2** (192.3.193.50). Adapter reaches real cpsrvd — blocked only on a license: log into WHM (:2087), (a) accept the legal agreements, (b) sign into/create a free cPanel Store account for the 15-day trial. ~2 clicks. See `memory/cpanel-live-validation-needs-license.md`. |
-| 3 | **Cloud import happy-path (5 providers)** | Connect + discover + error paths are live-verified; the actual **import** of a real instance needs one read-only API key per provider. |
-| 4 | **RHEL/multi-distro playbook smoke test** | The WordPress/LAMP/LEMP `_DISTRO` layer's AlmaLinux/RHEL path was written against documented practice, never run end-to-end (SELinux/firewalld/php-fpm-pool are where untested scripts break). Needs a *fresh* AlmaLinux/Rocky/CentOS box — TestServer2 is now the dedicated cPanel box. |
-| 5 | **DirectAdmin adapter** | Mock-tested (11 cases) against the documented API only — needs one live pass against a real DirectAdmin panel. CyberPanel is still the only hosting adapter proven live. |
-| 6 | **WHMCS PHP module** | Needs one pass on a **staging WHMCS** — the runbook is written and ready: [`docs/WHMCS-PHASE1-TEST.md`](WHMCS-PHASE1-TEST.md) (12 tests + the reconcile check). The ServerAlly side is **already validated** (`./whmcs/test-entitlements.sh` → 26/26 against the real backend + Postgres), and both PHP files lint clean — **PHP 8.4 IS available locally** (the old "no PHP locally" note was wrong), and `hooks.php` has been executed against the real endpoint via a stubbed-WHMCS harness. What remains is genuinely WHMCS-only: the module's own hooks (Create/Suspend/Unsuspend/Terminate), the client area, and the real order→pay→claim flow. **Two known bugs to confirm, not be surprised by:** BUG-W1 (email change orphans the paying account) and BUG-W2 (the claim button never clears). |
-| 7 | **panel2.firevps.net remediation** | The root-compromised production box: rotate **all** credentials from a clean device and rebuild on fresh infrastructure. Cleanup of individual sites is done; this is the root fix and only the user can do it. See `memory/panel2-root-gsocket-backdoor.md`. |
+| 1 | **Prove the 4 remaining Ploi installers** | Statamic, Craft CMS, Matomo, phpMyAdmin are **written but have never been run**. Each needs a throwaway server. This codebase's own history is emphatic that an unrun installer is not a shipped installer. |
+| 2 | **cPanel adapter happy-path** | Mock-tested only. **Correction to the old snapshot:** it claimed cPanel/WHM was live on "TestServer2 (192.3.193.50)" — that address is the ServerAlly production VPS, and the account holds **no cPanel server at all** today (checked 2026-08-18: 14 assets, panels are CyberPanel ×5 and CloudPanel ×1). Validating it needs a real WHM, and a license — see `memory/cpanel-live-validation-needs-license.md`. |
+| 3 | **Cloud import happy-path (5 providers)** | Connect + discover + error paths are live-verified; importing a real instance needs one read-only API key per provider. **AWS also unlocks SSM**, which has only ever been proven against a stand-in. |
+| 4 | **RHEL/multi-distro playbook smoke test** | The WordPress/LAMP/LEMP `_DISTRO` layer's AlmaLinux/RHEL path was written against documented practice, never run end to end. Needs a *fresh* AlmaLinux/Rocky/CentOS box. |
+| 5 | **DirectAdmin adapter** | Mock-tested against the documented API only. CyberPanel is still the only hosting adapter proven live. |
+| 6 | **WHMCS PHP module** | Needs one pass on a **staging WHMCS** — runbook ready at [`docs/WHMCS-PHASE1-TEST.md`](WHMCS-PHASE1-TEST.md). The ServerAlly side is already validated (26/26 against the real backend + Postgres) and `hooks.php` has been executed against the real endpoint via a stubbed-WHMCS harness. What remains is WHMCS-only: the lifecycle hooks, client area, and a real order→pay→claim flow. Two known bugs to expect, not be surprised by: BUG-W1 and BUG-W2. |
+| 7 | **panel2.firevps.net remediation** | The root-compromised production box: rotate **all** credentials from a clean device and rebuild on fresh infrastructure. Per-site cleanup is done; this is the root fix and only the user can do it. See `memory/panel2-root-gsocket-backdoor.md`. |
 | 8 | **Business/pricing decisions** | See §5 — PM calls, not code. |
 
 ---
 
-## 2. Needs live infrastructure to finish (build done, proof pending)
+## 3. Remaining engineering gaps
 
-- **Windows/WinRM** — fully built (connect/execute/metrics/OS-detect), only ever mock-tested.
-- **RDP desktop** — the full pipeline (browser ↔ `/ws/rdp` ↔ guacd ↔ RDP) is proven: guacd
-  performs a real RDP negotiation and renders its result in the browser canvas. What's never
-  been seen is an actual Windows desktop rendering, which needs item 1 above.
-- **cPanel / DirectAdmin adapters, cloud import** — see §1 items 2, 3, 5.
+Checked against the current code on 2026-08-18. These are genuine, not doc staleness.
 
----
+**Ploi replication — what is left:**
+- The **4 installers** above (written, unproven).
+- **DNS-based SSL validation** (for wildcard certificates). Deliberately designed differently
+  from Ploi: they put the customer's DNS token on the managed server; we already hold those
+  credentials, and the offsite-backup precedent says the server must never receive them — so
+  ours will run the DNS-01 exchange from the backend and install through the certificate path
+  that already exists. Its own piece of work, not a paragraph.
 
-## 3. Real remaining engineering gaps (small, known, deprioritized)
+**Never driven end to end on real hardware** (built and unit-proven, but the button-to-result
+chain has not been run):
+- **Staging site creation through the app** — the copy engine is proven against real nginx,
+  PHP-FPM and MariaDB; the full create-through-the-UI path has not run, because the account
+  has no site on a non-panel server.
+- **`.env` over MCP** — proven by parsing and mutation, never exercised against a real Laravel
+  site.
+- **RDP desktop** — the whole pipeline (browser ↔ `/ws/rdp` ↔ guacd ↔ RDP) is proven; an
+  actual Windows desktop rendering has never been seen.
+- **Certificate paste form** — every site on the account is on a CyberPanel server, where
+  HTTPS is deliberately refused (a panel owns its own certificates).
 
-Verified against the current code during the 2026-07-16 pass — these are genuine, not doc
-staleness.
+**Security residuals** (full detail in `SECURITY.md`):
+- `GET /api/audit` is self-service only — no team-wide view, no retention/pruning policy.
+- TOTP replay window (~30–90s) — no single-use timestep cache; accepted risk.
+- `token_version` isn't bumped specifically when 2FA is toggled (logout still bumps it).
+- Panel/WinRM connections use `verify=False` (self-signed panels are common). An opt-in
+  "strict TLS" per-asset toggle would close it; by design not yet offered.
+- `REQUIRE_EMAIL_VERIFICATION` is unset in production — set it before public signups.
+- `ENFORCE_PLAN_LIMITS=false` — **every user currently has unlimited servers and AI.**
 
-**Security residuals** (full detail in `SECURITY.md`; auth/rate-limit/audit code is untouched
-since the last audit, so these all still hold):
-- Rate-limit key source reads the raw connecting IP; needs a trusted `X-Forwarded-For` config
-  once ServerAlly sits behind a reverse proxy in production. (`rate_limit_service.py` carries
-  a NOTE about this but does not implement it. `audit_service` *does* honour the first hop.)
-- `GET /api/audit` is self-service only — no admin/team-wide audit view, no retention/pruning
-  policy for the `audit_logs` table.
-- TOTP replay window (~30–90s reuse) — no single-use timestep cache; accepted risk.
-- `token_version` isn't bumped specifically when 2FA is toggled on/off (logout still bumps it).
-- Panel/WinRM connections use `verify=False` (self-signed panels are common) — an opt-in
-  "strict TLS" per-asset toggle would close this; by design not yet offered.
-- Cosmetic: a harmless passlib/bcrypt "error reading bcrypt version" log line persists.
-- `REQUIRE_EMAIL_VERIFICATION` exists and works but is `False` — flip it before public signups.
-
-**Feature residuals** (all explicitly deferred in their own design docs, not overlooked):
-- **Dark/light mode toggle** — re-verified 2026-07-16: dark-mode CSS exists and components
-  style both themes, but there is **no UI control** to switch. Genuinely not built.
-- **Mission engine Phase 5** — Redis pub/sub fan-out for horizontal scaling (re-verified:
-  missions are still single-process/in-memory); webhook-triggered redeploys; community
-  mission templates.
+**Feature residuals** (deferred in their own design docs, not overlooked):
+- **Mission engine Phase 5** — Redis pub/sub fan-out for horizontal scale (still
+  single-process); webhook-triggered redeploys; community mission templates.
 - **Mission cancel** doesn't force-kill the remote process — streaming stops and the run is
-  marked cancelled (a documented limit, not a bug).
-- **CyberPanel email** — re-verified 2026-07-16: **Databases and SSL *are* wired** for
-  CyberPanel (CLI → `hosting_service` → routes → Hosting UI). Only **Email** is not: the
-  `cyberpanel` CLI exposes no email function, so it falls through to the base adapter's
-  "not supported for this panel". (Supersedes the old "Hosting H2 / DB+Email+SSL unwired"
-  note, which was stale.)
-- **Fleet-install** — per-server unique variables in a batch run (same values apply to all
-  today); fleet runs for saved user scripts (official playbooks only today); "retry failed
-  only" from a batch view.
-- **Guided remediation Tier 3** — AI-assisted fix suggestions for fleet-install failures
-  (Tiers 1–2, recommend-only + readiness check, are shipped).
-- **Recipes** — can't yet target an API-only hosting connection (cPanel/Plesk/DirectAdmin
-  without SSH); needs its own SSH/WP-CLI path first. Multi-mission chaining past the 40-step
-  budget ceiling is deferred.
-- **Dev Door stretch** — A/B prompt variants, and auto-drafting eval cases from ledger failure
-  patterns (the "mine mission transcripts to propose skills/evals" dream item). Not built.
-- **Interactive terminal** (`/ws/terminal`) was never moved onto the durable Celery execution
-  model — likely fine as-is (a terminal is inherently live), flagged only because a design doc
-  listed it.
+  marked cancelled (documented limit, not a bug).
+- **CyberPanel email** — the `cyberpanel` CLI exposes no email function, so it falls through
+  to "not supported for this panel". Databases and SSL *are* wired.
+- **Fleet-install** — per-server unique variables in a batch; fleet runs for saved user
+  scripts; "retry failed only".
+- **Recipes** can't target an API-only hosting connection (no SSH).
+- **Dev Door stretch** — A/B prompt variants; auto-drafting eval cases from ledger failures.
+- **Docker-based servers** — the log viewer reads `/var/log`, so an app logging inside a
+  container shows nothing. `docker logs` support is a follow-up.
+- **Digest is English-only** while the product ships 8 languages.
+- **RDP viewer** — no clipboard, file transfer or recording; an existing WinRM asset can't be
+  re-typed to RDP in Edit (delete + re-add).
 
-**Known-imperfect behaviours (honest limitations, tracked here so they aren't rediscovered):**
+**Known-imperfect behaviours:**
 - **Whole-server report repeats a self-footprint mislabel** — it can read ServerAlly's own
-  egress IP (`150.228.135.29`) as the attacker, because it only synthesises persisted
-  *missions* and the self-footprint rule lives in the incident-response **mission skill**, not
-  in the aggregator or the plain plan/advisory path. See `memory/serverally-egress-ip-self-footprint.md`.
-- **Reports only see missions** — findings from chat/direct forensics never enter the record,
-  so an aggregate report can omit real findings. Server reports also regenerate per session
-  (no server-side cache).
-- **Digest is English-only** — `digest_service` strings are hardcoded English while the product
-  ships 8 languages.
-- **SMTP never validated live** — dev SMTP is unconfigured, so `send_email` safely no-ops. The
-  alert/digest email path has never actually delivered a message.
-- **RDP viewer residuals** — no clipboard, no file transfer, no session recording; ServerDetail's
-  tabs aren't tuned for a command-less RDP asset. An existing WinRM asset can't be re-typed to
-  RDP in Edit (delete + re-add).
+  egress IP as the attacker, because it synthesises persisted *missions* only and the
+  self-footprint rule lives in the incident-response mission skill.
+  See `memory/serverally-egress-ip-self-footprint.md`.
+- **Reports only see missions** — findings from chat or direct forensics never enter the
+  record, so an aggregate report can omit real findings.
+- **Outgoing mail reverse DNS** is `192-3-193-50-host.colocrossing.com`, which Gmail and
+  Microsoft penalise. Only the hosting provider can fix it; some mail may land in spam.
 
 ---
 
-## 4. Testing-plan status (what's actually been run vs. just planned)
+## 4. Testing status
 
-- **Backend suite** — 629 pass / 24 skipped. **Frontend** — `npm run build` + 45 vitest.
-  Both CI-gated on every push, including the Ally eval gate.
-- **Shakedown cruise** — ✅ executed. Results in `docs/ALLY-CAPABILITIES-TESTED.md` (mandate
-  archived at `docs/archive/SHAKEDOWN-TESTPLAN.md`). Documents its own gaps: Windows/WinRM and
-  cPanel/Plesk hosting were not exercised live; the adversarial red-team is "a sample, not a
-  proof of universal safety."
+- **Backend** — 3,601 tests, green. **Frontend** — `npm run build` + 191 vitest. Both
+  CI-gated on every push, including the Ally eval gate.
+  *(CI had been silently red for a week in early August and the eval gate had never run —
+  fixed 2026-08-11. Worth re-checking after any dependency bump.)*
 - **`docs/QA-CHECKLIST.md`** — ⏳ not run. Manual dogfooding script; worth one pass before a
   public launch.
-- **`DEPLOY.md` §8 smoke tests** — ⏳ not run. All boxes unchecked; a single end-to-end pass
-  against a real *deployed* stack.
-- **Ally live evals** — the opt-in behavioural evals (`RUN_ALLY_EVALS=1` + API key) are a
-  standing manual-trigger gap: CI never pays for them, so someone must run them by hand
-  periodically (especially before/after a model or prompt change).
+- **`DEPLOY.md` §8 smoke tests** — ⏳ not run against a real deployed stack.
+- **Ally live evals** — opt-in (`RUN_ALLY_EVALS=1` + API key). CI never pays for them, so
+  someone must run them by hand, especially before/after a model or prompt change.
+- **Mutation testing is the house standard** for anything with a guard in it. It has caught a
+  weak test roughly as often as a weak fix.
 
 ---
 
 ## 5. Business/pricing open decisions (PM calls, not build items)
 
-- Final Pro price point and exact action allowance (1,000/mo is a placeholder pending real
-  ledger cost data — the Dev Door's Activity tab now has real cost history to base this on).
-- Overage UX at the plan wall (top-up packs vs. hard stop vs. BYO-key-only escape valve).
-- Self-hosted licensing: platform choice, installs-per-license policy, on-expiry behaviour,
-  offline/air-gapped activation — see `docs/SELF-HOSTED-LICENSING.md` ("strategy agreed, not
-  yet built").
-- Whether the hosted AI gateway should route by model tier too (chat/missions do; the gateway
-  doesn't).
-- **Resolved:** the billing provider question — WHMCS (via FireVPS) was chosen and is shipped
-  (`docs/WHMCS-INTEGRATION.md`). Only the PHP module's staging validation is outstanding (§1.6).
+Pricing **v3** is locked in principle — *two layers: platform priced per server, plus your
+choice of AI (bring your own via MCP/own key, or an Ally subscription)*. See
+[`docs/PRICING-V3.md`](PRICING-V3.md). **Credits, tokens and per-request billing are
+forbidden** by that decision.
+
+Still to decide:
+- The actual numbers — deliberately unset, to come from a beta cohort measured through the
+  operator console's per-user cost data, then grandfathered.
+- Overage UX at the plan wall (top-up vs hard stop vs BYO-key escape valve).
+- Self-hosted licensing: platform, installs-per-licence, on-expiry behaviour, offline
+  activation — see `docs/SELF-HOSTED-LICENSING.md` ("strategy agreed, not yet built").
+- Whether the hosted AI gateway should route by model tier (chat/missions do; it doesn't).
+- **Watch item:** the operator console's first real reading showed **$0.096 per AI action** —
+  about 2× the $0.05 the Pro margin case assumes. That was our own mission-heavy dev usage,
+  so it is a signal not a verdict, but it must be re-read on customer-shaped usage before
+  `ENFORCE_PLAN_LIMITS` is switched on.
 
 ---
 
-## 6. Recently closed loops (2026-07-07 → 2026-07-16)
+## 6. What shipped since the last snapshot (2026-07-16 → 2026-08-18)
 
-The previous snapshot was written 2026-07-06 and went **76 commits** stale. What shipped since:
+319 commits. The headlines, by theme — full detail in CLAUDE.md's Decisions Log:
 
-- **Eval-driven Dev Door** (07-12) — admin-only `/dev`: prompt inspector (dry-run the exact
-  chat prompt, never executes), eval runner + capture-as-eval flywheel, LLM judge, AI
-  usage/cost ledger + trend, CI eval gate. `users.is_admin` (migration 030), `dev_eval_cases`
-  (031).
-- **Assets Phase E COMPLETE — live in-browser Remote Desktop** (07-13) — guacd service, a
-  hand-rolled Python Guacamole tunnel (`/ws/rdp`, credentials decrypted server-side and never
-  sent to the browser), `RdpCanvas` viewer. Plus **RDP as a first-class asset**
-  (`connection_type='rdp'`, port 3389, reachability probe) after a live report showed the only
-  Windows path assumed WinRM. **This supersedes the old snapshot's "one remaining Assets
-  build".**
-- **Mission result card** (07-13, migration 032) — every mission ends with a plain-language
-  Found/Did/Left outcome instead of a one-line technical banner.
-- **Reports** (07-14) — "Explain this incident" (migration 033) synthesises a mission's durable
-  transcript into a plain-language story (built precisely *because* chat memory is capped and
-  couldn't do it); plus the whole-server aggregate report. PDF/Markdown/Copy export.
-- **One Ally** (07-08) — one dockable Ally window growing out of the sidebar: chat left,
-  Workspace right; markdown replies; one brain (fleet always in memory); per-message server
-  attribution.
-- **Ally proactivity** (07-08, Tracks A–D) — capability contract (killed the "I don't have SSH
-  access / use scp" hallucination), pre-mission scout, ask-with-option-chips, autonomy modes
-  (`users.ally_mode`, migration 029).
-- **Ally is a doer** (07-11) — killed the advisory "run this and paste the output back"
-  pattern; live command output + table/chart artifacts render in the Workspace; LLM retry
-  reliability so a transient empty response never surfaces as "AI error".
-- **AI cost** — 1h prompt-cache TTL + an Opus pricing-table bug fix + a Dev Door **Cost A/B**
-  tool (Claude vs OpenAI on real ledger usage).
-- **Live-testing bug protocol** (`docs/ISSUES-FOUND.md`) and its first four closures:
-  - **BUG-002** (Critical, 07-15) — malware cleanup quarantined 128 legitimate `vendor/`
-    library files and took a live government site offline. Fixed: signature grep excludes
-    dependency trees, one token ≠ proof, never sweep a directory.
-  - **BUG-001** (High, 07-15) — Ally forgot its own cleanup and nearly restored a 10-month-old
-    backup. Fixed at prompt level, then **closed properly in code** (below).
-  - **Task #1** (07-15) — the verify gate now checks page **content**, not just HTTP status
-    (a 200 can be a blank/error page).
-  - **Task #2** (07-15) — the threat scan now walks the **whole account home**; the old
-    `*/public_html` glob silently missed CyberPanel child-domain sites (the exact live gap).
-- **Ally's work record** (07-16) — the code-level floor under BUG-001: the server profile now
-  shows what Ally **changed** (filtered by the read-only classifier), and a high-risk
-  successful change auto-writes a memory note with **no model cooperation**. Narrow by design
-  so it can't flood the capped memory store.
+- **MCP connector** (07-23 → 08-13) — remote Streamable-HTTP server, our own OAuth 2.1
+  authorization server, 27 bounded tools, three consent tiers, `.env` and DNS tools. First
+  real Claude connect exposed 3 deploy bugs a mock cannot; ChatGPT exposed a 4th (08-18).
+- **The Ploi replication** (07-30 → 08-10) — the whole per-site surface, one screen at a
+  time, each proven against real nginx/PHP-FPM/systemd/MariaDB in containers.
+- **Operate features** (07-25 → 07-28) — offsite backups, uptime, log viewer, Autopilot,
+  status pages, certificate expiry, white-label, service monitoring, deploy pipeline,
+  firewall + SSH keys, cloud lifecycle.
+- **Assets rework** (07-29, 08-11) — capability-driven menus, three add-tiles instead of six,
+  derived groups, provider zones, AWS SSM as a transport, cross-account roles.
+- **Alerting became real** (07-30) — production had **no email configuration at all**; every
+  alert this product generates went nowhere while appearing to work. Own Postfix relay with
+  DKIM; malware detection went from 12 hours to 5 minutes.
+- **Server setup hardening** (08-01, 08-03) — seven separate faults in the first thing a
+  customer ever asks us to do, none visible to any offline test.
+- **Staging sites** (08-06 → 08-12) — create a copy, then promote it live by commit or file.
+- **UI redesign** (07-22) — 6 phases, design system, and the light/dark/system theme toggle.
+- **Operator console** (07-17) — admin support/ops view WHMCS structurally cannot provide.
+- **Bugs found by real use** — BUG-018 through BUG-025, including three Windows bugs that all
+  came from one gap: Phase 2B was tested entirely against mocked `pywinrm`.
+
+**Now fixed, contradicting the old snapshot:** the dark/light toggle exists; SMTP delivers for
+real; rate limiting and the audit log both use a proxy-aware client IP (`client_ip.py`);
+WinRM is live-validated.
 
 ---
 
 ## How to resume locally
 
-- Dev: **backend :8888**, **frontend :5190** (see `OPS.md`). Migrations at **033**.
-- Tests: backend `pytest` (629 pass / 24 skipped), frontend `npm run build` + `npx vitest run` (45).
-- Push: swap origin to `https://github.com/ASTGD/ServerMind.git`, push, restore the SSH remote
-  (`git@github.com:ASTGD/ServerMind.git`). `memory/` is never committed.
-- **Shared checkout warning:** the owner often edits/commits in this same working tree.
-  Check `git status` before staging, stage explicit paths (never a blind `git add -A`), and
-  prefer a PR over committing straight through — an agent commit reached `main` unreviewed on
-  2026-07-16 by riding along with an owner push.
+- Dev: **backend :8888**, **frontend :5190** (see `OPS.md`). Migrations at **063**.
+- Tests: backend `./venv/bin/python -m pytest tests/ -q`, frontend `npm run build` +
+  `npx vitest run`. **Never read a pass/fail off a piped tail** — check the exit code.
+- The local dev database is Docker (`servermind_postgres`). If ~21 database-dependent tests
+  fail at once, check Docker Desktop is actually running before debugging the code.
+- Push: `git push origin main` (the remote is already HTTPS). `memory/` is never committed.
+- Deploy: on the VPS, `docker compose -f docker-compose.prod.yml --env-file .env.prod` —
+  **that file alone**, never merged with the dev compose file. Rebuild `frontend` too when
+  frontend files or `nginx.conf` changed. Back the database up first when a migration is in
+  the batch.
+- **Shared checkout warning:** the owner often edits and commits in this same working tree.
+  Check `git status` before staging, stage explicit paths (never a blind `git add -A`).
+- If `git` fails with an Xcode licence error, use
+  `/Library/Developer/CommandLineTools/usr/bin/git` (permanent fix:
+  `sudo xcode-select -s /Library/Developer/CommandLineTools`).
 
 ## Marketing
 
-- `marketing-brief/` holds a self-contained brief + real screenshots for the design tool
-  building the landing page (see `marketing-brief/README.md`).
-- `marketing-visuals/` holds a full-session GIF + hero stills (mission offer, workspace
-  approval, workspace verified, security sweep) captured from a real live session.
-- Note: `demo.serverally.org` is a **real WordPress site still running on TestServer4** from a
-  live demo — re-verified 2026-07-16: it serves HTTP 200 with `<title>ServerAlly Demo</title>`
-  via a Host header against 91.109.20.155, but **its DNS was never pointed** (no A record), so
-  it does not resolve publicly. Point the A record at 91.109.20.155 to enable SSL, or delete it.
+- `marketing-brief/` — a self-contained brief + real screenshots for the landing page.
+- `marketing-visuals/` — a full-session GIF + hero stills captured from a real live session.
+- `demo.serverally.org` is a **real WordPress site still running on TestServer4** from a live
+  demo. It serves HTTP 200 via a Host header but its DNS was never pointed. Point the A record
+  at 91.109.20.155 to enable SSL, or delete it.
