@@ -146,7 +146,8 @@ def validate_schedule(expression: str) -> str:
     return expr
 
 
-def validate_command(command: str, os_family: str = "linux") -> str:
+def validate_command(command: str, os_family: str = "linux",
+                     access: object | None = None) -> str:
     """A crontab command runs unattended, so it goes through the same safety check as
     anything else — and a refusal matters more here, not less: nobody is watching."""
     command = (command or "").strip()
@@ -159,7 +160,7 @@ def validate_command(command: str, os_family: str = "linux") -> str:
             "A scheduled command has to be a single line — a crontab treats each line as "
             "a separate job."
         )
-    verdict = safety_service.validate_command(command, os_family)
+    verdict = safety_service.validate_command(command, os_family, access)
     if verdict.status == "blocked":
         raise CronError(
             "That command is refused — it is on the list of things that can destroy a "
@@ -417,7 +418,8 @@ async def add_job(server: Server, *, user: str, schedule: str, command: str,
     """Add one scheduled job to a user's crontab."""
     user = validate_user(user)
     schedule = validate_schedule(schedule)
-    command = validate_command(command, _os_family(server))
+    command = validate_command(command, _os_family(server),
+                               safety_service.access_for(server))
 
     current, _e, _c = await connection_manager.execute(server, build_read_command(user))
     _check_unchanged(current, expect)

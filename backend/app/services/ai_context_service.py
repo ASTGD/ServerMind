@@ -82,6 +82,23 @@ async def build_server_profile(db: AsyncSession, server: Server) -> str | None:
     recent activity — each line with its age so the model can judge freshness."""
     lines: list[str] = []
 
+    # How ServerAlly itself gets in. FIRST, because it changes whether a whole class of
+    # advice is safe — and because without it the model cannot reason about the question
+    # at all. A hardening mission once closed root password login on a server reached as
+    # root with a password: it had correctly noticed no root key existed, and read that as
+    # evidence the change was harmless (BUG-015). The safety layer now refuses such a
+    # command outright; this is so Ally does not propose it in the first place.
+    how = (server.auth_type or "").strip().lower()
+    if server.username and how in {"password", "key"}:
+        by = "a password" if how == "password" else "an SSH key"
+        line = f"ServerAlly reaches this server as {server.username} using {by}"
+        if getattr(server, "port", None):
+            line += f" on port {server.port}"
+        if how == "password":
+            line += (" — anything that turns off password login, or root login, would "
+                     "lock ServerAlly out")
+        lines.append(line + ".")
+
     # Latest metrics snapshot (metrics_worker writes every 5 min when enabled).
     metric = (
         await db.execute(

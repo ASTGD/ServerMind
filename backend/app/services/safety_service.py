@@ -100,8 +100,167 @@ class ValidationResult:
     pattern: str | None = None
 
 
-def validate_command(cmd: str, os_family: str = "linux") -> ValidationResult:
-    """Check a single command against blocklists."""
+# ── Self-lockout guard (BUG-015) ─────────────────────────────────────────────
+#
+# The one class of damage ServerAlly can do to itself. A hardening step that closes root
+# password login is textbook advice — and on a server ServerAlly reaches AS root WITH a
+# password it removes our own way in. It happened: a `harden-server` mission applied
+# `PermitRootLogin prohibit-password` to a live server, and because the step used `reload`
+# rather than `restart` the session kept working, the step reported SUCCESS, and the
+# lockout only surfaced on the next connection. There is no recovery from inside the
+# product — it needs the provider's console.
+#
+# The reasoning that produced it is the interesting part: the model correctly observed
+# that no root SSH key existed and treated that as evidence the change was harmless. The
+# opposite is true — "no key is set up" is exactly what makes it fatal.
+#
+# So this REFUSES rather than warns, the same call `firewall_service.lockout_risk` makes
+# for the same reason: a warning is something a customer clicks through once, and the cost
+# here is a server nobody can reach.
+#
+# The STORED credential is the right authority. ServerAlly reconnects with whatever is on
+# the asset, so if that says "password", disabling password login locks us out no matter
+# what keys exist on the box for humans.
+
+
+@dataclass(frozen=True)
+class Access:
+    """How ServerAlly itself reaches a server — the facts a lockout depends on."""
+
+    username: str = ""
+    auth_type: str = ""      # 'password' | 'key'
+    port: int = 22
+
+
+def access_for(server) -> Access:
+    """Read the connection facts off a server row (duck-typed — no model import)."""
+    try:
+        port = int(getattr(server, "port", 22) or 22)
+    except (TypeError, ValueError):
+        port = 22
+    return Access(
+        username=(getattr(server, "username", "") or "").strip(),
+        auth_type=(getattr(server, "auth_type", "") or "").strip().lower(),
+        port=port,
+    )
+
+
+_ROOT_LOGIN_CLOSED = re.compile(
+    r"PermitRootLogin\s+(?:prohibit-password|without-password|forced-commands-only|no)\b",
+    re.IGNORECASE)
+# The negative lookbehind keeps `KbdInteractiveAuthentication no` — which is harmless and
+# appears right beside it in every hardening guide — from matching.
+_PASSWORD_LOGIN_CLOSED = re.compile(r"(?<!Kbd)(?<!Interactive)PasswordAuthentication\s+no\b",
+                                    re.IGNORECASE)
+_KEY_ONLY = re.compile(r"AuthenticationMethods\s+publickey\b", re.IGNORECASE)
+_ROOT_ACCOUNT_LOCKED = re.compile(
+    r"\b(?:passwd\s+(?:-l|--lock)|usermod\s+(?:-L|--lock))\b[^\n;|&]*\broot\b",
+    re.IGNORECASE)
+_SSHD_PORT = re.compile(r"\bPort\s+(\d{1,5})\b")
+_TOUCHES_SSHD = re.compile(r"sshd?_config|\bsshd\b|\bssh_set\b", re.IGNORECASE)
+
+_ADD_A_KEY = ("Add an SSH key for this account and switch this server to key "
+              "authentication in its settings, then it is safe to do.")
+_CONSOLE = "the only way back in is your provider's console."
+
+
+# Ways of LOOKING at a file. An allow-list, because the polarity matters here: something
+# unrecognised must be treated as capable of changing the server, not assumed harmless.
+_READ_VERBS = re.compile(
+    r"^\s*(?:sudo\s+(?:-\S+\s+)*)?"
+    r"(?:grep|egrep|fgrep|zgrep|cat|less|more|head|tail|awk|cut|sort|uniq|wc|stat|ls|find"
+    r"|sshd|ssh-keygen|echo|printf|test|true)\b",
+    re.IGNORECASE)
+# Anything that can put bytes somewhere. `sed -n` reads; `sed -i` writes.
+_WRITES_SOMEWHERE = re.compile(r">|\btee\b|\bsed\b[^|;&]*\s-i\b|\bdd\b", re.IGNORECASE)
+
+
+def _only_reads(cmd: str) -> bool:
+    """True when every part of the command merely looks at the server.
+
+    Chained commands are split on the separators that start a NEW command (``&&``, ``||``,
+    ``;``) and each part must independently be a read — otherwise
+    ``grep something && ssh_set PermitRootLogin no`` would pass on the strength of its
+    first word. Pipes are left alone: a pipeline's downstream still only reads, and the
+    redirect check above covers the ways a pipeline can write.
+    """
+    if _WRITES_SOMEWHERE.search(cmd):
+        return False
+    parts = [p for p in re.split(r"&&|\|\||;", cmd) if p.strip()]
+    return bool(parts) and all(_READ_VERBS.match(p) for p in parts)
+
+
+def lockout_risk(cmd: str, access: "Access | None") -> str:
+    """Empty string if this command cannot cut ServerAlly's own way in.
+
+    Otherwise the reason it is refused, written for the person who would be locked out.
+
+    Fails OPEN when we do not know how we connect (``access is None``). This guard runs on
+    every command, and refusing real work because a caller did not supply the facts would
+    be its own kind of damage — so the structural test in `tests/test_ssh_lockout_guard.py`
+    is what stops a caller silently omitting them, rather than a refusal at runtime.
+    """
+    if access is None or not cmd:
+        return ""
+
+    # A command that only LOOKS at the server cannot lock anyone out of it. This keeps
+    # `grep "PasswordAuthentication no" /etc/ssh/sshd_config` — a normal thing to run while
+    # investigating — from being refused.
+    #
+    # Deliberately NOT `is_read_only_command`. Despite its docstring that classifier is a
+    # DENY-list: it returns True for anything without a known mutating token, so it calls
+    # `ssh_set PermitRootLogin prohibit-password` read-only and would have waved the exact
+    # command from the incident straight through. A security guard must not inherit another
+    # classifier's blind spots, so this is an explicit ALLOW-list of ways to look.
+    if _only_reads(cmd):
+        return ""
+
+    by_password = access.auth_type == "password"
+    as_root = access.username.lower() == "root"
+
+    if by_password and as_root and _ROOT_LOGIN_CLOSED.search(cmd):
+        return ("ServerAlly signs in to this server as root with a password, and that "
+                "setting turns root password login off — it would lock ServerAlly out, and "
+                + _CONSOLE + " " + _ADD_A_KEY)
+
+    if by_password and _PASSWORD_LOGIN_CLOSED.search(cmd):
+        return ("ServerAlly signs in to this server with a password, and that setting turns "
+                "password logins off — it would lock ServerAlly out, and " + _CONSOLE + " "
+                + _ADD_A_KEY)
+
+    if by_password and _KEY_ONLY.search(cmd):
+        return ("That setting requires an SSH key to sign in, but ServerAlly signs in to "
+                "this server with a password — it would lock ServerAlly out. " + _ADD_A_KEY)
+
+    if as_root and _ROOT_ACCOUNT_LOCKED.search(cmd):
+        return ("That locks the root account's password, and root is the account ServerAlly "
+                "uses to reach this server. It would lock ServerAlly out, and " + _CONSOLE)
+
+    if _TOUCHES_SSHD.search(cmd):
+        for found in _SSHD_PORT.findall(cmd):
+            if int(found) != access.port:
+                return (f"That moves SSH to port {found}, but ServerAlly reaches this server "
+                        f"on port {access.port} — it would not be able to reconnect. Change "
+                        f"the port on the asset first, or do this from your provider's "
+                        f"console.")
+
+    return ""
+
+
+def validate_command(cmd: str, os_family: str = "linux",
+                     access: "Access | None" = None) -> ValidationResult:
+    """Check a single command against the blocklists and against our own way in.
+
+    ``access`` is how ServerAlly reaches THIS server. Pass it wherever a server is known —
+    without it the self-lockout guard cannot run. It stays optional only because a couple of
+    callers genuinely have no server (the eval corpus).
+    """
+    # Checked first: its message names the exact problem and the way out, where a generic
+    # blocklist pattern would only say "blocked".
+    cut_off = lockout_risk(cmd, access)
+    if cut_off:
+        return ValidationResult(status="blocked", pattern="self-lockout", reason=cut_off)
+
     blocked = WINDOWS_BLOCKED if os_family == "windows" else LINUX_BLOCKED
 
     for pattern in blocked:
@@ -222,13 +381,14 @@ def is_read_only_command(cmd: str) -> bool:
     return not any(rx.search(cmd) for rx in _MUTATION_RE)
 
 
-def validate_plan(commands: list[dict], os_family: str = "linux") -> ValidationResult:
+def validate_plan(commands: list[dict], os_family: str = "linux",
+                  access: "Access | None" = None) -> ValidationResult:
     """Validate all commands in a plan. Blocked takes priority over confirm."""
     confirm_result: ValidationResult | None = None
 
     for item in commands:
         cmd = item.get("cmd", "")
-        result = validate_command(cmd, os_family)
+        result = validate_command(cmd, os_family, access)
         if result.status == "blocked":
             return result
         if result.status == "confirm" and confirm_result is None:

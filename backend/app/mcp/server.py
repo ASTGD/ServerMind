@@ -1346,7 +1346,8 @@ async def serverally_run_command(
             )
         # Absolute safety floor: refuse catastrophic commands (the same blocklist Ally uses).
         os_family = "windows" if srv.connection_type == "winrm" or (srv.shell or "") == "powershell" else "linux"
-        verdict = safety_service.validate_command(command, os_family)
+        verdict = safety_service.validate_command(
+            command, os_family, safety_service.access_for(srv))
         # Track the action live (running → finish) so the user sees it in the app's feed.
         async with _track(db, user, "run_command", srv, command=command) as act:
             if verdict.status == "blocked":

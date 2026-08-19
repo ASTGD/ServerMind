@@ -808,7 +808,8 @@ async def _run_on_server(server: Server, prompt: str, lang: str) -> tuple[str, s
     if not commands:
         return "skipped", plan.get("plan_summary") or "Nothing to run on this server."
 
-    safety = safety_service.validate_plan(commands, os_family)
+    safety = safety_service.validate_plan(commands, os_family,
+                                          safety_service.access_for(server))
     if safety.status == "blocked":
         await _save_log(server, prompt, lang, plan, "", "blocked")
         return "blocked", safety.reason or "Blocked by the safety policy."
@@ -1664,7 +1665,8 @@ async def _run_mission(
             target_family = "windows" if target.connection_type == "winrm" else "linux"
 
             # 2) Safety — same blocklist as everything else, per step, per TARGET OS.
-            safety = safety_service.validate_command(cmd, target_family)
+            safety = safety_service.validate_command(
+                cmd, target_family, safety_service.access_for(target))
             if safety.status == "blocked":
                 steps.append({
                     "server": target.name, "description": description, "cmd": cmd,
@@ -1981,7 +1983,8 @@ async def _handle_message_inner(
     commands: list[dict] = plan.get("commands", [])
 
     # ── 2. Safety check ───────────────────────────────────────────────────────
-    safety = safety_service.validate_plan(commands, os_family)
+    safety = safety_service.validate_plan(commands, os_family,
+                                          safety_service.access_for(server))
     if safety.status == "blocked":
         log = await _save_log(server, user_input, user_language, plan, "", "blocked")
         await ws.send_text(json.dumps({

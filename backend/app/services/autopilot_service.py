@@ -96,6 +96,10 @@ class AutopilotRunner:
     """
 
     policy: str
+    # How ServerAlly reaches the server this run works on — so the self-lockout guard
+    # can run here too. The engine already refuses a blocked command before the
+    # approval gate, so this is belt to that brace rather than the only strap.
+    access: object | None = None
     stop: bool = False
     pending_approval: dict | None = None
     # A pinned planning model (Ally's model picker). Autopilot never pins one — None means
@@ -141,7 +145,7 @@ class AutopilotRunner:
         # treating it as "confirm" made every step look dangerous and collapsed
         # safe_fixes into report_only. CONFIRM_PATTERNS is OS-agnostic, and 'blocked'
         # never reaches this point, so checking against linux is complete here.
-        safety_status = safety_service.validate_command(cmd, "linux").status
+        safety_status = safety_service.validate_command(cmd, "linux", self.access).status
         # The engine tells us explicitly whether the AI itself flagged the step. We must
         # NOT infer this from ``needs_approval``: autopilot forces careful mode, so that
         # flag is true for every change and would stop even an ordinary repair.
@@ -186,7 +190,8 @@ async def run_task_mission(task, user, server) -> dict:
     """
     from app.websocket import terminal as ws_terminal
 
-    runner = AutopilotRunner(policy=task.policy)
+    from app.services import safety_service as _safety
+    runner = AutopilotRunner(policy=task.policy, access=_safety.access_for(server))
     try:
         await ws_terminal._run_mission_detached(
             runner,
