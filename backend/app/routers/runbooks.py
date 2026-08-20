@@ -268,7 +268,8 @@ async def preview_match(
 
 
 @router.get("/built-in")
-async def built_in_procedures(os_type: str | None = Query(default=None)) -> dict:
+async def built_in_procedures(current_user: CurrentUser,
+                              os_type: str | None = Query(default=None)) -> dict:
     """The procedures ServerAlly ships, so an author can see what already exists rather than
     rewriting something we already do — or knowingly replace it."""
     return {

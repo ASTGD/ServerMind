@@ -154,7 +154,7 @@ async def list_webhooks(db: DBDep, current_user: CurrentUser) -> list[dict]:
 
 
 @router.get("/webhooks/events")
-async def available_events() -> dict:
+async def available_events(current_user: CurrentUser) -> dict:
     """What can be subscribed to, and how to verify a signature.
 
     Served from code rather than written in a doc, so the instructions cannot drift from what
