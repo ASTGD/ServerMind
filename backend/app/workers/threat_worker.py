@@ -90,7 +90,6 @@ async def _scan_and_alert(server: Server, *, fast_only: bool = False) -> None:
     if fast_only and result["verdict"] == prev:
         return
 
-    counts = result["counts"]
     async with AsyncSessionLocal() as db:
         scan = threat_service.scan_row(
             result, server_id=server.id, user_id=server.user_id)
