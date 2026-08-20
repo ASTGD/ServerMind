@@ -779,3 +779,251 @@ ACTIONS.update({
     "watch_check": _act_watch_check,
     "backup_check": _act_backup_check,
 })
+
+
+# ── actions for 'move-website' ───────────────────────────────────────────────
+# Files ride the PROVEN clone flow (create on the destination, copy, placeholder removed,
+# ownership repaired). The database moves by IDENTICAL CREDENTIALS: the same database
+# name, account and password are created on the destination and the data imported — so
+# the site's configuration needs no rewrite at all, which removes the one step of a move
+# that silently breaks things. Proof is a Host-header fetch on the DESTINATION before any
+# DNS is touched, and the old site is never deleted.
+
+async def _move_site_and_dest(ctx: _Ctx):
+    """The site being moved, and the destination server. Resolved fresh each step."""
+    from app.models.site import Site
+
+    async with AsyncSessionLocal() as db:
+        site = (await db.execute(select(Site).where(
+            Site.server_id == ctx.server.id,
+            Site.domain == ctx.inputs["domain"]))).scalars().first()
+        dest = None
+        ref = (ctx.inputs.get("to_server") or "").strip()
+        if ref:
+            rows = (await db.execute(select(Server).where(
+                Server.user_id == ctx.user_id))).scalars().all()
+            dest = next((s for s in rows if s.name == ref or str(s.id) == ref), None)
+    return site, dest
+
+
+async def _act_fit(ctx: _Ctx) -> StepResult:
+    from app.services import clone_service as clone
+    from app.services import staging_service
+
+    site, dest = await _move_site_and_dest(ctx)
+    if site is None:
+        return StepResult("failed", f"{ctx.server.name} has no website called "
+                                    f"'{ctx.inputs['domain']}' on record")
+    if dest is None:
+        return StepResult("failed", f"You have no server called '{ctx.inputs['to_server']}'. "
+                                    "Give its exact name in ServerAlly.")
+    try:
+        clone.check_request(site, ctx.server, dest, site.domain)
+    except clone.CloneError as exc:
+        return StepResult("failed", str(exc)[:250])
+
+    await ctx.say("Measuring the site and reading its database settings…")
+    text, code = await ctx.run_script(staging_service.build_survey_command(site.doc_root or ""))
+    try:
+        survey = staging_service.parse_survey(text, code)
+    except staging_service.StagingError as exc:
+        return StepResult("failed", str(exc)[:250])
+
+    await ctx.say(f"Checking {dest.name} has room…")
+    out, _err, _code = await connection_manager.execute(dest, clone.build_fit_command("/var/www"))
+    try:
+        clone.check_fit(survey["bytes"], clone.parse_free(out or ""))
+    except clone.CloneError as exc:
+        return StepResult("failed", str(exc)[:250])
+
+    ctx.state["dest_id"] = str(dest.id)
+    ctx.state["survey"] = survey
+    size = staging_service.human(survey["bytes"])
+    db_note = f", database {survey['source_db']}" if survey.get("source_db") else ", no database"
+    await ctx.found(f"{site.domain}: {size}{db_note} → {dest.name}")
+    return StepResult("done", f"{size} to move{db_note} — {dest.name} has room")
+
+
+async def _act_copy_files(ctx: _Ctx) -> StepResult:
+    import uuid as _uuid
+
+    from app.models.playbook import PlaybookRun
+    from app.models.user import User
+    from app.services import clone_service as clone
+    from app.services import site_service
+    from app.workers import clone_runner
+
+    site, dest = await _move_site_and_dest(ctx)
+    if site is None or dest is None:
+        return StepResult("failed", "The site or the destination disappeared mid-run")
+
+    await ctx.say("Looking at what is there…")
+    out, err, code = await connection_manager.execute(
+        ctx.server, clone.build_survey_command(site.doc_root or ""))
+    try:
+        survey = clone.parse_survey((out or "") + (err or ""), code)
+    except clone.CloneError as exc:
+        return StepResult("failed", str(exc)[:250])
+
+    await ctx.say(f"Creating {site.domain} on {dest.name}…")
+    async with AsyncSessionLocal() as db:
+        user = await db.get(User, ctx.user_id)
+        try:
+            new_site, run_id, script = await site_service.create(
+                db, dest, user, domain=site.domain, site_type=clone.site_type_for(survey))
+        except site_service.SiteError as exc:
+            return StepResult("failed", str(exc)[:250])
+        ctx.state["new_site_id"] = str(new_site.id)
+
+    asyncio.create_task(clone_runner.run_clone(
+        run_id=_uuid.UUID(run_id), script=script,
+        source_server_id=ctx.server.id, source_site_id=site.id,
+        dest_server_id=dest.id, new_site_id=new_site.id,
+        survey=survey, same_server=False))
+
+    waited = 0.0
+    while waited < _STEP_TIMEOUT:
+        await ctx.say(f"Copying {clone.human(survey.bytes)} to {dest.name}…")
+        await asyncio.sleep(_POLL)
+        waited += _POLL
+        async with AsyncSessionLocal() as db:
+            run = await db.get(PlaybookRun, run_id)
+            status = run.status if run else "missing"
+        if status == "success":
+            return StepResult("done", f"{clone.human(survey.bytes)} copied to {dest.name}")
+        if status in ("failed", "missing"):
+            return StepResult("failed", "The copy did not complete — its log has the reason")
+    return StepResult("failed", "The copy is still running after 30 minutes")
+
+
+async def _act_move_db(ctx: _Ctx) -> StepResult:
+    import secrets as _secrets
+
+    from app.services import database_service, file_service
+
+    survey = ctx.state.get("survey") or {}
+    db_name = (survey.get("source_db") or "").strip()
+    if not db_name or survey.get("config") in ("", "none"):
+        return StepResult("done", "This site has no database — nothing to move")
+
+    _site, dest = await _move_site_and_dest(ctx)
+    if dest is None:
+        return StepResult("failed", "The destination disappeared mid-run")
+    engine = survey.get("engine") or "mysql"
+    if engine not in ("mysql", "mariadb"):
+        return StepResult("failed", f"Moving a {engine} database is not supported yet — "
+                                    "move it by hand, then switch DNS")
+
+    # Read the site's own database credentials FROM its config, server-side. They travel
+    # over the SSH channel only (the same path the .env editor uses) and are never logged
+    # or stored — they exist so the DESTINATION can be given the identical account, which
+    # is what makes a config rewrite unnecessary.
+    await ctx.say("Reading the site's database settings…")
+    cfg = survey.get("config")
+    doc = ctx.inputs["domain"]
+    if cfg == "wordpress":
+        read = ("awk -F\"'\" '/define..DB_USER/{u=$4} /define..DB_PASSWORD/{p=$4} "
+                "END{print u; print p}' "
+                f"$(ls /var/www/{doc}/wp-config.php /var/www/{doc}/public/wp-config.php 2>/dev/null | head -1)")
+    else:
+        read = (f"awk -F= '/^DB_USERNAME=/{{u=$2}} /^DB_PASSWORD=/{{p=$2}} "
+                f"END{{print u; print p}}' /var/www/{doc}/.env")
+    text, code = await ctx.run_script(read)
+    lines = [ln.strip().strip('"') for ln in (text or "").splitlines()]
+    db_user = lines[0] if lines else ""
+    db_pass = lines[1] if len(lines) > 1 else ""
+    if code != 0 or not db_user or not db_pass:
+        return StepResult("failed", "Could not read the site's database credentials from "
+                                    "its configuration — move the database by hand")
+
+    stamp = _secrets.token_hex(4)
+    dump_path = f"/tmp/sa-move-{stamp}.sql"
+    await ctx.say(f"Dumping {db_name}…")
+    # As the local superuser over the socket — no password on any command line, the rule
+    # every database feature here follows. Mode 600 and removed however this ends.
+    dump = (f"set -e; umask 077; mysqldump --single-transaction {shlex_quote(db_name)} "
+            f"> {dump_path}; wc -c < {dump_path}")
+    text, code = await ctx.run_script(dump)
+    if code != 0:
+        await ctx.run_script(f"rm -f {dump_path}")
+        return StepResult("failed", f"Could not dump {db_name} — is it a MySQL/MariaDB database?")
+    size = (text or "").strip().splitlines()[-1] if text else "0"
+    if not size.isdigit() or int(size) == 0:
+        await ctx.run_script(f"rm -f {dump_path}")
+        # An empty dump imported is a database that exists and holds nothing — WordPress
+        # renders that as the install wizard. Refused, the staging rule.
+        return StepResult("failed", "The database dump came out empty — refusing to move it")
+
+    await ctx.say(f"Carrying the data to {dest.name}…")
+    try:
+        moved = await file_service.transfer_between(ctx.server, dump_path, dest, dump_path)
+    except Exception as exc:  # noqa: BLE001
+        await ctx.run_script(f"rm -f {dump_path}")
+        return StepResult("failed", f"Could not carry the dump across: {str(exc)[:150]}")
+
+    await ctx.say(f"Creating {db_name} on {dest.name} with the same account…")
+    try:
+        await database_service.create_database(
+            dest, engine="mysql", db_name=db_name, user=db_user,
+            password=db_pass, host="localhost")
+    except database_service.DatabaseError as exc:
+        msg = str(exc)
+        if "already exists" not in msg.lower():
+            await ctx.run_script(f"rm -f {dump_path}")
+            await connection_manager.execute(dest, f"rm -f {dump_path}")
+            return StepResult("failed", f"Could not create the database on {dest.name}: {msg[:150]}")
+
+    await ctx.say("Importing…")
+    imp = f"set -e; mysql {shlex_quote(db_name)} < {dump_path}; rm -f {dump_path}"
+    _out, _err, code2 = await connection_manager.execute(dest, imp)
+    await ctx.run_script(f"rm -f {dump_path}")
+    if code2 != 0:
+        return StepResult("failed", f"The import on {dest.name} failed — the dump was removed")
+    return StepResult("done", f"{db_name} moved ({int(size):,} bytes) — same name and "
+                              "account, so the site's configuration needed no changes")
+
+
+async def _act_prove(ctx: _Ctx) -> StepResult:
+    """The whole point of the order: proven working on the DESTINATION before any DNS
+    changes. A Host-header fetch does what a visitor's browser will do after the switch."""
+    _site, dest = await _move_site_and_dest(ctx)
+    if dest is None:
+        return StepResult("failed", "The destination disappeared mid-run")
+    domain = ctx.inputs["domain"]
+    await ctx.say(f"Fetching the site from {dest.name} as a visitor would…")
+    check = (f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 10 "
+             f"-H 'Host: {domain}' http://127.0.0.1/ ; echo; "
+             f"curl -s --max-time 10 -H 'Host: {domain}' http://127.0.0.1/ | head -c 400")
+    out, _err, code = await connection_manager.execute(dest, check)
+    lines = (out or "").splitlines()
+    status = lines[0].strip() if lines else ""
+    body = "\n".join(lines[1:]).strip()
+    if code == 0 and status in ("200", "301", "302") and body:
+        return StepResult("done", f"The new server serves it (HTTP {status}, real content)")
+    return StepResult("failed",
+                      f"The new server answered HTTP {status or '?'}"
+                      f"{' with an empty page' if not body else ''} — DNS was NOT handed "
+                      "over; the old site still serves and nothing is lost")
+
+
+async def _act_handover(ctx: _Ctx) -> StepResult:
+    _site, dest = await _move_site_and_dest(ctx)
+    host = dest.host if dest else "the new server"
+    domain = ctx.inputs["domain"]
+    return StepResult(
+        "waiting", "Waiting for you — the DNS switch is yours",
+        leave=(f"When you are ready, change {domain}'s A record to {host}. The old site "
+               f"on {ctx.server.name} keeps serving until then, and stays there afterwards "
+               "until you remove it yourself. After the switch, get a certificate on the "
+               "new server from the site's HTTPS page."))
+
+
+from shlex import quote as shlex_quote  # noqa: E402 — used by the move actions
+
+ACTIONS.update({
+    "fit": _act_fit,
+    "copy_files": _act_copy_files,
+    "move_db": _act_move_db,
+    "prove": _act_prove,
+    "handover": _act_handover,
+})

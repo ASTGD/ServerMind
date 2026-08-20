@@ -453,3 +453,85 @@ def test_discover_is_unpacked_in_its_real_order():
     assert "can_read_everything" in code
     assert "complete=complete" in code
     assert "truncated" in code
+
+
+# ── the move blueprint's own rules ───────────────────────────────────────────
+
+def test_move_never_deletes_and_never_touches_dns():
+    """The two promises that make the scariest job safe — stated in the blueprint AND
+    absent from the code: no action in the move set contains a remove of the old site."""
+    import inspect
+
+    from app.services import blueprint_service as b
+
+    bp = b.get("move-website")
+    assert any("Delete the old site. Ever." in d for d in bp.does_not_do)
+    assert any("Change DNS" in d for d in bp.does_not_do)
+
+    import app.workers.blueprint_runner as mod
+    for key in ("fit", "copy_files", "move_db", "prove", "handover"):
+        body = inspect.getsource(mod.ACTIONS[key])
+        code = "\n".join(ln for ln in body.splitlines() if not ln.strip().startswith("#"))
+        assert "site-remove" not in code and "delete_site" not in code, key
+        assert "dns_service" not in code, key
+
+
+def test_an_empty_database_dump_is_refused_not_imported():
+    """An empty dump imported is a database that exists and holds nothing — WordPress
+    renders that as the install wizard, the exact half-built thing a move must not make."""
+    import inspect
+
+    import app.workers.blueprint_runner as mod
+
+    body = inspect.getsource(mod._act_move_db)
+    code = "\n".join(ln for ln in body.splitlines() if not ln.strip().startswith("#"))
+    assert "int(size) == 0" in code
+    assert "refusing" in code.lower()
+
+
+def test_every_page_proof_reads_content_not_only_a_status_code():
+    """Both fetch-the-page steps — the move's proof AND the launch report's check. The
+    first mutation run aimed at 'the' proof line and hit the OTHER function carrying the
+    identical line, which is how page_check's rule turned out to have no test at all."""
+    import inspect
+
+    import app.workers.blueprint_runner as mod
+
+    for fn in (mod._act_prove, mod._act_page_check):
+        body = inspect.getsource(fn)
+        assert "head -c" in body, f"{fn.__name__}: the body must be read"
+        code = "\n".join(ln for ln in body.splitlines() if not ln.strip().startswith("#"))
+        assert "and body" in code, f"{fn.__name__}: a 200 with an empty page must fail"
+
+
+def test_the_dns_handover_is_a_waiting_step_naming_the_new_address(monkeypatch):
+    from types import SimpleNamespace
+
+    import app.workers.blueprint_runner as mod
+
+    async def pair(ctx):
+        return None, SimpleNamespace(host="203.0.113.99", name="NewBox")
+
+    monkeypatch.setattr(mod, "_move_site_and_dest", pair)
+    ctx = SimpleNamespace(inputs={"domain": "shop.com"}, server=SimpleNamespace(name="OldBox"))
+    res = asyncio.get_event_loop().run_until_complete(mod._act_handover(ctx)) \
+        if False else asyncio.run(mod._act_handover(ctx))
+    assert res.state == "waiting"
+    assert "203.0.113.99" in res.leave
+    assert "keeps serving" in res.leave
+
+
+def test_a_wrong_destination_name_is_a_plain_refusal(monkeypatch):
+    from types import SimpleNamespace
+
+    import app.workers.blueprint_runner as mod
+
+    async def pair(ctx):
+        return SimpleNamespace(domain="shop.com", doc_root="/var/www/shop.com"), None
+
+    monkeypatch.setattr(mod, "_move_site_and_dest", pair)
+    ctx = SimpleNamespace(inputs={"domain": "shop.com", "to_server": "NoSuchBox"},
+                          server=SimpleNamespace(name="OldBox"))
+    res = asyncio.run(mod._act_fit(ctx))
+    assert res.state == "failed"
+    assert "NoSuchBox" in res.note

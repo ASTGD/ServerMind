@@ -237,3 +237,36 @@ READY_TO_GO_LIVE = _register(Blueprint(
     does_not_do=("Change anything. A pre-launch check that edits the site is not a check.",),
     report=True,
 ))
+
+
+MOVE_WEBSITE = _register(Blueprint(
+    key="move-website",
+    title="Move a website to another server",
+    description=("The most feared job in hosting: the site's files AND its database move "
+                 "to another of your servers, it is proven working there BEFORE any DNS "
+                 "changes, and the old site keeps running until you switch the domain "
+                 "over. Nothing is deleted, and DNS is never touched."),
+    inputs=(
+        Input("domain", "The website to move (its domain name)"),
+        Input("to_server", "The server to move it to (its name in ServerAlly)"),
+    ),
+    steps=(
+        BpStep("fit",        "Check the destination fits"),
+        BpStep("copy_files", "Copy the website's files"),
+        BpStep("move_db",    "Move the database"),
+        BpStep("prove",      "Prove it works on the new server"),
+        BpStep("handover",   "Hand over the DNS switch"),
+    ),
+    leaves_for_you=(
+        "The DNS switch itself: change the domain's A record to the new server when you "
+        "are ready. Until then the old site keeps serving.",
+        "Removing the old site afterwards — from the old server's Sites page, once you "
+        "have seen the new one take traffic.",
+    ),
+    does_not_do=(
+        "Delete the old site. Ever.",
+        "Change DNS records.",
+        "Move email, cron jobs, or HTTPS (get a new certificate on the new server after "
+        "the DNS switch).",
+    ),
+))
