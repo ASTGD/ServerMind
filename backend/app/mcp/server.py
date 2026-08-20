@@ -54,6 +54,7 @@ from app.services import (
     mission_service,
     safety_service,
     security_service,
+    ssl_service,
     team_service,
     threat_service,
 )
@@ -1449,12 +1450,25 @@ async def serverally_create_site(
             f"- Follow it with `serverally_list_sites`.")
 
 
-@mcp_server.tool(name="serverally_issue_ssl", annotations={"title": "Issue SSL", **_WRITE})
-async def serverally_issue_ssl(server: str, domain: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
-    """Issue (or renew) a free Let's Encrypt SSL certificate for a domain on the server.
+@mcp_server.tool(name="serverally_issue_ssl", annotations={"title": "Turn on HTTPS", **_WRITE})
+async def serverally_issue_ssl(
+    server: str, domain: str, force: bool = False,
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Turn on HTTPS for a site — get a free certificate and serve the site over it.
 
-    The domain's DNS must already point to the server, or issuance fails. Requires execute
-    permission. ``server`` is a name or id.
+    The certificate covers every name the site answers to, not just its own domain: a
+    certificate missing ``www`` hands half the visitors a browser warning on a site whose
+    owner has been told HTTPS is on. An alias that does not point here is left out and
+    reported, never dropped silently.
+
+    Refuses up front when the domain does not point at this server. That is deliberate:
+    Let's Encrypt allows five certificates per domain per week and a doomed attempt spends
+    one, so an AI retrying is expensive. Set ``force`` ONLY when the site sits behind
+    Cloudflare's proxy or another CDN — then the domain resolves to the CDN rather than the
+    server, our check says "points somewhere else", and the certificate would issue fine.
+
+    Needs execute permission. Returns a run id — follow it with ``serverally_get_playbook_run``.
     """
     async with AsyncSessionLocal() as db:
         user = await _resolve_caller(db)
@@ -1464,27 +1478,67 @@ async def serverally_issue_ssl(server: str, domain: str, response_format: Respon
         if err:
             return err
         srv = acc.server
+
+        # A control panel issues and renews its own certificates on its own schedule, so a
+        # certificate we install behind its back is reverted later, at a moment nobody can
+        # connect to anything we did. Its own path stays the panel API.
+        if (srv.panel_type or "").strip():
+            try:
+                result = await hosting_service.issue_ssl(srv, domain)
+            except HostingError as exc:
+                return f"Could not issue a certificate for {domain} on {srv.name}: {exc}"
+            except Exception as exc:  # noqa: BLE001
+                return f"Error issuing a certificate for {domain} on {srv.name}: {type(exc).__name__}"
+            await _audit(db, user, "issue_ssl", srv.id)
+            if response_format == ResponseFormat.JSON:
+                return json.dumps({"server": srv.name, "domain": domain,
+                                   "via": srv.panel_type, "result": result}, indent=2)
+            return f"HTTPS is on for **{domain}** on {srv.name} (issued by {srv.panel_type})."
+
+        if srv.connection_type != "ssh":
+            return (f"{srv.name}: HTTPS is set up over SSH on a Linux server "
+                    f"(this one is '{srv.connection_type}').")
+
+        from app.models.site import Site
+        site = (await db.execute(
+            select(Site).where(Site.server_id == srv.id, Site.domain == domain)
+        )).scalars().first()
+        if site is None:
+            return (f"{srv.name} has no website called '{domain}' on record. "
+                    f"Use serverally_list_sites to see the domains it has, or create it "
+                    f"first with serverally_create_site.")
+
+        # The SAME decision the app's own HTTPS screen makes — which names go on the
+        # certificate, which are excluded and why, and the refusals that must happen before
+        # anything is requested. One rule: a second copy here is how one of them stops
+        # excluding a stale alias, or spends a certificate on an attempt that cannot work.
+        try:
+            plan = await ssl_service.plan_issue(
+                domain=site.domain, aliases=site.aliases, server_host=srv.host, force=force)
+            run_id = await ssl_service.start_issue(
+                db, site=site, server=srv, user=user, plan=plan)
+        except ssl_service.SslError as exc:
+            return (f"HTTPS was not requested for {domain} on {srv.name}: {exc}"
+                    + ("" if force else
+                       " If this site is behind Cloudflare's proxy or another CDN, that check "
+                       "is wrong here — call again with force=true."))
         await _audit(db, user, "issue_ssl", srv.id)
-    # Panel-only, deliberately and honestly. Turning on HTTPS for a site on an ordinary
-    # server is a different job — it checks the domain really points here first, because
-    # Let's Encrypt allows five certificates per domain per week and a doomed attempt spends
-    # one — and that logic lives in the app's own SSL path. Rebuilding it here would be a
-    # second copy of the thing most worth having only one of. Until it is shared, say what
-    # is true and where to go, rather than reporting a missing panel_type at somebody whose
-    # server was never meant to have one.
-    if not (srv.panel_type or "").strip():
-        return (f"{srv.name} has no control panel, and HTTPS for a site on an ordinary "
-                f"server is not available through MCP yet — turn it on for {domain} in "
-                f"ServerAlly, on the site's own page. (Nothing was changed.)")
-    try:
-        result = await hosting_service.issue_ssl(srv, domain)
-    except HostingError as exc:
-        return f"Could not issue SSL for {domain} on {srv.name}: {exc}"
-    except Exception as exc:  # noqa: BLE001
-        return f"Error issuing SSL for {domain} on {srv.name}: {type(exc).__name__}"
+
+    excluded = [{"name": e["name"], "why": e.get("why", "")} for e in plan["excluded"]]
+    data = {"server": srv.name, "domain": site.domain, "run_id": run_id,
+            "covers": plan["covers"], "excluded": excluded, "forced": force}
     if response_format == ResponseFormat.JSON:
-        return json.dumps({"server": srv.name, "domain": domain, "result": result}, indent=2)
-    return f"🔒 SSL issued for **{domain}** on {srv.name}."
+        return json.dumps(data, indent=2)
+
+    lines = [f"# HTTPS is being set up for **{site.domain}** on {srv.name}", "",
+             f"- **Covers**: {', '.join(plan['covers'])}"]
+    if excluded:
+        # What it does NOT cover is the thing the owner would otherwise discover from a
+        # visitor's browser warning weeks later.
+        lines.append("- **Left out** (these do not point at this server):")
+        lines += [f"  - `{e['name']}` — {e['why']}" for e in excluded]
+    lines += ["", f"Follow it with `serverally_get_playbook_run` (run id `{run_id}`)."]
+    return "\n".join(lines)
 
 
 @mcp_server.tool(name="serverally_create_database", annotations={"title": "Create a database", **_WRITE})

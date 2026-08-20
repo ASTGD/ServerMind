@@ -401,3 +401,75 @@ def valid_name(name: str) -> str:
     if not _NAME_OK.match(clean):
         raise SslError(f"'{name}' is not a domain name.")
     return clean
+
+
+# ── Turning HTTPS on for a site ──────────────────────────────────────────────
+# This is the whole policy: which names go on the certificate, which are excluded and why,
+# and the refusals that must happen BEFORE anything is requested. It lives here, once,
+# because two callers need it — the app's own screen and a customer's AI over MCP — and a
+# second copy is how one of them ends up not knowing that a stale alias is excluded rather
+# than fatal, or that a doomed attempt spends one of five certificates a week.
+
+async def plan_issue(*, domain: str, aliases: list[str] | None, server_host: str,
+                     force: bool = False, authority: str = "letsencrypt",
+                     eab_kid: str = "", eab_key: str = "") -> dict:
+    """Decide what to ask for. Raises ``SslError`` when nothing should be requested at all.
+
+    Returns ``{covers, excluded, acme}``. Nothing is contacted and nothing is changed.
+    """
+    names = names_for(domain, aliases)
+
+    if force:
+        # No filtering at all — one rule, easy to explain: ask for every name without
+        # checking DNS first. If ANY one of them cannot be reached the whole request fails,
+        # because that is Let's Encrypt's own rule, and quietly dropping a name would put
+        # the owner back where they started.
+        dns = {"ready": names, "not_ready": []}
+    else:
+        dns = await check_names(names, server_host)
+
+    if domain not in dns["ready"]:
+        # Its own domain is the one that cannot be skipped: it names the certificate, and a
+        # certificate for the aliases alone would not cover the site anybody visits.
+        own = next((n for n in dns["not_ready"] if n["name"] == domain), None)
+        raise SslError(own["why"] if own else dns_message(domain, {"ready": False}))
+
+    acme = check_authority(authority, eab_kid=eab_kid, eab_key=eab_key)
+    # An alias that does not point here is EXCLUDED, never dropped silently: an owner who
+    # believes `www` is covered when it was left out is back where they started.
+    return {"covers": dns["ready"], "excluded": dns["not_ready"], "acme": acme}
+
+
+async def start_issue(db, *, site, server, user, plan: dict) -> str:
+    """Run the HTTPS installer for ``plan``. Returns the run id. Raises ``SslError``."""
+    from sqlalchemy import select
+
+    from app.models.playbook import Playbook, PlaybookRun
+    from app.services import playbook_service
+    from app.services.secret_vars import encrypt_variables
+    from app.workers.playbook_tasks import run_playbook_task
+
+    pb = (await db.execute(
+        select(Playbook).where(Playbook.slug == "site-ssl",
+                               Playbook.is_official == True)  # noqa: E712
+    )).scalar_one_or_none()
+    if pb is None or not pb.script_bash:
+        raise SslError("The HTTPS installer is not available on this ServerAlly.")
+
+    variables = {
+        "DOMAIN": site.domain,
+        "EMAIL": user.email,
+        "DOMAIN_FLAGS": certbot_domain_flags(plan["covers"]),
+        "ACME_SERVER": plan["acme"]["server"],
+        "EAB_KID": plan["acme"]["eab_kid"],
+        "EAB_KEY": plan["acme"]["eab_key"],
+    }
+    script = playbook_service.substitute_variables(pb.script_bash, variables)
+
+    run = PlaybookRun(server_id=server.id, user_id=user.id, playbook_id=pb.id,
+                      variables_used=encrypt_variables(variables), status="running")
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+    run_playbook_task.delay(str(run.id), str(server.id), script)
+    return str(run.id)

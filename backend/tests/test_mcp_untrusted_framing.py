@@ -339,15 +339,17 @@ def test_creating_a_site_refuses_a_server_with_no_command_channel():
     assert 'srv.connection_type != "ssh"' in body
 
 
-def test_ssl_says_what_it_cannot_do_instead_of_naming_a_missing_panel():
-    """Left panel-only on purpose: turning on HTTPS for a site on an ordinary server checks
-    the domain really points here first — Let's Encrypt allows five certificates per domain
-    per week and a doomed attempt spends one — and that lives in the app's SSL path.
-    Rebuilding it here would be a second copy of the thing most worth having one of."""
+def test_ssl_no_longer_turns_an_ordinary_server_away():
+    """This tool WAS panel-only, and said so honestly rather than reporting a missing
+    panel_type at somebody whose server was never meant to have one. The reason was that the
+    policy — which names go on the certificate, and the refusals that must happen before
+    anything is requested — lived inside the app's own endpoint. It moved into `ssl_service`,
+    so both callers share it and the refusal is gone. Behaviour is covered in
+    tests/test_mcp_https.py; this only guards against the message coming back."""
     body = code_of(m.serverally_issue_ssl)
-    assert 'srv.panel_type' in body, "it no longer checks before reaching for the panel"
-    assert "not available through MCP yet" in body
-    assert "Nothing was changed" in body
+    assert "not available through MCP yet" not in body
+    assert "srv.panel_type" in body, "a panel must still issue its own certificates"
+    assert "ssl_service.plan_issue" in body
 
 
 # ── the gate is called correctly, everywhere ──────────────────────────────────

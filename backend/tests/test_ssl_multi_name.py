@@ -343,18 +343,34 @@ async def test_a_forced_request_skips_the_check_entirely(monkeypatch):
 @pytest.mark.asyncio
 async def test_forcing_still_refuses_a_name_that_is_not_a_domain(monkeypatch):
     """Skipping the DNS check does not skip validation. A name reaches both a shell and a
-    filesystem path, and `force` is a statement about DNS — not permission to send anything."""
+    filesystem path, and `force` is a statement about DNS — not permission to send anything.
+
+    It surfaces as a 422 naming the bad name. It used to escape as a bare SslError, which a
+    client sees as "Internal Server Error" — true of the old code, and no help to the person
+    who typed the alias. What has to hold either way is that NOTHING is requested."""
+    from fastapi import HTTPException
+    from sqlalchemy import func, select as _select
+
+    from app.models.playbook import PlaybookRun
+
     async with AsyncSessionLocal() as db:
         user, _server, site = await _fixture(db, ["shop.com; rm -rf /"])
         await _site_ssl_playbook(db)
         await db.commit()
 
+        before = (await db.execute(_select(func.count()).select_from(PlaybookRun))).scalar()
         _resolver(monkeypatch, ready=set())
-        _no_celery(monkeypatch)
+        sent = _no_celery(monkeypatch)
 
-        with pytest.raises(ssl.SslError):
+        with pytest.raises(HTTPException) as exc:
             await sites_router.turn_on_ssl(
                 str(site.id), db, user, sites_router.SslIn(force=True))
+
+        after = (await db.execute(_select(func.count()).select_from(PlaybookRun))).scalar()
+
+    assert exc.value.status_code == 422
+    assert not sent, "a refused name must never reach certbot"
+    assert after == before, "a refusal must happen before the run row exists"
 
 
 @pytest.mark.asyncio

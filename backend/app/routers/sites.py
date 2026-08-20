@@ -718,78 +718,34 @@ async def turn_on_ssl(site_id: str, db: DBDep, current_user: CurrentUser,
     # Every name this site answers to, not just its own domain. A certificate that does not
     # cover `www` hands half the visitors a browser warning on a site whose owner has been
     # told HTTPS is on — worse than no certificate, because it looks handled.
-    names = ssl_service.names_for(site.domain, site.aliases)
+    #
+    # The policy itself lives in `ssl_service.plan_issue`, because a customer's AI reaches
+    # the same job over MCP and two copies of "which names, and which refusals" is how one
+    # of them stops excluding a stale alias.
     force = bool(body and body.force)
-
-    if force:
-        # No filtering at all — one rule, easy to explain: ask for every name without
-        # checking DNS first. The screen says plainly that if ANY one of them cannot be
-        # reached the whole request fails, because that is Let's Encrypt's own rule and
-        # quietly dropping a name would put the owner back where they started.
-        dns = {"ready": names, "not_ready": []}
-    else:
-        dns = await ssl_service.check_names(names, server.host)
-
-    if site.domain not in dns["ready"]:
-        # Its own domain is the one that cannot be skipped: it names the certificate.
-        own = next((n for n in dns["not_ready"] if n["name"] == site.domain), None)
-        raise HTTPException(status_code=422,
-                            detail=own["why"] if own else
-                            ssl_service.dns_message(site.domain, {"ready": False}))
-
-    # An alias that does not point here is EXCLUDED rather than fatal. Let's Encrypt fails
-    # the whole request if any one name cannot be reached, so a stale alias from a domain
-    # the customer stopped using would otherwise block the certificate entirely — and
-    # certbot's error names the alias without saying the rest were fine. What is excluded
-    # is reported back, never dropped silently: an owner who believes `www` is covered when
-    # it was left out is back where they started.
-    excluded = dns["not_ready"]
-
-    pb = (await db.execute(
-        select(Playbook).where(Playbook.slug == "site-ssl",
-                               Playbook.is_official == True)  # noqa: E712
-    )).scalar_one_or_none()
-    if pb is None or not pb.script_bash:
-        raise HTTPException(status_code=422,
-                            detail="The HTTPS installer is not available on this ServerAlly.")
-
     try:
-        acme = ssl_service.check_authority(
-            (body.authority if body else "letsencrypt"),
+        plan = await ssl_service.plan_issue(
+            domain=site.domain, aliases=site.aliases, server_host=server.host, force=force,
+            authority=(body.authority if body else "letsencrypt"),
             eab_kid=(body.eab_kid if body else ""),
             eab_key=(body.eab_key if body else ""))
+        run_id = await ssl_service.start_issue(
+            db, site=site, server=server, user=current_user, plan=plan)
     except ssl_service.SslError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    variables = {
-        "DOMAIN": site.domain,
-        "EMAIL": current_user.email,
-        "DOMAIN_FLAGS": ssl_service.certbot_domain_flags(dns["ready"]),
-        "ACME_SERVER": acme["server"],
-        "EAB_KID": acme["eab_kid"],
-        "EAB_KEY": acme["eab_key"],
-    }
-    script = playbook_service.substitute_variables(pb.script_bash, variables)
-
-    run = PlaybookRun(server_id=server.id, user_id=current_user.id, playbook_id=pb.id,
-                      variables_used=encrypt_variables(variables), status="running")
-    db.add(run)
-    await db.commit()
-    await db.refresh(run)
-
-    run_playbook_task.delay(str(run.id), str(server.id), script)
     await audit_service.audit(db, current_user, "site.ssl_requested",
                               target_type="server", target_id=str(server.id),
-                              meta={"domain": site.domain, "names": dns["ready"],
+                              meta={"domain": site.domain, "names": plan["covers"],
                                     "forced": force})
     return {
-        "run_id": str(run.id),
+        "run_id": run_id,
         "domain": site.domain,
         # Both lists, always. What the certificate covers is the thing the customer wanted
         # to know, and what it does NOT cover is the thing they would otherwise discover
         # from a visitor's browser warning weeks later.
-        "covers": dns["ready"],
-        "excluded": excluded,
+        "covers": plan["covers"],
+        "excluded": plan["excluded"],
     }
 
 
