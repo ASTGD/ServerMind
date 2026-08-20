@@ -1436,12 +1436,21 @@ async def serverally_run_command(
         # Track the action live (running → finish) so the user sees it in the app's feed.
         async with _track(db, user, "run_command", srv, command=command) as act:
             if verdict.status == "blocked":
-                act.set_blocked("On ServerAlly's absolute blocklist — refused.")
+                # Pass the SPECIFIC reason through when there is one written for a person.
+                # The self-lockout guard says what it protects and how to proceed ("add an
+                # SSH key first"); the blocklist's reason is the regex that matched, which
+                # helps nobody. Hardcoding one sentence for both told a customer's AI that
+                # closing root login was "on the absolute blocklist" — true of neither the
+                # cause nor the cure, and less than in-app Ally is told, which passes
+                # `safety.reason` straight through.
+                lockout = verdict.pattern == "self-lockout"
+                reason = (verdict.reason if lockout and verdict.reason else
+                          "this command is on ServerAlly's absolute safety blocklist "
+                          "because it could irreversibly destroy the server.")
+                act.set_blocked("Would lock ServerAlly out — refused." if lockout
+                                else "On ServerAlly's absolute blocklist — refused.")
                 await _audit(db, user, "run_command_blocked", srv.id)
-                return (
-                    f"⛔ Refused on {sname}: this command is on ServerAlly's absolute safety "
-                    "blocklist because it could irreversibly destroy the server. Nothing was run."
-                )
+                return f"⛔ Refused on {sname}: {reason} Nothing was run."
             await _audit(db, user, "run_command", srv.id)  # the call is audited; the command text is not, to never log a secret
             try:
                 stdout, stderr, exit_code = await connection_manager.execute(srv, command)

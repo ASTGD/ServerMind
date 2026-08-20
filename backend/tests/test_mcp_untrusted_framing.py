@@ -244,3 +244,44 @@ def test_it_returns_no_credential():
     body = src[src.index("async with"):]          # everything after the docstring
     for leak in ("encrypted", "password", "credential", "secret", "model_dump"):
         assert leak not in body, f"list_sites touches {leak}"
+
+
+# ── what a refusal tells the customer's AI ───────────────────────────────────
+
+def test_a_lockout_refusal_says_what_it_protects_and_how_to_proceed():
+    """Found by driving `run_command` over MCP. All four refusals answered with the SAME
+    sentence — "this command is on ServerAlly's absolute safety blocklist" — and three of
+    them were not the blocklist at all. They were the self-lockout guard, whose reason is
+    written for a person: it names what would break and says an SSH key makes it safe.
+
+    That reason was thrown away. So a customer's own AI was told less than in-app Ally is
+    told, which passes `safety.reason` straight through — on the lane we are making
+    primary.
+    """
+    body = inspect.getsource(m.serverally_run_command)
+    assert 'verdict.pattern == "self-lockout"' in body
+    assert "verdict.reason" in body, "the specific reason is still discarded"
+
+
+def test_the_blocklists_own_reason_is_not_shown_because_it_is_a_regex():
+    """`validate_command` reports a blocklist hit as "Command matches blocked pattern:
+    <regex>". Passing that to a customer's AI would be noise; the generic sentence is
+    better there. The distinction is the point."""
+    from app.services import safety_service
+
+    hit = safety_service.validate_command("rm -rf / --no-preserve-root", "linux")
+    assert hit.status == "blocked"
+    assert "pattern" in (hit.reason or "").lower(), "the blocklist reason is not customer-facing"
+    assert hit.pattern != "self-lockout"
+
+
+def test_the_two_kinds_of_refusal_are_distinguishable_at_all():
+    """The fix rests on `pattern` telling them apart. If the lockout guard stopped setting
+    it, both would fall back to the generic wording and nobody would notice."""
+    from app.services import safety_service
+
+    access = safety_service.Access(username="root", auth_type="password", port=22)
+    lock = safety_service.validate_command("ssh_set PermitRootLogin no", "linux", access)
+    assert lock.status == "blocked" and lock.pattern == "self-lockout"
+    assert "lock ServerAlly out" in (lock.reason or "")
+    assert "SSH key" in (lock.reason or ""), "the way out must be in the reason"
