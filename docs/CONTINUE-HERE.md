@@ -1,4 +1,4 @@
-# Continue Here — build status, pending work & testing plans (2026-08-18)
+# Continue Here — build status, pending work & testing plans (2026-08-21)
 
 The single living "where are we, what's left, what needs a decision" doc for ServerAlly.
 Full dated history is in **CLAUDE.md's Decisions Log**; this doc is the *current snapshot*.
@@ -9,6 +9,26 @@ Full dated history is in **CLAUDE.md's Decisions Log**; this doc is the *current
 > when it held a confirmed live incident. Every item below was checked against the current
 > code and against production, not against what a doc claimed. **If you are reading this more
 > than a couple of weeks after the date above, verify before believing.**
+
+## Blueprints — shipped overnight 2026-08-21 (all six phases)
+
+Ready-made long jobs, started from the app or by a customer's AI over MCP, shown live as a
+filling checklist. NOT missions — no AI inside a run. Plan: docs/BLUEPRINTS-PLAN.md.
+
+- **Engine** (`blueprint_service` + `blueprint_runner`, migration 064): fixed steps, live
+  per-step narration, a WAITING state for things only the human can do (DNS), report mode
+  for check-style blueprints, stop, orphan recovery. Missing inputs are ASKED for, never
+  guessed.
+- **Four blueprints**: set-up-website (proven end to end on TestServerNew — 8/8, HTTPS
+  correctly waiting), take-over-server, site-ready-to-go-live, move-website (files via the
+  clone flow + the database by IDENTICAL credentials so no config rewrite exists).
+- **The screen**: /activity (the ONE place work is read), the run page, the top-bar pill
+  (absent when idle), strips on server/site pages. The MCP drawer is DELETED — its icon
+  keeps the green pulse and now goes to Activity.
+- **Over MCP**: list/start/poll/stop tools; the whole conversation verified live.
+- Found on the way: **every real ufw server showed 0 firewall rules since 28 July** (probe
+  sent `status verbose numbered`; ufw honours only the first word) — fixed, fixture now
+  real output.
 
 ## Where we are
 
