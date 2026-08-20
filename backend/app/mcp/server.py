@@ -1264,12 +1264,12 @@ async def serverally_run_backup(backup_id: str, response_format: ResponseFormat 
 
 @mcp_server.tool(name="serverally_create_site", annotations={"title": "Create a website", **_WRITE})
 async def serverally_create_site(
-    server: str, domain: str, type: str = "php",
+    server: str, domain: str, site_type: str = "php",
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
 ) -> str:
     """Create a website on a server and start the installer that builds it.
 
-    ``server`` is a name or id. ``type`` is what to put on it — wordpress, laravel, php,
+    ``server`` is a name or id. ``site_type`` is what to put on it — wordpress, laravel, php,
     static, or app. Returns immediately; the install runs in the background and the site
     becomes live only once a scan SEES it on the server.
     """
@@ -1297,7 +1297,7 @@ async def serverally_create_site(
         # a site here, not the only one.
         try:
             site, run_id, script = await site_service.create(
-                db, srv, user, domain=domain, site_type=type)
+                db, srv, user, domain=domain, site_type=site_type)
         except Exception as exc:  # noqa: BLE001 — the services raise several kinds
             return f"Could not create {domain} on {srv.name}: {exc}"
 
@@ -1306,12 +1306,12 @@ async def serverally_create_site(
     # Enqueued after the commit inside create(), so the worker can always find the run.
     run_playbook_task.delay(run_id, str(srv.id), script)
 
-    data = {"server": srv.name, "domain": site.domain, "type": type,
+    data = {"server": srv.name, "domain": site.domain, "site_type": site_type,
             "status": site.status, "run_id": run_id}
     if response_format == ResponseFormat.JSON:
         return json.dumps(data, indent=2)
     return (f"# {site.domain} is being created on {srv.name}\n\n"
-            f"- **What it runs**: {type}\n"
+            f"- **What it runs**: {site_type}\n"
             f"- **Status**: {site.status} — it becomes live once a scan sees it serving\n"
             f"- Follow it with `serverally_list_sites`.")
 
