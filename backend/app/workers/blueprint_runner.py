@@ -275,7 +275,7 @@ async def _act_https(ctx: _Ctx) -> StepResult:
             return StepResult(
                 "waiting", "Waiting for you — the domain does not point here yet",
                 leave=(f"Point {domain} at {ctx.server.host} (an A record), then turn on "
-                       f"HTTPS from the site's page. Why now: {str(exc)[:180]}"))
+                       f"HTTPS from the site's page."))
         try:
             ssl_run = await ssl_service.start_issue(
                 db, site=site, server=ctx.server, user=user, plan=plan)
@@ -372,7 +372,8 @@ async def _act_safety(ctx: _Ctx) -> StepResult:
         nice = {"clean": "no malware found", "unknown": "malware check could not see everything"}
         bits.append(nice.get(verdict, f"malware verdict: {verdict}"))
     await ctx.found("Safety: " + ", ".join(bits))
-    return StepResult("done", ", ".join(bits).capitalize())
+    note = ", ".join(bits)
+    return StepResult("done", note[0].upper() + note[1:] if note else note)
 
 
 ACTIONS = {

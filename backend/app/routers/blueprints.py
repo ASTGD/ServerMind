@@ -119,7 +119,7 @@ async def list_runs(db: DBDep, current_user: CurrentUser,
         q = q.where(BlueprintRun.server_id == server_id)
     rows = (await db.execute(q.order_by(BlueprintRun.created_at.desc()).limit(limit))).all()
     out = [_serialize(r, name) for r, name in rows]
-    out.sort(key=lambda r: (r["status"] != "running", r["created_at"] or ""), reverse=False)
+    out.sort(key=lambda r: (r["status"] == "running", r["created_at"] or ""), reverse=True)
     return out
 
 

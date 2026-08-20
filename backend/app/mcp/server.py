@@ -308,6 +308,7 @@ _NO_USER = "Error: could not identify your ServerAlly account for this request."
 _RO = {  # read-only tool annotations
     "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True,
 }
+_WRITE = {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True}
 
 
 async def _resolve_server(db, user: User, ref: str):
@@ -910,6 +911,183 @@ async def serverally_read_file(
     return f"# {path} on {srv.name} ({note})\n\n```\n{content}\n```"
 
 
+# ── Blueprints — ready-made long jobs (docs/BLUEPRINTS-PLAN.md) ───────────────
+# The customer's AI is the front desk: it matches a blueprint, asks the human for the
+# inputs the start call names, starts it, and polls. A blueprint step contains NO AI —
+# the run is deterministic, so our model cost here is zero and the screen in the app shows
+# the same run the AI is watching. Start-and-poll, the run_playbook pattern: a tool call
+# must never block on a fifteen-minute job.
+
+
+def _bp_run_payload(run, server_name: str | None = None) -> dict:
+    steps = [{"label": s.get("label"), "state": s.get("state"), "note": s.get("note", "")}
+             for s in (run.steps or [])]
+    return {
+        "run_id": str(run.id), "blueprint": run.blueprint_key, "title": run.title,
+        "server": server_name, "status": run.status,
+        "steps": steps,
+        "steps_done": sum(1 for s in steps if s["state"] in ("done", "skipped", "waiting")),
+        "steps_total": len(steps),
+        "message": run.message, "found": run.found or [],
+        "left_for_you": run.left_for_you or [],
+        "started_at": run.created_at.isoformat() if run.created_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+    }
+
+
+@mcp_server.tool(name="serverally_list_blueprints", annotations={"title": "List blueprints", **_RO})
+async def serverally_list_blueprints(response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
+    """Ready-made long jobs ServerAlly can run — what each does, NEEDS, and will not do.
+
+    A blueprint is a fixed list of steps (no AI inside the run). To use one: check its
+    ``needs``, ASK THE USER for any input you do not have — never invent a domain — then
+    ``serverally_start_blueprint`` and poll ``serverally_get_blueprint_run``.
+    """
+    from app.services import blueprint_service
+
+    items = [blueprint_service.describe(bp) for bp in blueprint_service.CATALOGUE.values()]
+    if response_format == ResponseFormat.JSON:
+        return json.dumps({"count": len(items), "blueprints": items}, indent=2)
+    lines = ["# Blueprints", ""]
+    for bp in items:
+        lines.append(f"## {bp['key']} — {bp['title']}")
+        lines.append(bp["description"])
+        needs = ", ".join(f"{n['name']}"
+                          + (f" (one of: {', '.join(n['choices'])})" if n["choices"] else "")
+                          for n in bp["needs"])
+        lines.append(f"- **Needs**: {needs}")
+        lines.append(f"- **Steps**: {' → '.join(bp['steps'])}")
+        for item in bp["leaves_for_you"]:
+            lines.append(f"- **Left for the user**: {item}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+@mcp_server.tool(name="serverally_start_blueprint", annotations={"title": "Start a blueprint", **_WRITE})
+async def serverally_start_blueprint(
+    server: str, blueprint: str, inputs: dict | None = None,
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Start a ready-made long job on a server. Returns a run id IMMEDIATELY — the job
+    takes minutes; follow it with ``serverally_get_blueprint_run`` (poll every ~10s).
+
+    A missing required input is refused with a message naming exactly what to ask the user
+    for — supply it and call again. Never invent an input: a guessed domain is a website
+    nobody wanted. One blueprint per server at a time.
+    """
+    from app.models.blueprint import BlueprintRun
+    from app.services import blueprint_service
+    from app.workers import blueprint_runner
+
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        acc, err = await _executor(db, user, server)
+        if err:
+            return err
+        srv = acc.server
+        try:
+            bp = blueprint_service.get(blueprint)
+            clean = blueprint_service.check_inputs(bp, inputs or {})
+            blueprint_service.check_server(bp, srv)
+        except blueprint_service.BlueprintError as exc:
+            return f"Not started: {exc}"
+
+        busy = (await db.execute(select(BlueprintRun).where(
+            BlueprintRun.server_id == srv.id,
+            BlueprintRun.status == "running"))).scalars().first()
+        if busy is not None:
+            return (f"Not started: '{busy.title}' is already running on {srv.name} "
+                    f"(run {busy.id}). Wait for it or stop it first.")
+
+        run = BlueprintRun(
+            user_id=user.id, server_id=srv.id, blueprint_key=bp.key,
+            title=f"{bp.title.split(' on ')[0]} — {clean.get('domain', srv.name)}",
+            inputs=clean, status="running", source="mcp",
+            steps=blueprint_service.build_steps(bp, clean))
+        db.add(run)
+        await db.commit()
+        await db.refresh(run)
+        await blueprint_runner.start(run.id, srv, user.id, clean)
+        await _audit(db, user, "start_blueprint", srv.id)
+        payload = _bp_run_payload(run, srv.name)
+
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(payload, indent=2)
+    plan = "\n".join(f"- {s['label']}" for s in payload["steps"])
+    return (f"# Started: {payload['title']} on {payload['server']}\n\n"
+            f"Run id: `{payload['run_id']}` — poll `serverally_get_blueprint_run` every "
+            f"~10 seconds; this takes minutes.\n\nThe plan:\n{plan}\n\n"
+            f"The user can watch it live in ServerAlly under Activity.")
+
+
+@mcp_server.tool(name="serverally_get_blueprint_run", annotations={"title": "Check a blueprint run", **_RO})
+async def serverally_get_blueprint_run(
+    run_id: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Where a blueprint run is: every step's state and note, what it found, what is left
+    for the user. A step 'waiting' is NOT a failure — it needs the user (usually DNS)."""
+    from app.models.blueprint import BlueprintRun
+    from app.models.server import Server
+
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        try:
+            run = await db.get(BlueprintRun, run_id)
+        except Exception:  # noqa: BLE001 — a malformed id is "no such run", not a 500
+            run = None
+        if run is None or str(run.user_id) != str(user.id):
+            return f"No blueprint run with id '{run_id}' on this account."
+        srv = await db.get(Server, run.server_id)
+        payload = _bp_run_payload(run, srv.name if srv else None)
+
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(payload, indent=2)
+    mark = {"done": "[done]", "running": "[now]", "pending": "[ ]", "failed": "[FAILED]",
+            "waiting": "[waiting for the user]", "skipped": "[skipped]"}
+    lines = [f"# {payload['title']} — {payload['status']} "
+             f"({payload['steps_done']} of {payload['steps_total']})", ""]
+    for st in payload["steps"]:
+        note = f" — {st['note']}" if st["note"] else ""
+        lines.append(f"- {mark.get(st['state'], st['state'])} {st['label']}{note}")
+    if payload["message"]:
+        lines += ["", payload["message"]]
+    for item in payload["left_for_you"]:
+        lines.append(f"- **Left for the user**: {item}")
+    return "\n".join(lines)
+
+
+@mcp_server.tool(name="serverally_stop_blueprint", annotations={"title": "Stop a blueprint run", **_WRITE})
+async def serverally_stop_blueprint(run_id: str) -> str:
+    """Stop a running blueprint. Honest limits: it refuses everything further; it cannot
+    undo steps that already ran."""
+    from app.models.blueprint import BlueprintRun
+    from app.workers import blueprint_runner
+
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        try:
+            run = await db.get(BlueprintRun, run_id)
+        except Exception:  # noqa: BLE001
+            run = None
+        if run is None or str(run.user_id) != str(user.id):
+            return f"No blueprint run with id '{run_id}' on this account."
+        # Stop is a WRITE on the run's server — the same permission that started it.
+        acc, err = await _executor(db, user, str(run.server_id))
+        if err:
+            return err
+        if run.status != "running":
+            return f"This run already finished ({run.status}) — nothing to stop."
+        await blueprint_runner.stop(db, run)
+        await _audit(db, user, "stop_blueprint", run.server_id)
+        return (f"Stopped. {run.message}")
+
+
 # ── Server logs (read-only) ───────────────────────────────────────────────────
 # When a site breaks, the answer is almost always in a log file, and FINDING the log is
 # the hard half — a shop owner does not know that web-server errors live in
@@ -1111,7 +1289,6 @@ async def _track(db, user: User, tool: str, srv, *, command: str | None = None):
 
 # Non-read annotations. destructiveHint defaults False (scans change nothing); a tool that
 # modifies the server overrides it to True.
-_WRITE = {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True}
 
 
 async def _executor(db, user: User, ref: str):
