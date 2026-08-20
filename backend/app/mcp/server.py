@@ -763,10 +763,10 @@ _FILE_CONTENT_CAP = 100_000
 
 @mcp_server.tool(name="serverally_list_sites", annotations={"title": "List hosted sites", **_RO})
 async def serverally_list_sites(server: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
-    """Websites/domains hosted on a server (CyberPanel, or a connected cPanel/Plesk panel).
+    """The websites on a server — the same list the customer sees in ServerAlly.
 
-    ``server`` is a name or id. Read-only, credential-free. A server with no panel returns
-    a clear note. Each site: domain, state, PHP version, admin email.
+    ``server`` is a name or id. Read-only, credential-free. Each site: domain, what it runs,
+    whether it is up, its folder, and whether HTTPS is on.
     """
     async with AsyncSessionLocal() as db:
         user = await _resolve_caller(db)
@@ -777,22 +777,45 @@ async def serverally_list_sites(server: str, response_format: ResponseFormat = R
             return await _unknown_server(db, user, server)
         srv = acc.server
         await _audit(db, user, "list_sites", srv.id)
-    # Live call — outside the DB session (SSH/API is slow; srv columns stay usable).
-    try:
-        sites = await hosting_service.list_websites(srv)
-    except HostingError as exc:
-        return f"{srv.name}: {exc}"
-    except Exception as exc:  # noqa: BLE001
-        return f"Error listing sites on {srv.name}: {type(exc).__name__}"
+        from app.models.site import Site   # local, as elsewhere in this module
+
+        # Read what ServerAlly RECORDED, which is what the app shows — not a live panel
+        # call. This tool used to ask `hosting_service` and nothing else, so on an ordinary
+        # server it answered "Unsupported or missing panel_type: (none)" — internal jargon,
+        # for a server whose five sites we were holding all along. Sites became a
+        # first-class object of this product; the tool had been left in the world before
+        # that, where a website only existed if a control panel knew about it.
+        rows = (await db.execute(
+            select(Site).where(Site.server_id == srv.id, Site.is_present.is_(True))
+            .order_by(Site.domain)
+        )).scalars().all()
+        sites = [{
+            "domain": r.domain,
+            "runs": r.app_type or "unknown",
+            "version": r.app_version or "",
+            "status": r.status,
+            "folder": r.doc_root or "",
+            "https": bool(r.has_ssl),
+        } for r in rows]
+
     data = {"server": srv.name, "count": len(sites), "sites": sites}
     if response_format == ResponseFormat.JSON:
         return json.dumps(data, indent=2)
     if not sites:
-        return f"No sites found on {srv.name}."
-    lines = [f"# Sites on {srv.name} ({len(sites)})", ""]
-    for s in sites:
-        php = f"  ·  PHP {s['php']}" if s.get("php") else ""
-        lines.append(f"- **{s.get('domain', '?')}** — {s.get('state', '')}{php}")
+        # Honest about WHY: an unscanned server and a server with no websites look identical
+        # from here, and telling somebody there are no sites when we simply have not looked
+        # is the kind of confident wrong answer this codebase keeps finding.
+        return (f"No websites recorded on {srv.name}. If it has some, ask ServerAlly to scan "
+                f"the server first — this list is what the last scan found.")
+    lines = [f"# Websites on {srv.name} ({len(sites)})", ""]
+    for site in sites:
+        bits = [site["runs"] + (f" {site['version']}" if site["version"] else "")]
+        if site["status"] != "live":
+            bits.append(site["status"])
+        if site["https"]:
+            bits.append("HTTPS")
+        lines.append(f"- **{site['domain']}** — {'  ·  '.join(bits)}"
+                     + (f"\n  `{site['folder']}`" if site["folder"] else ""))
     return "\n".join(lines)
 
 

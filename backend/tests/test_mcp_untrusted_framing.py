@@ -147,3 +147,100 @@ def test_a_new_tool_that_reaches_a_server_cannot_forget():
     assert missing == [], (
         "these reach a managed server and return its output without labelling it as data: "
         f"{missing}. Add @carries_server_content, or add it to the write list with a reason.")
+
+
+# ── the tool that could not see a website unless a control panel knew about it ──
+
+def test_list_sites_reads_what_serverally_recorded():
+    """Found by walking every tool against a real server. `list_sites` asked
+    `hosting_service` and nothing else, so on an ordinary server — the common case — it
+    answered:
+
+        TestServerNew: Unsupported or missing panel_type: (none)
+
+    Internal jargon, for a server whose five websites we were holding all along. Sites
+    became a first-class object of this product; the tool had been left in the world before
+    that, where a website only existed if a control panel knew about it.
+    """
+    body = inspect.getsource(m.serverally_list_sites)
+    assert "select(Site)" in body, "it no longer reads the recorded sites"
+    assert "hosting_service.list_websites" not in body, "still asking the panel only"
+
+
+def test_it_asks_the_database_only_for_sites_that_are_still_there(monkeypatch):
+    """`is_present` is how a scan records that a site has gone. Listing a removed one would
+    have the customer's AI act on something that does not exist.
+
+    Asserted on the SQL the tool actually sends, not on its source text. Two weaker versions
+    failed first and both are worth remembering: grepping the source for the filter passed
+    when the filter was widened to `is_(False) | is_(True)` — the text was still there and
+    meant the opposite; and a fake session cannot evaluate a WHERE clause, so filtering rows
+    in the fake only tested the fake. Compiling the statement tests what the database is
+    asked for.
+    """
+    import asyncio
+    from types import SimpleNamespace
+
+    seen = []
+
+    class _Result:
+        def scalars(self): return SimpleNamespace(all=lambda: [])
+
+    class _Session:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *e): return False
+        async def execute(self, stmt):
+            seen.append(stmt)
+            return _Result()
+
+    import uuid
+    srv = SimpleNamespace(id=uuid.uuid4(), name="box", connection_type="ssh")
+    monkeypatch.setattr(m, "AsyncSessionLocal", lambda: _Session())
+    monkeypatch.setattr(m, "_resolve_caller", _ok(SimpleNamespace(id="u1")))
+    monkeypatch.setattr(m, "_resolve_server", _ok(SimpleNamespace(server=srv)))
+    monkeypatch.setattr(m, "_audit", _ok(None))
+
+    asyncio.run(m.serverally_list_sites("box"))
+    assert seen, "the tool never queried the database"
+    sql = str(seen[-1].compile()).lower()
+    assert "is_present is true" in sql, f"present-only filter missing: {sql}"
+    assert " or " not in sql.split("where", 1)[-1], (
+        f"the filter was widened and now also returns removed sites: {sql}")
+
+
+def _ok(value):
+    async def _fn(*a, **k):
+        return value
+    return _fn
+
+
+def test_it_is_scoped_to_the_server_that_was_asked_for():
+    body = inspect.getsource(m.serverally_list_sites)
+    assert "Site.server_id == srv.id" in body
+
+
+def test_an_empty_list_says_why_rather_than_asserting_there_are_none():
+    """An unscanned server and a server with no websites look identical from here. Telling
+    somebody there are no sites when we simply have not looked is the confident wrong
+    answer this codebase keeps finding."""
+    body = inspect.getsource(m.serverally_list_sites)
+    assert "scan" in body.lower() and "No websites recorded" in body
+
+
+def test_it_is_not_labelled_untrusted():
+    """It returns OUR records — domain, type, status — not bytes off the server. Labelling
+    it would dilute the label that matters."""
+    assert not getattr(m.serverally_list_sites, "__serverally_untrusted__", False)
+
+
+def test_it_returns_no_credential():
+    """Same rule as every other tool: an explicit field list, never a model dump.
+
+    Checked on the CODE, not the whole source. The docstring on that tool says
+    "credential-free", which a whole-text search matches — the eighth time in this codebase
+    that a check has caught its own documentation instead of the thing it documents.
+    """
+    src = inspect.getsource(m.serverally_list_sites)
+    body = src[src.index("async with"):]          # everything after the docstring
+    for leak in ("encrypted", "password", "credential", "secret", "model_dump"):
+        assert leak not in body, f"list_sites touches {leak}"
