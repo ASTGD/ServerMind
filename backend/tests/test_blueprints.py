@@ -570,3 +570,20 @@ def test_the_wp_credential_read_handles_both_define_spacings(tmp_path):
         out = subprocess.run(f"{awk} {path}", shell=True, capture_output=True, text=True)
         lines = out.stdout.splitlines()
         assert lines == [user, pw], f"{path.name}: read {lines}"
+
+
+def test_the_move_proof_follows_redirects_on_the_box_itself():
+    """A 302 has no body by nature. WordPress answers / with a redirect (to its canonical
+    URL, or its installer), so a moved site behaving EXACTLY like its source read as
+    'empty page' and failed the move — found live on the first full run. The fetch pins
+    the domain to 127.0.0.1 with --resolve so the redirect is followed on the same
+    machine instead of leaving for DNS that is deliberately not switched yet."""
+    import inspect
+
+    import app.workers.blueprint_runner as mod
+
+    body = inspect.getsource(mod._act_prove)
+    code = "\n".join(ln for ln in body.splitlines() if not ln.strip().startswith("#"))
+    assert "--resolve" in code and ":80:127.0.0.1" in code
+    assert "-L" in code and "--max-redirs" in code
+    assert 'status == "200"' in code, "after following, only a real 200 with content is proof"

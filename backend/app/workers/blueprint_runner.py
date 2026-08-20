@@ -996,14 +996,21 @@ async def _act_prove(ctx: _Ctx) -> StepResult:
         return StepResult("failed", "The destination disappeared mid-run")
     domain = ctx.inputs["domain"]
     await ctx.say(f"Fetching the site from {dest.name} as a visitor would…")
-    check = (f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 10 "
-             f"-H 'Host: {domain}' http://127.0.0.1/ ; echo; "
-             f"curl -s --max-time 10 -H 'Host: {domain}' http://127.0.0.1/ | head -c 400")
+    # `--resolve` pins the domain to the box itself, so a redirect the application issues
+    # (WordPress sends / to its canonical URL or its installer) is FOLLOWED on the same
+    # machine instead of leaving for DNS that is not switched yet. The first version used
+    # a Host header and refused to follow — and a 302 has no body by nature, so a site
+    # behaving exactly like its source read as "empty page". Found live, on the first
+    # full move.
+    r = f"--resolve {domain}:80:127.0.0.1 --resolve {domain}:443:127.0.0.1"
+    check = (f"curl -sk -o /dev/null -w '%{{http_code}}' --max-time 15 -L --max-redirs 3 "
+             f"{r} http://{domain}/ ; echo; "
+             f"curl -sk --max-time 15 -L --max-redirs 3 {r} http://{domain}/ | head -c 400")
     out, _err, code = await connection_manager.execute(dest, check)
     lines = (out or "").splitlines()
     status = lines[0].strip() if lines else ""
     body = "\n".join(lines[1:]).strip()
-    if code == 0 and status in ("200", "301", "302") and body:
+    if code == 0 and status == "200" and body:
         return StepResult("done", f"The new server serves it (HTTP {status}, real content)")
     return StepResult("failed",
                       f"The new server answered HTTP {status or '?'}"
