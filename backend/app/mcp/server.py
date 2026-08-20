@@ -1264,36 +1264,57 @@ async def serverally_run_backup(backup_id: str, response_format: ResponseFormat 
 
 @mcp_server.tool(name="serverally_create_site", annotations={"title": "Create a website", **_WRITE})
 async def serverally_create_site(
-    server: str, domain: str, php: str = "8.1", email: str = "",
+    server: str, domain: str, type: str = "php",
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
 ) -> str:
-    """Create a new website/domain on a CyberPanel (or connected hosting) server.
+    """Create a website on a server and start the installer that builds it.
 
-    Verifies the site actually appears before reporting success (the underlying CLI can
-    report success while failing). Requires execute permission. ``server`` name/id.
+    ``server`` is a name or id. ``type`` is what to put on it — wordpress, laravel, php,
+    static, or app. Returns immediately; the install runs in the background and the site
+    becomes live only once a scan SEES it on the server.
     """
+    from app.services import site_service
+    from app.workers.playbook_tasks import run_playbook_task
+
     async with AsyncSessionLocal() as db:
         user = await _resolve_caller(db)
         if user is None:
             return _NO_USER
-        acc, err = await _executor(db, user, server)
+        acc = await _resolve_server(db, user, server)
+        if acc is None:
+            return await _unknown_server(db, user, server)
+        err = _executor(acc, "create a website")
         if err:
             return err
         srv = acc.server
+        if srv.connection_type != "ssh":
+            return (f"{srv.name}: a website can only be created on a Linux server reached "
+                    f"over SSH (this one is '{srv.connection_type}').")
+
+        # The SAME service call the app's own button makes. This tool used to go through
+        # `hosting_service`, so on an ordinary server it answered "Unsupported or missing
+        # panel_type: (none)" — internal jargon, on the kind of server most customers have,
+        # for something the product does perfectly well. A control panel is one way to host
+        # a site here, not the only one.
+        try:
+            site, run_id, script = await site_service.create(
+                db, srv, user, domain=domain, site_type=type)
+        except Exception as exc:  # noqa: BLE001 — the services raise several kinds
+            return f"Could not create {domain} on {srv.name}: {exc}"
+
         await _audit(db, user, "create_site", srv.id)
-    body = {"domain": domain, "php": php}
-    if email:
-        body["email"] = email
-    try:
-        result = await hosting_service.create_website(srv, body)
-    except HostingError as exc:
-        return f"Could not create {domain} on {srv.name}: {exc}"
-    except Exception as exc:  # noqa: BLE001
-        return f"Error creating {domain} on {srv.name}: {type(exc).__name__}"
-    data = {"server": srv.name, "domain": domain, "result": result}
+
+    # Enqueued after the commit inside create(), so the worker can always find the run.
+    run_playbook_task.delay(run_id, str(srv.id), script)
+
+    data = {"server": srv.name, "domain": site.domain, "type": type,
+            "status": site.status, "run_id": run_id}
     if response_format == ResponseFormat.JSON:
         return json.dumps(data, indent=2)
-    return f"✅ Created **{domain}** on {srv.name} (PHP {php}). Point its DNS at the server, then issue SSL."
+    return (f"# {site.domain} is being created on {srv.name}\n\n"
+            f"- **What it runs**: {type}\n"
+            f"- **Status**: {site.status} — it becomes live once a scan sees it serving\n"
+            f"- Follow it with `serverally_list_sites`.")
 
 
 @mcp_server.tool(name="serverally_issue_ssl", annotations={"title": "Issue SSL", **_WRITE})
@@ -1312,6 +1333,17 @@ async def serverally_issue_ssl(server: str, domain: str, response_format: Respon
             return err
         srv = acc.server
         await _audit(db, user, "issue_ssl", srv.id)
+    # Panel-only, deliberately and honestly. Turning on HTTPS for a site on an ordinary
+    # server is a different job — it checks the domain really points here first, because
+    # Let's Encrypt allows five certificates per domain per week and a doomed attempt spends
+    # one — and that logic lives in the app's own SSL path. Rebuilding it here would be a
+    # second copy of the thing most worth having only one of. Until it is shared, say what
+    # is true and where to go, rather than reporting a missing panel_type at somebody whose
+    # server was never meant to have one.
+    if not (srv.panel_type or "").strip():
+        return (f"{srv.name} has no control panel, and HTTPS for a site on an ordinary "
+                f"server is not available through MCP yet — turn it on for {domain} in "
+                f"ServerAlly, on the site's own page. (Nothing was changed.)")
     try:
         result = await hosting_service.issue_ssl(srv, domain)
     except HostingError as exc:

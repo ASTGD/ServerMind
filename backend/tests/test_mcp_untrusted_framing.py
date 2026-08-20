@@ -285,3 +285,47 @@ def test_the_two_kinds_of_refusal_are_distinguishable_at_all():
     assert lock.status == "blocked" and lock.pattern == "self-lockout"
     assert "lock ServerAlly out" in (lock.reason or "")
     assert "SSH key" in (lock.reason or ""), "the way out must be in the reason"
+
+
+# ── the tools that assumed a control panel ───────────────────────────────────
+#
+# Three did. `list_sites` was the first found; walking the WRITE tools turned up two more,
+# so it was a pattern rather than an oversight: the MCP surface was built when a website
+# only existed if a panel knew about it, and the product moved on without it.
+
+
+def code_of(fn) -> str:
+    """Executable lines, past the docstring. A comment explaining the old bug names the very
+    thing the check looks for — the ninth time that has mattered here."""
+    src = "\n".join(l for l in inspect.getsource(fn).splitlines()
+                    if not l.strip().startswith("#"))
+    return src[src.index("async with"):]
+
+
+def test_creating_a_site_uses_the_apps_own_path():
+    """It went through `hosting_service`, so on an ordinary server — the kind most
+    customers have — it answered "Unsupported or missing panel_type: (none)" for something
+    the product does perfectly well. A customer on MCP could not create a website at all."""
+    body = code_of(m.serverally_create_site)
+    assert "site_service.create(" in body
+    assert "hosting_service" not in body
+
+
+def test_creating_a_site_needs_permission_to_change_things():
+    assert "_executor(" in code_of(m.serverally_create_site)
+
+
+def test_creating_a_site_refuses_a_server_with_no_command_channel():
+    body = code_of(m.serverally_create_site)
+    assert 'srv.connection_type != "ssh"' in body
+
+
+def test_ssl_says_what_it_cannot_do_instead_of_naming_a_missing_panel():
+    """Left panel-only on purpose: turning on HTTPS for a site on an ordinary server checks
+    the domain really points here first — Let's Encrypt allows five certificates per domain
+    per week and a doomed attempt spends one — and that lives in the app's SSL path.
+    Rebuilding it here would be a second copy of the thing most worth having one of."""
+    body = code_of(m.serverally_issue_ssl)
+    assert 'srv.panel_type' in body, "it no longer checks before reaching for the panel"
+    assert "not available through MCP yet" in body
+    assert "Nothing was changed" in body
