@@ -484,8 +484,12 @@ async def _run_steps(run_id, server: Server, user_id, inputs: dict) -> None:
         if failed:
             msg = (f"{failed} check{'s' if failed != 1 else ''} need attention — "
                    "each one says where to fix it.")
-        else:
+        elif run.blueprint_key == "set-up-website":
             msg = f"{domain} is set up."
+        elif run.blueprint_key == "site-ready-to-go-live":
+            msg = f"{domain} checks out."
+        else:
+            msg = "Done — what we found is below."
         if waiting:
             msg += " One thing is waiting for you — see below."
         if skipped:
@@ -549,7 +553,14 @@ async def _act_find_sites(ctx: _Ctx) -> StepResult:
     from app.services import site_service
 
     await ctx.say("Walking the web roots…")
-    found, complete, privilege, _extra = await site_service.discover(ctx.server)
+    # discover returns (sites, truncated, error, privilege) — in that order. The first
+    # version of this unpacked it as (found, complete, …), which INVERTED the meaning: a
+    # truncated scan would have been allowed to mark sites absent, and a full one refused.
+    # `complete` is computed the way the sites router computes it: from what the probe
+    # could actually READ — the Phase-0 rule, "you may add what you saw, you may conclude
+    # nothing from what you did not".
+    found, truncated, _error, level = await site_service.discover(ctx.server)
+    complete = site_service.privilege.can_read_everything(level) and not truncated
     async with AsyncSessionLocal() as db:
         await site_service.sync(db, ctx.server, found, complete=complete)
         await db.commit()
@@ -573,7 +584,7 @@ async def _act_who_access(ctx: _Ctx) -> StepResult:
     await ctx.say("Reading the SSH keys…")
     keys_line = "could not be read"
     try:
-        out, _err, code = await ctx.run_script(
+        out, code = await ctx.run_script(
             sshkey_service.home_probe(ctx.server.username or "root"))
         if code == 0:
             _path, keys, _note = sshkey_service.parse_home_probe(out)
@@ -586,7 +597,7 @@ async def _act_who_access(ctx: _Ctx) -> StepResult:
     await ctx.say("Reading the firewall…")
     fw_line = "firewall could not be read"
     try:
-        out, _err, _code = await ctx.run_script(fw.discovery_probe(ctx.server.port or 22))
+        out, _code = await ctx.run_script(fw.discovery_probe(ctx.server.port or 22))
         if (out or "").strip():
             state = fw.parse_probe(out, ssh_port=ctx.server.port or 22)
             if not state.active:

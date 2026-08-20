@@ -409,3 +409,47 @@ def test_a_build_blueprint_still_stops_at_a_failure():
     assert all("report" not in r for r in rows)
     rows = b.build_steps(b.get("site-ready-to-go-live"), {"domain": "a.com"})
     assert all(r.get("report") for r in rows)
+
+
+def test_every_run_script_result_is_unpacked_as_a_pair():
+    """`ctx.run_script` returns (text, code). Two actions unpacked THREE names, the
+    ValueError vanished into a broad except, and the step reported 'could not be read'
+    about probes that worked — found live on the first take-over run. The same disease as
+    the `_executor` arity bug, so the same cure: an AST sweep."""
+    import ast, inspect
+
+    import app.workers.blueprint_runner as mod
+
+    tree = ast.parse(inspect.getsource(mod))
+    checked = 0
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Assign):
+            continue
+        val = n.value
+        if isinstance(val, ast.Await):
+            val = val.value
+        if not (isinstance(val, ast.Call) and isinstance(val.func, ast.Attribute)
+                and val.func.attr == "run_script"):
+            continue
+        checked += 1
+        target = n.targets[0]
+        assert isinstance(target, ast.Tuple) and len(target.elts) == 2, (
+            f"line {n.lineno}: run_script returns a PAIR — "
+            f"{ast.unparse(n)[:70]}")
+    assert checked >= 5, "the sweep found too few call sites to be believed"
+
+
+def test_discover_is_unpacked_in_its_real_order():
+    """discover returns (sites, truncated, error, privilege). The first version read
+    truncated as 'complete' — inverted: a truncated scan could mark sites absent. Pinned
+    by asserting the runner computes complete from PRIVILEGE, the way the sites router
+    does — one rule, and this is the second caller."""
+    import inspect
+
+    import app.workers.blueprint_runner as mod
+
+    body = inspect.getsource(mod._act_find_sites)
+    code = "\n".join(ln for ln in body.splitlines() if not ln.strip().startswith("#"))
+    assert "can_read_everything" in code
+    assert "complete=complete" in code
+    assert "truncated" in code
