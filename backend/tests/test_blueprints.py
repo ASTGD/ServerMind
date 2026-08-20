@@ -364,3 +364,48 @@ async def test_the_create_step_actually_dispatches_the_installer(monkeypatch):
     finally:
         async with AsyncSessionLocal() as db:
             await db.delete(await db.get(BlueprintRun, run.id)); await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_a_report_blueprint_shows_every_red_row_instead_of_stopping(monkeypatch):
+    """A pre-launch report that stops at the first problem hides the other checks — the
+    opposite of its job. A failed report check stays RED (not skipped: red is the finding)
+    and the run continues to the end."""
+    table = {}
+    for key, res in {
+        "dns_check": br.StepResult("failed", "not pointed"),
+        "https_check": br.StepResult("failed", "no certificate"),
+        "page_check": br.StepResult("done", "serving"),
+    }.items():
+        async def act(ctx, _r=res):
+            return _r
+        table[key] = act
+    monkeypatch.setattr(br, "ACTIONS", table)
+
+    steps = [{"key": k, "label": k, "state": "pending", "note": "", "optional": False,
+              "report": True} for k in ("dns_check", "https_check", "page_check")]
+    async with AsyncSessionLocal() as db:
+        run, server, user = await _make_run(db, steps)
+    try:
+        await br._run_steps(run.id, server, user.id, run.inputs)
+        async with AsyncSessionLocal() as db:
+            fresh = await db.get(BlueprintRun, run.id)
+            assert fresh.status == "done", "a report with findings still FINISHES"
+            assert fresh.steps[0]["state"] == "failed"
+            assert fresh.steps[1]["state"] == "failed", "the second problem must also be found"
+            assert fresh.steps[2]["state"] == "done"
+            assert "2 checks need attention" in fresh.message
+    finally:
+        async with AsyncSessionLocal() as db:
+            await db.delete(await db.get(BlueprintRun, run.id)); await db.commit()
+
+
+def test_a_build_blueprint_still_stops_at_a_failure():
+    """The report rule must not leak into build blueprints — building past a failure
+    leaves half a job. Pinned structurally: set-up-website rows carry no report flag."""
+    from app.services import blueprint_service as b
+
+    rows = b.build_steps(b.get("set-up-website"), {"domain": "a.com", "site_type": "php"})
+    assert all("report" not in r for r in rows)
+    rows = b.build_steps(b.get("site-ready-to-go-live"), {"domain": "a.com"})
+    assert all(r.get("report") for r in rows)

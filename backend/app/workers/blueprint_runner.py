@@ -452,6 +452,11 @@ async def _run_steps(run_id, server: Server, user_id, inputs: dict) -> None:
         await _mark(run_id, index, state=state, note=result.note,
                     finished_at=_now().isoformat())
 
+        if state == "failed" and row.get("report"):
+            # A report blueprint: the red row IS the finding. Stopping at the first
+            # problem would hide the other checks — the opposite of a pre-launch report.
+            continue
+
         if state == "failed":
             async with AsyncSessionLocal() as db:
                 run = await db.get(BlueprintRun, run_id)
@@ -474,8 +479,13 @@ async def _run_steps(run_id, server: Server, user_id, inputs: dict) -> None:
         run.left_for_you = leaves
         waiting = sum(1 for r in (run.steps or []) if r.get("state") == "waiting")
         skipped = sum(1 for r in (run.steps or []) if r.get("state") == "skipped")
+        failed = sum(1 for r in (run.steps or []) if r.get("state") == "failed")
         domain = inputs.get("domain", "the site")
-        msg = f"{domain} is set up."
+        if failed:
+            msg = (f"{failed} check{'s' if failed != 1 else ''} need attention — "
+                   "each one says where to fix it.")
+        else:
+            msg = f"{domain} is set up."
         if waiting:
             msg += " One thing is waiting for you — see below."
         if skipped:
@@ -528,3 +538,233 @@ async def recover_orphaned() -> int:
         if rows:
             await db.commit()
         return len(rows)
+
+
+# ── actions for 'take-over-server' ───────────────────────────────────────────
+# Read-only by design except the last (creating monitors). This blueprint's promise is
+# that it looks and records — fixing is the owner's decision, so nothing here changes the
+# machine. The one write (uptime checks) runs from ServerAlly, not on the server.
+
+async def _act_find_sites(ctx: _Ctx) -> StepResult:
+    from app.services import site_service
+
+    await ctx.say("Walking the web roots…")
+    found, complete, privilege, _extra = await site_service.discover(ctx.server)
+    async with AsyncSessionLocal() as db:
+        await site_service.sync(db, ctx.server, found, complete=complete)
+        await db.commit()
+    if not found:
+        note = "No websites found" if complete else \
+            "Could not see everything — no conclusion about websites"
+        return StepResult("done", note)
+    names = ", ".join(sorted(d.domain for d in found)[:6])
+    more = f" and {len(found) - 6} more" if len(found) > 6 else ""
+    await ctx.found(f"{len(found)} website{'s' if len(found) != 1 else ''}: {names}{more}")
+    ctx.state["site_count"] = len(found)
+    return StepResult("done", f"{len(found)} website{'s' if len(found) != 1 else ''} recorded"
+                              + ("" if complete else " — the scan could not see everything"))
+
+
+async def _act_who_access(ctx: _Ctx) -> StepResult:
+    """Who can get in: SSH keys and firewall openings, listed — never touched."""
+    from app.services import firewall_service as fw
+    from app.services import sshkey_service
+
+    await ctx.say("Reading the SSH keys…")
+    keys_line = "could not be read"
+    try:
+        out, _err, code = await ctx.run_script(
+            sshkey_service.home_probe(ctx.server.username or "root"))
+        if code == 0:
+            _path, keys, _note = sshkey_service.parse_home_probe(out)
+            keys_line = f"{len(keys)} SSH key{'s' if len(keys) != 1 else ''} can sign in"
+            await ctx.found(keys_line + (
+                ": " + "; ".join(k.comment or k.fingerprint[:20] for k in keys[:4]) if keys else ""))
+    except Exception:  # noqa: BLE001
+        pass
+
+    await ctx.say("Reading the firewall…")
+    fw_line = "firewall could not be read"
+    try:
+        out, _err, _code = await ctx.run_script(fw.discovery_probe(ctx.server.port or 22))
+        if (out or "").strip():
+            state = fw.parse_probe(out, ssh_port=ctx.server.port or 22)
+            if not state.active:
+                fw_line = "No firewall is active — every port is open"
+            else:
+                fw_line = (f"Firewall on ({state.manager}) · "
+                           f"{len(state.rules)} rule{'s' if len(state.rules) != 1 else ''}")
+            await ctx.found(fw_line)
+    except Exception:  # noqa: BLE001
+        pass
+    return StepResult("done", f"{keys_line} · {fw_line}")
+
+
+async def _act_certs(ctx: _Ctx) -> StepResult:
+    from app.models.site import Site
+    from app.services import ssl_service
+
+    async with AsyncSessionLocal() as db:
+        sites = (await db.execute(select(Site).where(
+            Site.server_id == ctx.server.id, Site.is_present.is_(True),
+            Site.has_ssl.is_(True)))).scalars().all()
+    if not sites:
+        return StepResult("done", "No HTTPS sites to check")
+    soon, checked = [], 0
+    for site in sites[:10]:
+        await ctx.say(f"Checking {site.domain}'s certificate…")
+        info = await ssl_service.inspect(f"https://{site.domain}/")
+        if info.get("expires_at") is None:
+            continue
+        checked += 1
+        days = ssl_service.days_left(info["expires_at"])
+        if isinstance(days, int) and days <= 14:
+            soon.append(f"{site.domain} ({days}d)")
+    if soon:
+        await ctx.found("Certificates running out: " + ", ".join(soon))
+        return StepResult("done", f"{checked} checked · running out soon: {', '.join(soon)}")
+    return StepResult("done", f"{checked} certificate{'s' if checked != 1 else ''} checked — none expiring soon")
+
+
+async def _act_watch_all(ctx: _Ctx) -> StepResult:
+    """The one write: an uptime check per site that is live. Runs from ServerAlly."""
+    from app.models.site import Site
+    from app.models.uptime import UptimeMonitor
+    from app.services import site_service
+
+    await ctx.say("Setting up the checks…")
+    made = 0
+    async with AsyncSessionLocal() as db:
+        sites = (await db.execute(select(Site).where(
+            Site.server_id == ctx.server.id, Site.is_present.is_(True)))).scalars().all()
+        watchable = [s for s in sites if site_service.should_watch(s.status, s.is_present)]
+        known = {site_service.monitor_host(m.url) for m in (await db.execute(
+            select(UptimeMonitor).where(UptimeMonitor.user_id == ctx.user_id))).scalars().all()}
+        for site in watchable:
+            if site.domain in known:
+                continue
+            db.add(UptimeMonitor(user_id=ctx.user_id, server_id=ctx.server.id,
+                                 **site_service.monitor_defaults(site.domain, https=bool(site.has_ssl))))
+            known.add(site.domain)
+            made += 1
+        if made:
+            await db.commit()
+    if made == 0:
+        return StepResult("done", "Every site is already being watched")
+    return StepResult("done", f"Now watching {made} site{'s' if made != 1 else ''}, every minute")
+
+
+# ── actions for 'site-ready-to-go-live' ──────────────────────────────────────
+# Entirely read-only. Each check's note IS the report line, and a failure names its fix —
+# a failed check here fails the STEP (so the list shows red where it matters) but every
+# check is judged independently: the run itself finishes, because a pre-launch report that
+# stops at the first problem hides the other four.
+
+def _bp_site(ctx: _Ctx):
+    from app.models.site import Site
+
+    async def get():
+        async with AsyncSessionLocal() as db:
+            return (await db.execute(select(Site).where(
+                Site.server_id == ctx.server.id,
+                Site.domain == ctx.inputs["domain"]))).scalars().first()
+    return get()
+
+
+async def _act_dns_check(ctx: _Ctx) -> StepResult:
+    from app.services import ssl_service
+
+    domain = ctx.inputs["domain"]
+    await ctx.say(f"Looking up {domain}…")
+    check = await ssl_service.check_dns(domain, ctx.server.host)
+    if check.get("ready"):
+        return StepResult("done", f"{domain} points at this server")
+    note = f"{domain} does not point at this server yet — create an A record to {ctx.server.host}"
+    return StepResult("waiting", note,
+                      leave=f"Point {domain} (and www.{domain}) at {ctx.server.host} at your domain registrar.")
+
+
+async def _act_https_check(ctx: _Ctx) -> StepResult:
+    from app.services import ssl_service
+
+    domain = ctx.inputs["domain"]
+    await ctx.say("Reading the certificate a visitor would get…")
+    info = await ssl_service.inspect(f"https://{domain}/")   # never raises, by contract
+    if info.get("expires_at") is not None:
+        days = ssl_service.days_left(info["expires_at"])
+        return StepResult("done", f"HTTPS is on — {days} days left "
+                                  f"({info.get('issuer') or 'unknown issuer'})")
+    err = (info.get("error") or "").lower()
+    if "expired" in err:
+        return StepResult("failed", "The certificate has EXPIRED — visitors see a security "
+                                    "warning. Renew it from the site's HTTPS page.")
+    return StepResult("waiting", "HTTPS is not answering yet",
+                      leave=f"Turn on HTTPS for {domain} from the site's page (needs DNS pointed first).")
+
+
+async def _act_page_check(ctx: _Ctx) -> StepResult:
+    """A 200 is not proof — read the body. The rule the verify gate and uptime already
+    follow, applied to the launch check."""
+    domain = ctx.inputs["domain"]
+    await ctx.say("Opening the page…")
+    check = (f"curl -sk -o /dev/null -w '%{{http_code}}' --max-time 10 "
+             f"-H 'Host: {domain}' http://127.0.0.1/ ; echo; "
+             f"curl -sk --max-time 10 -H 'Host: {domain}' http://127.0.0.1/ | head -c 500")
+    text, code = await ctx.run_script(check)
+    lines = (text or "").splitlines()
+    status = lines[0].strip() if lines else ""
+    body = "\n".join(lines[1:]).strip()
+    if code == 0 and status in ("200", "301", "302") and body:
+        low = body.lower()
+        if "error" in low[:200] and ("fatal" in low or "exception" in low):
+            return StepResult("failed", f"HTTP {status}, but the page shows an error — read the site's logs")
+        return StepResult("done", f"Serving real content (HTTP {status})")
+    if status and not body:
+        return StepResult("failed", f"HTTP {status} with an EMPTY page — the classic broken-PHP signature")
+    return StepResult("failed", f"The site did not answer (HTTP {status or '?'})")
+
+
+async def _act_watch_check(ctx: _Ctx) -> StepResult:
+    from app.models.uptime import UptimeMonitor
+    from app.services import site_service
+
+    domain = ctx.inputs["domain"]
+    async with AsyncSessionLocal() as db:
+        monitors = (await db.execute(select(UptimeMonitor).where(
+            UptimeMonitor.user_id == ctx.user_id))).scalars().all()
+    ours = [mo for mo in monitors if site_service.monitor_host(mo.url) == domain]
+    if ours and ours[0].is_active:
+        return StepResult("done", "Watched every minute from outside")
+    return StepResult("failed", "Nothing is watching this site — add a check on the "
+                                "server's Monitoring page (one click)")
+
+
+async def _act_backup_check(ctx: _Ctx) -> StepResult:
+    from app.models.backup import Backup
+
+    domain = ctx.inputs["domain"]
+    async with AsyncSessionLocal() as db:
+        jobs = (await db.execute(select(Backup).where(
+            Backup.server_id == ctx.server.id, Backup.is_active.is_(True)))).scalars().all()
+    covering = [j for j in jobs if domain in (j.source or "") or (j.source or "") in ("/var/www", "/home")]
+    if not covering:
+        return StepResult("failed", "No backup job covers this site — set one up on Backups")
+    job = covering[0]
+    if job.last_status == "success":
+        return StepResult("done", f"Backed up ({job.human_schedule or job.cron_expression or 'scheduled'}) — last run succeeded")
+    if job.last_status:
+        return StepResult("failed", f"A backup job exists but its last run {job.last_status} — check Backups")
+    return StepResult("done", "A backup job exists — it has not run yet")
+
+
+ACTIONS.update({
+    "find_sites": _act_find_sites,
+    "who_access": _act_who_access,
+    "certs": _act_certs,
+    "watch_all": _act_watch_all,
+    "dns_check": _act_dns_check,
+    "https_check": _act_https_check,
+    "page_check": _act_page_check,
+    "watch_check": _act_watch_check,
+    "backup_check": _act_backup_check,
+})

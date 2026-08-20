@@ -48,6 +48,10 @@ class Blueprint:
     steps: tuple[BpStep, ...] = ()
     leaves_for_you: tuple[str, ...] = ()
     does_not_do: tuple[str, ...] = ()
+    # A REPORT blueprint: a failed check stays red but the run continues — a pre-launch
+    # report that stops at the first problem hides the rest. Build-type blueprints keep
+    # the stop, because building past a failure leaves half a job.
+    report: bool = False
 
 
 def _site_type_choices() -> tuple[str, ...]:
@@ -160,8 +164,11 @@ def build_steps(bp: Blueprint, inputs: dict) -> list[dict]:
             pretty = {"wordpress": "WordPress", "laravel": "Laravel",
                       "php": "a PHP site", "static": "a static site"}
             label = f"Create the website and install {pretty.get(inputs['site_type'], inputs['site_type'])}"
-        rows.append({"key": s.key, "label": label, "state": "pending", "note": "",
-                     "optional": s.optional})
+        row = {"key": s.key, "label": label, "state": "pending", "note": "",
+               "optional": s.optional}
+        if bp.report:
+            row["report"] = True
+        rows.append(row)
     return rows
 
 
@@ -179,3 +186,54 @@ def describe(bp: Blueprint) -> dict:
         "leaves_for_you": list(bp.leaves_for_you),
         "does_not_do": list(bp.does_not_do),
     }
+
+
+TAKE_OVER_SERVER = _register(Blueprint(
+    key="take-over-server",
+    title="Take over a server somebody else built",
+    description=("A server was handed to you — a client's, or one built before your time — "
+                 "and nobody knows what is on it, who can log in, or whether it is safe. "
+                 "This finds out, starts watching it, and writes it down. Almost entirely "
+                 "read-only."),
+    inputs=(),                       # nothing beyond access — that is the point
+    steps=(
+        BpStep("look",       "Identify the machine"),
+        BpStep("find_sites", "Find the websites"),
+        BpStep("who_access", "Check who can get in"),
+        BpStep("safety",     "Check it is safe"),
+        BpStep("certs",      "Check the certificates", optional=True),
+        BpStep("watch_all",  "Start watching its sites", optional=True),
+    ),
+    leaves_for_you=(
+        "Removing access you do not recognise. We list every key and firewall opening; "
+        "we never remove one on our own — that is how you lose a server.",
+    ),
+    does_not_do=(
+        "Change, remove or fix anything. This looks and records; fixing is a decision.",
+    ),
+))
+
+
+READY_TO_GO_LIVE = _register(Blueprint(
+    key="site-ready-to-go-live",
+    title="Get a site ready to go live",
+    description=("The pre-launch check: does the domain point here, is HTTPS on, does the "
+                 "page actually work, is it watched and backed up. Read-only — it reports, "
+                 "and each failure names its fix."),
+    inputs=(
+        Input("domain", "The site's domain name"),
+    ),
+    steps=(
+        BpStep("dns_check",   "Does the domain point here?"),
+        BpStep("https_check", "Is HTTPS on and healthy?"),
+        BpStep("page_check",  "Does the page actually work?"),
+        BpStep("watch_check", "Is anything watching it?"),
+        BpStep("backup_check", "Are backups running?"),
+        BpStep("safety",      "Is the server safe?", optional=True),
+    ),
+    leaves_for_you=(
+        "Any fix the report names — each one says where to do it.",
+    ),
+    does_not_do=("Change anything. A pre-launch check that edits the site is not a check.",),
+    report=True,
+))
