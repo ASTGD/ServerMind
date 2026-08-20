@@ -4,6 +4,9 @@ import { Link, useParams } from "react-router-dom"
 import { listRuns, type BlueprintRun } from "@/api/blueprints"
 import RunScreen from "@/components/activity/RunScreen"
 import StartJobCard from "@/components/activity/StartJobCard"
+import AiActionsCard from "@/components/activity/AiActionsCard"
+import { useQuery as useQ } from "@tanstack/react-query"
+import { listMcpConnections } from "@/api/mcp"
 import { EmptyState } from "@/components/ui"
 
 /** Activity — the ONE place long jobs are read, running first then finished.
@@ -35,6 +38,11 @@ function RunRow({ run }: { run: BlueprintRun }) {
       </div>
     </Link>
   )
+}
+
+function AiActions() {
+  const { data: conns = [] } = useQ({ queryKey: ["mcp-connections"], queryFn: listMcpConnections })
+  return <AiActionsCard hasMcp={conns.length > 0} />
 }
 
 export default function ActivityPage() {
@@ -79,6 +87,7 @@ export default function ActivityPage() {
           </div>
         </div>
       )}
+      <AiActions />
       {finished.length > 0 && (
         <div>
           <p className="mb-2 text-[13px] font-medium text-muted-foreground">Finished</p>

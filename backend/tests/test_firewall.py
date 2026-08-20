@@ -150,17 +150,41 @@ def test_a_comment_cannot_carry_a_second_command():
 
 
 # ── reading a real ufw listing ───────────────────────────────────────────────
+# The REAL shape: `ufw status verbose` (Status/Default, NO [N] rows) followed by
+# `ufw status numbered` (the [N] rows, NO Default line). The old fixture mixed the two
+# into an output real ufw never prints — `Default:` beside `[ 1]` rows — which is exactly
+# how "0 rules on every real ufw server" survived: the parser was proven against an
+# invention. Taken verbatim from a live Ubuntu 22.04.
 UFW_OUT = """Status: active
 Logging: on (low)
 Default: deny (incoming), allow (outgoing), disabled (routed)
+New profiles: skip
+
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW IN    Anywhere                   # SSH
+80/tcp                     ALLOW IN    Anywhere
+3306/tcp                   ALLOW IN    10.0.0.0/24
+22/tcp (v6)                ALLOW IN    Anywhere (v6)              # SSH
+
+Status: active
 
      To                         Action      From
      --                         ------      ----
-[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 1] 22/tcp                     ALLOW IN    Anywhere                   # SSH
 [ 2] 80/tcp                     ALLOW IN    Anywhere
 [ 3] 3306/tcp                   ALLOW IN    10.0.0.0/24
-[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)              # SSH
 """
+
+
+def test_the_probe_sends_verbose_and_numbered_separately():
+    """ufw honours only the FIRST word after `status`, so `status verbose numbered` never
+    prints a rule row. The probe must run both."""
+    probe = fw.discovery_probe(22)
+    assert "ufw status verbose 2>" in probe
+    assert "ufw status numbered 2>" in probe
+    assert "verbose numbered" not in probe
 
 
 def test_reading_ufw_rules():

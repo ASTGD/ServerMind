@@ -238,7 +238,13 @@ def discovery_probe(ssh_port: int) -> str:
     return (
         f'echo "{s}WHOAMI"; echo "${{SSH_CONNECTION:-}}"; echo "sshport={ssh_port}"; '
         f'echo "{s}UFW"; command -v ufw >/dev/null 2>&1 && '
-        f'  (ufw status verbose numbered 2>/dev/null || echo "__needs_root__"); '
+        # BOTH commands, because ufw only honours the FIRST word after `status`:
+        # `status verbose numbered` is just `status verbose`, which prints no [ N] rows —
+        # so the parser (which reads [ N] rows) saw zero rules on every real ufw server.
+        # Verbose carries Status/Default; numbered carries the rules. Found live by the
+        # take-over blueprint on a box with six rules showing as none.
+        f'  (ufw status verbose 2>/dev/null; '
+        f'   ufw status numbered 2>/dev/null || echo "__needs_root__"); '
         f'echo "{s}FIREWALLD"; systemctl is-active firewalld 2>/dev/null; '
         f'  command -v firewall-cmd >/dev/null 2>&1 && '
         f'  (firewall-cmd --list-all 2>/dev/null || true); '

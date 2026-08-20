@@ -4,7 +4,6 @@ import { History, Menu, Activity } from "lucide-react"
 import Breadcrumbs from "./Breadcrumbs"
 import NotificationBell from "./NotificationBell"
 import UserMenu from "./UserMenu"
-import { useMcpDrawerStore } from "@/store/mcpDrawerStore"
 import { useMcpActivity } from "@/hooks/useMcpActivity"
 import RunningPill from "@/components/activity/RunningPill"
 import { listMcpConnections } from "@/api/mcp"
@@ -12,13 +11,11 @@ import { listMcpConnections } from "@/api/mcp"
 export default function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
   const navigate = useNavigate()
 
-  // MCP activity — a top-bar icon that pulses when a connected AI is running something, and
-  // toggles the floating activity drawer. Only shown to users who've connected an AI client.
-  const mcpOpen = useMcpDrawerStore((s) => s.open)
-  const toggleMcp = useMcpDrawerStore((s) => s.toggle)
+  // MCP activity — a top-bar icon that pulses when a connected AI is running something.
+  // The drawer is retired: the icon goes to Activity, the one place work is read.
   const { data: conns } = useQuery({ queryKey: ["mcp-connections"], queryFn: listMcpConnections })
   const hasMcp = (conns?.length ?? 0) > 0
-  const { data: activity = [] } = useMcpActivity(mcpOpen, hasMcp)
+  const { data: activity = [] } = useMcpActivity(false, hasMcp)
   const runningCount = activity.filter((a) => a.status === "running").length
 
   // The drawer is opened by hand, never by itself. It used to slide down whenever a new
@@ -47,7 +44,7 @@ export default function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
         {hasMcp && (
           <button
             data-mcp-toggle
-            onClick={toggleMcp}
+            onClick={() => navigate("/activity")}
             title={
               runningCount > 0
                 ? `${runningCount} MCP action${runningCount === 1 ? "" : "s"} running`
@@ -56,9 +53,7 @@ export default function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
             className={`relative flex items-center justify-center rounded-md p-2 transition-colors ${
               runningCount > 0
                 ? "text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400"
-                : mcpOpen
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
             }`}
           >
             <span className="relative flex items-center justify-center">
