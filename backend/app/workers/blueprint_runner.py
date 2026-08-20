@@ -195,12 +195,19 @@ async def _act_create(ctx: _Ctx) -> StepResult:
     async with AsyncSessionLocal() as db:
         user = await db.get(User, ctx.user_id)
         try:
-            site, run_id, _script = await site_service.create(
+            site, run_id, script = await site_service.create(
                 db, ctx.server, user, domain=domain, site_type=site_type)
         except site_service.SiteError as exc:
             return StepResult("failed", str(exc)[:250])
         ctx.state["site_id"] = str(site.id)
         ctx.state["install_run_id"] = run_id
+
+    # `create` records the request and hands the SCRIPT back — every caller dispatches it
+    # itself (the sites router, the MCP tool, and now this). Forgetting this line leaves a
+    # PlaybookRun saying 'running' that nothing will ever run — found live, on the first
+    # real run of this blueprint, as a create step that never finished.
+    from app.workers.playbook_tasks import run_playbook_task
+    run_playbook_task.delay(run_id, str(ctx.server.id), script)
 
     waited = 0.0
     while waited < _STEP_TIMEOUT:

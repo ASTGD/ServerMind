@@ -323,3 +323,44 @@ async def test_a_stop_during_the_final_step_is_not_overwritten_by_done():
         mod.ACTIONS = orig
         async with AsyncSessionLocal() as db:
             await db.delete(await db.get(BlueprintRun, run.id)); await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_the_create_step_actually_dispatches_the_installer(monkeypatch):
+    """Found live, on the first real run: `site_service.create` records the request and
+    hands the SCRIPT back — the CALLER dispatches it. This step did not, so a PlaybookRun
+    sat saying 'running' forever while the checklist said 'Installing…'. The test runs the
+    real action and asserts the script reaches the task queue."""
+    from types import SimpleNamespace
+
+    from app.services import site_service
+    from app.workers import playbook_tasks
+
+    dispatched = {}
+
+    async def fake_create(db, server, user, *, domain, site_type, **kw):
+        return (SimpleNamespace(id="site-1"), "run-1", "#!/bin/bash\necho hi")
+
+    monkeypatch.setattr(site_service, "create", fake_create)
+    monkeypatch.setattr(playbook_tasks.run_playbook_task, "delay",
+                        lambda *a: dispatched.update(run_id=a[0], script=a[2]))
+
+    class _PollDone(Exception):
+        pass
+
+    async def no_sleep(_s):
+        raise _PollDone()          # stop before the poll loop; the dispatch already happened
+
+    monkeypatch.setattr(br.asyncio, "sleep", no_sleep)
+
+    async with AsyncSessionLocal() as db:
+        run, server, user = await _make_run(db, _steps("create"))
+    ctx = br._Ctx(run.id, server, user.id, run.inputs)
+    try:
+        with pytest.raises(_PollDone):
+            await br._act_create(ctx)
+        assert dispatched.get("run_id") == "run-1", "the installer script was never dispatched"
+        assert "echo hi" in dispatched.get("script", "")
+    finally:
+        async with AsyncSessionLocal() as db:
+            await db.delete(await db.get(BlueprintRun, run.id)); await db.commit()

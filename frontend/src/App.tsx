@@ -48,6 +48,7 @@ import Installed from "@/routes/Installed"
 import Hosting from "@/routes/Hosting"
 import Logs from "@/routes/Logs"
 import Missions from "@/routes/Missions"
+import ActivityPage from "@/routes/ActivityPage"
 import Reports from "@/routes/Reports"
 import ServerReportView from "@/routes/ServerReportView"
 import ClientReportView from "@/routes/ClientReportView"
@@ -142,6 +143,8 @@ export default function App() {
           <Route path="logs" element={<Logs />} />
           {/* A mission's log now lives inside its Missions detail pane. */}
           <Route path="logs/mission/:id" element={<MissionLogRedirect />} />
+          <Route path="activity" element={<ActivityPage />} />
+          <Route path="activity/:runId" element={<ActivityPage />} />
           <Route path="missions" element={<Missions />} />
           <Route path="missions/:id" element={<Missions />} />
           <Route path="reports" element={<Reports />} />

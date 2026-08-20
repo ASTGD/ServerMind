@@ -6,6 +6,7 @@ import NotificationBell from "./NotificationBell"
 import UserMenu from "./UserMenu"
 import { useMcpDrawerStore } from "@/store/mcpDrawerStore"
 import { useMcpActivity } from "@/hooks/useMcpActivity"
+import RunningPill from "@/components/activity/RunningPill"
 import { listMcpConnections } from "@/api/mcp"
 
 export default function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
@@ -40,6 +41,7 @@ export default function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
         <Breadcrumbs />
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
+        <RunningPill />
         {/* MCP activity — pulses green while a connected AI is running something; click to
             slide the live activity drawer down from the bar. */}
         {hasMcp && (
