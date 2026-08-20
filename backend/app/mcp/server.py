@@ -49,6 +49,7 @@ from app.services import (
     file_service,
     fleet_service,
     hosting_service,
+    log_service,
     mcp_activity_service,
     mission_service,
     safety_service,
@@ -906,6 +907,138 @@ async def serverally_read_file(
     if truncated:
         note += ", truncated"
     return f"# {path} on {srv.name} ({note})\n\n```\n{content}\n```"
+
+
+# ── Server logs (read-only) ───────────────────────────────────────────────────
+# When a site breaks, the answer is almost always in a log file, and FINDING the log is
+# the hard half — a shop owner does not know that web-server errors live in
+# /var/log/nginx/error.log. Without these two tools the only way to read a log over MCP is
+# `run_command`, which means granting a real shell to look at a file: the same wrong shape
+# as asking for a shell to read one `.env`, and the same answer — a tool for the job.
+
+_LOG_LINE_CAP = 60_000
+
+
+@mcp_server.tool(name="serverally_list_logs", annotations={"title": "List server logs", **_RO})
+@carries_server_content
+async def serverally_list_logs(
+    server: str, domain: str = "", response_format: ResponseFormat = ResponseFormat.MARKDOWN
+) -> str:
+    """Which log files exist on a server, labelled in plain language.
+
+    ``server`` is a name or id. Pass ``domain`` to get one site's OWN logs instead — its web
+    server log and its application log (Laravel's ``storage/logs``, WordPress's
+    ``debug.log``), which is where a 500 explains itself. Read the tail of any path this
+    returns with ``serverally_read_log``. Read-only, SSH servers only.
+    """
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        acc = await _resolve_server(db, user, server)
+        if acc is None:
+            return await _unknown_server(db, user, server)
+        srv = acc.server
+        if srv.connection_type != "ssh":
+            return f"{srv.name}: reading logs needs an SSH server (this is '{srv.connection_type}')."
+        site = None
+        if domain:
+            from app.models.site import Site
+            site = (await db.execute(
+                select(Site).where(Site.server_id == srv.id, Site.domain == domain)
+            )).scalars().first()
+            if site is None:
+                return (f"{srv.name} has no website called '{domain}' on record. "
+                        f"Use serverally_list_sites to see the domains it has.")
+        await _audit(db, user, "list_logs", srv.id)
+
+    if site is not None:
+        found = await log_service.discover_for_site(srv, site.domain, site.doc_root)
+    else:
+        found = await log_service.discover(srv)
+
+    where = f"{srv.name} → {domain}" if domain else srv.name
+    data = {"server": srv.name, "domain": domain or None, "count": len(found), "logs": found}
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+    if not found:
+        # An unreachable server and a server with no logs look identical from here.
+        return (f"No log files found on {where}. Either the server could not be reached, or "
+                f"its applications keep their logs somewhere else — a Docker-based server "
+                f"keeps them inside its containers, not in /var/log.")
+    lines = [f"# Logs on {where} ({len(found)})", ""]
+    for item in found:
+        kb = max(1, int(item.get("size_bytes", 0)) // 1024)
+        lines.append(f"- **{item['label']}** ({item.get('category', 'other')}) — {kb} KB")
+        lines.append(f"  `{item['path']}`")
+    lines.append("")
+    lines.append("Read one with `serverally_read_log`.")
+    return "\n".join(lines)
+
+
+@mcp_server.tool(name="serverally_read_log", annotations={"title": "Read a server log", **_RO})
+@carries_server_content
+async def serverally_read_log(
+    server: str, path: str, lines: int = 200, search: str = "",
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+) -> str:
+    """Read the end of a log file, newest lines last. Optionally filter by plain text.
+
+    ``path`` must be a log file — get one from ``serverally_list_logs``. ``search`` is a
+    fixed string, not a pattern. Secrets are masked before the text leaves the server.
+    Read-only, SSH servers only.
+    """
+    # A log tool that reads any path is a way around `read_file`'s secret masking, so the
+    # path has to BE a log. Checked before the server is touched.
+    if not log_service.is_log_path(path):
+        return (f"'{path}' is not a log file, so this tool will not read it. Use "
+                f"serverally_list_logs to see the logs on this server, or "
+                f"serverally_read_file for an ordinary file (secrets are masked there).")
+
+    async with AsyncSessionLocal() as db:
+        user = await _resolve_caller(db)
+        if user is None:
+            return _NO_USER
+        acc = await _resolve_server(db, user, server)
+        if acc is None:
+            return await _unknown_server(db, user, server)
+        srv = acc.server
+        if srv.connection_type != "ssh":
+            return f"{srv.name}: reading logs needs an SSH server (this is '{srv.connection_type}')."
+        await _audit(db, user, "read_log", srv.id)
+
+    try:
+        res = await log_service.read(srv, path, lines, (search or "").strip() or None)
+    except Exception as exc:  # noqa: BLE001
+        return f"Could not read '{path}' on {srv.name}: {type(exc).__name__}"
+
+    # Logs leak secrets — a URL with a token in its query string, a stack trace carrying a
+    # connection string. Same rule as read_file: masked here, because there is no
+    # client-side redaction on the other end of MCP.
+    text, hidden = redact_secrets(res.get("content") or "")
+    truncated = bool(res.get("truncated"))
+    if len(text) > _LOG_LINE_CAP:
+        text, truncated = text[-_LOG_LINE_CAP:], True
+
+    problems = sum(1 for ln in text.splitlines() if log_service.line_severity(ln) == "error")
+    data = {"server": srv.name, "path": path, "search": search or None,
+            "line_count": res.get("line_count", 0), "problem_lines": problems,
+            "secrets_hidden": hidden, "truncated": truncated, "content": text}
+    if response_format == ResponseFormat.JSON:
+        return json.dumps(data, indent=2)
+
+    note = f"last {data['line_count']} lines"
+    if search:
+        note += f" matching '{search}'"
+    if problems:
+        note += f" · {problems} look like problems"
+    if hidden:
+        note += f" · {hidden} secret(s) hidden"
+    if truncated:
+        note += " · truncated"
+    if not text.strip():
+        return f"# {path} on {srv.name}\n\nNothing to show ({note})."
+    return f"# {path} on {srv.name}\n\n_{note}_\n\n```\n{text}\n```"
 
 
 # ── MCP activity feed (docs/MCP-SERVER-PLAN.md) ───────────────────────────────

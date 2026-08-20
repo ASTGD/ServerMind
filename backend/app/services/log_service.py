@@ -221,3 +221,58 @@ async def discover_for_site(server: Server, domain: str, doc_root: str | None) -
         logger.warning("Site log discovery failed for %s: %s", domain, exc)
         return []
     return parse_discovery(stdout)
+
+
+# ── What counts as a log ─────────────────────────────────────────────────────
+# `read()` will tail whatever path it is given. That is fine behind the app's own screen,
+# where the path always comes from a list this module produced. It is NOT fine when the
+# caller is somebody else's AI: `read_file` masks secrets server-side precisely because
+# there is no client-side redaction over MCP, and a "log" tool that reads any path is a
+# way straight around that control — `/var/www/shop/.env` is not a log.
+#
+# So the path is checked against the SHAPES logs actually have. Pure, so it can be tested
+# directly and cannot drift with a server's state.
+#
+# Honest limit: a symlink inside /var/log pointing somewhere else would still be followed.
+# The owner of the server is the caller here, so this guards against handing secrets to an
+# AI that only asked to read a log — not against the owner attacking their own machine.
+
+_LOG_DIRS = ("/var/log/", "/usr/local/lsws/logs/", "/var/log/virtualmin/")
+
+
+def _is_log_name(name: str) -> bool:
+    """`error.log`, and the rotated `error.log.1` — but not `wp-config.php`."""
+    if name.endswith(".log"):
+        return True
+    base, _, tail = name.rpartition(".")
+    return base.endswith(".log") and tail.isdigit()
+
+
+def is_log_path(path: str) -> bool:
+    """Is this the path of a log file, rather than any other file on the server?
+
+    True for anything under a log DIRECTORY, and for the per-site shapes an application
+    writes into its own folder (Laravel's ``storage/logs``, WordPress's
+    ``wp-content/debug.log``, a plain ``logs/`` beside the code).
+    """
+    if not path or not path.startswith("/") or "\0" in path or "\n" in path:
+        return False
+    parts = path.split("/")
+    if any(p in ("", ".", "..") for p in parts[1:]):
+        return False              # no traversal, no empty segment, no trailing slash
+    if "%2f" in path.lower() or "%5c" in path.lower():
+        # Defence in depth rather than a live hole: nothing here URL-decodes, so `%2f` is
+        # just a filename character to `tail`. But no real log is named that, and the cost
+        # of refusing is nothing.
+        return False
+
+    if any(path.startswith(d) for d in _LOG_DIRS):
+        return True
+
+    name = parts[-1]
+    if len(parts) >= 3 and parts[-2] == "wp-content" and name == "debug.log":
+        return True
+    if len(parts) >= 3 and parts[-2] == "logs" and _is_log_name(name):
+        # …/storage/logs/laravel.log, …/home/site/logs/error.log, …/app/logs/x.log
+        return True
+    return False
