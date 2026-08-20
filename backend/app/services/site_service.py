@@ -262,6 +262,30 @@ def parse_discovery(output: str) -> tuple[list[DiscoveredSite], bool]:
     return ordered[:MAX_SITES], len(ordered) > MAX_SITES
 
 
+
+def parse_privilege(output: str) -> str:
+    """How much the probe could see, read from its own line in the probe output.
+
+    Separate from `parse_discovery` on purpose, because it is NOT a website — and running
+    it through website rules is exactly what broke it. The value arrives as
+    `…|privilege|root||no`, `parse_discovery` filters every line whose names are not real
+    domains, and `root` is not one, so the line was dropped before anything could read it.
+    Every scan then reported `none`.
+
+    That was not cosmetic. A scan that cannot read everything is deliberately not allowed
+    to conclude a site is gone — so with the level stuck at `none`, `sync(complete=False)`
+    made discovery **add-only**: a site genuinely removed from a server was never marked
+    missing, and its uptime monitor was never paused.
+    """
+    for raw in (output or "").splitlines():
+        line = raw.strip()
+        if line.startswith(f"{_SENTINEL}|privilege|"):
+            parts = line.split("|")
+            if len(parts) >= 3:
+                return privilege.parse(parts[2])
+    return privilege.NONE
+
+
 async def discover(server: Server) -> tuple[list[DiscoveredSite], bool, str, str]:
     """Run the probe on ``server``. Returns ``(sites, truncated, error, privilege)``.
 
@@ -285,15 +309,13 @@ async def discover(server: Server) -> tuple[list[DiscoveredSite], bool, str, str
         logger.info("Site discovery failed on %s: %s", server.name, exc)
         return [], False, f"Could not reach {server.name}: {exc}", privilege.NONE
     sites, truncated = parse_discovery(stdout or "")
-    # The privilege line is a probe result like any other, so it arrives through the same
-    # parser and is then removed from the list — it is not a website.
-    level = privilege.NONE
-    kept = []
-    for site in sites:
-        if site.source == "privilege":
-            level = privilege.parse(site.domain)
-        else:
-            kept.append(site)
+    level = parse_privilege(stdout or "")
+    # Defensive, and honestly unreachable today: `parse_discovery` already drops this line
+    # because `root` is not a real domain — which is precisely what hid the value in the
+    # first place. Kept so a future probe emitting it in a shape the site parser DOES
+    # accept cannot put it in the inventory. No test can reach it, and mutation testing
+    # says so rather than this pretending otherwise.
+    kept = [s for s in sites if s.source != "privilege"]
     return kept, truncated, "", level
 
 

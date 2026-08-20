@@ -978,14 +978,8 @@ async def serverally_run_threat_scan(server: str, response_format: ResponseForma
         async with _track(db, user, "run_threat_scan", srv) as act:
             result = await threat_service.run_scan(srv)
             counts = result["counts"]
-            db.add(ThreatScan(
-                server_id=srv.id, user_id=user.id, verdict=result["verdict"],
-                status=result["status"], error=result.get("error"), duration_ms=result.get("duration_ms"),
-                critical_count=counts.get("critical", 0), high_count=counts.get("high", 0),
-                medium_count=counts.get("medium", 0), low_count=counts.get("low", 0),
-                pass_count=counts.get("pass", 0), info_count=counts.get("info", 0),
-                findings=json.dumps(result["findings"]),
-            ))
+            db.add(threat_service.scan_row(
+                result, server_id=srv.id, user_id=user.id))
             await db.commit()
             await _audit(db, user, "run_threat_scan", srv.id)
             act.set_ok(detail=f"verdict: {result['verdict']}")

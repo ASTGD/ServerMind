@@ -92,15 +92,8 @@ async def _scan_and_alert(server: Server, *, fast_only: bool = False) -> None:
 
     counts = result["counts"]
     async with AsyncSessionLocal() as db:
-        scan = ThreatScan(
-            server_id=server.id, user_id=server.user_id, verdict=result["verdict"],
-            status=result["status"], error=result.get("error"),
-            duration_ms=result.get("duration_ms"),
-            critical_count=counts.get("critical", 0), high_count=counts.get("high", 0),
-            medium_count=counts.get("medium", 0), low_count=counts.get("low", 0),
-            pass_count=counts.get("pass", 0), info_count=counts.get("info", 0),
-            findings=json.dumps(result["findings"]),
-        )
+        scan = threat_service.scan_row(
+            result, server_id=server.id, user_id=server.user_id)
         db.add(scan)
         await db.commit()
 

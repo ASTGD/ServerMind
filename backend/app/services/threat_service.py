@@ -17,6 +17,8 @@ Verdict: ``clean`` | ``suspicious`` (medium) | ``at_risk`` (high) | ``compromise
 """
 from __future__ import annotations
 
+import json
+
 import logging
 import re
 import time
@@ -321,6 +323,37 @@ def _parse_sections(output: str) -> dict[str, str]:
 
 
 _VERDICT_BY_WORST = {"critical": "compromised", "high": "at_risk", "medium": "suspicious"}
+
+
+
+def scan_row(result: dict, *, server_id, user_id):
+    """Turn a scan result into the row that records it — the ONE place that does.
+
+    There were three writers (the button, the 5-minute sweep, the MCP tool) each building
+    this by hand, and TWO of them silently dropped `privilege` and `skipped`. The sweep
+    creates almost every scan there is, so in practice the history could not tell a scan
+    that saw everything from one that could not look — which is the entire reason those
+    columns exist. The verdict stayed honest either way (`_summarize` refuses to say clean
+    while blind); what was lost was the reason for it, so the page showed "unknown" with
+    nothing to explain it.
+
+    A guard that each caller has to remember is a guard that gets missed, so there is now
+    nothing to remember: a structural test refuses any other module that builds one.
+    """
+    from app.models.threat_scan import ThreatScan
+
+    counts = result.get("counts") or {}
+    return ThreatScan(
+        server_id=server_id, user_id=user_id,
+        verdict=result["verdict"], status=result["status"],
+        error=result.get("error"), duration_ms=result.get("duration_ms"),
+        critical_count=counts.get("critical", 0), high_count=counts.get("high", 0),
+        medium_count=counts.get("medium", 0), low_count=counts.get("low", 0),
+        pass_count=counts.get("pass", 0), info_count=counts.get("info", 0),
+        findings=json.dumps(result.get("findings") or []),
+        privilege=result.get("privilege"),
+        skipped=json.dumps(result.get("skipped") or []),
+    )
 
 
 def _summarize(findings: list[dict], *, level: str = privilege.ROOT,

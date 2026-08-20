@@ -159,18 +159,9 @@ def _json_list(raw: str | None) -> list:
 
 
 def _persist_threat(scan_result: dict, server: Server, user_id) -> ThreatScan:
-    counts = scan_result["counts"]
-    return ThreatScan(
-        server_id=server.id, user_id=user_id, verdict=scan_result["verdict"],
-        status=scan_result["status"], error=scan_result.get("error"),
-        duration_ms=scan_result.get("duration_ms"),
-        critical_count=counts.get("critical", 0), high_count=counts.get("high", 0),
-        medium_count=counts.get("medium", 0), low_count=counts.get("low", 0),
-        pass_count=counts.get("pass", 0), info_count=counts.get("info", 0),
-        findings=json.dumps(scan_result["findings"]),
-        privilege=scan_result.get("privilege"),
-        skipped=json.dumps(scan_result.get("skipped") or []),
-    )
+    """One place builds the row — see `threat_service.scan_row`."""
+    return threat_service.scan_row(
+        scan_result, server_id=server.id, user_id=user_id)
 
 
 @router.get("/servers/{server_id}/security/threats", response_model=list[ThreatScanOut])
