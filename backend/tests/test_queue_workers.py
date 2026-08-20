@@ -145,12 +145,13 @@ def test_two_sites_can_both_have_a_queue_worker_of_the_same_name():
 
 # ── Reading the application ──────────────────────────────────────────────────
 
+#: One blob now — the booted application answers both questions in a single read.
 SAMPLE = "\n".join([
     "___SM_QUEUE___|php|/usr/bin/php8.3",
     "___SM_QUEUE___|path|/var/www/shop",
-    '___SM_QUEUE___|connections|{"database":{"driver":"database","queue":"default",'
-    '"retry_after":90},"redis":{"driver":"redis","queue":"default","retry_after":300}}',
-    "___SM_QUEUE___|default|redis",
+    '___SM_QUEUE___|queue|{"default":"redis","connections":{'
+    '"database":{"driver":"database","queue":"default","retry_after":90},'
+    '"redis":{"driver":"redis","queue":"default","retry_after":300}}}',
 ])
 
 
@@ -166,12 +167,21 @@ def test_the_connections_come_from_the_booted_application():
 
 
 def test_the_probe_reads_from_the_app_and_writes_nothing():
-    cmd = q.build_probe_command("/var/www/shop/public")
+    """The guarantee this probe is held to: it may look at the application, never change it.
+
+    Executable lines ONLY. A comment explaining the guarantee contains the word
+    "guarantee", which contains "tee " — so a check over the whole text fails on its own
+    documentation. That trap has now caught this repo six times; every instance was a
+    search matching prose instead of code.
+    """
     import re
-    body = re.sub(r"\d?>\s*/dev/null", "", cmd)
-    for verb in ("rm ", "mv ", "chmod", "chown", "config set", "queue:work",
+
+    cmd = q.build_probe_command("/var/www/shop/public")
+    code = "\n".join(ln for ln in cmd.splitlines() if not ln.strip().startswith("#"))
+    body = re.sub(r"\d?>\s*/dev/null", "", code)
+    for verb in ("rm ", "mv ", "chmod", "chown", "mkdir", "config set", "queue:work",
                  "systemctl", "tee "):
-        assert verb not in body
+        assert verb not in body, f"the probe writes: {verb!r}"
 
 
 def test_output_the_application_mangled_degrades_to_not_knowing(monkeypatch):

@@ -157,13 +157,34 @@ done
 [ -n "$PHP_BIN" ] || {{ echo "{_S}|error|nophp"; exit 0; }}
 echo "{_S}|php|$PHP_BIN"
 echo "{_S}|path|$APP_PATH"
-echo "{_S}|connections|$($RUNAS "$PHP_BIN" "$APP_PATH/artisan" tinker --no-ansi \\
-  --execute='echo json_encode(collect(config("queue.connections"))->map(fn($c) => [
+cd "$APP_PATH" || {{ echo "{_S}|error|noapp"; exit 0; }}
+# Read by BOOTING the application in a one-off `php -r`, not by `artisan tinker`.
+#
+# tinker is psysh, and psysh writes a config directory under $HOME. Running as the site's
+# own account that is /var/www, which it cannot write — so psysh printed
+# "Writing to directory /var/www/.config/psysh is not allowed." **on stdout**, where the
+# 2>/dev/null could not catch it, and that sentence was captured AS THE ANSWER. The screen
+# showed it as the default connection, `connections` came back empty, and the retry_after
+# guard — the one that stops a job being done twice — had nothing to compare against and
+# silently skipped on EVERY Laravel site.
+#
+# Booting the app is what makes the answer right: `retry_after` usually comes from `.env`,
+# so reading config/queue.php would give the default and be wrong exactly where it matters.
+# And unlike tinker this writes NOTHING, which is the guarantee this probe is held to.
+echo "{_S}|queue|$($RUNAS "$PHP_BIN" -r '
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+echo json_encode(["default" => config("queue.default"),
+  "connections" => collect(config("queue.connections"))->map(fn($c) => [
     "driver" => $c["driver"] ?? "", "queue" => $c["queue"] ?? "default",
-    "retry_after" => $c["retry_after"] ?? null]));' 2>/dev/null | tr -d '\\n' | tail -c 2000)"
-echo "{_S}|default|$($RUNAS "$PHP_BIN" "$APP_PATH/artisan" tinker --no-ansi \\
-  --execute='echo config("queue.default");' 2>/dev/null | tr -d '\\n' | tail -c 60)"
+    "retry_after" => $c["retry_after"] ?? null])]);
+' 2>/dev/null | tr -d '\\n' | tail -c 4000)"
 """
+
+
+#: A queue connection name as Laravel writes one — an identifier, never a sentence.
+_NAME = re.compile(r"^[A-Za-z0-9_.:-]{1,40}$")
 
 
 def parse_probe(stdout: str) -> dict:
@@ -180,23 +201,38 @@ def parse_probe(stdout: str) -> dict:
             "nosudo": "We could not run commands as the account that owns this site.",
         }.get(fields["error"], "We could not read this application's queue settings.")}
 
-    connections: dict = {}
-    raw = fields.get("connections") or ""
+    payload: dict = {}
+    raw = fields.get("queue") or ""
     # The application's own output, so a broken value must degrade to "we do not know"
     # rather than take the page down — and "we do not know" then SKIPS the timeout guard
     # rather than inventing a number to enforce.
     try:
         start = raw.find("{")
         if start >= 0:
-            connections = json.loads(raw[start:])
+            payload = json.loads(raw[start:])
     except (ValueError, TypeError):
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    connections = payload.get("connections") or {}
+    if not isinstance(connections, dict):
         connections = {}
+
+    # A connection name is an identifier. Anything else is the application talking to us
+    # about something that went wrong — a warning, a stack trace — and presenting that as
+    # the site's queue configuration is how a broken read looked like a working screen for
+    # as long as it did. An unreadable value has to SAY it is unreadable.
+    default = str(payload.get("default") or "").strip()
+    if not _NAME.match(default):
+        default = ""
+    unreadable = bool(raw.strip()) and not payload
 
     return {
         "ok": True,
         "php": fields.get("php", ""),
         "path": fields.get("path", ""),
-        "default": (fields.get("default") or "").strip(),
+        "default": default,
+        "unreadable": unreadable,
         "connections": [
             {"name": name,
              "driver": (info or {}).get("driver", ""),
