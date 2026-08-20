@@ -16,6 +16,7 @@ from app.models.mission import Mission
 from app.models.cloud_account import CloudAccount
 from app.models.dev_eval_case import DevEvalCase
 from app.models.oauth import OAuthClient, OAuthAuthorizationCode, OAuthTokenRecord
+from app.models.blueprint import BlueprintRun
 
 __all__ = [
     "NotificationChannel",
@@ -42,4 +43,5 @@ __all__ = [
     "OAuthClient",
     "OAuthAuthorizationCode",
     "OAuthTokenRecord",
+    "BlueprintRun",
 ]

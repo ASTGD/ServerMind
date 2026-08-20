@@ -37,6 +37,7 @@ from app.routers import scheduler as scheduler_router
 from app.routers import scripts as scripts_router
 from app.routers import security as security_router
 from app.routers import server_setup as server_setup_router
+from app.routers import blueprints as blueprints_router
 from app.routers import servers as servers_router
 from app.routers import settings as settings_router
 from app.routers import entitlements as entitlements_router
@@ -63,7 +64,7 @@ from app.services.rate_limit_service import limiter
 from app.websocket import terminal as ws_handlers
 from app.websocket import rdp_tunnel as ws_rdp
 from app.workers import mail_worker
-from app.workers import setup_runner
+from app.workers import blueprint_runner, setup_runner
 from app.workers import metrics_worker
 from app.mcp.server import mcp_server  # MCP server (docs/MCP-SERVER-PLAN.md)
 
@@ -299,6 +300,7 @@ async def lifespan(app: FastAPI):
     from app.services import mission_service
     await mission_service.recover_orphaned()
     await setup_runner.recover_orphaned()
+    await blueprint_runner.recover_orphaned()
     async with AsyncSessionLocal() as db:
         # Not "seed if empty": a playbook edit has to reach the row, or the customer keeps
         # running the previous script while the change looks deployed.
@@ -356,6 +358,7 @@ app.include_router(auth_router.router)
 app.include_router(audit_router.router)
 app.include_router(assistant_router.router)
 app.include_router(server_setup_router.router)
+app.include_router(blueprints_router.router)
 app.include_router(servers_router.router)
 app.include_router(commands_router.router)
 app.include_router(dev_router.router)
