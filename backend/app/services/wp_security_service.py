@@ -139,7 +139,7 @@ def parse_state(stdout: str, config_block: str = "") -> dict:
         # already knows.
         "log_in_web_root": bool(log_value) and log_value.lower() not in ("false", "true")
                            and LOG_DIR_NAME not in log_value,
-        "xmlrpc_blocked": BEGIN in (config_block or ""),
+        "xmlrpc_blocked": xmlrpc_is_blocked(config_block or ""),
         # True means WordPress has STOPPED running its scheduled work during visits, so
         # something else must be doing it. The screen pairs this with whether a real cron
         # job exists, because that combination is the only one that matters.
@@ -198,6 +198,24 @@ fi
 rm -f "$BK"
 echo "{_S}|ok|{'on' if enable else 'off'}"
 """
+
+
+
+#: A deny of `/xmlrpc.php`, written by anyone. Our own WordPress installer writes one as a
+#: single line outside these markers, so a check for the markers alone reported "not
+#: blocked" on a site that WAS blocked — and then tried to add a second block, which nginx
+#: refuses outright as a duplicate location. The question this screen asks is whether
+#: xmlrpc is reachable, not whether we were the one who closed it.
+_XMLRPC_DENIED = re.compile(
+    r"location\s*=\s*/xmlrpc\.php\s*\{[^}]*\bdeny\s+all\b|"
+    r"<Files\s+\"?xmlrpc\.php\"?>[^<]*(Require\s+all\s+denied|Deny\s+from\s+all)",
+    re.IGNORECASE | re.DOTALL)
+
+
+def xmlrpc_is_blocked(config: str) -> bool:
+    """True when this site's configuration already refuses `xmlrpc.php`."""
+    text = config or ""
+    return BEGIN in text or bool(_XMLRPC_DENIED.search(text))
 
 
 def build_xmlrpc_command(config_path: str, domain: str, *, block: bool,

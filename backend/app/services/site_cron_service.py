@@ -32,6 +32,34 @@ def app_root(app_type: str, doc_root: str) -> str:
     return path
 
 
+
+def anchor_to_site(command: str, app_type: str, doc_root: str, domain: str) -> str:
+    """Make a site's job run in the site's folder — and belong to the site.
+
+    Two things go wrong without this, and only one of them is visible:
+
+    * **It does not work.** `php artisan schedule:run` with no `cd` runs in the crontab
+      owner's home directory — `/var/www` for the web account — where there is no
+      `artisan`. It fails every minute, silently, which is the same as never having
+      scheduled it.
+    * **It is orphaned.** `cron_service.jobs_for_site` claims a job by its command
+      mentioning the site's folder or its domain, and that filter is what BOTH the listing
+      and the removal guard use. A custom command mentioning neither is created, runs, and
+      can then never be seen or removed from the site's page — the add path and the read
+      path disagreeing about what belongs to this site.
+
+    The suggested jobs are already written `cd <root> && …`; this is the same rule applied
+    to a command somebody typed, so the two cannot drift apart.
+    """
+    command = (command or "").strip()
+    root = app_root(app_type, doc_root) or (doc_root or "").rstrip("/")
+    if not command or not root:
+        return command
+    # Already claimable — leave it exactly as written.
+    if root in command or (domain and domain in command):
+        return command
+    return f"cd {shlex.quote(root)} && {command}"
+
 def suggested_job(app_type: str, doc_root: str) -> dict | None:
     """The job this application needs, or nothing if it does not need one.
 

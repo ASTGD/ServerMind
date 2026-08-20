@@ -2243,7 +2243,13 @@ async def read_robots(site_id: str, db: DBDep, current_user: CurrentUser) -> dic
     # that decides whether the site is indexed.
     out, _e, _c = await connection_manager.execute(
         server,
-        f'curl -sI --max-time 6 -H "Host: {shlex.quote(site.domain)[1:-1]}" '
+        # Quote the WHOLE argument. `shlex.quote` only adds quotes when the string needs
+        # them, so for an ordinary domain it returns it unchanged — and the old
+        # `shlex.quote(domain)[1:-1]` then ate the first and last characters:
+        # `t-lv.example.com` became `-lv.example.co`, nginx served the default site, and
+        # the screen reported "not blocked" for a site that WAS blocked. The write then
+        # failed its own verification and returned an error over a change that had worked.
+        f"curl -sI --max-time 6 -H {shlex.quote('Host: ' + site.domain)} "
         f'http://127.0.0.1/ 2>/dev/null | grep -i "^x-robots-tag:" | head -1')
     return {"ok": True, "blocked": "noindex" in (out or "").lower(),
             "header": (out or "").strip()}
@@ -3832,9 +3838,15 @@ async def add_site_cron(site_id: str, body: SiteCronIn, db: DBDep,
             detail="We could not tell which account owns this site's files, so we will "
                    "not guess which one should run its scheduled jobs.")
 
+    # A job added from a site's page runs in that site's folder. Without this a typed
+    # command runs in the crontab owner's home — where a Laravel `artisan` does not exist —
+    # AND is invisible to the listing and the removal guard, which both claim a job by its
+    # command mentioning the site.
+    command = site_cron_service.anchor_to_site(
+        body.command, site.app_type or "", site.doc_root or "", site.domain)
     try:
         result = await cron_service.add_job(
-            server, user=owner, schedule=body.schedule, command=body.command,
+            server, user=owner, schedule=body.schedule, command=command,
             note=body.note or site.domain, expect=body.expect)
     except cron_service.CronError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
