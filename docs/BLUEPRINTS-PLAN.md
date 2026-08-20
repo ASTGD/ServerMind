@@ -315,3 +315,53 @@ nobody should have to learn it to find their work.
 
 Step 4 is the one to leave alone for now. Missions carry approval, resume and the verification
 gate, and moving them is a change to a working flagship path.
+
+---
+
+## 10. Phases
+
+Six. Each one is useful on its own and can be stopped after.
+
+| # | Phase | Ends when | Size |
+|---|---|---|---|
+| 1 | **The engine + one blueprint** | *Set up a website* runs end to end on a real raw server, started from the app | Large |
+| 2 | **The screen** | The run page, the Activity list, the top-bar pill, the strips | Medium |
+| 3 | **Over MCP** | A customer's AI starts it by name, watches it, and stops it | Small |
+| 4 | **Two more blueprints** | *Take over a server* and *Get a site ready to go live* | Medium |
+| 5 | **Absorb MCP actions** | Loose AI actions appear as runs; the drawer's list is deleted | Small |
+| 6 | **Move a website** | A site moves between servers, proven both ways on real machines | Large |
+
+**Phase 1 is deliberately app-first.** Building the engine and exposing it over MCP at the
+same time means debugging two new things through each other. Start it from a button, prove it
+on a real server, then hand the same thing to an AI in phase 3 — which is then genuinely small,
+because it is four thin tools over an engine that already works.
+
+### The hard part in each phase
+
+1. **Resume.** A fifteen-minute job will cross a backend restart. Missions already solved
+   this (`recover_orphaned` flips anything left running to interrupted); copy the lesson
+   rather than rediscovering it. Also: every step must decide what "already done" means, so
+   a resumed run skips what it should and repeats what is safe.
+2. **Not looking frozen.** A step can be silent for minutes. Service steps get a written
+   line per step; playbook steps can stream. Either way a heartbeat, because the apt-lock
+   work already proved that silence reads as a hang.
+3. **Never block a tool call.** Start returns an id immediately and the AI polls — the
+   pattern `run_playbook` already uses, because MCP clients time out in minutes.
+4. Mostly data, once the engine is right. *Take over a server* is almost all read-only, so
+   it is the safest place to widen the action list.
+5. Deciding what an ungrouped action looks like — and resisting the temptation to give it a
+   progress bar.
+6. The cutover. Prove the copy serves the real page with a Host header **before** any DNS
+   change, never delete the old site, never touch DNS.
+
+### A third status, needed from day one
+
+A step can succeed, fail, or **wait for the human**. HTTPS on a domain that is not pointed yet
+is not a failure, and the flagship blueprint cannot finish honestly without that state. Build
+it in phase 1, not later.
+
+### One decision needed before phase 1
+
+**A missing input: stop and ask, or work it out?** Leaning — work out what is genuinely ours
+to know (the database name, the folder, the PHP version), and always stop for anything the
+human owns (the domain). It needs to be settled first because it changes the shape of `start`.
