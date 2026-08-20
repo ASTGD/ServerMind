@@ -250,3 +250,68 @@ call must never block, because clients time out in minutes.
    start-and-poll shape, applied to approval.
 4. **Do we let customers write their own?** Powerful, and a different product with a
    different safety story. Not now; do not design it out.
+
+---
+
+## 9. One screen, and where it lives
+
+### 9.1 It replaces the MCP drawer — but not one-for-one
+
+The top-bar drawer does two jobs at once, and only one of them is worth keeping.
+
+- **Telling you something is happening** — worth keeping, and it must stay global. You should
+  learn that your AI is working from any page.
+- **Being the place you read it** — wrong. It is a small panel that covers the page, and a
+  long job needs a page of its own: one you can link to, come back to, and read afterwards.
+
+So: **the drawer's list goes; a live indicator stays.** The top bar shows a compact pill —
+*"Setting up shop.com · 3 of 9"* with a spinner — that clicks through to the run. When nothing
+is running the pill is **absent, not greyed out**, the same rule the menus already follow.
+
+### 9.2 Two modes, one screen
+
+An MCP action is not always part of a plan. The screen handles both, and the only difference
+is the header.
+
+| | We know the plan | We are following along |
+|---|---|---|
+| When | A blueprint was started | The AI just did things |
+| Title | The blueprint's goal | What the AI said it was doing, else "Work on TestServerNew" |
+| Progress | Checklist, "3 of 9", time left | A growing list, "4 steps so far" |
+| Bar | Yes | **No** |
+
+**Never show a progress bar we cannot honour.** A bar with no known end is a lie, and it is
+the first thing that makes a screen untrustworthy. Steps that belong to nothing still appear —
+under "other work" — because losing them is worse than not grouping them.
+
+### 9.3 Where it shows
+
+| Place | What appears | Status |
+|---|---|---|
+| **Top bar** | The live pill; absent when nothing runs | Replaces the MCP drawer |
+| **Nav → Activity** | The list: running first, then finished. Badge when something needs you | New item |
+| **`/activity/:id`** | The full screen | New page |
+| **Dashboard** | Feeds the existing `RunningTasks` card | Already there |
+| **A server's page** | A strip when something is running on *that* server | Small addition |
+| **A site's page** | The same, for a run about that site | Small addition |
+
+### 9.4 The thing to be careful about
+
+We already have three places that answer "what happened": **Missions** (in the nav),
+**`/logs`** (a real page with no nav item, reached from a Dashboard tile), and the **MCP
+drawer**. Adding a fourth would be the fragmentation this product keeps having to undo.
+
+From the owner's side there is only one idea: *a long job running on my servers.* Whether the
+steps came from a blueprint, from Ally, or from their own AI is our implementation detail, and
+nobody should have to learn it to find their work.
+
+**So the destination is ONE page — Activity — and we walk to it, not jump:**
+
+1. Build the run screen and the Activity list. Blueprint runs live there.
+2. Move MCP actions in. Delete the drawer's list; keep the pill.
+3. Fold in playbook runs and deployments — they are already runs with steps.
+4. Last, and only once the screen has proven itself: missions join, and the Missions nav item
+   goes. Its history and reports stay reachable; they just stop being a separate place.
+
+Step 4 is the one to leave alone for now. Missions carry approval, resume and the verification
+gate, and moving them is a change to a working flagship path.
