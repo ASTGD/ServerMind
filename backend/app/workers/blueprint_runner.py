@@ -922,7 +922,12 @@ async def _act_move_db(ctx: _Ctx) -> StepResult:
     cfg = survey.get("config")
     doc = ctx.inputs["domain"]
     if cfg == "wordpress":
-        read = ("awk -F\"'\" '/define..DB_USER/{u=$4} /define..DB_PASSWORD/{p=$4} "
+        # wp-cli writes `define( 'DB_USER',` — with a SPACE — while hand-written configs
+        # use `define('DB_USER',`. The first version matched `define..` (exactly two
+        # characters) and read nothing from every wp-cli site, which is every site our own
+        # installer makes. Match the constant name alone, and strip the \r a CRLF config
+        # would leave on the value.
+        read = ("awk -F\"'\" '{gsub(/\\r/,\"\")} /DB_USER/{u=$4} /DB_PASSWORD/{p=$4} "
                 "END{print u; print p}' "
                 f"$(ls /var/www/{doc}/wp-config.php /var/www/{doc}/public/wp-config.php 2>/dev/null | head -1)")
     else:

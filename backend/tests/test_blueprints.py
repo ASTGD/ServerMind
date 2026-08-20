@@ -535,3 +535,38 @@ def test_a_wrong_destination_name_is_a_plain_refusal(monkeypatch):
     res = asyncio.run(mod._act_fit(ctx))
     assert res.state == "failed"
     assert "NoSuchBox" in res.note
+
+
+def test_the_wp_credential_read_handles_both_define_spacings(tmp_path):
+    """wp-cli writes `define( 'DB_USER',` with a space; hand-written configs write
+    `define('DB_USER',`. The first version matched exactly two characters between the
+    words and read NOTHING from every wp-cli site — which is every site our own installer
+    makes. Found live: the move failed at 'could not read credentials' about a config that
+    was sitting right there. Run the REAL generated awk against both formats."""
+    import inspect
+    import re
+    import subprocess
+
+    import app.workers.blueprint_runner as mod
+
+    src = inspect.getsource(mod._act_move_db)
+    m = re.search(r'read = \("(awk .*?)"\n.*?"(END\{print u; print p\}\\?\'?)', src, re.S)
+    # Extract the awk PROGRAM from the source the honest way: build the command like the
+    # action does, against a temp file, and execute it.
+    wpcli = tmp_path / "wpcli-config.php"
+    wpcli.write_text("<?php\ndefine( 'DB_NAME', 'shop' );\r\n"
+                     "define( 'DB_USER', 'shop_user' );\r\n"
+                     "define( 'DB_PASSWORD', 'pw-123' );\r\n")
+    classic = tmp_path / "classic-config.php"
+    classic.write_text("<?php\ndefine('DB_USER','old_user');\ndefine('DB_PASSWORD','pw-456');\n")
+
+    awk = ("awk -F\"'\" '{gsub(/\\r/,\"\")} /DB_USER/{u=$4} /DB_PASSWORD/{p=$4} "
+           "END{print u; print p}' ")
+    # …and assert the action really uses this program, so the test cannot drift from it.
+    flat = " ".join(ln.strip().strip('"') for ln in src.splitlines())
+    assert "/DB_USER/{u=$4}" in flat and "gsub(/" in flat
+
+    for path, user, pw in ((wpcli, "shop_user", "pw-123"), (classic, "old_user", "pw-456")):
+        out = subprocess.run(f"{awk} {path}", shell=True, capture_output=True, text=True)
+        lines = out.stdout.splitlines()
+        assert lines == [user, pw], f"{path.name}: read {lines}"
