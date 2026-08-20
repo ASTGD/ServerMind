@@ -6,6 +6,7 @@ import {
 } from "lucide-react"
 import { getServer, getServerRole, trustKey } from "@/api/servers"
 import AssetSidebar from "@/components/server/AssetSidebar"
+import RunningStrip from "@/components/activity/RunningStrip"
 import UpdateCredentialsModal from "@/components/server/UpdateCredentialsModal"
 import RdpDesktopModal from "@/components/server/RdpDesktopModal"
 import { actionsFor, menuFor, redirectForMissingSection } from "@/lib/assetMenu"
@@ -189,6 +190,7 @@ export default function ServerDetail() {
       <div className="flex flex-col gap-4 md:flex-row md:items-start">
         <AssetSidebar server={server} />
         <div className="min-w-0 flex-1">
+          <RunningStrip serverId={server.id} />
           <Outlet context={{ server, openAI }} />
         </div>
       </div>

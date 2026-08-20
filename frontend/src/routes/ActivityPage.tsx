@@ -3,6 +3,7 @@ import { Loader2, Check, Ban, Square, Clock } from "lucide-react"
 import { Link, useParams } from "react-router-dom"
 import { listRuns, type BlueprintRun } from "@/api/blueprints"
 import RunScreen from "@/components/activity/RunScreen"
+import StartJobCard from "@/components/activity/StartJobCard"
 import { EmptyState } from "@/components/ui"
 
 /** Activity — the ONE place long jobs are read, running first then finished.
@@ -65,6 +66,7 @@ export default function ActivityPage() {
           Long jobs on your servers — what is running now, and what already ran.
         </p>
       </div>
+      <StartJobCard />
       {runs.length === 0 && (
         <EmptyState title="Nothing has run yet"
           description="Start a job from a server's page — like setting up a website — and it shows here, step by step." />

@@ -1,4 +1,5 @@
 import { Link, NavLink, Navigate, Outlet, useLocation, useParams } from "react-router-dom"
+import RunningStrip from "@/components/activity/RunningStrip"
 import { useQuery } from "@tanstack/react-query"
 import {
   ArrowLeft, CircleAlert, CircleCheck, CircleDashed, ExternalLink, Loader2, Server as ServerIcon,
@@ -144,6 +145,7 @@ export default function SiteLayout() {
         </nav>
 
         <div className="min-w-0 flex-1">
+          {site.server_id && <RunningStrip serverId={site.server_id} domain={site.domain} />}
           <Outlet context={{ site }} />
         </div>
       </div>
