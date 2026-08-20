@@ -311,8 +311,27 @@ def test_creating_a_site_uses_the_apps_own_path():
     assert "hosting_service" not in body
 
 
-def test_creating_a_site_needs_permission_to_change_things():
-    assert "_executor(" in code_of(m.serverally_create_site)
+def test_creating_a_site_refuses_a_read_only_connection(monkeypatch):
+    """Driven, not grepped. Asserting `_executor(` APPEARS in the source passed while the
+    call had the wrong signature entirely — the tool raised TypeError the first time it was
+    run against a real server. A test that never calls the function cannot see that.
+    """
+    import asyncio
+    from types import SimpleNamespace
+
+    class _Session:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *e): return False
+
+    monkeypatch.setattr(m, "AsyncSessionLocal", lambda: _Session())
+    monkeypatch.setattr(m, "_resolve_caller", _ok(SimpleNamespace(id="u1")))
+
+    async def refuse(db, user, ref):
+        return None, "This connection is read-only."
+
+    monkeypatch.setattr(m, "_executor", refuse)
+    out = asyncio.run(m.serverally_create_site(server="box", domain="x.example.com"))
+    assert out == "This connection is read-only."
 
 
 def test_creating_a_site_refuses_a_server_with_no_command_channel():
@@ -329,3 +348,49 @@ def test_ssl_says_what_it_cannot_do_instead_of_naming_a_missing_panel():
     assert 'srv.panel_type' in body, "it no longer checks before reaching for the panel"
     assert "not available through MCP yet" in body
     assert "Nothing was changed" in body
+
+
+# ── the gate is called correctly, everywhere ──────────────────────────────────
+# `_executor(db, user, ref) -> (Access, message)` is the one permission gate for every
+# write tool. `serverally_create_site` called it as `_executor(acc, "create a website")` —
+# two positional arguments against a three-argument signature — and shipped: nothing at
+# import time or in review says a word, and the tool raised TypeError the first time it
+# was run against a real server. Python only checks a call when it happens, so a tool
+# nobody has exercised carries the fault silently. Same shape as `ssh_service._get_client`,
+# where an optional argument left host-key verification off at three call sites.
+
+def test_the_permission_gate_is_called_with_the_arguments_it_declares():
+    import ast, inspect
+
+    tree = ast.parse(inspect.getsource(m))
+    gates = {"_executor", "_admin_executor"}
+    wanted = {name: len(inspect.signature(getattr(m, name)).parameters) for name in gates}
+
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in gates]
+    assert len(calls) >= 6, "expected the write tools to go through the gate"
+
+    for call in calls:
+        assert len(call.args) == wanted[call.func.id], (
+            f"line {call.lineno}: {ast.unparse(call)[:70]} passes {len(call.args)} "
+            f"arguments, but {call.func.id} declares {wanted[call.func.id]}")
+
+
+def test_the_gates_answer_is_unpacked_as_a_pair():
+    """It returns `(Access, message)`. Assigning it to one name makes `if err:` always
+    true — every write would be refused with a tuple printed at the caller."""
+    import ast, inspect
+
+    tree = ast.parse(inspect.getsource(m))
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Assign):
+            continue
+        val = n.value
+        if isinstance(val, ast.Await):
+            val = val.value
+        if not (isinstance(val, ast.Call) and isinstance(val.func, ast.Name)
+                and val.func.id in ("_executor", "_admin_executor")):
+            continue
+        target = n.targets[0]
+        assert isinstance(target, ast.Tuple) and len(target.elts) == 2, (
+            f"line {n.lineno}: {ast.unparse(n)[:70]} — the gate returns a pair")

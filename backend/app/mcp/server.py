@@ -1280,10 +1280,9 @@ async def serverally_create_site(
         user = await _resolve_caller(db)
         if user is None:
             return _NO_USER
-        acc = await _resolve_server(db, user, server)
-        if acc is None:
-            return await _unknown_server(db, user, server)
-        err = _executor(acc, "create a website")
+        # `_executor` is the one gate: it refuses a read-only connection, an unknown
+        # server, and a teammate without execute permission — all three, in one call.
+        acc, err = await _executor(db, user, server)
         if err:
             return err
         srv = acc.server
@@ -1357,15 +1356,17 @@ async def serverally_issue_ssl(server: str, domain: str, response_format: Respon
 
 @mcp_server.tool(name="serverally_create_database", annotations={"title": "Create a database", **_WRITE})
 async def serverally_create_database(
-    server: str, domain: str, db_name: str, db_user: str, db_password: str,
-    response_format: ResponseFormat = ResponseFormat.MARKDOWN,
+    server: str, db_name: str, db_user: str, db_password: str,
+    engine: str = "mysql", response_format: ResponseFormat = ResponseFormat.MARKDOWN,
 ) -> str:
-    """Create a MySQL/MariaDB database + user on a hosting server.
+    """Create a database and an account with rights to that one database only.
 
-    You supply ``db_password`` — it is used to create the database and is NEVER returned or
-    stored by this tool. ``domain`` is the site the DB belongs to. Requires execute
-    permission. ``server`` is a name or id.
+    ``server`` is a name or id. The password is an INPUT and is never returned, never
+    logged, and never written to the audit trail — so reading any record of this can never
+    hand somebody a live credential. Keep your own copy.
     """
+    from app.services import database_service as dbs
+
     async with AsyncSessionLocal() as db:
         user = await _resolve_caller(db)
         if user is None:
@@ -1374,19 +1375,32 @@ async def serverally_create_database(
         if err:
             return err
         srv = acc.server
+        if srv.connection_type != "ssh":
+            return (f"{srv.name}: a database can only be created on a Linux server reached "
+                    f"over SSH (this one is '{srv.connection_type}').")
+
+        # The SAME service the app's own Databases screen uses. This tool went through
+        # `hosting_service`, so on an ordinary server it answered "Unsupported or missing
+        # panel_type: (none)" — the fourth tool with that assumption. A control panel is one
+        # way to have a database here, not the only one.
+        try:
+            result = await dbs.create_database(
+                srv, engine=engine, db_name=db_name, user=db_user,
+                password=db_password, host="localhost")
+        except Exception as exc:  # noqa: BLE001 — the service raises its own error type
+            return f"Could not create database {db_name} on {srv.name}: {exc}"
+
+        # Name and account recorded; the password deliberately is not.
         await _audit(db, user, "create_database", srv.id)
-    body = {"domain": domain, "db_name": db_name, "db_user": db_user, "db_password": db_password}
-    try:
-        await hosting_service.create_database(srv, body)
-    except HostingError as exc:
-        return f"Could not create database {db_name} on {srv.name}: {exc}"
-    except Exception as exc:  # noqa: BLE001
-        return f"Error creating database {db_name} on {srv.name}: {type(exc).__name__}"
-    # Never echo the password back.
-    data = {"server": srv.name, "domain": domain, "db_name": db_name, "db_user": db_user, "status": "created"}
+
+    data = {"server": srv.name, "engine": engine, "database": result.get("name", db_name),
+            "user": result.get("user", db_user), "host": result.get("host", "localhost")}
     if response_format == ResponseFormat.JSON:
         return json.dumps(data, indent=2)
-    return f"✅ Created database **{db_name}** (user {db_user}) on {srv.name}."
+    return (f"# Database **{data['database']}** created on {srv.name}\n\n"
+            f"- **Account**: `{data['user']}` — rights to this database only\n"
+            f"- **Reachable from**: {data['host']}\n"
+            f"- The password is not stored or returned anywhere. Keep your own copy.")
 
 
 # ── admin tool: run_command (Full power / mcp:admin) ──────────────────────────
