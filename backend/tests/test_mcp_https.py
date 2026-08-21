@@ -211,7 +211,9 @@ def test_turning_https_on_needs_permission_to_change_things(monkeypatch):
     monkeypatch.setattr(m, "_executor", _ok((None, "This connection is read-only.")))
 
     out = asyncio.run(m.serverally_issue_ssl(server="Box", domain="shop.example.com"))
-    assert out == "This connection is read-only."
+    # The what's-new footer rides every tool for a week after a deploy. The property that
+    # matters is unchanged: the REFUSAL leads, intact.
+    assert out.split("\n\n")[0] == "This connection is read-only."
 
 
 def test_the_app_and_the_tool_share_one_rule():

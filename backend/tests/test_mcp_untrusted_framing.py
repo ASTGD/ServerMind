@@ -331,7 +331,9 @@ def test_creating_a_site_refuses_a_read_only_connection(monkeypatch):
 
     monkeypatch.setattr(m, "_executor", refuse)
     out = asyncio.run(m.serverally_create_site(server="box", domain="x.example.com"))
-    assert out == "This connection is read-only."
+    # The what's-new footer rides every tool for a week after a deploy. The property that
+    # matters is unchanged: the REFUSAL leads, intact.
+    assert out.split("\n\n")[0] == "This connection is read-only."
 
 
 def test_creating_a_site_refuses_a_server_with_no_command_channel():

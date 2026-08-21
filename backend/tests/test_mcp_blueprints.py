@@ -53,7 +53,11 @@ def test_a_read_only_connection_cannot_start(monkeypatch):
     out = asyncio.run(m.serverally_start_blueprint(
         server="Box", blueprint="set-up-website",
         inputs={"domain": "a.com", "site_type": "php"}))
-    assert out == "This connection is read-only."
+        # The what's-new footer rides every tool for a week after a deploy, so an
+        # exact-equality assertion no longer holds. The property that matters is
+        # unchanged and is what is asserted: the REFUSAL leads, intact — a customer
+        # must not have to read past an announcement to learn they were refused.
+    assert out.split("\n\n")[0] == "This connection is read-only."
 
 
 def test_a_panel_server_is_refused_before_any_row_exists(monkeypatch):
@@ -108,7 +112,11 @@ def test_stop_needs_the_permission_that_started_it(monkeypatch):
     monkeypatch.setattr(m, "_resolve_caller", _ok(SimpleNamespace(id="u1")))
     monkeypatch.setattr(m, "_executor", _ok((None, "This connection is read-only.")))
     out = asyncio.run(m.serverally_stop_blueprint(run_id="r1"))
-    assert out == "This connection is read-only."
+        # The what's-new footer rides every tool for a week after a deploy, so an
+        # exact-equality assertion no longer holds. The property that matters is
+        # unchanged and is what is asserted: the REFUSAL leads, intact — a customer
+        # must not have to read past an announcement to learn they were refused.
+    assert out.split("\n\n")[0] == "This connection is read-only."
     assert run.status == "running", "a refused stop must change nothing"
 
 

@@ -72,9 +72,52 @@ def test_a_date_nobody_bumped_means_no_notice(monkeypatch):
     assert m.whats_new_line() is None
 
 
-def test_it_rides_the_two_most_called_read_tools():
-    for fn in (m.serverally_get_fleet_health, m.serverally_list_servers):
-        assert getattr(fn, "__serverally_whats_new__", False), fn.__name__
+def test_it_rides_EVERY_tool_not_a_hand_picked_few():
+    """The first version put it on two read tools, so a customer whose AI called anything
+    else got nothing — and a tool added next month would have to remember to opt in. It is
+    applied at the REGISTRATION point now, so this holds for tools that do not exist yet."""
+    import re
+
+    src = open("app/mcp/server.py").read()
+    names = sorted(set(re.findall(r'name="(serverally_[a-z_]+)"', src)))
+    assert len(names) >= 30
+    for name in names:
+        fn = getattr(m, name, None)
+        assert fn is not None, name
+        assert getattr(fn, "__serverally_whats_new__", False), f"{name} is not announcing"
+
+
+def test_the_notice_is_never_applied_twice(fresh):
+    """A hand-placed decorator left beside the registration patch would append the line
+    twice — noise in every answer, and the kind of thing nobody notices in review."""
+    out = asyncio.run(_tool("hello")())
+    assert out.count("WHAT'S NEW:") == 1
+
+    src = open("app/mcp/server.py").read()
+    assert "@announces_whats_new" not in src, (
+        "the registration patch covers every tool; a hand-placed decorator double-wraps")
+
+
+def test_wrapping_every_tool_does_not_break_its_schema():
+    """FastMCP builds each tool's input schema from the function signature. A wrapper that
+    loses the signature would publish tools with no parameters — every call would fail."""
+    tools = asyncio.run(m.mcp_server.list_tools())
+    assert len(tools) >= 30
+    for t in tools:
+        assert isinstance(t.inputSchema, dict) and "properties" in t.inputSchema, t.name
+        assert t.annotations and t.annotations.title, f"{t.name} lost its title"
+    cmd = next(t for t in tools if t.name == "serverally_run_command")
+    assert {"server", "command"} <= set(cmd.inputSchema["properties"])
+
+
+def test_the_notice_tells_the_reader_to_speak_rather_than_only_to_act():
+    """The first wording ended in a condition — 'if you cannot see these tools, ask the
+    user to reconnect' — which an AI that believes it is fine satisfies by saying nothing.
+    Silence looking like success is the failure this codebase keeps finding."""
+    note = m.TOOLS_CHANGED_NOTE.lower()
+    assert "tell the user" in note
+    assert "in your reply" in note
+    assert note.index("tell the user") < 40, "the instruction must lead, not trail"
 
 
 def test_a_non_dict_json_answer_is_not_corrupted(fresh):
@@ -119,3 +162,12 @@ def test_every_tool_has_a_human_title():
         title = m.group(1)
         assert not title.startswith("serverally_"), f"{name}: title is the raw tool name"
         assert title[0].isupper(), f"{name}: title should read as a sentence — {title!r}"
+
+
+def test_a_refusal_still_leads_when_the_footer_is_attached(fresh):
+    """The footer rides every tool, refusals included. A customer must never have to read
+    past an announcement to learn they were refused — so the refusal leads and the notice
+    trails, always."""
+    out = asyncio.run(_tool("This connection is read-only.")())
+    assert out.split("\n\n")[0] == "This connection is read-only."
+    assert "WHAT'S NEW:" in out

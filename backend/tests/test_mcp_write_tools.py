@@ -117,4 +117,9 @@ def test_creating_a_database_needs_execute_permission(monkeypatch):
 
     out = asyncio.run(m.serverally_create_database(
         server="box", db_name="shop", db_user="u", db_password=PASSWORD))
-    assert out == "This connection is read-only."
+        # The what's-new footer rides every tool for a week after a deploy, so an
+        # exact-equality assertion no longer holds. The property that matters is
+        # unchanged and is what is asserted: the REFUSAL leads, intact — a customer
+        # must not have to read past an announcement to learn they were refused.
+    assert out.split("\n\n")[0] == "This connection is read-only."
+    assert PASSWORD not in out

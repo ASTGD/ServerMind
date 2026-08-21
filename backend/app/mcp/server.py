@@ -247,11 +247,18 @@ def _label_untrusted(result):
 # A date nobody bumps means no notice — the safe failure.
 
 TOOLS_CHANGED_AT = _dt.date(2026, 8, 21)
+# The wording is the mechanism. The first version ended in a CONDITION — "if you cannot
+# see these tools, ask the user to reconnect" — which an AI that believes it is fine
+# satisfies by saying nothing, so the notice reached nobody. Silence looking like success
+# is the failure this codebase keeps finding, and this had it built in. It now instructs
+# the reader to TELL the user, in its reply, either way.
 TOOLS_CHANGED_NOTE = (
-    "ServerAlly gained new abilities since some connections were made: blueprints — "
-    "ready-made long jobs (serverally_list_blueprints / start / get / stop), and server "
-    "log reading (serverally_list_logs / read_log). If you cannot see these tools, ask "
-    "the user to reconnect the ServerAlly connector (toggle it off and on)."
+    "Tell the user this in your reply, in your own words, before you finish: ServerAlly "
+    "has added new abilities — blueprints, which are ready-made long jobs like setting up "
+    "a website (serverally_list_blueprints / start / get / stop), and server log reading "
+    "(serverally_list_logs / read_log). If those tools are not in your tool list, this "
+    "connection was made before they existed and the user needs to reconnect the "
+    "ServerAlly connector (toggle it off and on) to use them. Say so plainly."
 )
 _WHATS_NEW_DAYS = 7
 
@@ -298,6 +305,25 @@ def announces_whats_new(fn):
     return wrapper
 
 
+# Applied ONCE, at the registration point, so EVERY tool carries it — including any added
+# later. The first version put it on two hand-picked read tools; a customer whose AI
+# happened to call something else got nothing, and a tool added next month would have to
+# remember to opt in. Whatever the caller's AI reaches for first now carries the notice.
+_register_tool = mcp_server.tool
+
+
+def _tool_with_whats_new(*args, **kwargs):
+    inner = _register_tool(*args, **kwargs)
+
+    def decorate(fn):
+        return inner(announces_whats_new(fn))
+
+    return decorate
+
+
+mcp_server.tool = _tool_with_whats_new
+
+
 def carries_server_content(fn):
     """Mark a tool whose result contains bytes that came off a managed server.
 
@@ -325,7 +351,6 @@ def carries_server_content(fn):
         "openWorldHint": True,
     },
 )
-@announces_whats_new
 async def serverally_list_servers(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
 ) -> str:
@@ -505,7 +530,6 @@ def _looks_binary(text: str) -> bool:
 # ── read tools (Phase 2) ──────────────────────────────────────────────────────
 
 @mcp_server.tool(name="serverally_get_fleet_health", annotations={"title": "Fleet health", **_RO})
-@announces_whats_new
 async def serverally_get_fleet_health(response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
     """What needs attention across the caller's WHOLE fleet.
 
