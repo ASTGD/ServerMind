@@ -747,11 +747,21 @@ async def serverally_get_threat_scan(server: str, response_format: ResponseForma
     return "\n".join(lines).rstrip()
 
 
-@mcp_server.tool(name="serverally_list_playbooks", annotations={"title": "List playbooks", **_RO})
+@mcp_server.tool(name="serverally_list_playbooks", annotations={"title": "List one-click install scripts", **_RO})
 async def serverally_list_playbooks(
     os_family: str = "", category: str = "", response_format: ResponseFormat = ResponseFormat.MARKDOWN
 ) -> str:
-    """The official ServerAlly playbook library (one-click scripts) the caller can run.
+    """Scripts that install or configure ONE piece of software on a server — Docker,
+    Redis, a firewall, a control panel, a backup script.
+
+    This is the narrow list: one script, one thing. For a whole JOB — set up a website
+    (server prepared, site created, database made, HTTPS, monitoring, backups), take over
+    a server, move a site — use ``serverally_list_blueprints`` instead; a blueprint runs
+    several of these in order and handles what comes between them.
+
+    If the user asks the open question "what can ServerAlly do?", answer with the
+    BLUEPRINTS first (the jobs) and mention this library second (the individual pieces) —
+    a list of a hundred script names is not an answer to that question.
 
     Optional filters: ``os_family`` ('linux'|'windows') and ``category``. Read-only.
     Returns each playbook's slug, title, category, os_family, and description.
@@ -1500,14 +1510,18 @@ async def serverally_run_threat_scan(server: str, response_format: ResponseForma
 
 @mcp_server.tool(
     name="serverally_run_playbook",
-    annotations={"title": "Run a playbook", "readOnlyHint": False, "destructiveHint": True,
+    annotations={"title": "Install one thing", "readOnlyHint": False, "destructiveHint": True,
                  "idempotentHint": False, "openWorldHint": True},
 )
 async def serverally_run_playbook(
     server: str, playbook: str, variables: dict[str, str] | None = None,
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
 ) -> str:
-    """Start an official playbook (one-click install/config script) on a server.
+    """Install or configure ONE piece of software on a server (Docker, Redis, a firewall).
+
+    For a whole job rather than a single piece — setting up a website end to end, taking
+    over a server, moving a site — use ``serverally_start_blueprint``, which runs the
+    right scripts in order and does the parts no single script covers.
 
     Returns a ``run_id`` IMMEDIATELY — the playbook runs in the background (it can take
     minutes); poll ``get_playbook_run(run_id)`` for progress and output. A playbook CHANGES

@@ -180,7 +180,8 @@ def test_every_tool_title_reads_as_an_action():
     import asyncio as _a
 
     VERBS = {"list", "read", "run", "start", "stop", "set", "see", "check",
-             "create", "turn", "save", "issue", "get", "open", "look", "move"}
+             "create", "turn", "save", "issue", "get", "open", "look", "move",
+             "install"}
     tools = _a.run(m.mcp_server.list_tools())
     assert len(tools) >= 30
     for t in tools:
@@ -207,3 +208,40 @@ def test_the_catalogue_matches_the_words_customers_actually_use():
     doc = (m.serverally_list_blueprints.__doc__ or "").lower()
     for phrase in ("skills", "recipes", "set up", "what serverally can do"):
         assert phrase in doc, f"missing '{phrase}'"
+
+
+# ── the two catalogues must not compete ──────────────────────────────────────
+# ServerAlly has TWO lists a customer's AI could reach for when asked "what can you do":
+# ~100 one-click scripts, and 4 whole jobs. Their descriptions used to be "one-click
+# scripts" and "ready-made jobs" — a distinction neither a customer nor a model can act
+# on, so the answer to the most basic question was a coin flip.
+
+def test_the_narrow_list_says_it_is_narrow_and_points_at_the_other():
+    doc = (m.serverally_list_playbooks.__doc__ or "").lower()
+    assert "one piece of software" in doc, "the script library must say it is ONE thing"
+    assert "serverally_list_blueprints" in doc, "…and name where whole jobs live"
+
+
+def test_the_open_question_is_answered_with_jobs_first():
+    """"What can ServerAlly do?" answered with a hundred script names is not an answer."""
+    doc = (m.serverally_list_playbooks.__doc__ or "").lower()
+    assert "what can serverally do" in doc
+    assert doc.index("blueprints first") < doc.index("library second")
+
+
+def test_running_one_script_also_points_at_the_whole_job():
+    """The AI reaches run_playbook directly when a user says "install X". If they really
+    wanted a website set up, that is four scripts and the parts in between."""
+    doc = (m.serverally_run_playbook.__doc__ or "").lower()
+    assert "one piece of software" in doc
+    assert "serverally_start_blueprint" in doc
+
+
+def test_the_two_catalogues_are_distinguishable_by_their_titles_alone():
+    """A customer reading the chat line should be able to tell which list was consulted."""
+    import asyncio as _a
+
+    titles = {t.name: (t.annotations.title or "") for t in _a.run(m.mcp_server.list_tools())}
+    assert titles["serverally_list_playbooks"] != titles["serverally_list_blueprints"]
+    assert "script" in titles["serverally_list_playbooks"].lower()
+    assert "set up" in titles["serverally_list_blueprints"].lower()
