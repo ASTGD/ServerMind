@@ -529,7 +529,7 @@ def _looks_binary(text: str) -> bool:
 
 # ── read tools (Phase 2) ──────────────────────────────────────────────────────
 
-@mcp_server.tool(name="serverally_get_fleet_health", annotations={"title": "Fleet health", **_RO})
+@mcp_server.tool(name="serverally_get_fleet_health", annotations={"title": "Check the whole fleet", **_RO})
 async def serverally_get_fleet_health(response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
     """What needs attention across the caller's WHOLE fleet.
 
@@ -574,7 +574,7 @@ async def serverally_get_fleet_health(response_format: ResponseFormat = Response
     return "\n".join(lines).rstrip()
 
 
-@mcp_server.tool(name="serverally_get_server", annotations={"title": "Server detail", **_RO})
+@mcp_server.tool(name="serverally_get_server", annotations={"title": "Look at one server", **_RO})
 async def serverally_get_server(server: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
     """Detailed status of one server: identity + latest metrics + last security grade and
     threat verdict. Read-only, credential-free. ``server`` is a name or id.
@@ -624,7 +624,7 @@ async def serverally_get_server(server: str, response_format: ResponseFormat = R
     return "\n".join(lines)
 
 
-@mcp_server.tool(name="serverally_get_metrics", annotations={"title": "Server metrics", **_RO})
+@mcp_server.tool(name="serverally_get_metrics", annotations={"title": "Check a server's load", **_RO})
 async def serverally_get_metrics(
     server: str, hours: int = 0, response_format: ResponseFormat = ResponseFormat.MARKDOWN
 ) -> str:
@@ -681,7 +681,7 @@ def _scan_payload(scan, key: str) -> dict:
     }
 
 
-@mcp_server.tool(name="serverally_get_security_scan", annotations={"title": "Security scan", **_RO})
+@mcp_server.tool(name="serverally_get_security_scan", annotations={"title": "Read the last security scan", **_RO})
 @carries_server_content
 async def serverally_get_security_scan(server: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
     """The latest security audit for a server: A–F grade, score, severity counts, and the
@@ -716,7 +716,7 @@ async def serverally_get_security_scan(server: str, response_format: ResponseFor
     return "\n".join(lines).rstrip()
 
 
-@mcp_server.tool(name="serverally_get_threat_scan", annotations={"title": "Threat scan", **_RO})
+@mcp_server.tool(name="serverally_get_threat_scan", annotations={"title": "Read the last malware scan", **_RO})
 @carries_server_content
 async def serverally_get_threat_scan(server: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
     """The latest proactive threat/IOC scan for a server: a verdict
@@ -819,7 +819,7 @@ async def serverally_list_missions(
     return "\n".join(lines)
 
 
-@mcp_server.tool(name="serverally_get_mission", annotations={"title": "Mission detail", **_RO})
+@mcp_server.tool(name="serverally_get_mission", annotations={"title": "Look at one mission", **_RO})
 @carries_server_content
 async def serverally_get_mission(mission_id: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
     """Full detail of one mission: summary + outcome + the step-by-step transcript (command
@@ -1032,12 +1032,18 @@ def _bp_run_payload(run, server_name: str | None = None) -> dict:
     }
 
 
-@mcp_server.tool(name="serverally_list_blueprints", annotations={"title": "List blueprints", **_RO})
+@mcp_server.tool(name="serverally_list_blueprints", annotations={"title": "See what it can set up", **_RO})
 async def serverally_list_blueprints(response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
-    """Ready-made long jobs ServerAlly can run — what each does, NEEDS, and will not do.
+    """The ready-made jobs ServerAlly can do end to end — its recipes, its skills, the
+    things it can set up for the user.
 
-    A blueprint is a fixed list of steps (no AI inside the run). To use one: check its
-    ``needs``, ASK THE USER for any input you do not have — never invent a domain — then
+    CALL THIS whenever the user asks what ServerAlly can do for them, what it can set up,
+    what its skills or recipes are — or asks for something that sounds like a multi-step
+    job: set up a website, put WordPress on a server, take over a server somebody else
+    built, move a site to another server, check a site before it goes live.
+
+    Each one is a fixed list of steps ServerAlly runs itself. To use one: read its
+    ``needs``, ASK THE USER for anything you do not have — never invent a domain — then
     ``serverally_start_blueprint`` and poll ``serverally_get_blueprint_run``.
     """
     from app.services import blueprint_service
@@ -1060,7 +1066,7 @@ async def serverally_list_blueprints(response_format: ResponseFormat = ResponseF
     return "\n".join(lines)
 
 
-@mcp_server.tool(name="serverally_start_blueprint", annotations={"title": "Start a blueprint", **_WRITE})
+@mcp_server.tool(name="serverally_start_blueprint", annotations={"title": "Set something up", **_WRITE})
 async def serverally_start_blueprint(
     server: str, blueprint: str, inputs: dict | None = None,
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
@@ -1119,7 +1125,7 @@ async def serverally_start_blueprint(
             f"The user can watch it live in ServerAlly under Activity.")
 
 
-@mcp_server.tool(name="serverally_get_blueprint_run", annotations={"title": "Check a blueprint run", **_RO})
+@mcp_server.tool(name="serverally_get_blueprint_run", annotations={"title": "Check how it is going", **_RO})
 async def serverally_get_blueprint_run(
     run_id: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN,
 ) -> str:
@@ -1157,7 +1163,7 @@ async def serverally_get_blueprint_run(
     return "\n".join(lines)
 
 
-@mcp_server.tool(name="serverally_stop_blueprint", annotations={"title": "Stop a blueprint run", **_WRITE})
+@mcp_server.tool(name="serverally_stop_blueprint", annotations={"title": "Stop the job", **_WRITE})
 async def serverally_stop_blueprint(run_id: str) -> str:
     """Stop a running blueprint. Honest limits: it refuses everything further; it cannot
     undo steps that already ran."""
@@ -1551,7 +1557,7 @@ async def serverally_run_playbook(
             "It runs in the background — call `get_playbook_run` with that id to follow progress.")
 
 
-@mcp_server.tool(name="serverally_get_playbook_run", annotations={"title": "Playbook run status", **_RO})
+@mcp_server.tool(name="serverally_get_playbook_run", annotations={"title": "Check a playbook run", **_RO})
 @carries_server_content
 async def serverally_get_playbook_run(run_id: str, response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
     """Status + output of a playbook run started with run_playbook.

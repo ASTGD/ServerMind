@@ -171,3 +171,39 @@ def test_a_refusal_still_leads_when_the_footer_is_attached(fresh):
     out = asyncio.run(_tool("This connection is read-only.")())
     assert out.split("\n\n")[0] == "This connection is read-only."
     assert "WHAT'S NEW:" in out
+
+
+def test_every_tool_title_reads_as_an_action():
+    """The chat line is "using ServerAlly to <title>", so a noun title reads as
+    "using ServerAlly to fleet health". Seven did. It is the only sentence most customers
+    will ever read about what their AI just did to their server."""
+    import asyncio as _a
+
+    VERBS = {"list", "read", "run", "start", "stop", "set", "see", "check",
+             "create", "turn", "save", "issue", "get", "open", "look", "move"}
+    tools = _a.run(m.mcp_server.list_tools())
+    assert len(tools) >= 30
+    for t in tools:
+        title = t.annotations.title if t.annotations else None
+        assert title, f"{t.name} has no title"
+        first = title.split()[0].lower()
+        assert first in VERBS, f"{t.name}: title reads as a noun — 'using ServerAlly to {title.lower()}'"
+
+
+def test_the_customer_never_reads_our_internal_word():
+    """'Blueprint' is ours, for code and docs. What a customer sees is what happens."""
+    import asyncio as _a
+
+    tools = _a.run(m.mcp_server.list_tools())
+    for t in tools:
+        title = (t.annotations.title if t.annotations else "") or ""
+        assert "blueprint" not in title.lower(), f"{t.name}: '{title}'"
+
+
+def test_the_catalogue_matches_the_words_customers_actually_use():
+    """A customer says 'what are your skills', 'what can you set up', 'what can you do
+    for me'. The AI picks a tool by its DESCRIPTION, so the description carries those
+    words — renaming the feature would only move the problem."""
+    doc = (m.serverally_list_blueprints.__doc__ or "").lower()
+    for phrase in ("skills", "recipes", "set up", "what serverally can do"):
+        assert phrase in doc, f"missing '{phrase}'"
