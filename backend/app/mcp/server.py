@@ -71,7 +71,11 @@ logger = logging.getLogger(__name__)
 # shape for the Phase-1 OAuth bearer flow. Served at exactly ``/mcp`` (inner path
 # "/" here, mounted at "/mcp" in main.py).
 mcp_server = FastMCP(
-    "serverally_mcp",
+    # This is `serverInfo.name` on the wire — what a client shows when it names the
+    # connector for itself. It was "serverally_mcp", an internal-looking string with an
+    # underscore; a customer reading "using serverally_mcp to run a shell command" is
+    # reading our variable naming. The product's name is the product's name.
+    "ServerAlly",
     stateless_http=True,
     json_response=True,
     streamable_http_path="/",

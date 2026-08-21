@@ -93,3 +93,29 @@ def test_the_constants_travel_together():
     registry = open("app/mcp/server.py").read()
     for name in named:
         assert f'name="{name}"' in registry, f"the note names '{name}', which is not a registered tool"
+
+
+def test_the_server_names_itself_after_the_product():
+    """`serverInfo.name` is what a client shows when it names the connector for itself.
+    It was `serverally_mcp` — a customer reading "using serverally_mcp to run a shell
+    command" is reading our variable naming."""
+    from app.mcp.server import mcp_server
+
+    assert mcp_server.name == "ServerAlly"
+
+
+def test_every_tool_has_a_human_title():
+    """The chat line is the connector name plus THIS. A tool with no title falls back to
+    its function name — "using ServerAlly to serverally_run_command"."""
+    import re
+
+    src = open("app/mcp/server.py").read()
+    names = set(re.findall(r'name="(serverally_[a-z_]+)"', src))
+    assert len(names) >= 30
+    for name in sorted(names):
+        block = src[src.index(f'name="{name}"'):][:400]
+        m = re.search(r'"title":\s*"([^"]+)"', block)
+        assert m, f"{name} has no title"
+        title = m.group(1)
+        assert not title.startswith("serverally_"), f"{name}: title is the raw tool name"
+        assert title[0].isupper(), f"{name}: title should read as a sentence — {title!r}"

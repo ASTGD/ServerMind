@@ -324,7 +324,7 @@ async def lifespan(app: FastAPI):
 
     # The MCP Streamable-HTTP session manager must run for the app's lifetime.
     async with mcp_server.session_manager.run():
-        logger.info("MCP server ready at /mcp (serverally_mcp)")
+        logger.info("MCP server ready at /mcp (ServerAlly)")
         yield
 
     logger.info("ServerAlly backend shutting down...")
