@@ -19,6 +19,7 @@ Design rules that hold from day one:
 """
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import logging
 import os
@@ -227,6 +228,72 @@ def _label_untrusted(result):
     return result
 
 
+# ── "What's new" — how a stale client learns the tool surface grew ────────────
+# An MCP client fetches the tool list when its session connects, so a client holding an
+# old list simply cannot see a tool added since — and nothing on our side can push a new
+# list into a dead session. What we CAN do is speak through the tools it already calls:
+# for a short window after a deploy that changes the tool surface, the two most-called
+# read tools append one line telling the CALLER'S AI what appeared and how to pick it up.
+# The AI is the actual reader of tool lists, and it relays the line to the human in its
+# own words. Harmless when the client already sees the new tools, and it expires by
+# itself — a permanent notice would train the reader to ignore it, the same reason the
+# untrusted label is not put on everything.
+#
+# BOTH constants are updated by hand in the SAME commit that adds or renames a tool.
+# A date nobody bumps means no notice — the safe failure.
+
+TOOLS_CHANGED_AT = _dt.date(2026, 8, 21)
+TOOLS_CHANGED_NOTE = (
+    "ServerAlly gained new abilities since some connections were made: blueprints — "
+    "ready-made long jobs (serverally_list_blueprints / start / get / stop), and server "
+    "log reading (serverally_list_logs / read_log). If you cannot see these tools, ask "
+    "the user to reconnect the ServerAlly connector (toggle it off and on)."
+)
+_WHATS_NEW_DAYS = 7
+
+
+def _today() -> "_dt.date":
+    """Split out so tests can freeze the clock."""
+    return _dt.date.today()
+
+
+def whats_new_line() -> str | None:
+    """The notice, or None once the window has passed."""
+    if (_today() - TOOLS_CHANGED_AT).days >= _WHATS_NEW_DAYS:
+        return None
+    return f"WHAT'S NEW: {TOOLS_CHANGED_NOTE}"
+
+
+def announces_whats_new(fn):
+    """Append the notice to a tool's answer while the window is open.
+
+    Prose gets a trailing line (a footer — the answer itself comes first); JSON gets a
+    `_whats_new` field and stays valid JSON. Once expired, the result is returned
+    byte-identical — no leftover markers.
+    """
+    import functools
+
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        result = await fn(*args, **kwargs)
+        line = whats_new_line()
+        if line is None or not isinstance(result, str):
+            return result
+        stripped = result.lstrip()
+        if stripped.startswith("{"):
+            try:
+                payload = json.loads(result)
+            except ValueError:
+                return f"{result}\n\n{line}"
+            if isinstance(payload, dict):
+                return json.dumps({**payload, "_whats_new": line}, indent=2)
+            return f"{result}\n\n{line}"
+        return f"{result}\n\n{line}"
+
+    wrapper.__serverally_whats_new__ = True
+    return wrapper
+
+
 def carries_server_content(fn):
     """Mark a tool whose result contains bytes that came off a managed server.
 
@@ -254,6 +321,7 @@ def carries_server_content(fn):
         "openWorldHint": True,
     },
 )
+@announces_whats_new
 async def serverally_list_servers(
     response_format: ResponseFormat = ResponseFormat.MARKDOWN,
 ) -> str:
@@ -433,6 +501,7 @@ def _looks_binary(text: str) -> bool:
 # ── read tools (Phase 2) ──────────────────────────────────────────────────────
 
 @mcp_server.tool(name="serverally_get_fleet_health", annotations={"title": "Fleet health", **_RO})
+@announces_whats_new
 async def serverally_get_fleet_health(response_format: ResponseFormat = ResponseFormat.MARKDOWN) -> str:
     """What needs attention across the caller's WHOLE fleet.
 
