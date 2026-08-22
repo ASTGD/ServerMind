@@ -1120,7 +1120,10 @@ async def serverally_list_blueprints(response_format: ResponseFormat = ResponseF
         needs = ", ".join(f"{n['name']}"
                           + (f" (one of: {', '.join(n['choices'])})" if n["choices"] else "")
                           for n in bp["needs"])
-        lines.append(f"- **Needs**: {needs}")
+        # Needing nothing is the selling point of the take-over job — access IS the input.
+        # An empty "Needs:" reads as a missing field, which is the opposite of the message.
+        lines.append(f"- **Needs**: {needs}" if needs
+                     else "- **Needs**: nothing — just a server ServerAlly can already reach")
         lines.append(f"- **Steps**: {' → '.join(bp['steps'])}")
         for item in bp["leaves_for_you"]:
             lines.append(f"- **Left for the user**: {item}")

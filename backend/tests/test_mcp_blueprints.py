@@ -125,3 +125,13 @@ def test_the_waiting_state_is_explained_to_the_ai():
     text must teach it."""
     doc = m.serverally_get_blueprint_run.__doc__ or ""
     assert "NOT a failure" in doc
+
+
+def test_a_job_that_needs_nothing_says_so_rather_than_showing_a_blank():
+    """Needing nothing is the selling point of the take-over job — access IS the input.
+    An empty "Needs:" reads as a missing field, which says the opposite."""
+    import asyncio as _a
+
+    out = _a.run(m.serverally_list_blueprints())
+    assert "**Needs**: \n" not in out and not out.rstrip().endswith("**Needs**:")
+    assert "nothing — just a server ServerAlly can already reach" in out
