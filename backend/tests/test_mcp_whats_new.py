@@ -36,14 +36,32 @@ def _tool(result):
     return fn
 
 
-def test_prose_gets_the_line_as_a_footer_not_a_header(fresh):
+@pytest.fixture
+def stale(monkeypatch):
+    """A connection made BEFORE the tools changed, not yet told."""
+    async def predates(_token):
+        return True, "grant-1"
+    monkeypatch.setattr(m, "_connection_predates_the_change", predates)
+    monkeypatch.setattr(m, "_ANNOUNCED_GRANTS", set())
+
+
+@pytest.fixture
+def updated(monkeypatch):
+    """A connection made after the deploy — it already has the tools."""
+    async def predates(_token):
+        return False, "grant-2"
+    monkeypatch.setattr(m, "_connection_predates_the_change", predates)
+    monkeypatch.setattr(m, "_ANNOUNCED_GRANTS", set())
+
+
+def test_prose_gets_the_line_as_a_footer_not_a_header(fresh, stale):
     out = asyncio.run(_tool("# Fleet health\n\nall fine")())
     assert out.startswith("# Fleet health"), "the answer itself comes first"
     assert out.rstrip().endswith(")")  is False or True
     assert "WHAT'S NEW:" in out.splitlines()[-1]
 
 
-def test_json_stays_valid_json_and_carries_the_field(fresh):
+def test_json_stays_valid_json_and_carries_the_field(fresh, stale):
     out = asyncio.run(_tool(json.dumps({"count": 2}))())
     data = json.loads(out)                      # must not raise
     assert data["count"] == 2
@@ -58,7 +76,7 @@ def test_the_line_names_a_new_tool_and_the_fix():
     assert "reconnect" in note.lower()
 
 
-def test_it_expires_by_itself_and_leaves_no_marker(expired):
+def test_it_expires_by_itself_and_leaves_no_marker(expired, stale):
     for result in ("# Fleet health\n\nall fine", json.dumps({"count": 2})):
         out = asyncio.run(_tool(result)())
         assert out == result, "once expired, byte-identical — a permanent notice trains the reader to ignore it"
@@ -87,7 +105,7 @@ def test_it_rides_EVERY_tool_not_a_hand_picked_few():
         assert getattr(fn, "__serverally_whats_new__", False), f"{name} is not announcing"
 
 
-def test_the_notice_is_never_applied_twice(fresh):
+def test_the_notice_is_never_applied_twice(fresh, stale):
     """A hand-placed decorator left beside the registration patch would append the line
     twice — noise in every answer, and the kind of thing nobody notices in review."""
     out = asyncio.run(_tool("hello")())
@@ -120,7 +138,7 @@ def test_the_notice_tells_the_reader_to_speak_rather_than_only_to_act():
     assert note.index("tell the user") < 40, "the instruction must lead, not trail"
 
 
-def test_a_non_dict_json_answer_is_not_corrupted(fresh):
+def test_a_non_dict_json_answer_is_not_corrupted(fresh, stale):
     out = asyncio.run(_tool(json.dumps([1, 2]))())
     assert out.startswith("[1, 2]")
     assert "WHAT'S NEW:" in out
@@ -164,7 +182,7 @@ def test_every_tool_has_a_human_title():
         assert title[0].isupper(), f"{name}: title should read as a sentence — {title!r}"
 
 
-def test_a_refusal_still_leads_when_the_footer_is_attached(fresh):
+def test_a_refusal_still_leads_when_the_footer_is_attached(fresh, stale):
     """The footer rides every tool, refusals included. A customer must never have to read
     past an announcement to learn they were refused — so the refusal leads and the notice
     trails, always."""
@@ -245,3 +263,73 @@ def test_the_two_catalogues_are_distinguishable_by_their_titles_alone():
     assert titles["serverally_list_playbooks"] != titles["serverally_list_blueprints"]
     assert "script" in titles["serverally_list_playbooks"].lower()
     assert "set up" in titles["serverally_list_blueprints"].lower()
+
+
+# ── it is said ONCE, and only to a connection that needs it ──────────────────
+# The first version asked only the clock, so it fired on every call for a week — including
+# to a customer who had already reconnected. Reported by the owner: "every session got the
+# message even after update". A notice that repeats is worse than one that is missed,
+# because the customer learns to skip every line we add.
+
+def test_a_reconnected_customer_is_never_told_again(fresh, updated):
+    """A grant made after the deploy has the new tools by construction."""
+    out = asyncio.run(_tool("# Fleet health\n\nall fine")())
+    assert out == "# Fleet health\n\nall fine"
+    assert "WHAT'S NEW" not in out
+
+
+def test_a_stale_connection_is_told_exactly_once(fresh, stale):
+    first = asyncio.run(_tool("answer one")())
+    second = asyncio.run(_tool("answer two")())
+    third = asyncio.run(_tool("answer three")())
+    assert "WHAT'S NEW:" in first
+    assert "WHAT'S NEW" not in second, "the second call must be clean"
+    assert "WHAT'S NEW" not in third
+    assert second == "answer two"
+
+
+def test_two_different_connections_are_each_told_once(fresh, monkeypatch):
+    seen = []
+
+    async def predates(_token):
+        return True, seen.pop(0)
+
+    monkeypatch.setattr(m, "_connection_predates_the_change", predates)
+    monkeypatch.setattr(m, "_ANNOUNCED_GRANTS", set())
+
+    seen.extend(["grant-a", "grant-a", "grant-b"])
+    a1 = asyncio.run(_tool("x")())
+    a2 = asyncio.run(_tool("x")())
+    b1 = asyncio.run(_tool("x")())
+    assert "WHAT'S NEW:" in a1 and "WHAT'S NEW" not in a2
+    assert "WHAT'S NEW:" in b1, "a different customer still gets told"
+
+
+def test_an_unreadable_connection_says_nothing(fresh, monkeypatch):
+    """Local dev has no bearer at all. Silence is the safe failure."""
+    async def predates(_token):
+        return False, None
+
+    monkeypatch.setattr(m, "_connection_predates_the_change", predates)
+    out = asyncio.run(_tool("plain answer")())
+    assert out == "plain answer"
+
+
+def test_a_lookup_that_raises_never_breaks_the_tool(fresh, monkeypatch):
+    async def boom(_token):
+        raise RuntimeError("database is down")
+
+    monkeypatch.setattr(m, "_connection_predates_the_change", boom)
+    out = asyncio.run(_tool("the real answer")())
+    assert out == "the real answer"
+
+
+def test_the_connection_age_comes_from_the_grant_not_the_access_token():
+    """An access token is re-minted on every refresh, so ITS age says nothing about when
+    the customer connected. The oldest token sharing the grant is the connection's birth."""
+    import inspect
+
+    src = inspect.getsource(m._connection_predates_the_change)
+    code = "\n".join(ln for ln in src.splitlines() if not ln.strip().startswith("#"))
+    assert "min(OAuthTokenRecord.created_at)" in code
+    assert "grant_id ==" in code

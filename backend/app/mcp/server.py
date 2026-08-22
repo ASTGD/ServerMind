@@ -268,6 +268,44 @@ def _today() -> "_dt.date":
     return _dt.date.today()
 
 
+# Grants already told, this process. Keyed on the GRANT — the connection — so a client
+# hears it once and then never again, however many tools it calls.
+_ANNOUNCED_GRANTS: set[str] = set()
+
+
+async def _connection_predates_the_change(token) -> tuple[bool, str | None]:
+    """Was this CONNECTION made before the new tools existed?
+
+    Returns ``(stale, grant_id)``. The first version asked only the clock, so it fired on
+    every call for a week — including to a customer who had already reconnected and could
+    see the tools perfectly well. The connection's own age is the honest signal: a grant
+    made after the deploy has the new tools BY CONSTRUCTION and must never be nagged.
+
+    Unknown (no bearer — local dev) is treated as NOT stale: silence is the safe failure.
+    """
+    raw = getattr(token, "token", None)
+    if not raw:
+        return False, None
+    from sqlalchemy import func as _f
+
+    from app.mcp.oauth_provider import _hash
+    from app.models.oauth import OAuthTokenRecord
+
+    async with AsyncSessionLocal() as db:
+        row = (await db.execute(select(OAuthTokenRecord).where(
+            OAuthTokenRecord.token_hash == _hash(raw)))).scalar_one_or_none()
+        if row is None:
+            return False, None
+        # The access token is re-minted on every refresh, so ITS age says nothing about
+        # the connection. The oldest token sharing this grant is when the customer
+        # actually connected.
+        born = (await db.execute(select(_f.min(OAuthTokenRecord.created_at)).where(
+            OAuthTokenRecord.grant_id == row.grant_id))).scalar_one_or_none()
+    if born is None:
+        return False, None
+    return born.date() < TOOLS_CHANGED_AT, str(row.grant_id)
+
+
 def whats_new_line() -> str | None:
     """The notice, or None once the window has passed."""
     if (_today() - TOOLS_CHANGED_AT).days >= _WHATS_NEW_DAYS:
@@ -290,6 +328,20 @@ def announces_whats_new(fn):
         line = whats_new_line()
         if line is None or not isinstance(result, str):
             return result
+
+        # Only a connection made BEFORE the new tools existed, and only its first answer.
+        # Best-effort by construction: if we cannot tell, we say nothing — a notice that
+        # repeats is worse than one that is missed, because the customer learns to skip
+        # every line we add.
+        try:
+            from mcp.server.auth.middleware.auth_context import get_access_token
+
+            stale, grant = await _connection_predates_the_change(get_access_token())
+        except Exception:  # noqa: BLE001 — never break a tool over an announcement
+            return result
+        if not stale or grant is None or grant in _ANNOUNCED_GRANTS:
+            return result
+        _ANNOUNCED_GRANTS.add(grant)
         stripped = result.lstrip()
         if stripped.startswith("{"):
             try:
